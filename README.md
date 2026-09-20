@@ -7,6 +7,7 @@ leaks in real time.
 ## Features
 
 - Native Windows file picker for `.exe`, `.bat`, `.cmd`, and `.py` targets.
+- Displays the repository `TITLE.txt` artwork on startup with a legacy-console fallback.
 - Recursive child-process tracking with pause, resume, terminate, and kill controls.
 - 500 ms telemetry for RSS, VMS, private bytes, handles, threads, CPU, and I/O rates.
 - Sliding-window leak heuristics with Low, Medium, High, and Critical severity levels.
