@@ -18,7 +18,6 @@ from rich.console import Console, Group, RenderableType
 from rich.layout import Layout
 from rich.live import Live
 from rich.panel import Panel
-from rich.progress import BarColumn, Progress, TextColumn
 from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
@@ -234,19 +233,6 @@ class DashboardApp:
         handles = totals["handles"]
         threads = totals["threads"]
 
-        cpu_progress = Progress(
-            TextColumn("[cyan]CPU[/cyan]"),
-            BarColumn(
-                bar_width=None,
-                complete_style="cyan",
-                finished_style="bright_cyan",
-                pulse_style="magenta",
-            ),
-            TextColumn("[bold cyan]{task.completed:>5.1f}%[/bold cyan]"),
-            expand=True,
-        )
-        cpu_progress.add_task("", total=100, completed=min(max(cpu, 0), 100))
-
         memory_text = Text()
         memory_text.append(self._format_bytes(memory), style="bold white")
         memory_text.append(f"  {self._trend(self._memory_history)}", style="bold")
@@ -286,7 +272,7 @@ class DashboardApp:
             Panel(
                 Group(
                     Text("CPU UTILIZATION", style="bold cyan"),
-                    cpu_progress,
+                    self._progress_bar(cpu),
                     self._sparkline(self._cpu_history, "cyan"),
                 ),
                 border_style="cyan",
@@ -408,6 +394,16 @@ class DashboardApp:
             ]
         glyphs = ".:-=+*#@"
         return Text("".join(glyphs[index] for index in indexes), style=color)
+
+    @staticmethod
+    def _progress_bar(value: float, width: int = 4) -> Text:
+        bounded = min(max(value, 0.0), 100.0)
+        complete = round((bounded / 100.0) * width)
+        progress = Text("[")
+        progress.append("#" * complete, style="cyan")
+        progress.append("." * (width - complete), style="bright_black")
+        progress.append(f"] {bounded:5.1f}%", style="bold cyan")
+        return progress
 
     def _totals(self) -> dict[str, float]:
         if self.snapshot is None:
