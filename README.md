@@ -9,7 +9,7 @@ The detector reports *potential* leaks. It is a signal for investigation, not
 proof that a particular allocation or handle is permanently unreleased.
 
 ## What happens when it runs
-
+0. Read working-principle.md to get a clear and comprehensive idea on how each function works.
 1. The application clears the terminal and displays `TITLE.txt`. If the
    terminal uses a legacy code page that cannot display the block artwork, it
    shows the product name instead.
