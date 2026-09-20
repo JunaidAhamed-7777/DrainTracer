@@ -12,6 +12,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from rich import box
 from rich.align import Align
 from rich.console import Console, Group, RenderableType
 from rich.layout import Layout
@@ -80,6 +81,7 @@ class DashboardApp:
                     f"[bold red]Unable to start monitor[/bold red]\n\n{exc}",
                     title="STARTUP ERROR",
                     border_style="red",
+                    box=box.ASCII,
                 )
             )
             return 1
@@ -219,9 +221,10 @@ class DashboardApp:
         )
 
         return Panel(
-            Group(title, Rule(style="magenta"), details),
+            Group(title, Rule(characters="-", style="magenta"), details),
             border_style="magenta",
             padding=(0, 1),
+            box=box.ASCII,
         )
 
     def _render_metrics_panel(self) -> Panel:
@@ -261,16 +264,19 @@ class DashboardApp:
             Group(Text("MEMORY USAGE", style="bold cyan"), memory_text),
             border_style="cyan",
             padding=(1, 2),
+            box=box.ASCII,
         )
         handles_panel = Panel(
             Group(Text("SYSTEM HANDLES", style="bold cyan"), handle_text),
             border_style="cyan",
             padding=(1, 2),
+            box=box.ASCII,
         )
         threads_panel = Panel(
             Group(Text("THREAD COUNT", style="bold cyan"), thread_text),
             border_style="cyan",
             padding=(1, 2),
+            box=box.ASCII,
         )
 
         grid = Table.grid(expand=True)
@@ -285,6 +291,7 @@ class DashboardApp:
                 ),
                 border_style="cyan",
                 padding=(1, 2),
+                box=box.ASCII,
             ),
             memory_panel,
         )
@@ -295,6 +302,7 @@ class DashboardApp:
             title="[bold cyan] LIVE METRICS [/bold cyan]",
             border_style="cyan",
             padding=(0, 1),
+            box=box.ASCII,
         )
 
     def _render_diagnostics_panel(self) -> Panel:
@@ -307,6 +315,7 @@ class DashboardApp:
                 Align.center(Text("[OK]  NO ACTIVE LEAK SIGNALS", style="bold green")),
                 border_style="green",
                 padding=(1, 0),
+                box=box.ASCII,
             )
         else:
             label = f"[!]  {severity.value.upper()} LEAK SIGNAL"
@@ -314,6 +323,7 @@ class DashboardApp:
                 Align.center(Text(label, style=f"bold {style}")),
                 border_style=style,
                 padding=(1, 0),
+                box=box.ASCII,
             )
 
         event_table = Table.grid(expand=True)
@@ -333,13 +343,14 @@ class DashboardApp:
                 banner,
                 Text("ACTIVE DIAGNOSTICS", style="bold white"),
                 alert_table,
-                Rule(style="magenta"),
+                Rule(characters="-", style="magenta"),
                 Text("EVENT LOG", style="bold white"),
                 event_table,
             ),
             title="[bold magenta] DIAGNOSTICS [/bold magenta]",
             border_style="magenta",
             padding=(0, 1),
+            box=box.ASCII,
         )
 
     def _render_alerts(self, snapshot: MetricsSnapshot | None) -> Table:
@@ -376,7 +387,12 @@ class DashboardApp:
         controls.append(" Export Log   ", style="white")
         controls.append("[Q]", style="bold magenta")
         controls.append(" Quit", style="white")
-        return Panel(Align.center(controls), border_style="magenta", padding=(0, 1))
+        return Panel(
+            Align.center(controls),
+            border_style="magenta",
+            padding=(0, 1),
+            box=box.ASCII,
+        )
 
     def _sparkline(self, values: deque[float], color: str) -> RenderableType:
         if len(values) < 2:
