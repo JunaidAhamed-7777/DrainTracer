@@ -79,6 +79,7 @@ class LeakDetector:
 
         self._stop_event = threading.Event()
         self._pause_event = threading.Event()
+        self._lifecycle_lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._cpu_baselines: dict[int, tuple[float, float]] = {}
         self._io_baselines: dict[int, tuple[float, int, int]] = {}
@@ -96,22 +97,32 @@ class LeakDetector:
         return self._pause_event.is_set()
 
     def start(self) -> None:
-        if self.is_running:
-            return
-        self._stop_event.clear()
-        self._pause_event.clear()
-        self._thread = threading.Thread(
-            target=self._sample_loop,
-            name="LeakDetector",
-            daemon=True,
-        )
-        self._thread.start()
+        with self._lifecycle_lock:
+            if self.is_running:
+                return
+            # A previous sampling operation may still be unwinding after a
+            # timed-out stop. Do not clear its event and create an overlap.
+            if self._thread is not None and self._thread.is_alive():
+                logger.warning("Leak detector stop is still in progress")
+                return
+            self._stop_event.clear()
+            self._pause_event.clear()
+            self._thread = threading.Thread(
+                target=self._sample_loop,
+                name="LeakDetector",
+                daemon=True,
+            )
+            self._thread.start()
 
     def stop(self) -> None:
-        self._stop_event.set()
-        if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=2.0)
-        self._thread = None
+        with self._lifecycle_lock:
+            self._stop_event.set()
+            thread = self._thread
+        if thread and thread.is_alive():
+            thread.join(timeout=2.0)
+        with self._lifecycle_lock:
+            if self._thread is thread and (thread is None or not thread.is_alive()):
+                self._thread = None
 
     def pause(self) -> None:
         self._pause_event.set()
@@ -126,11 +137,38 @@ class LeakDetector:
     def _sample_loop(self) -> None:
         interval = self.sample_interval_ms / 1000.0
         while not self._stop_event.wait(interval):
-            if self._pause_event.is_set():
-                snapshot = self._build_paused_snapshot()
-            else:
-                snapshot = self._collect_snapshot()
+            try:
+                if self._pause_event.is_set():
+                    snapshot = self._build_paused_snapshot()
+                else:
+                    snapshot = self._collect_snapshot()
+            except Exception as exc:
+                logger.exception("Resource sampling failed")
+                snapshot = self._build_error_snapshot(str(exc))
             self.stream.publish(snapshot)
+
+    def _build_error_snapshot(self, error: str) -> MetricsSnapshot:
+        return MetricsSnapshot(
+            timestamp=time.time(),
+            root_pid=self.process_manager.root_pid,
+            process_alive=self.process_manager.is_running,
+            monitoring_paused=False,
+            processes=(),
+            totals={
+                "rss_bytes": 0.0,
+                "vms_bytes": 0.0,
+                "private_bytes": 0.0,
+                "handles": 0.0,
+                "threads": 0.0,
+                "cpu_percent": 0.0,
+                "io_read_bytes_per_sec": 0.0,
+                "io_write_bytes_per_sec": 0.0,
+            },
+            alerts=(),
+            severity=LeakSeverity.NONE,
+            sample_interval_ms=self.sample_interval_ms,
+            metadata={"sampling_error": error},
+        )
 
     def _build_paused_snapshot(self) -> MetricsSnapshot:
         return MetricsSnapshot(
@@ -224,6 +262,21 @@ class LeakDetector:
                 io_write_bytes_per_sec=0.0,
                 access_denied=False,
             )
+        except (psutil.Error, OSError) as exc:
+            return ProcessMetrics(
+                pid=pid,
+                name="unavailable",
+                status="unknown",
+                rss_bytes=0,
+                vms_bytes=0,
+                private_bytes=0,
+                handles=0,
+                threads=0,
+                cpu_percent=0.0,
+                io_read_bytes_per_sec=0.0,
+                io_write_bytes_per_sec=0.0,
+                access_denied=isinstance(exc, psutil.AccessDenied),
+            )
 
         return ProcessMetrics(
             pid=pid,
@@ -244,14 +297,14 @@ class LeakDetector:
     def _safe_num_handles(proc: psutil.Process) -> int:
         try:
             return int(proc.num_handles())
-        except (AttributeError, psutil.AccessDenied, NotImplementedError):
+        except (AttributeError, OSError, psutil.AccessDenied, NotImplementedError):
             return 0
 
     def _sample_cpu_percent(self, proc: psutil.Process, now: float) -> float:
         pid = proc.pid
         try:
             cpu = proc.cpu_percent(interval=None)
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
+        except (psutil.Error, OSError):
             return 0.0
 
         last = self._cpu_baselines.get(pid)
@@ -268,7 +321,7 @@ class LeakDetector:
             counters = proc.io_counters()
             read_bytes = int(counters.read_bytes)
             write_bytes = int(counters.write_bytes)
-        except (psutil.NoSuchProcess, psutil.AccessDenied, AttributeError):
+        except (psutil.Error, OSError, AttributeError):
             return 0.0, 0.0
 
         baseline = self._io_baselines.get(pid)

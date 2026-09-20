@@ -74,6 +74,8 @@ class DashboardApp:
                 )
                 time.sleep(0.2)
         except Exception as exc:
+            if self.manager.has_tracked_processes:
+                self.manager.kill()
             self.console.print(
                 Panel(
                     f"[bold red]Unable to start monitor[/bold red]\n\n{exc}",
@@ -101,7 +103,7 @@ class DashboardApp:
             self._append_event("Dashboard interrupted by user")
         finally:
             self.detector.stop()
-            if self.manager.is_running:
+            if self.manager.is_running or self.manager.has_tracked_processes:
                 self.manager.terminate()
 
         return 0
@@ -147,20 +149,37 @@ class DashboardApp:
 
         if key == " ":
             if self.detector.is_paused:
-                self.detector.resume()
-                self.manager.resume()
-                self._append_event("Monitoring resumed")
+                if self.manager.resume():
+                    self.detector.resume()
+                    self._append_event("Monitoring resumed")
+                else:
+                    self._append_event(
+                        f"Resume failed: {self.manager.last_error or 'unknown error'}"
+                    )
             else:
-                self.manager.pause()
-                self.detector.pause()
-                self._append_event("Monitoring paused")
+                if self.manager.pause():
+                    self.detector.pause()
+                    self._append_event("Monitoring paused")
+                else:
+                    self._append_event(
+                        f"Pause failed: {self.manager.last_error or 'unknown error'}"
+                    )
         elif normalized == "k":
             self.manager.kill()
             self._terminated_by_user = True
-            self._append_event("Target process tree terminated")
+            if self.manager.has_tracked_processes:
+                self._append_event(
+                    f"Target cleanup incomplete: {self.manager.last_error or 'unknown error'}"
+                )
+            else:
+                self._append_event("Target process tree terminated")
         elif normalized == "e":
-            path = self.export_log()
-            self._append_event(f"Session exported to {path}")
+            try:
+                path = self.export_log()
+            except OSError as exc:
+                self._append_event(f"Export failed: {exc}")
+            else:
+                self._append_event(f"Session exported to {path}")
         elif normalized == "q":
             self._quit_requested = True
             self._append_event("Quit requested")

@@ -126,26 +126,34 @@ class ProcessManager:
             self._start_poll_thread()
             return self._root_pid
 
-    def pause(self) -> None:
+    def pause(self) -> bool:
         """Suspend the root process and all tracked descendants."""
         with self._lock:
             if not self.is_running:
-                return
+                return False
             if self._paused:
-                return
+                return True
             self._refresh_tracked_pids()
+            success = True
             for pid in self._tracked_pids:
-                self._suspend_pid(pid)
-            self._paused = True
+                success = self._suspend_pid(pid) and success
+            self._paused = success
+            if not success:
+                self._last_error = "One or more processes could not be suspended"
+            return success
 
-    def resume(self) -> None:
+    def resume(self) -> bool:
         """Resume a previously paused process tree."""
         with self._lock:
             if not self._paused:
-                return
+                return True
+            success = True
             for pid in self._tracked_pids:
-                self._resume_pid(pid)
-            self._paused = False
+                success = self._resume_pid(pid) and success
+            self._paused = not success
+            if not success:
+                self._last_error = "One or more processes could not be resumed"
+            return success
 
     def terminate(self, timeout: float = 3.0) -> None:
         """Gracefully terminate the process tree."""
@@ -312,22 +320,26 @@ class ProcessManager:
         return {pid for pid in remaining if cls._pid_is_alive(pid)}
 
     @staticmethod
-    def _suspend_pid(pid: int) -> None:
+    def _suspend_pid(pid: int) -> bool:
         if sys.platform != "win32":
-            return
+            return True
         try:
             psutil.Process(pid).suspend()
+            return True
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess) as exc:
             logger.debug("Could not suspend pid %s: %s", pid, exc)
+            return False
 
     @staticmethod
-    def _resume_pid(pid: int) -> None:
+    def _resume_pid(pid: int) -> bool:
         if sys.platform != "win32":
-            return
+            return True
         try:
             psutil.Process(pid).resume()
+            return True
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess) as exc:
             logger.debug("Could not resume pid %s: %s", pid, exc)
+            return False
 
     @staticmethod
     def _terminate_pid(pid: int, graceful: bool) -> None:
