@@ -27,6 +27,18 @@ def _load_title_art() -> str:
     return title
 
 
+def _display_title(console: Console) -> None:
+    title = _load_title_art()
+    encoding = getattr(console.file, "encoding", None) or "utf-8"
+    try:
+        title.encode(encoding)
+    except (LookupError, UnicodeEncodeError):
+        # Legacy Windows code pages cannot represent the block-art glyphs.
+        # Keep startup reliable and show the same product title in plain text.
+        title = "PROCESS RESOURCE LEAK DETECTOR"
+    console.print(title, style="bold cyan")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Monitor Windows process resources and detect likely leaks.",
@@ -54,7 +66,7 @@ def main(argv: list[str] | None = None) -> int:
     console = Console()
     args = build_parser().parse_args(argv)
     console.clear()
-    console.print(_load_title_art(), style="bold cyan")
+    _display_title(console)
 
     target_path = args.target
     if target_path is None:
