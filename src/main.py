@@ -51,7 +51,7 @@ def main(argv: list[str] | None = None) -> int:
         console.print(
             Panel(
                 "[bold cyan]Select a target executable or script[/bold cyan]\n"
-                "[dim]Supported: .exe · .bat · .cmd · .py[/dim]",
+                "[dim]Supported: .exe | .bat | .cmd | .py[/dim]",
                 title="[bold magenta]PROCESS RESOURCE LEAK DETECTOR[/bold magenta]",
                 border_style="magenta",
             )

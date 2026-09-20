@@ -1,1 +1,1 @@
-"""Process Resource Leak Detector — core backend engine."""
+"""Process Resource Leak Detector - core backend engine."""

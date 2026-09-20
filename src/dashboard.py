@@ -71,7 +71,7 @@ class DashboardApp:
                 self._accept_snapshot(self.detector.sample_once())
                 self.detector.start()
                 self._append_event(
-                    f"Attached to {Path(self.target_path).name} · PID {self.manager.root_pid}"
+                    f"Attached to {Path(self.target_path).name} | PID {self.manager.root_pid}"
                 )
                 time.sleep(0.2)
         except Exception as exc:
@@ -124,7 +124,7 @@ class DashboardApp:
 
         if snapshot.severity != self._last_severity:
             if snapshot.severity == LeakSeverity.NONE:
-                self._append_event("Leak indicators cleared · system healthy")
+                self._append_event("Leak indicators cleared | system healthy")
             else:
                 self._append_event(
                     f"{snapshot.severity.value.upper()} leak signal detected"
@@ -199,7 +199,7 @@ class DashboardApp:
         snapshot = self.snapshot
         status, status_style = self._status(snapshot)
         process_name = self._process_name(snapshot)
-        pid = snapshot.root_pid if snapshot and snapshot.root_pid else "—"
+        pid = snapshot.root_pid if snapshot and snapshot.root_pid else "-"
 
         title = Text()
         title.append(f"{self.TITLE} ", style="bold cyan")
@@ -304,12 +304,12 @@ class DashboardApp:
 
         if severity == LeakSeverity.NONE:
             banner = Panel(
-                Align.center(Text("✓  NO ACTIVE LEAK SIGNALS", style="bold green")),
+                Align.center(Text("[OK]  NO ACTIVE LEAK SIGNALS", style="bold green")),
                 border_style="green",
                 padding=(1, 0),
             )
         else:
-            label = f"⚠  {severity.value.upper()} LEAK SIGNAL"
+            label = f"[!]  {severity.value.upper()} LEAK SIGNAL"
             banner = Panel(
                 Align.center(Text(label, style=f"bold {style}")),
                 border_style=style,
@@ -325,7 +325,7 @@ class DashboardApp:
                 Text(event, style="white"),
             )
         if not self._events:
-            event_table.add_row("—", Text("Waiting for telemetry events...", style="dim"))
+            event_table.add_row("-", Text("Waiting for telemetry events...", style="dim"))
 
         alert_table = self._render_alerts(snapshot)
         return Panel(
@@ -350,7 +350,7 @@ class DashboardApp:
         if not snapshot or not snapshot.alerts:
             table.add_row(
                 Text("CLEAR", style="green"),
-                "—",
+                "-",
                 Text("No monotonic growth detected", style="dim"),
             )
             return table
@@ -380,7 +380,7 @@ class DashboardApp:
 
     def _sparkline(self, values: deque[float], color: str) -> RenderableType:
         if len(values) < 2:
-            return Text("· waiting for trend samples ·", style="dim")
+            return Text("... waiting for trend samples ...", style="dim")
         points = list(values)
         low, high = min(points), max(points)
         if high == low:
@@ -390,7 +390,7 @@ class DashboardApp:
                 round((point - low) / (high - low) * 7)
                 for point in points
             ]
-        glyphs = "▁▂▃▄▅▆▇█"
+        glyphs = ".:-=+*#@"
         return Text("".join(glyphs[index] for index in indexes), style=color)
 
     def _totals(self) -> dict[str, float]:
@@ -444,11 +444,11 @@ class DashboardApp:
     @staticmethod
     def _trend(values: deque[float]) -> str:
         if len(values) < 2:
-            return "→"
+            return "-"
         delta = values[-1] - values[-2]
         if abs(delta) < max(abs(values[-2]) * 0.01, 1):
-            return "→"
-        return "⬆" if delta > 0 else "⬇"
+            return "-"
+        return "^" if delta > 0 else "v"
 
     def _append_event(self, message: str) -> None:
         self._events.append(message)
