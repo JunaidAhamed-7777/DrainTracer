@@ -1,4 +1,4 @@
-# Process Resource Leak Detector (MVP)
+# DrainTracer
 
 A lightweight Windows CLI tool that launches processes via a native file selector, monitors resource consumption in real-time, and flags memory and handle leaks directly in an interactive Terminal UI.
 
