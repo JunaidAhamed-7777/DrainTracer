@@ -95,27 +95,57 @@ def _select_with_ctypes() -> str | None:
     OFN_EXPLORER = 0x00080000
     OFN_NOCHANGEDIR = 0x00000008
 
-    file_buffer = ctypes.create_unicode_buffer(260)
-    title_buffer = ctypes.create_unicode_buffer(260)
+    # The dialog may return long Windows paths; keep the buffers larger than
+    # MAX_PATH and pass their addresses explicitly for Python 3.14+ ctypes.
+    file_buffer = ctypes.create_unicode_buffer(32768)
+    title_buffer = ctypes.create_unicode_buffer(512)
 
     ofn = OPENFILENAMEW()
     ofn.lStructSize = ctypes.sizeof(OPENFILENAMEW)
     ofn.lpstrFilter = filter_buffer
     ofn.nFilterIndex = 1
-    ofn.lpstrFile = file_buffer
+    ofn.lpstrFile = ctypes.cast(file_buffer, wintypes.LPWSTR)
     ofn.nMaxFile = len(file_buffer)
-    ofn.lpstrFileTitle = title_buffer
+    ofn.lpstrFileTitle = ctypes.cast(title_buffer, wintypes.LPWSTR)
     ofn.nMaxFileTitle = len(title_buffer)
     ofn.lpstrTitle = "Select target executable or script"
     ofn.lpstrDefExt = "exe"
     ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_EXPLORER | OFN_NOCHANGEDIR
 
-    ole32.CoInitialize(None)
+    get_open_file_name = comdlg32.GetOpenFileNameW
+    get_open_file_name.argtypes = [ctypes.POINTER(OPENFILENAMEW)]
+    get_open_file_name.restype = wintypes.BOOL
+    get_extended_error = comdlg32.CommDlgExtendedError
+    get_extended_error.argtypes = []
+    get_extended_error.restype = wintypes.DWORD
+
+    co_initialize_ex = ole32.CoInitializeEx
+    co_initialize_ex.argtypes = [wintypes.LPVOID, wintypes.DWORD]
+    co_initialize_ex.restype = wintypes.HRESULT
+    co_uninitialize = ole32.CoUninitialize
+    co_uninitialize.argtypes = []
+    co_uninitialize.restype = None
+
+    # COINIT_APARTMENTTHREADED; CoInitializeEx may report that the current
+    # thread is already in another apartment. In that case, do not unbalance
+    # COM with a matching CoUninitialize call.
+    COINIT_APARTMENTTHREADED = 0x2
+    S_OK = 0
+    S_FALSE = 1
+    com_result = co_initialize_ex(None, COINIT_APARTMENTTHREADED)
+    com_initialized = com_result in (S_OK, S_FALSE)
     try:
-        if not comdlg32.GetOpenFileNameW(ctypes.byref(ofn)):
-            return None
+        if not get_open_file_name(ctypes.byref(ofn)):
+            error_code = get_extended_error()
+            if error_code == 0:
+                return None
+            raise OSError(
+                int(error_code),
+                f"GetOpenFileNameW failed with error 0x{error_code:08X}",
+            )
     finally:
-        ole32.CoUninitialize()
+        if com_initialized:
+            co_uninitialize()
 
     selected = file_buffer.value.strip()
     if not selected:
@@ -138,6 +168,7 @@ def select_target_file(prefer_ctypes: bool = True) -> str | None:
         (_select_with_tkinter, not prefer_ctypes),
     )
 
+    errors: list[Exception] = []
     for selector, _ in sorted(selectors, key=lambda item: not item[1]):
         try:
             path = selector()
@@ -146,7 +177,16 @@ def select_target_file(prefer_ctypes: bool = True) -> str | None:
             if os.path.isfile(path):
                 return path
             raise FileNotFoundError(f"Selected path does not exist: {path}")
-        except OSError:
+        except Exception as exc:
+            # ctypes and tkinter expose platform-specific exception types.
+            # A failed native dialog should fall through to the other picker.
+            errors.append(exc)
             continue
 
-    return _select_with_tkinter()
+    try:
+        return _select_with_tkinter()
+    except Exception as exc:
+        errors.append(exc)
+        if errors:
+            raise OSError("All Windows file picker implementations failed") from errors[-1]
+        raise
