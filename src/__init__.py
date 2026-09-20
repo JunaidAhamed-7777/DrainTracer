@@ -1,1 +1,1 @@
-"""Process Resource Leak Detector - core backend engine."""
+"""DrainTracer - core backend engine."""

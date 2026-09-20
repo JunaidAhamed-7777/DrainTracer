@@ -1,4 +1,4 @@
-"""Rich terminal dashboard for Process Resource Leak Detector."""
+"""Rich terminal dashboard for DrainTracer."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ from .process_runner import ProcessManager
 class DashboardApp:
     """Own the monitor lifecycle and render live snapshots in the terminal."""
 
-    TITLE = "PROCESS RESOURCE LEAK DETECTOR"
+    TITLE = "DRAINTRACER"
     VERSION = "v0.1"
     HISTORY_LIMIT = 48
 

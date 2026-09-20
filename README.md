@@ -1,6 +1,6 @@
-# Process Resource Leak Detector
+# DrainTracer
 
-Process Resource Leak Detector is a Windows CLI/TUI tool for watching an
+DrainTracer is a Windows CLI/TUI tool for watching an
 executable or script and its complete child-process tree. It reports live
 resource telemetry and raises heuristic warnings when memory, handles, or
 threads show sustained growth consistent with a resource leak.

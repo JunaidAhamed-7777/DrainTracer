@@ -1,4 +1,4 @@
-"""Command-line entry point for Process Resource Leak Detector."""
+"""Command-line entry point for DrainTracer."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ def _load_title_art() -> str:
     try:
         title = title_path.read_text(encoding="utf-8").strip()
     except OSError:
-        title = "PROCESS RESOURCE LEAK DETECTOR"
+        title = "DRAINTRACER"
     return title
 
 
@@ -35,7 +35,7 @@ def _display_title(console: Console) -> None:
     except (LookupError, UnicodeEncodeError):
         # Legacy Windows code pages cannot represent the block-art glyphs.
         # Keep startup reliable and show the same product title in plain text.
-        title = "PROCESS RESOURCE LEAK DETECTOR"
+        title = "DRAINTRACER"
     console.print(title, style="bold cyan")
 
 
@@ -74,7 +74,7 @@ def main(argv: list[str] | None = None) -> int:
             Panel(
                 "[bold cyan]Select a target executable or script[/bold cyan]\n"
                 "[dim]Supported: .exe | .bat | .cmd | .py[/dim]",
-                title="[bold magenta]PROCESS RESOURCE LEAK DETECTOR[/bold magenta]",
+                title="[bold magenta]DRAINTRACER[/bold magenta]",
                 border_style="magenta",
             )
         )
