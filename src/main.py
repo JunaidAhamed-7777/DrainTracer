@@ -18,6 +18,15 @@ from src.file_picker import select_target_file
 from src.process_runner import ProcessManagerError
 
 
+def _load_title_art() -> str:
+    title_path = Path(__file__).resolve().parents[1] / "TITLE.txt"
+    try:
+        title = title_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        title = "PROCESS RESOURCE LEAK DETECTOR"
+    return title
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Monitor Windows process resources and detect likely leaks.",
@@ -45,6 +54,7 @@ def main(argv: list[str] | None = None) -> int:
     console = Console()
     args = build_parser().parse_args(argv)
     console.clear()
+    console.print(_load_title_art(), style="bold cyan")
 
     target_path = args.target
     if target_path is None:

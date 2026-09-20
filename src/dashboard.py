@@ -60,7 +60,6 @@ class DashboardApp:
 
     def run(self) -> int:
         """Start monitoring and run the interactive dashboard until quit."""
-        self.console.clear()
         try:
             with self.console.status(
                 "[bold cyan]ATTACHING MONITOR[/bold cyan] "
