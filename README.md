@@ -1,76 +1,57 @@
-# DrainTracer
+# Process Resource Leak Detector
 
-A lightweight Windows CLI tool that launches processes via a native file selector, monitors resource consumption in real-time, and flags memory and handle leaks directly in an interactive Terminal UI.
+A Windows CLI/TUI tool that launches a target executable or script, monitors
+its complete process tree, and highlights likely memory, handle, and thread
+leaks in real time.
 
 ## Features
 
-- **Native Windows File Picker:** File selection via standard Windows file dialog directly on startup.
-- **Real-Time Resource Metrics:** Tracks RAM (Working Set/VMS), CPU, System Handles, and Thread counts across parent and child processes.
-- **Automated Leak Detection:** Uses sliding-window heuristic analysis to detect unreleased handles and monotonic memory growth.
-- **Interactive TUI Dashboard:** Dynamic CLI interface with visual sparklines, resource alerts, and process control keybindings.
-
-## Directory Structure
-
-```text
-├── src/
-│   ├── main.py            # Main entry point & CLI setup
-│   ├── file_picker.py     # Windows native file selection interface
-│   ├── process_runner.py  # Process spawning and PID hierarchy manager
-│   ├── leak_detector.py   # Metric sampling & leak heuristics engine
-│   └── ui/
-│       └── dashboard.py   # Rich/Textual CLI-GUI interface
-├── requirements.txt
-└── README.md
-
-```
+- Native Windows file picker for `.exe`, `.bat`, `.cmd`, and `.py` targets.
+- Recursive child-process tracking with pause, resume, terminate, and kill controls.
+- 500 ms telemetry for RSS, VMS, private bytes, handles, threads, CPU, and I/O rates.
+- Sliding-window leak heuristics with Low, Medium, High, and Critical severity levels.
+- Rich neon telemetry dashboard with live gauges, trend sparklines, diagnostics, and event log.
+- JSON session export through the dashboard.
 
 ## Quick Start
 
-### Prerequisites
+Requirements: Windows 10/11 and Python 3.10+.
 
-* Windows 10 / 11
-* Python 3.10+
-
-### Installation
-
-1. Clone the repository:
-```bash
-git clone [https://github.com/your-username/process-resource-leak-detector.git](https://github.com/your-username/process-resource-leak-detector.git)
-cd process-resource-leak-detector
-
-```
-
-
-2. Create a virtual environment and install dependencies:
-```bash
-python -m venv venv
-.\venv\Scripts\activate
+```powershell
+python -m venv .venv
+.\.venv\Scripts\activate
 pip install -r requirements.txt
-
-```
-
-
-
-### Running the Application
-
-Execute the main script:
-
-```bash
 python src/main.py
-
 ```
 
-1. Select any target executable or script in the Windows file picker pop-up.
-2. Monitor real-time resource telemetry and leak warnings directly inside your terminal.
+The application opens the native file picker on startup. For repeatable runs,
+provide a target directly:
 
-## Keybindings
+```powershell
+python src/main.py --target C:\path\to\worker.exe
+python src/main.py --target C:\path\to\worker.py -- --iterations 10
+```
+
+## Dashboard Controls
 
 | Key | Action |
 | --- | --- |
-| `Space` | Pause / Resume real-time monitoring |
-| `K` | Terminate monitored target process |
-| `E` | Export session metrics to `leak_report.json` |
-| `Q` | Exit application |
+| `Space` | Pause/resume monitoring and the target process |
+| `K` | Kill the monitored process tree |
+| `E` | Export the session to `leak_report.json` |
+| `Q` | Quit and cleanly terminate a running target |
+
+## Project Layout
+
+```text
+src/
+├── main.py             # CLI entry point and picker workflow
+├── dashboard.py        # Rich terminal UI and controls
+├── events.py           # Snapshot models and MetricsStream
+├── file_picker.py      # Native Windows file selection
+├── process_runner.py   # Process lifecycle and PID tree tracking
+└── leak_detector.py    # Sampling loop and leak heuristics
+```
 
 ## License
 
