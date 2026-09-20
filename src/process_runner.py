@@ -248,6 +248,7 @@ class ProcessManager:
     def _start_poll_thread(self) -> None:
         if self._poll_thread and self._poll_thread.is_alive():
             return
+        self._poll_thread = None
         self._poll_stop.clear()
         self._poll_thread = threading.Thread(
             target=self._poll_loop,
@@ -258,9 +259,11 @@ class ProcessManager:
 
     def _stop_poll_thread(self) -> None:
         self._poll_stop.set()
-        if self._poll_thread and self._poll_thread.is_alive():
-            self._poll_thread.join(timeout=1.0)
-        self._poll_thread = None
+        thread = self._poll_thread
+        if thread and thread.is_alive():
+            thread.join(timeout=1.0)
+        if thread is None or not thread.is_alive():
+            self._poll_thread = None
 
     def _poll_loop(self) -> None:
         while not self._poll_stop.wait(self.poll_interval):

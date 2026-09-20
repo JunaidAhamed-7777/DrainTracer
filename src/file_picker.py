@@ -183,10 +183,6 @@ def select_target_file(prefer_ctypes: bool = True) -> str | None:
             errors.append(exc)
             continue
 
-    try:
-        return _select_with_tkinter()
-    except Exception as exc:
-        errors.append(exc)
-        if errors:
-            raise OSError("All Windows file picker implementations failed") from errors[-1]
-        raise
+    if errors:
+        raise OSError("All Windows file picker implementations failed") from errors[-1]
+    return None
