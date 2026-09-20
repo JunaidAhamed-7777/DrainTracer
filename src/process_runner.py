@@ -81,6 +81,12 @@ class ProcessManager:
         with self._lock:
             return frozenset(self._tracked_pids)
 
+    @property
+    def has_tracked_processes(self) -> bool:
+        """Whether any root or descendant PID still needs cleanup."""
+        with self._lock:
+            return bool(self._tracked_pids)
+
     def start(self) -> int:
         """Launch the target process and begin PID tree polling."""
         with self._lock:
@@ -145,22 +151,31 @@ class ProcessManager:
         """Gracefully terminate the process tree."""
         with self._lock:
             self._stop_poll_thread()
-            if self._process is None:
+            if self._process is None and not self._tracked_pids:
                 return
 
             self._refresh_tracked_pids()
-            for pid in sorted(self._tracked_pids, reverse=True):
+            targets = set(self._tracked_pids)
+            for pid in sorted(targets, reverse=True):
                 self._terminate_pid(pid, graceful=True)
 
-            try:
-                self._process.wait(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                self.kill()
-            finally:
-                self._process = None
-                self._root_pid = None
+            remaining = self._wait_for_pids(targets, timeout)
+            if remaining:
+                for pid in sorted(remaining, reverse=True):
+                    self._terminate_pid(pid, graceful=False)
+                remaining = self._wait_for_pids(remaining, 0.5)
+
+            self._process = None
+            self._paused = False
+            if remaining:
+                self._tracked_pids = remaining
+                self._last_error = (
+                    f"Could not terminate process tree; remaining PIDs: "
+                    f"{sorted(remaining)}"
+                )
+            else:
                 self._tracked_pids.clear()
-                self._paused = False
+                self._root_pid = None
 
     def kill(self) -> None:
         """Force-kill the process tree."""
@@ -170,7 +185,8 @@ class ProcessManager:
                 return
 
             self._refresh_tracked_pids()
-            for pid in sorted(self._tracked_pids, reverse=True):
+            targets = set(self._tracked_pids)
+            for pid in sorted(targets, reverse=True):
                 self._terminate_pid(pid, graceful=False)
 
             if self._process is not None:
@@ -180,8 +196,16 @@ class ProcessManager:
                     pass
                 self._process = None
 
-            self._root_pid = None
-            self._tracked_pids.clear()
+            remaining = self._wait_for_pids(targets, 0.5)
+            if remaining:
+                self._tracked_pids = remaining
+                self._last_error = (
+                    f"Could not kill process tree; remaining PIDs: "
+                    f"{sorted(remaining)}"
+                )
+            else:
+                self._root_pid = None
+                self._tracked_pids.clear()
             self._paused = False
 
     def refresh_process_tree(self) -> set[int]:
@@ -198,7 +222,7 @@ class ProcessManager:
                 proc = psutil.Process(pid)
                 if proc.is_running():
                     processes.append(proc)
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 continue
         return processes
 
@@ -243,19 +267,15 @@ class ProcessManager:
         if self._root_pid is None:
             return
 
-        discovered: set[int] = set()
+        discovered: set[int] = set(self._tracked_pids)
         try:
             root = psutil.Process(self._root_pid)
             discovered.update(self._collect_descendants(root))
         except (psutil.NoSuchProcess, psutil.AccessDenied) as exc:
             self._last_error = str(exc)
-            discovered.add(self._root_pid)
 
         alive = {pid for pid in discovered if self._pid_is_alive(pid)}
-        if alive:
-            self._tracked_pids = alive
-        elif self._root_pid is not None:
-            self._tracked_pids = {self._root_pid}
+        self._tracked_pids = alive
 
     def _collect_descendants(self, root: psutil.Process) -> set[int]:
         pids: set[int] = {root.pid}
@@ -274,8 +294,22 @@ class ProcessManager:
         try:
             proc = psutil.Process(pid)
             return proc.is_running() and proc.status() != psutil.STATUS_ZOMBIE
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
+        except (psutil.NoSuchProcess, psutil.ZombieProcess):
             return False
+        except psutil.AccessDenied:
+            # Keep inaccessible PIDs tracked so termination is not reported as
+            # successful merely because inspection was denied.
+            return True
+
+    @classmethod
+    def _wait_for_pids(cls, pids: set[int], timeout: float) -> set[int]:
+        deadline = time.monotonic() + max(timeout, 0.0)
+        remaining = set(pids)
+        while remaining and time.monotonic() < deadline:
+            remaining = {pid for pid in remaining if cls._pid_is_alive(pid)}
+            if remaining:
+                time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
+        return {pid for pid in remaining if cls._pid_is_alive(pid)}
 
     @staticmethod
     def _suspend_pid(pid: int) -> None:
@@ -283,7 +317,7 @@ class ProcessManager:
             return
         try:
             psutil.Process(pid).suspend()
-        except (psutil.NoSuchProcess, psutil.AccessDenied) as exc:
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess) as exc:
             logger.debug("Could not suspend pid %s: %s", pid, exc)
 
     @staticmethod
@@ -292,7 +326,7 @@ class ProcessManager:
             return
         try:
             psutil.Process(pid).resume()
-        except (psutil.NoSuchProcess, psutil.AccessDenied) as exc:
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess) as exc:
             logger.debug("Could not resume pid %s: %s", pid, exc)
 
     @staticmethod
@@ -303,7 +337,7 @@ class ProcessManager:
                 proc.terminate()
             else:
                 proc.kill()
-        except (psutil.NoSuchProcess, psutil.AccessDenied) as exc:
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess) as exc:
             logger.debug("Could not terminate pid %s: %s", pid, exc)
 
     def __enter__(self) -> ProcessManager:
