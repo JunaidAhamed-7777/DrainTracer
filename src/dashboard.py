@@ -68,8 +68,8 @@ class DashboardApp:
                 spinner="dots",
             ):
                 self.manager.start()
-                self.detector.start()
                 self._accept_snapshot(self.detector.sample_once())
+                self.detector.start()
                 self._append_event(
                     f"Attached to {Path(self.target_path).name} · PID {self.manager.root_pid}"
                 )
