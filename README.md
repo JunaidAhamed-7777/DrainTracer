@@ -69,16 +69,18 @@ The detector keeps timestamped samples for three default windows:
 - 30 seconds
 - 60 seconds
 
-A window is evaluated only after it contains enough samples for its duration
-at the configured sampling interval. This prevents a warning from being
+A window is evaluated only after at least four samples cover 85% of that
+window's duration. The slope uses the samples' real timestamps, so a slightly
+slower sampling loop can still qualify. This prevents a warning from being
 created from only a few startup readings.
 
 ### Growth tests
 
 For each resource and each eligible window, the detector calculates:
 
-1. **Trend slope** using least-squares linear regression. The slope must be
-   positive, meaning the resource is growing over time.
+1. **Trend slope** using least-squares linear regression over the actual sample
+   timestamps. The slope must be positive, meaning the resource is growing
+   over time.
 2. **Monotonic increase ratio**, the proportion of adjacent samples that do
    not decrease. It must be at least 65%.
 3. **Drop ratio**, the proportion of samples that fall below the running
@@ -124,7 +126,12 @@ growth is persistent and highly monotonic.
 - Private bytes drive the memory leak heuristic; the dashboard also shows RSS.
 - Alerts are based on the aggregate process tree, not only the root PID.
 - Access-denied metrics are reported as unavailable rather than guessed.
-- Pausing monitoring produces a paused snapshot and does not add new samples.
+- Pausing monitoring keeps the last measured totals and alerts, and does not
+  add new samples or trend points.
+- The CPU percentage is the summed process-tree value and can exceed 100% on
+  multi-core machines. The gauge fill stops at 100%.
+- Cleanup validates process creation time before suspending or killing a PID,
+  and terminates descendants before their parent.
 - A `NONE` severity means no active heuristic signal was found in the current
   sample; it does not prove that the program has no leaks.
 

@@ -51,6 +51,8 @@ class ProcessManager:
         self._process: subprocess.Popen[str] | None = None
         self._root_pid: int | None = None
         self._tracked_pids: set[int] = set()
+        self._identities: dict[int, float] = {}
+        self._depths: dict[int, int] = {}
         self._lock = threading.RLock()
         self._poll_stop = threading.Event()
         self._poll_thread: threading.Thread | None = None
@@ -121,6 +123,9 @@ class ProcessManager:
 
             self._root_pid = self._process.pid
             self._tracked_pids = {self._root_pid}
+            self._identities.clear()
+            self._depths = {self._root_pid: 0}
+            self._remember_identity(self._root_pid)
             self._paused = False
             self._last_error = None
             self._start_poll_thread()
@@ -134,13 +139,18 @@ class ProcessManager:
             if self._paused:
                 return True
             self._refresh_tracked_pids()
-            success = True
+            suspended: list[int] = []
             for pid in self._tracked_pids:
-                success = self._suspend_pid(pid) and success
-            self._paused = success
-            if not success:
+                if self._suspend_pid(pid):
+                    suspended.append(pid)
+                    continue
+                for suspended_pid in suspended:
+                    self._resume_pid(suspended_pid)
+                self._paused = False
                 self._last_error = "One or more processes could not be suspended"
-            return success
+                return False
+            self._paused = True
+            return True
 
     def resume(self) -> bool:
         """Resume a previously paused process tree."""
@@ -164,12 +174,12 @@ class ProcessManager:
 
             self._refresh_tracked_pids()
             targets = set(self._tracked_pids)
-            for pid in sorted(targets, reverse=True):
+            for pid in self._termination_order(targets):
                 self._terminate_pid(pid, graceful=True)
 
             remaining = self._wait_for_pids(targets, timeout)
             if remaining:
-                for pid in sorted(remaining, reverse=True):
+                for pid in self._termination_order(remaining):
                     self._terminate_pid(pid, graceful=False)
                 remaining = self._wait_for_pids(remaining, 0.5)
 
@@ -183,6 +193,8 @@ class ProcessManager:
                 )
             else:
                 self._tracked_pids.clear()
+                self._identities.clear()
+                self._depths.clear()
                 self._root_pid = None
 
     def kill(self) -> None:
@@ -194,7 +206,7 @@ class ProcessManager:
 
             self._refresh_tracked_pids()
             targets = set(self._tracked_pids)
-            for pid in sorted(targets, reverse=True):
+            for pid in self._termination_order(targets):
                 self._terminate_pid(pid, graceful=False)
 
             if self._process is not None:
@@ -214,6 +226,8 @@ class ProcessManager:
             else:
                 self._root_pid = None
                 self._tracked_pids.clear()
+                self._identities.clear()
+                self._depths.clear()
             self._paused = False
 
     def refresh_process_tree(self) -> set[int]:
@@ -226,12 +240,9 @@ class ProcessManager:
         """Return psutil.Process objects for all tracked PIDs that are accessible."""
         processes: list[psutil.Process] = []
         for pid in self.tracked_pids:
-            try:
-                proc = psutil.Process(pid)
-                if proc.is_running():
-                    processes.append(proc)
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                continue
+            proc = self._open_tracked(pid)
+            if proc is not None:
+                processes.append(proc)
         return processes
 
     def _build_command(self) -> list[str]:
@@ -268,86 +279,160 @@ class ProcessManager:
     def _poll_loop(self) -> None:
         while not self._poll_stop.wait(self.poll_interval):
             with self._lock:
+                self._refresh_tracked_pids()
                 if self._process is not None and self._process.poll() is not None:
-                    self._refresh_tracked_pids()
                     if not self._any_tracked_alive():
                         break
-                self._refresh_tracked_pids()
 
     def _refresh_tracked_pids(self) -> None:
         if self._root_pid is None:
             return
 
         discovered: set[int] = set(self._tracked_pids)
-        try:
-            root = psutil.Process(self._root_pid)
+        root = self._open_tracked(self._root_pid)
+        if root is not None:
             discovered.update(self._collect_descendants(root))
-        except (psutil.NoSuchProcess, psutil.AccessDenied) as exc:
-            self._last_error = str(exc)
 
         alive = {pid for pid in discovered if self._pid_is_alive(pid)}
         self._tracked_pids = alive
+        self._identities = {
+            pid: created for pid, created in self._identities.items() if pid in alive
+        }
+        self._depths = {pid: depth for pid, depth in self._depths.items() if pid in alive}
 
     def _collect_descendants(self, root: psutil.Process) -> set[int]:
         pids: set[int] = {root.pid}
+        self._depths[root.pid] = 0
+        self._remember_process(root)
         try:
             for child in root.children(recursive=True):
                 pids.add(child.pid)
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                self._remember_process(child)
+                self._depths[child.pid] = self._depth_from_root(child, root.pid)
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             pass
         return pids
+
+    def _termination_order(self, pids: set[int]) -> list[int]:
+        """Kill descendants before their parents while parent links still exist."""
+        return sorted(pids, key=lambda pid: (self._depths.get(pid, 0), pid), reverse=True)
+
+    def _remember_identity(self, pid: int) -> None:
+        try:
+            self._remember_process(psutil.Process(pid))
+        except (psutil.Error, OSError) as exc:
+            self._last_error = str(exc)
+
+    def _remember_process(self, proc: psutil.Process) -> None:
+        try:
+            self._identities[proc.pid] = proc.create_time()
+        except (psutil.Error, OSError):
+            return
+
+    def _depth_from_root(self, proc: psutil.Process, root_pid: int) -> int:
+        depth = 0
+        current = proc
+        seen: set[int] = set()
+        while current.pid != root_pid and depth < 64:
+            if current.pid in seen:
+                break
+            seen.add(current.pid)
+            depth += 1
+            try:
+                parent = current.parent()
+            except (psutil.Error, OSError):
+                break
+            if parent is None:
+                break
+            current = parent
+        return depth
+
+    def _open_tracked(self, pid: int) -> psutil.Process | None:
+        """Return the original process for a PID, rejecting reused PID values."""
+        with self._lock:
+            return self._open_tracked_unlocked(pid)
+
+    def _open_tracked_unlocked(self, pid: int) -> psutil.Process | None:
+        try:
+            proc = psutil.Process(pid)
+        except (psutil.NoSuchProcess, psutil.ZombieProcess):
+            self._identities.pop(pid, None)
+            return None
+
+        try:
+            if not proc.is_running() or proc.status() == psutil.STATUS_ZOMBIE:
+                return None
+        except psutil.AccessDenied:
+            pass
+        except (psutil.NoSuchProcess, psutil.ZombieProcess):
+            self._identities.pop(pid, None)
+            return None
+
+        expected = self._identities.get(pid)
+        try:
+            created = proc.create_time()
+        except psutil.AccessDenied:
+            return proc
+        except (psutil.NoSuchProcess, psutil.ZombieProcess):
+            self._identities.pop(pid, None)
+            return None
+
+        if expected is None:
+            self._identities[pid] = created
+            return proc
+        if abs(created - expected) > 1.0:
+            self._identities.pop(pid, None)
+            self._depths.pop(pid, None)
+            self._last_error = f"PID {pid} was reused; the new process was left untouched"
+            return None
+        return proc
 
     def _any_tracked_alive(self) -> bool:
         return any(self._pid_is_alive(pid) for pid in self._tracked_pids)
 
-    @staticmethod
-    def _pid_is_alive(pid: int) -> bool:
-        try:
-            proc = psutil.Process(pid)
-            return proc.is_running() and proc.status() != psutil.STATUS_ZOMBIE
-        except (psutil.NoSuchProcess, psutil.ZombieProcess):
-            return False
-        except psutil.AccessDenied:
-            # Keep inaccessible PIDs tracked so termination is not reported as
-            # successful merely because inspection was denied.
-            return True
+    def _pid_is_alive(self, pid: int) -> bool:
+        return self._open_tracked(pid) is not None
 
-    @classmethod
-    def _wait_for_pids(cls, pids: set[int], timeout: float) -> set[int]:
+    def _wait_for_pids(self, pids: set[int], timeout: float) -> set[int]:
         deadline = time.monotonic() + max(timeout, 0.0)
         remaining = set(pids)
         while remaining and time.monotonic() < deadline:
-            remaining = {pid for pid in remaining if cls._pid_is_alive(pid)}
+            remaining = {pid for pid in remaining if self._pid_is_alive(pid)}
             if remaining:
                 time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
-        return {pid for pid in remaining if cls._pid_is_alive(pid)}
+        return {pid for pid in remaining if self._pid_is_alive(pid)}
 
-    @staticmethod
-    def _suspend_pid(pid: int) -> bool:
+    def _suspend_pid(self, pid: int) -> bool:
         if sys.platform != "win32":
             return True
+        proc = self._open_tracked(pid)
+        if proc is None:
+            return False
         try:
-            psutil.Process(pid).suspend()
+            proc.suspend()
             return True
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess) as exc:
             logger.debug("Could not suspend pid %s: %s", pid, exc)
             return False
 
-    @staticmethod
-    def _resume_pid(pid: int) -> bool:
+    def _resume_pid(self, pid: int) -> bool:
         if sys.platform != "win32":
             return True
+        proc = self._open_tracked(pid)
+        if proc is None:
+            return False
         try:
-            psutil.Process(pid).resume()
+            proc.resume()
             return True
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess) as exc:
             logger.debug("Could not resume pid %s: %s", pid, exc)
             return False
 
-    @staticmethod
-    def _terminate_pid(pid: int, graceful: bool) -> None:
+    def _terminate_pid(self, pid: int, graceful: bool) -> None:
+        proc = self._open_tracked(pid)
+        if proc is None:
+            return
         try:
-            proc = psutil.Process(pid)
             if graceful:
                 proc.terminate()
             else:

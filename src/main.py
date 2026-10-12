@@ -87,13 +87,17 @@ def main(argv: list[str] | None = None) -> int:
             console.print(f"[bold red]File picker failed:[/bold red] {exc}")
             return 1
 
+    forwarded_args = list(args.target_args or [])
+    if forwarded_args[:1] == ["--"]:
+        forwarded_args = forwarded_args[1:]
+
     if not target_path:
         console.print("[yellow]Selection canceled. Nothing to monitor.[/yellow]")
         return 0
 
     app = DashboardApp(
         target_path,
-        args=args.target_args or None,
+        args=forwarded_args or None,
         console=console,
         export_path=args.export,
     )

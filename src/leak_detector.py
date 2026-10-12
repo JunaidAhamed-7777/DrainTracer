@@ -45,15 +45,9 @@ class _ResourceSeries:
         while self.points and self.points[0].timestamp < cutoff:
             self.points.popleft()
 
-    def values_in_window(self, timestamp: float, window_seconds: float) -> list[float]:
+    def points_in_window(self, timestamp: float, window_seconds: float) -> list[_SamplePoint]:
         cutoff = timestamp - window_seconds
-        return [p.value for p in self.points if p.timestamp >= cutoff]
-
-    def moving_average(self, timestamp: float, window_seconds: float) -> float | None:
-        values = self.values_in_window(timestamp, window_seconds)
-        if not values:
-            return None
-        return sum(values) / len(values)
+        return [point for point in self.points if point.timestamp >= cutoff]
 
 
 class LeakDetector:
@@ -87,6 +81,10 @@ class LeakDetector:
         self._memory_series = _ResourceSeries("memory", LeakResource.MEMORY, deque())
         self._handle_series = _ResourceSeries("handles", LeakResource.HANDLES, deque())
         self._thread_series = _ResourceSeries("threads", LeakResource.THREADS, deque())
+        self._last_processes: tuple[ProcessMetrics, ...] = ()
+        self._last_totals: dict[str, float] | None = None
+        self._last_alerts: tuple[LeakAlert, ...] = ()
+        self._last_severity = LeakSeverity.NONE
 
     @property
     def is_running(self) -> bool:
@@ -176,22 +174,26 @@ class LeakDetector:
             root_pid=self.process_manager.root_pid,
             process_alive=self.process_manager.is_running,
             monitoring_paused=True,
-            processes=(),
-            totals={
-                "rss_bytes": 0.0,
-                "vms_bytes": 0.0,
-                "private_bytes": 0.0,
-                "handles": 0.0,
-                "threads": 0.0,
-                "cpu_percent": 0.0,
-                "io_read_bytes_per_sec": 0.0,
-                "io_write_bytes_per_sec": 0.0,
-            },
-            alerts=(),
-            severity=LeakSeverity.NONE,
+            processes=self._last_processes,
+            totals=dict(self._last_totals or self._zero_totals()),
+            alerts=self._last_alerts,
+            severity=self._last_severity,
             sample_interval_ms=self.sample_interval_ms,
-            metadata={"last_error": self.process_manager.last_error},
+            metadata={"last_error": self.process_manager.last_error, "paused": True},
         )
+
+    @staticmethod
+    def _zero_totals() -> dict[str, float]:
+        return {
+            "rss_bytes": 0.0,
+            "vms_bytes": 0.0,
+            "private_bytes": 0.0,
+            "handles": 0.0,
+            "threads": 0.0,
+            "cpu_percent": 0.0,
+            "io_read_bytes_per_sec": 0.0,
+            "io_write_bytes_per_sec": 0.0,
+        }
 
     def _collect_snapshot(self) -> MetricsSnapshot:
         now = time.time()
@@ -199,12 +201,16 @@ class LeakDetector:
         processes = self._sample_processes(now)
         totals = self._aggregate_totals(processes)
 
+        self._last_processes = tuple(processes)
+        self._last_totals = dict(totals)
         self._memory_series.add(now, totals["private_bytes"], self.max_window_seconds * 1.5)
         self._handle_series.add(now, totals["handles"], self.max_window_seconds * 1.5)
         self._thread_series.add(now, totals["threads"], self.max_window_seconds * 1.5)
 
         alerts = self._evaluate_leaks(now, totals)
         severity = self._max_severity(alerts)
+        self._last_alerts = tuple(alerts)
+        self._last_severity = severity
 
         return MetricsSnapshot(
             timestamp=now,
@@ -379,11 +385,18 @@ class LeakDetector:
         best_alert: LeakAlert | None = None
 
         for window in self.window_seconds:
-            values = series.values_in_window(timestamp, window)
-            if len(values) < max(4, int(window / (self.sample_interval_ms / 1000.0))):
+            points = series.points_in_window(timestamp, window)
+            if len(points) < 4:
+                continue
+            covered = points[-1].timestamp - points[0].timestamp
+            # Require most of the window to have elapsed. Counting nominal
+            # 500 ms slots misses real windows when sampling takes extra time.
+            if covered < window * 0.85:
                 continue
 
-            slope = self._least_squares_slope(values, self.sample_interval_ms / 1000.0)
+            values = [point.value for point in points]
+            times = [point.timestamp for point in points]
+            slope = self._least_squares_slope(times, values)
             monotonic_ratio = self._monotonic_increase_ratio(values)
             drop_ratio = self._drop_ratio(values)
             baseline = values[0]
@@ -419,11 +432,12 @@ class LeakDetector:
         return best_alert
 
     @staticmethod
-    def _least_squares_slope(values: list[float], sample_interval: float) -> float:
+    def _least_squares_slope(times: list[float], values: list[float]) -> float:
         n = len(values)
-        if n < 2:
+        if n < 2 or len(times) != n:
             return 0.0
-        xs = [i * sample_interval for i in range(n)]
+        origin = times[0]
+        xs = [stamp - origin for stamp in times]
         x_mean = sum(xs) / n
         y_mean = sum(values) / n
         numerator = sum((x - x_mean) * (y - y_mean) for x, y in zip(xs, values))

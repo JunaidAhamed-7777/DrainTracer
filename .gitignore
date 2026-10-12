@@ -60,6 +60,7 @@ dmypy.json
 # --- Project artifacts ---
 leak_report.json
 leak_report*.json
+leak_reports/
 *.log
 logs/
 *.tmp

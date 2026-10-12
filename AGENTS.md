@@ -18,8 +18,9 @@ Core modules are under `src/`:
 
 ## Mandatory versioning rule
 
-The application started at `v0.1`; initializing this instruction file advances
-the current runtime version to `v0.2`. **Every subsequent change to the
+The application started at `v0.1`. Initializing this instruction file advanced
+the runtime version to `v0.2`; that sentence is history, not the live release.
+Read `DashboardApp.VERSION` before editing. **Every subsequent change to the
 repository must increment the application version by exactly `0.1`.** For
 example:
 

@@ -28,8 +28,9 @@ total_cpu_percent = sum(process_cpu_percent for every tracked process)
 ```
 
 Because the total is a sum across processes, it can exceed 100% on a
-multi-core machine. CPU is diagnostic telemetry only; it is not an input to
-the current leak heuristic.
+multi-core machine. The dashboard prints that summed percentage. Its bar fill
+stops at 100% so the gauge stays inside the panel. CPU is diagnostic telemetry
+only; it is not an input to the current leak heuristic.
 
 ## 2. Memory usage
 
@@ -107,16 +108,19 @@ The default evaluation windows are 10, 30, and 60 seconds. Samples are kept
 for approximately 1.5 times the largest configured window so the oldest
 window remains available while new samples arrive.
 
-A window is not evaluated until it contains enough samples for its duration at
-the configured interval. With the default 500 ms interval this requires
-approximately 20, 60, or 120 samples respectively.
+A window is not evaluated until it contains at least four samples and the time
+from the oldest sample to the newest covers at least 85% of the window. This
+uses observed timestamps rather than assuming every sample arrives exactly 500
+ms apart. A slower sampling loop can therefore still fill a window, while a
+short startup burst cannot.
 
 For each eligible window, DrainTracer computes:
 
 ### Trend slope
 
-The values are fitted to a least-squares line. The resulting slope is the
-estimated resource growth per second:
+The values are fitted to a least-squares line using each sample's real
+timestamp, shifted so the first sample in the window is time zero. The
+resulting slope is the estimated resource growth per second:
 
 ```text
 slope = sum((time - mean_time) * (value - mean_value))
@@ -154,7 +158,7 @@ allocation bursts followed by garbage collection or idle cleanup as leaks.
 A resource/window becomes a candidate active signal only when all of these are
 true:
 
-1. The window has enough samples.
+1. The window has at least four samples covering 85% of its duration.
 2. Its growth slope is positive.
 3. Its monotonic increase ratio is at least `65%`.
 4. Its drop ratio is at most `15%`.
@@ -196,6 +200,24 @@ overall severity is the strongest severity among its active alerts.
 `NONE` means that no current window met all criteria. It does not prove that
 the target is leak-free.
 
+Pausing the monitor does not append another sample and does not clear the last
+alert. The paused snapshot repeats the last process totals so the dashboard
+does not fall to zero while sampling is stopped.
+
+## Process identity and cleanup
+
+DrainTracer records each tracked process's creation time. Before it samples,
+suspends, or kills a PID, it opens that PID again and rejects it when the
+creation time differs by more than one second. Windows reuses PID values, so
+this check avoids operating on a different process that inherited a stale
+number.
+
+Descendants are terminated before their parents. The tree is resolved first,
+then walked from the deepest recorded process upward, so parent links are
+still available while cleanup is in progress. Previously discovered children
+remain tracked after the root exits until they themselves exit or their
+recorded identity no longer matches.
+
 ## 7. `leak_report.json` structure
 
 The dashboard exports a JSON session envelope:
@@ -207,7 +229,7 @@ The dashboard exports a JSON session envelope:
   "target_path": "C:\\path\\to\\target.exe",
   "root_pid": 1234,
   "exported_at": 1789932789.395636,
-  "events": ["Attached to target.exe | PID 1234"],
+  "events": ["12:00:00 Attached to target.exe | PID 1234"],
   "snapshots": []
 }
 ```
@@ -219,7 +241,8 @@ The dashboard exports a JSON session envelope:
 - `target_path` — absolute selected target path.
 - `root_pid` — root PID when available.
 - `exported_at` — Unix timestamp for report generation.
-- `events` — recent dashboard event messages.
+- `events` — the most recent dashboard messages, each prefixed with its
+  local `HH:MM:SS` timestamp.
 - `snapshots` — chronological exported telemetry snapshots.
 
 The dashboard retains up to 600 snapshots and the most recent 8 event

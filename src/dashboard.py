@@ -31,7 +31,7 @@ class DashboardApp:
     """Own the monitor lifecycle and render live snapshots in the terminal."""
 
     TITLE = "DRAINTRACER"
-    VERSION = "v0.3"
+    VERSION = "v0.4"
     HISTORY_LIMIT = 48
 
     def __init__(
@@ -53,10 +53,9 @@ class DashboardApp:
         self._handle_history: deque[float] = deque(maxlen=self.HISTORY_LIMIT)
         self._thread_history: deque[float] = deque(maxlen=self.HISTORY_LIMIT)
         self._snapshot_history: deque[dict[str, Any]] = deque(maxlen=600)
-        self._events: deque[str] = deque(maxlen=8)
+        self._events: deque[tuple[float, str]] = deque(maxlen=8)
         self._last_severity = LeakSeverity.NONE
         self._quit_requested = False
-        self._terminated_by_user = False
 
     def run(self) -> int:
         """Start monitoring and run the interactive dashboard until quit."""
@@ -118,10 +117,11 @@ class DashboardApp:
         previous = self.snapshot
         self.snapshot = snapshot
 
-        self._cpu_history.append(snapshot.totals.get("cpu_percent", 0.0))
-        self._memory_history.append(snapshot.totals.get("rss_bytes", 0.0))
-        self._handle_history.append(snapshot.totals.get("handles", 0.0))
-        self._thread_history.append(snapshot.totals.get("threads", 0.0))
+        if not snapshot.monitoring_paused:
+            self._cpu_history.append(snapshot.totals.get("cpu_percent", 0.0))
+            self._memory_history.append(snapshot.totals.get("rss_bytes", 0.0))
+            self._handle_history.append(snapshot.totals.get("handles", 0.0))
+            self._thread_history.append(snapshot.totals.get("threads", 0.0))
         self._snapshot_history.append(self._snapshot_to_dict(snapshot))
 
         if snapshot.severity != self._last_severity:
@@ -166,7 +166,6 @@ class DashboardApp:
                     )
         elif normalized == "k":
             self.manager.kill()
-            self._terminated_by_user = True
             if self.manager.has_tracked_processes:
                 self._append_event(
                     f"Target cleanup incomplete: {self.manager.last_error or 'unknown error'}"
@@ -192,7 +191,10 @@ class DashboardApp:
             "target_path": self.target_path,
             "root_pid": self.manager.root_pid,
             "exported_at": time.time(),
-            "events": list(self._events),
+            "events": [
+                f"{time.strftime('%H:%M:%S', time.localtime(stamp))} {message}"
+                for stamp, message in self._events
+            ],
             "snapshots": list(self._snapshot_history),
         }
         self.export_path.write_text(
@@ -333,9 +335,9 @@ class DashboardApp:
         event_table = Table.grid(expand=True)
         event_table.add_column(style="dim", width=8)
         event_table.add_column()
-        for event in self._events:
+        for stamp, event in self._events:
             event_table.add_row(
-                time.strftime("%H:%M:%S"),
+                time.strftime("%H:%M:%S", time.localtime(stamp)),
                 Text(event, style="white"),
             )
         if not self._events:
@@ -415,12 +417,13 @@ class DashboardApp:
 
     @staticmethod
     def _progress_bar(value: float, width: int = 4) -> Text:
-        bounded = min(max(value, 0.0), 100.0)
-        complete = round((bounded / 100.0) * width)
+        shown = max(value, 0.0)
+        fill = min(shown, 100.0)
+        complete = round((fill / 100.0) * width)
         progress = Text("[")
         progress.append("#" * complete, style="cyan")
         progress.append("." * (width - complete), style="bright_black")
-        progress.append(f"] {bounded:5.1f}%", style="bold cyan")
+        progress.append(f"] {shown:.1f}%", style="bold cyan")
         return progress
 
     def _totals(self) -> dict[str, float]:
@@ -481,7 +484,7 @@ class DashboardApp:
         return "^" if delta > 0 else "v"
 
     def _append_event(self, message: str) -> None:
-        self._events.append(message)
+        self._events.append((time.time(), message))
 
     @staticmethod
     def _snapshot_to_dict(snapshot: MetricsSnapshot) -> dict[str, Any]:

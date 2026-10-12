@@ -15,14 +15,6 @@ _EXECUTABLE_FILTERS: tuple[tuple[str, str], ...] = (
 )
 
 
-def _filters_to_tkinter_string() -> str:
-    parts: list[str] = []
-    for description, pattern in _EXECUTABLE_FILTERS:
-        parts.append(f"{description} ({pattern})")
-        parts.append(pattern)
-    return "\n".join(parts)
-
-
 def _select_with_tkinter() -> str | None:
     import tkinter as tk
     from tkinter import filedialog
