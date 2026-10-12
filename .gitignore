@@ -61,6 +61,7 @@ dmypy.json
 leak_report.json
 leak_report*.json
 leak_reports/
+torture/reports/
 *.log
 logs/
 *.tmp

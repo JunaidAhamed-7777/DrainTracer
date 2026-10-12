@@ -44,6 +44,26 @@ python src/main.py --target C:\path\to\worker.exe
 python src/main.py --target C:\path\to\worker.py -- --iterations 10
 ```
 
+## Torture showcase
+
+The [`torture`](torture/README.md) directory contains bounded `.py`, `.bat`,
+`.cmd`, and `.exe` targets that demonstrate:
+
+- sustained memory, handle, and thread growth;
+- normal resource bursts that recover;
+- recursive process-tree tracking;
+- cleanup after the root exits before a child; and
+- stable and fast-exit baselines.
+
+Run every target through the real dashboard and JSON export path:
+
+```powershell
+python torture\verify_suite.py
+```
+
+The full suite takes about a minute and exits non-zero if an expected alert,
+process-tree observation, report, or cleanup check fails.
+
 ## How active leak signals are detected
 
 Every sample aggregates metrics from the root process and all currently
@@ -152,6 +172,7 @@ src/
 ├── file_picker.py      # Native Windows file selection
 ├── process_runner.py   # Process lifecycle and PID tree tracking
 └── leak_detector.py    # Sampling loop and leak heuristics
+torture/                # Bounded demonstration and edge-case targets
 ```
 
 ## License
