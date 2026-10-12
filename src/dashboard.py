@@ -31,7 +31,7 @@ class DashboardApp:
     """Own the monitor lifecycle and render live snapshots in the terminal."""
 
     TITLE = "DRAINTRACER"
-    VERSION = "v0.4"
+    VERSION = "v0.5"
     HISTORY_LIMIT = 48
 
     def __init__(
