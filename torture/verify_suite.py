@@ -37,6 +37,8 @@ class TortureCase:
     expect_root_exit: bool = False
     expect_root_exit_with_child: bool = False
     attach: bool = False
+    # The handle category a handles alert must attribute most growth to.
+    expected_handle_type: str | None = None
     headless: bool = False
     fail_on: str = "high"
     expected_exit_code: int = 0
@@ -71,6 +73,14 @@ CASES = (
         target=TORTURE_ROOT / "handle_leak.py",
         args=("--duration", "30", "--max-handles", "800"),
         expected_alert="handles",
+        expected_handle_type="file",
+    ),
+    TortureCase(
+        name="socket-growth",
+        target=TORTURE_ROOT / "socket_leak.py",
+        args=("--duration", "30", "--max-connections", "300"),
+        expected_alert="handles",
+        expected_handle_type="socket",
     ),
     TortureCase(
         name="thread-growth",
@@ -214,6 +224,7 @@ def _run_case(
         app.manager,
         sample_interval_ms=100,
         window_seconds=(4.0,),
+        handle_types_interval=1.0,
     )
 
     timer: threading.Timer | None = None
@@ -308,6 +319,19 @@ def _run_case(
             f"observed at most {max_processes} processes; "
             f"expected at least {case.min_processes}"
         )
+    if case.expected_handle_type:
+        attributed = {
+            max(growth, key=growth.get)
+            for snapshot in snapshots
+            for alert in snapshot.get("alerts", [])
+            if alert.get("resource") == "handles"
+            and (growth := alert.get("growth_by_type"))
+        }
+        if case.expected_handle_type not in attributed:
+            errors.append(
+                f"handle alerts were not attributed to {case.expected_handle_type!r} "
+                f"handles; top types seen: {sorted(attributed) or 'none'}"
+            )
     if case.expected_alert and case.expected_alert not in alert_resources:
         errors.append(
             f"missing {case.expected_alert!r} alert; "
