@@ -282,15 +282,18 @@ class WarmupTests(unittest.TestCase):
             classifier=mock.Mock(available=False),
         )
 
-    def _collect(self, detector: LeakDetector, values: list[float], clock_gaps=()):
-        """Collect one snapshot per private-bytes value, 0.5 s apart."""
+    def _collect(self, detector: LeakDetector, values: list[float], clock_gaps=(), start=0):
+        """Collect one snapshot per private-bytes value, 0.5 s apart.
+
+        ``start`` continues the timeline of an earlier call.
+        """
         from unittest import mock
 
         from helpers import make_process
 
         snapshots = []
-        clock = 50.0
-        for index, value in enumerate(values):
+        clock = 50.0 + start * 0.5
+        for index, value in enumerate(values, start):
             clock += 0.5
             if index in clock_gaps:
                 detector._last_active_sample = None  # what a paused stretch leaves behind
@@ -314,6 +317,14 @@ class WarmupTests(unittest.TestCase):
         self.assertEqual(detector.warmup_completed_at, 1005.0)
         self.assertEqual(len(detector._memory_series.points), 21)
         self.assertEqual(detector.warmup_remaining, 0.0)
+        self.assertTrue(detector.detection_started)
+
+    def test_detection_starts_only_once_a_window_fills(self) -> None:
+        detector = self._detector(warmup=5.0)
+        self._collect(detector, [100 * MB] * 27)  # warm-up, then 8 s of samples
+        self.assertFalse(detector.detection_started)
+        self._collect(detector, [100 * MB], start=27)  # 8.5 s: the 10 s window is ready
+        self.assertTrue(detector.detection_started)
 
     def test_startup_growth_is_only_a_leak_without_warmup(self) -> None:
         spike = [100 * MB + min(index, 10) * 8 * MB for index in range(31)]  # 5 s ramp, then flat

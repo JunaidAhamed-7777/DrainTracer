@@ -156,6 +156,7 @@ class LeakDetector:
         self._last_active_sample: float | None = None
         self.warmup_completed_at: float | None = None
         self.warmup_baseline: dict[str, float] | None = None
+        self._detection_started = False
 
     @property
     def is_running(self) -> bool:
@@ -174,6 +175,14 @@ class LeakDetector:
     def warmup_remaining(self) -> float:
         """Active sampling seconds left before leak detection starts."""
         return max(0.0, self.warmup_seconds - self._warmup_elapsed)
+
+    @property
+    def detection_started(self) -> bool:
+        """Whether the shortest window has ever held enough samples to judge.
+
+        Until then no signal can be raised, so a clean result says nothing.
+        """
+        return self._detection_started
 
     def start(self) -> None:
         with self._lifecycle_lock:
@@ -301,6 +310,8 @@ class LeakDetector:
             self._memory_series.add(now, totals["private_bytes"], max_age)
             self._handle_series.add(now, totals["handles"], max_age)
             self._thread_series.add(now, totals["threads"], max_age)
+            if not self._detection_started:
+                self._detection_started = self._window_ready(now)
             alerts = self._evaluate_leaks(now, totals)
         severity = self._max_severity(alerts)
         self._last_alerts = tuple(alerts)
@@ -320,6 +331,12 @@ class LeakDetector:
             handle_types=handle_types,
             warming_up=warming_up,
         )
+
+    def _window_ready(self, now: float) -> bool:
+        """Whether the shortest window passes the evaluation preconditions."""
+        window = self.window_seconds[0]
+        points = self._memory_series.points_in_window(now, window)
+        return len(points) >= 4 and points[-1].timestamp - points[0].timestamp >= window * 0.85
 
     def _advance_warmup(self, now: float, totals: dict[str, float]) -> bool:
         """Count active sampling time; return whether the warm-up continues.

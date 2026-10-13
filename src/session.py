@@ -379,6 +379,7 @@ class MonitorSession:
             ],
             "settings": self._settings_record(),
             "warmup": self._warmup_record(),
+            "detection_ran": self.detector.detection_started,
             "snapshots": list(self._snapshot_history),
         }
 
