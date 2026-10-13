@@ -30,7 +30,7 @@ from .report import (
     write_json_report,
 )
 from .theme import select_glyphs
-from .units import format_bytes, format_clock
+from .units import format_bytes, format_clock, format_duration
 
 HISTORY_KEYS = ("cpu_percent", "rss_bytes", "private_bytes", "handles", "threads")
 
@@ -183,6 +183,12 @@ class MonitorSession:
             "ok",
         )
         self._warn_if_inaccessible()
+        if self.detector.warmup_seconds:
+            self._append_event(
+                f"Warming up for {format_duration(self.detector.warmup_seconds)}; "
+                "leak detection starts after that",
+                "info",
+            )
 
     def _abort_start(self) -> None:
         self.detector.stop()
@@ -254,8 +260,27 @@ class MonitorSession:
         ):
             self._append_event(f"Sampling error: {sampling_error}", "error")
 
+        if (
+            previous is not None
+            and previous.warming_up
+            and not snapshot.warming_up
+            and not snapshot.monitoring_paused
+        ):
+            self._log_warmup_complete(snapshot)
+
         if not snapshot.monitoring_paused:
             self._log_signal_transitions(snapshot)
+
+    def _log_warmup_complete(self, snapshot: MetricsSnapshot) -> None:
+        baseline = self.detector.warmup_baseline or snapshot.totals
+        sep = self.glyphs.sep
+        self._append_event(
+            "Warm-up complete; leak detection started from a baseline of "
+            f"{self._format_bytes(baseline.get('private_bytes', 0.0))} private {sep} "
+            f"{int(baseline.get('handles', 0.0)):,} handles {sep} "
+            f"{int(baseline.get('threads', 0.0)):,} threads",
+            "ok",
+        )
 
     def _log_signal_transitions(self, snapshot: MetricsSnapshot) -> None:
         """Log when a resource signal appears, changes tier, or clears.
@@ -353,7 +378,21 @@ class MonitorSession:
                 for stamp, message, level in self._events
             ],
             "settings": self._settings_record(),
+            "warmup": self._warmup_record(),
             "snapshots": list(self._snapshot_history),
+        }
+
+    def _warmup_record(self) -> dict[str, Any] | None:
+        """Warm-up length, whether it finished, and the baseline it produced."""
+        detector = self.detector
+        if not detector.warmup_seconds:
+            return None
+        completed_at = detector.warmup_completed_at
+        return {
+            "seconds": detector.warmup_seconds,
+            "completed": not detector.warming_up,
+            "completed_at": iso_timestamp(completed_at) if completed_at else None,
+            "baseline": dict(detector.warmup_baseline) if detector.warmup_baseline else None,
         }
 
     def _settings_record(self) -> dict[str, Any]:

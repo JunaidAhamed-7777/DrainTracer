@@ -68,6 +68,54 @@ class SettingsTests(unittest.TestCase):
         self.assertIsNone(record["profile"])
 
 
+class WarmupEventTests(unittest.TestCase):
+    def _session(self, warmup: float) -> _Session:
+        from dataclasses import replace
+
+        from src.config import MonitorSettings
+
+        return _Session(
+            "C:/targets/worker.exe",
+            console=make_console(),
+            settings=replace(MonitorSettings(), warmup=warmup),
+        )
+
+    def test_completion_is_logged_once_with_the_baseline(self) -> None:
+        from dataclasses import replace
+
+        from helpers import make_snapshot
+
+        session = self._session(5.0)
+        session.detector.warmup_baseline = {"private_bytes": 2 * 1024**2, "handles": 120.0,
+                                            "threads": 7.0}
+        warm = replace(make_snapshot(), warming_up=True)
+        session._accept_snapshot(warm)
+        session._accept_snapshot(replace(make_snapshot(), warming_up=True, monitoring_paused=True))
+        session._accept_snapshot(make_snapshot())
+        session._accept_snapshot(make_snapshot())
+        messages = [message for _s, message, _l in session._events]
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(
+            messages[0],
+            "Warm-up complete; leak detection started from a baseline of "
+            "2.0 MB private · 120 handles · 7 threads",
+        )
+
+    def test_reports_say_whether_the_warmup_finished(self) -> None:
+        session = self._session(5.0)
+        record = session.build_report()["warmup"]
+        self.assertEqual(record, {"seconds": 5.0, "completed": False, "completed_at": None,
+                                  "baseline": None})
+        session.detector._warmup_elapsed = 5.0
+        session.detector.warmup_completed_at = 1_700_000_000.0
+        session.detector.warmup_baseline = {"handles": 3.0}
+        record = session.build_report()["warmup"]
+        self.assertTrue(record["completed"])
+        self.assertEqual(record["baseline"], {"handles": 3.0})
+        self.assertIsNotNone(record["completed_at"])
+        self.assertIsNone(self._session(0.0).build_report()["warmup"])
+
+
 class SessionLifecycleTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
