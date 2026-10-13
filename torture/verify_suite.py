@@ -263,6 +263,13 @@ def _run_case(
         errors.append(f"report filename {report_path.name!r} does not embed its UUID")
     if not report.get("created_at"):
         errors.append("report has no ISO 8601 created_at timestamp")
+    html_path = app._last_html_report
+    if html_path is None or not html_path.is_file():
+        errors.append("no HTML report was written next to the JSON report")
+    elif html_path.with_suffix(".json") != report_path:
+        errors.append(f"HTML report {html_path.name!r} does not match {report_path.name!r}")
+    elif 'id="drain-data"' not in html_path.read_text(encoding="utf-8"):
+        errors.append("HTML report has no embedded chart data")
 
     snapshots = report.get("snapshots", [])
     if not snapshots:
