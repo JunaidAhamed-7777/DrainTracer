@@ -81,9 +81,13 @@ class MonitorSession:
         self._snapshot_history: deque[dict[str, Any]] = deque(maxlen=self.SNAPSHOT_LIMIT)
         self._events: deque[tuple[float, str, str]] = deque(maxlen=self.EVENT_LIMIT)
         self._resource_severity: dict[LeakResource, LeakSeverity] = {}
+        self._worst_by_resource: dict[LeakResource, LeakSeverity] = {}
         self._worst_severity = LeakSeverity.NONE
         self._sample_count = 0
         self._started_at: float | None = None
+        self._ended_at: float | None = None
+        self._root_pid: int | None = None
+        self._stopped_target = False
         self._last_report: Path | None = None
         self._last_report_id: str | None = None
         self._left_running = False
@@ -91,6 +95,16 @@ class MonitorSession:
     @property
     def attached(self) -> bool:
         return self.attach_pid is not None
+
+    @property
+    def root_pid(self) -> int | None:
+        """Root PID of the session; kept after the manager releases it."""
+        return self.manager.root_pid or self._root_pid or self.attach_pid
+
+    @property
+    def stopped_target(self) -> bool:
+        """Whether shutdown had to terminate a launched tree that was still running."""
+        return self._stopped_target
 
     @property
     def time_remaining(self) -> float | None:
@@ -103,6 +117,15 @@ class MonitorSession:
     def timed_out(self) -> bool:
         remaining = self.time_remaining
         return remaining is not None and remaining <= 0.0
+
+    @property
+    def worst_severity(self) -> LeakSeverity:
+        """Strongest leak signal observed during the session."""
+        return self._worst_severity
+
+    def worst_severity_for(self, resource: LeakResource) -> LeakSeverity:
+        """Strongest signal observed for one resource during the session."""
+        return self._worst_by_resource.get(resource, LeakSeverity.NONE)
 
     @property
     def tree_finished(self) -> bool:
@@ -128,6 +151,7 @@ class MonitorSession:
                 self.manager.attach(self.attach_pid)
             else:
                 self.manager.start()
+            self._root_pid = self.manager.root_pid
             self._started_at = time.time()
             if self.timeout is not None:
                 self._deadline = time.monotonic() + self.timeout
@@ -153,11 +177,14 @@ class MonitorSession:
 
     def shutdown(self) -> None:
         """Stop sampling; terminate launched targets, release attached ones."""
+        if self._started_at is not None and self._ended_at is None:
+            self._ended_at = time.time()
         self.detector.stop()
         if self.attached:
             self._left_running = self.manager.is_running
             self.manager.detach()
         elif self.manager.is_running or self.manager.has_tracked_processes:
+            self._stopped_target = True
             self.manager.terminate()
 
     def poll(self) -> None:
@@ -193,6 +220,10 @@ class MonitorSession:
 
         if severity_rank(snapshot.severity) > severity_rank(self._worst_severity):
             self._worst_severity = snapshot.severity
+        for alert in snapshot.alerts:
+            worst = self._worst_by_resource.get(alert.resource, LeakSeverity.NONE)
+            if severity_rank(alert.severity) > severity_rank(worst):
+                self._worst_by_resource[alert.resource] = alert.severity
 
         if previous and snapshot.process_alive is False and previous.process_alive:
             code = self.manager.exit_code
@@ -267,11 +298,13 @@ class MonitorSession:
             "report_schema": REPORT_SCHEMA,
             "created_at": iso_timestamp(),
             "session_started_at": iso_timestamp(self._started_at) if self._started_at else None,
+            "session_ended_at": iso_timestamp(self._ended_at) if self._ended_at else None,
             "app": self.TITLE,
             "version": self.VERSION,
             "target_path": self.target_path,
-            "root_pid": self.manager.root_pid or self.attach_pid,
+            "root_pid": self.root_pid,
             "mode": "attach" if self.attached else "launch",
+            "target_exit_code": None if self._stopped_target else self.manager.exit_code,
             "events": [
                 f"{time.strftime('%H:%M:%S', time.localtime(stamp))} {message}"
                 for stamp, message, _level in self._events
@@ -293,9 +326,11 @@ class MonitorSession:
         return self.snapshot.totals
 
     def _uptime(self) -> float:
+        """Seconds monitored so far; frozen once the session shuts down."""
         if self._started_at is None:
             return 0.0
-        return max(0.0, time.time() - self._started_at)
+        end = self._ended_at if self._ended_at is not None else time.time()
+        return max(0.0, end - self._started_at)
 
     def _process_name(self, snapshot: MetricsSnapshot | None) -> str:
         if snapshot:
