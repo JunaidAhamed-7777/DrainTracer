@@ -213,8 +213,8 @@ growth is persistent and highly monotonic.
 - Access-denied metrics are reported as unavailable rather than guessed.
 - Pausing monitoring keeps the last measured totals and alerts, and does not
   add new samples or trend points.
-- The CPU percentage is the summed process-tree value and can exceed 100% on
-  multi-core machines. The gauge fill stops at 100%.
+- The CPU percentage is the summed process-tree value, relative to one
+  core, so it can exceed 100% on multi-core machines.
 - Cleanup validates process creation time before suspending or killing a PID,
   and terminates descendants before their parent.
 - A `NONE` severity means no active heuristic signal was found in the current
@@ -247,10 +247,30 @@ glyphs.
 - `K` — kill the monitored process tree (press twice when attached with
   `--pid`)
 - `E` — export collected snapshots and events to
-  `leak_reports/leak_report_<UUID>.json`; the UUID appears in the event log,
-  footer, and exit summary (`--report-dir` changes the directory)
+  `leak_reports/leak_report_<UUID>.json` plus an interactive
+  `leak_report_<UUID>.html`; the UUID appears in the event log, footer, and
+  exit summary (`--report-dir` changes the directory)
+- `O` — open the latest HTML report in the default browser (shown after an
+  export)
 - `Q` — quit and cleanly terminate a launched target (detach and leave it
   running when attached with `--pid`)
+
+## Reports
+
+Every export (and every headless run) writes two files with the same UUID:
+
+- `leak_report_<UUID>.json` — every snapshot, alert, and event, for tools
+  and for later comparison.
+- `leak_report_<UUID>.html` — a self-contained page to read or share: the
+  verdict, growth and drift per resource, interactive memory, handle,
+  thread, and CPU charts with red markers where a leak signal was raised or
+  escalated, a table of signals (click one to zoom the charts), the event
+  log, and the final process list.
+
+The HTML file needs no network access and loads no external scripts; hover
+for exact values, drag across a chart to zoom, and double-click or press Esc
+to reset. See [working-principle.md](working-principle.md#8-html-report) for
+how each element is derived.
 
 ## Tests
 
@@ -258,9 +278,9 @@ glyphs.
 python -m unittest discover -s tests
 ```
 
-Unit tests cover rendering at each layout breakpoint, the session
-lifecycle, headless exit codes, reports, and CLI parsing. The torture suite
-above exercises real processes.
+Unit tests cover the leak heuristics, rendering at each layout breakpoint,
+the session lifecycle, headless exit codes, report analysis, HTML escaping,
+and CLI parsing. The torture suite above exercises real processes.
 
 ## Project layout
 
@@ -271,7 +291,10 @@ src/
 ├── dashboard.py        # Rich terminal UI and controls
 ├── headless.py         # Non-interactive CI runner and exit codes
 ├── report.py           # Report IDs, timestamps, and atomic JSON writes
-├── units.py            # Duration parsing and formatting
+├── analysis.py         # Report summaries, signal episodes, chart data
+├── html_report.py      # Self-contained interactive HTML reports
+├── stats.py            # Least-squares slope shared with the detector
+├── units.py            # Duration, byte, and clock formatting
 ├── theme.py            # Palette and Unicode/ASCII glyph sets
 ├── widgets.py          # Sparkline and size-aware renderables
 ├── events.py           # Snapshot models and MetricsStream

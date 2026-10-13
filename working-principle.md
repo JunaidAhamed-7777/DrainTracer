@@ -10,16 +10,21 @@ proof of a specific unreleased allocation, handle, or thread.
 
 ## 1. CPU utilization
 
-For every accessible process, DrainTracer calls:
+For every accessible process, DrainTracer reads the cumulative CPU time
+with `process.cpu_times()` and keeps the previous reading per PID:
 
-```python
-process.cpu_percent(interval=None)
+```text
+cpu_percent = (user + system - previous_user_plus_system)
+              / seconds_since_previous_reading * 100
 ```
 
-The first reading establishes psutil's baseline and is reported as `0.0`.
-Later readings are the CPU percentage reported by psutil since the previous
-sample for that process. The detector does not sleep inside the per-process
-call, so sampling remains non-blocking.
+The first reading of a process establishes its baseline and is reported as
+`0.0`. Elapsed time comes from a monotonic clock, so wall-clock adjustments
+cannot distort the rate. psutil's own `cpu_percent(interval=None)` is not
+used because it stores its baseline on the `Process` object, and tracked
+processes are reopened (and identity-checked) on every sample. Nothing
+sleeps inside the per-process call, so sampling remains non-blocking.
+Baselines for processes that have left the tree are discarded.
 
 The process-tree CPU total is:
 
@@ -28,9 +33,9 @@ total_cpu_percent = sum(process_cpu_percent for every tracked process)
 ```
 
 Because the total is a sum across processes, it can exceed 100% on a
-multi-core machine. The dashboard prints that summed percentage. Its bar fill
-stops at 100% so the gauge stays inside the panel. CPU is diagnostic telemetry
-only; it is not an input to the current leak heuristic.
+multi-core machine. The dashboard prints and charts that summed percentage.
+CPU is diagnostic telemetry only; it is not an input to the current leak
+heuristic.
 
 ## 2. Memory usage
 
@@ -248,10 +253,13 @@ seen at any point, a signal that later clears still fails the run.
 
 ## 7. Leak report structure
 
-Each export writes a new file to the report directory (`leak_reports/` by
-default; change it with `--report-dir`). The filename embeds a random UUID4,
-`leak_report_<UUID>.json`, so repeated exports never overwrite each other.
-Files are written to a temporary sibling first and then renamed into place.
+Each export writes new files to the report directory (`leak_reports/` by
+default; change it with `--report-dir`). The filenames embed a random UUID4,
+`leak_report_<UUID>.json` and `leak_report_<UUID>.html`, so repeated exports
+never overwrite each other. Files are written to a temporary sibling first
+and then renamed into place; a failed write removes the temporary file. If
+the HTML page cannot be rendered or written, the JSON report is kept and
+the failure is logged.
 
 ```json
 {
@@ -293,6 +301,9 @@ Files are written to a temporary sibling first and then renamed into place.
   processes.
 - `events` — the most recent dashboard messages, each prefixed with its
   local `HH:MM:SS` timestamp.
+- `event_log` — the same messages as objects with `time` (ISO 8601),
+  `timestamp` (Unix), `level` (`ok`, `info`, `warn`, `alert`, or `error`),
+  and `message`.
 - `snapshots` — chronological exported telemetry snapshots.
 
 The dashboard retains up to 7,200 snapshots (one hour at the default
@@ -367,3 +378,33 @@ baseline_value
 
 Enum values are exported as lowercase strings so reports can be consumed by
 simple JSON tooling without importing DrainTracer's Python classes.
+
+## 8. HTML report
+
+The HTML companion is generated from the same report dictionary as the JSON
+file, so both always describe the same samples.
+
+- **Verdict and cards.** The strongest severity seen per resource, plus
+  growth (last measured value minus first), peak, and drift. Drift is the
+  least-squares slope over every measured sample of the run, shown per
+  second or, for slow growth, per minute.
+- **Charts.** Private bytes and RSS, handles, threads, and CPU over time.
+  Hovering shows exact values with a crosshair shared by all charts;
+  dragging zooms every chart to the same range; legend entries toggle
+  series. A chart line breaks where nothing was measured (paused
+  monitoring, a failed sample, or no live process) instead of dropping to
+  zero. Shaded bands mark paused periods and continuous signals; dashed
+  lines mark the moment the root process exited.
+- **Signal markers.** A red dot marks each sample where a resource's
+  signal was raised from clear or escalated to a stronger tier. Easing and
+  clearing are not marked. Paused and failed samples neither raise nor
+  split a signal.
+- **Tables.** One row per continuous signal (strongest severity, start,
+  duration, and the alert message when it peaked), the event log, and the
+  processes from the last sample that still had live processes.
+
+The page is a single file with no external requests. Styles, the chart
+script, and the data are inline; every value is HTML-escaped, the embedded
+JSON escapes `<`, `>`, and `&` so it cannot close its script element, and a
+Content-Security-Policy allows only the page's own inline style and script
+(pinned by SHA-256) with no network access.
