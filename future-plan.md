@@ -14,7 +14,7 @@
    - Return exit code `1` if any `HIGH` or `CRITICAL` leak threshold is breached during execution.
    - *Real-world use case:* Running automated leak regression tests in GitHub Actions pipelines before merging Pull Requests.
 
-4. **Interactive HTML & Visual Chart Reports**
+4. **Interactive HTML & Visual Chart Reports** — done in v1.1
    - Generate self-contained HTML reports alongside JSON exports (`leak_report_<UUID>.html`) featuring interactive line graphs (using Chart.js or Plotly).
    - Visualize memory, handle, and thread trends over time with highlighted red markers where alerts were triggered.
 
