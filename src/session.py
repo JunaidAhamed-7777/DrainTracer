@@ -53,7 +53,12 @@ class MonitorSession:
         console: Console | None = None,
         report_dir: str | Path = DEFAULT_REPORT_DIR,
         attach_pid: int | None = None,
+        timeout: float | None = None,
     ) -> None:
+        if timeout is not None and not timeout > 0:
+            raise ValueError("timeout must be a positive number of seconds")
+        self.timeout = timeout
+        self._deadline: float | None = None
         self.attach_pid = attach_pid
         if attach_pid is not None:
             self.target_path = target_path or describe_pid(attach_pid)
@@ -87,6 +92,27 @@ class MonitorSession:
     def attached(self) -> bool:
         return self.attach_pid is not None
 
+    @property
+    def time_remaining(self) -> float | None:
+        """Seconds left before the time limit, or ``None`` without one."""
+        if self._deadline is None:
+            return None
+        return max(0.0, self._deadline - time.monotonic())
+
+    @property
+    def timed_out(self) -> bool:
+        remaining = self.time_remaining
+        return remaining is not None and remaining <= 0.0
+
+    @property
+    def tree_finished(self) -> bool:
+        """Whether the root and every tracked descendant have exited."""
+        return (
+            self._started_at is not None
+            and not self.manager.is_running
+            and not self.manager.has_tracked_processes
+        )
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -103,6 +129,8 @@ class MonitorSession:
             else:
                 self.manager.start()
             self._started_at = time.time()
+            if self.timeout is not None:
+                self._deadline = time.monotonic() + self.timeout
             self._accept_snapshot(self.detector.sample_once())
             self.detector.start()
         except BaseException:
@@ -167,7 +195,9 @@ class MonitorSession:
             self._worst_severity = snapshot.severity
 
         if previous and snapshot.process_alive is False and previous.process_alive:
-            self._append_event("Target process exited", "warn")
+            code = self.manager.exit_code
+            suffix = f" with code {code}" if code is not None else ""
+            self._append_event(f"Target process exited{suffix}", "warn")
 
         sampling_error = snapshot.metadata.get("sampling_error")
         if sampling_error and (
