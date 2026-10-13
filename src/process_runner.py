@@ -32,6 +32,22 @@ def _parent_pid_map() -> dict[int, int]:
     return mapping
 
 
+def describe_pid(pid: int) -> str:
+    """Best-effort executable path (or name) for display; never raises."""
+    try:
+        proc = psutil.Process(pid)
+    except (psutil.Error, OSError, ValueError):
+        return f"PID {pid}"
+    for getter in (proc.exe, proc.name):
+        try:
+            value = getter()
+        except (psutil.Error, OSError):
+            continue
+        if value:
+            return value
+    return f"PID {pid}"
+
+
 class ProcessManagerError(Exception):
     """Base error for process manager failures."""
 

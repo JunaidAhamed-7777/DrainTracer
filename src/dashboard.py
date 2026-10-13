@@ -28,7 +28,7 @@ from .events import (
     severity_rank,
 )
 from .leak_detector import LeakDetector
-from .process_runner import ProcessManager
+from .process_runner import ProcessManager, describe_pid
 from .report import (
     DEFAULT_REPORT_DIR,
     REPORT_SCHEMA,
@@ -54,16 +54,26 @@ class DashboardApp:
     DELTA_WINDOW_SECONDS = 10.0
     FRAME_SECONDS = 0.1
 
+    KILL_CONFIRM_SECONDS = 3.0
+
     def __init__(
         self,
-        target_path: str,
+        target_path: str | None,
         args: list[str] | None = None,
         console: Console | None = None,
         report_dir: str | Path = DEFAULT_REPORT_DIR,
+        attach_pid: int | None = None,
     ) -> None:
-        self.target_path = str(Path(target_path).resolve())
+        self.attach_pid = attach_pid
+        if attach_pid is not None:
+            self.target_path = target_path or describe_pid(attach_pid)
+            self.manager = ProcessManager(None)
+        else:
+            if not target_path:
+                raise ValueError("target_path is required unless attach_pid is given")
+            self.target_path = str(Path(target_path).resolve())
+            self.manager = ProcessManager(self.target_path, args=args)
         self.console = console or Console()
-        self.manager = ProcessManager(self.target_path, args=args)
         self.detector = LeakDetector(self.manager)
         self.report_dir = Path(report_dir)
 
@@ -85,7 +95,13 @@ class DashboardApp:
         self._last_report: Path | None = None
         self._last_report_id: str | None = None
         self._quit_requested = False
+        self._kill_armed_until = 0.0
+        self._left_running = False
         self._cpu_cores = psutil.cpu_count(logical=True) or 1
+
+    @property
+    def attached(self) -> bool:
+        return self.attach_pid is not None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -101,18 +117,25 @@ class DashboardApp:
                 spinner="dots",
                 spinner_style=palette.accent,
             ):
-                self.manager.start()
+                if self.attached:
+                    self.manager.attach(self.attach_pid)
+                else:
+                    self.manager.start()
                 self._started_at = time.time()
                 self._accept_snapshot(self.detector.sample_once())
                 self.detector.start()
+                verb = "Attached to running" if self.attached else "Launched"
                 self._append_event(
-                    f"Attached to {Path(self.target_path).name} "
+                    f"{verb} {Path(self.target_path).name} "
                     f"{self.glyphs.sep} PID {self.manager.root_pid}",
                     "ok",
                 )
+                self._warn_if_inaccessible()
                 time.sleep(0.2)
         except Exception as exc:
-            if self.manager.has_tracked_processes:
+            if self.attached:
+                self.manager.detach()
+            elif self.manager.has_tracked_processes:
                 self.manager.kill()
             self.console.print(
                 Panel(
@@ -145,12 +168,29 @@ class DashboardApp:
         except KeyboardInterrupt:
             self._append_event("Dashboard interrupted by user", "warn")
         finally:
-            self.detector.stop()
-            if self.manager.is_running or self.manager.has_tracked_processes:
-                self.manager.terminate()
+            self.shutdown()
 
         self.console.print(self.render_summary())
         return 0
+
+    def shutdown(self) -> None:
+        """Stop sampling; terminate launched targets, release attached ones."""
+        self.detector.stop()
+        if self.attached:
+            self._left_running = self.manager.is_running
+            self.manager.detach()
+        elif self.manager.is_running or self.manager.has_tracked_processes:
+            self.manager.terminate()
+
+    def _warn_if_inaccessible(self) -> None:
+        snapshot = self.snapshot
+        if snapshot is None:
+            return
+        root = next((p for p in snapshot.processes if p.pid == snapshot.root_pid), None)
+        if root is not None and root.access_denied:
+            self._append_event(
+                "Access denied: metrics unavailable (try an elevated terminal)", "error"
+            )
 
     def _consume_stream(self) -> None:
         snapshots = self.detector.stream.drain()
@@ -239,6 +279,18 @@ class DashboardApp:
                         "error",
                     )
         elif normalized == "k":
+            # Attached processes were not started by DrainTracer (a service, a
+            # server); require a second press before ending them.
+            now = time.monotonic()
+            if self.attached and now > self._kill_armed_until:
+                self._kill_armed_until = now + self.KILL_CONFIRM_SECONDS
+                self._append_event(
+                    f"Press K again within {self.KILL_CONFIRM_SECONDS:.0f}s to kill "
+                    f"attached PID {self.manager.root_pid} and its children",
+                    "warn",
+                )
+                return
+            self._kill_armed_until = 0.0
             self.manager.kill()
             if self.manager.has_tracked_processes:
                 self._append_event(
@@ -273,7 +325,8 @@ class DashboardApp:
             "app": self.TITLE,
             "version": self.VERSION,
             "target_path": self.target_path,
-            "root_pid": self.manager.root_pid,
+            "root_pid": self.manager.root_pid or self.attach_pid,
+            "mode": "attach" if self.attached else "launch",
             "events": [
                 f"{time.strftime('%H:%M:%S', time.localtime(stamp))} {message}"
                 for stamp, message, _level in self._events
@@ -378,7 +431,7 @@ class DashboardApp:
             target = f"{target} via {root_name}"
         info = self._label_values(
             ("TARGET", target),
-            ("PID", str(pid)),
+            ("PID", f"{pid} (attached)" if self.attached else str(pid)),
             ("PROCESSES" if roomy else "PROCS", str(process_count)),
             ("UPTIME", self._format_duration(self._uptime())),
             ("SAMPLES", f"{self._sample_count:,} @ {interval} ms"),
@@ -404,7 +457,7 @@ class DashboardApp:
             ("SPACE", "pause/resume", palette.accent),
             ("K", "kill tree", palette.danger),
             ("E", "export report", palette.warn),
-            ("Q", "quit", palette.accent_alt),
+            ("Q", "detach & quit" if self.attached else "quit", palette.accent_alt),
         ):
             keys.append(f" {key} ", style=f"bold {palette.ink} on {color}")
             keys.append(f" {label}   ", style=palette.muted)
@@ -884,6 +937,12 @@ class DashboardApp:
         grid.add_column(style=f"bold {palette.muted}", no_wrap=True)
         grid.add_column()
         grid.add_row("Target", f"{Path(self.target_path).name}")
+        if self.attached:
+            grid.add_row(
+                "Mode",
+                f"attached to PID {self.attach_pid} {glyphs.sep} "
+                + ("left running" if self._left_running else "no longer running"),
+            )
         grid.add_row(
             "Duration",
             f"{self._format_duration(self._uptime())} {glyphs.sep} {self._sample_count:,} samples",
