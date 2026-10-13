@@ -6,8 +6,10 @@ import argparse
 import sys
 from pathlib import Path
 
+from rich import box
 from rich.console import Console
 from rich.panel import Panel
+from rich.text import Text
 
 if __package__ in (None, ""):
     # Keep ``python src/main.py`` working when launched from the repository root.
@@ -16,6 +18,7 @@ if __package__ in (None, ""):
 from src.dashboard import DashboardApp
 from src.file_picker import select_target_file
 from src.process_runner import ProcessManagerError
+from src.theme import PALETTE, blend
 
 
 def _load_title_art() -> str:
@@ -36,7 +39,20 @@ def _display_title(console: Console) -> None:
         # Legacy Windows code pages cannot represent the block-art glyphs.
         # Keep startup reliable and show the same product title in plain text.
         title = "DRAINTRACER"
-    console.print(title, style="bold cyan")
+    lines = title.splitlines() or ["DRAINTRACER"]
+    if max(len(line) for line in lines) > console.width:
+        # Wrapped block art is unreadable; narrow terminals get plain text.
+        lines = ["DRAINTRACER"]
+
+    art = Text()
+    for index, line in enumerate(lines):
+        shade = blend(PALETTE.cyan, PALETTE.accent_alt, index / max(1, len(lines) - 1))
+        art.append(line + "\n", style=f"bold {shade}")
+    console.print(art, end="")
+    console.print(
+        f"[{PALETTE.muted}]Resource leak monitor for Windows process trees[/] "
+        f"[bold {PALETTE.accent}]{DashboardApp.VERSION}[/]\n"
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -72,10 +88,14 @@ def main(argv: list[str] | None = None) -> int:
     if target_path is None:
         console.print(
             Panel(
-                "[bold cyan]Select a target executable or script[/bold cyan]\n"
-                "[dim]Supported: .exe | .bat | .cmd | .py[/dim]",
-                title="[bold magenta]DRAINTRACER[/bold magenta]",
-                border_style="magenta",
+                "[bold]Select a target executable or script[/bold]\n"
+                f"[{PALETTE.muted}]Supported: .exe  .bat  .cmd  .py[/]",
+                title=f"[bold {PALETTE.accent}] CHOOSE TARGET [/]",
+                title_align="left",
+                border_style=PALETTE.border,
+                box=box.ROUNDED,
+                padding=(1, 2),
+                expand=False,
             )
         )
         try:
