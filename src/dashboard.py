@@ -199,7 +199,9 @@ class DashboardApp(MonitorSession):
             else:
                 formats = "JSON + HTML" if self._last_html_report else "JSON"
                 self._append_event(
-                    f"Report {self._last_report_id} saved to {path.parent} ({formats})", "ok"
+                    f"Report {self._last_report_id} saved to {path.parent} ({formats})"
+                    + ("; press O to open it" if self._last_html_report else ""),
+                    "ok",
                 )
         elif normalized == "o":
             self._open_last_report()
@@ -834,7 +836,12 @@ class DashboardApp(MonitorSession):
             )
         worst = Text.assemble(
             ("session worst ", palette.muted),
-            (self._worst_severity.value.upper(), f"bold {self._severity_color(self._worst_severity)}"),
+            (
+                self._worst_severity.value.upper()
+                if self._worst_severity != LeakSeverity.NONE
+                else "CLEAR",
+                f"bold {self._severity_color(self._worst_severity)}",
+            ),
         )
         top = Table.grid(expand=True)
         top.add_column(no_wrap=True)
@@ -863,7 +870,7 @@ class DashboardApp(MonitorSession):
         profile = f"profile {self.settings.profile} {glyphs.sep} " if self.settings.profile else ""
         footnote = Text(
             f"{profile}windows {windows} {glyphs.sep} "
-            f"sample every {self.detector.sample_interval_ms} ms",
+            f"every {self.detector.sample_interval_ms} ms",
             style=palette.muted,
             no_wrap=True,
             overflow="ellipsis",

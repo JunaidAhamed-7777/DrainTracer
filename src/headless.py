@@ -228,7 +228,9 @@ class HeadlessRunner(MonitorSession):
         active = ", ".join(
             alert.resource.value for alert in (self.snapshot.alerts if self.snapshot else ())
         )
-        signal = severity.value.upper() + (f" ({active})" if active else "")
+        signal = (severity.value.upper() if severity != LeakSeverity.NONE else "clear") + (
+            f" ({active})" if active else ""
+        )
         if self.snapshot is not None and self.snapshot.warming_up:
             left = format_duration(max(1.0, math.ceil(self.detector.warmup_remaining)))
             signal = f"WARMING UP ({left} left)"
