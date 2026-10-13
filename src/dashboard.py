@@ -28,6 +28,7 @@ from .events import (
     severity_rank,
 )
 from .config import MonitorSettings
+from .handle_types import describe_type_growth
 from .report import DEFAULT_REPORT_DIR
 from .session import MonitorSession
 from .theme import PALETTE
@@ -43,6 +44,7 @@ class DashboardApp(MonitorSession):
     FRAME_SECONDS = 0.1
 
     KILL_CONFIRM_SECONDS = 3.0
+    EVENT_LINES = 2
 
     def __init__(
         self,
@@ -368,7 +370,7 @@ class DashboardApp(MonitorSession):
         palette, glyphs = self.palette, self.glyphs
         aside = Text(f"peak {self._peaks['cpu_percent']:.1f}%", style=palette.muted)
         detail = (
-            f"{self._cpu_cores} logical cores {glyphs.sep} "
+            f"{self._cpu_cores} cores {glyphs.sep} "
             f"read {self._format_bytes(totals.get('io_read_bytes_per_sec', 0.0))}/s "
             f"{glyphs.sep} write {self._format_bytes(totals.get('io_write_bytes_per_sec', 0.0))}/s"
         )
@@ -766,8 +768,28 @@ class DashboardApp(MonitorSession):
         if alert is None:
             detail = Text("no sustained growth", style=palette.muted)
         else:
-            detail = Text(self._alert_summary(alert), style=color)
+            detail = Text(self._health_detail(alert), style=color)
         return name, meter, label, detail
+
+    def _health_detail(self, alert: LeakAlert) -> str:
+        """Compact alert summary that keeps the growing handle type visible.
+
+        The panel is narrow, so the type that grew comes right after the
+        amount, ahead of the rate: ``+358 in 10s · file +340 · 39.8/s``.
+        """
+        delta = alert.current_value - alert.baseline_value
+        if alert.resource == LeakResource.MEMORY:
+            amount = self._format_bytes(delta)
+            rate = f"{self._format_bytes(alert.slope_per_second)}/s"
+        else:
+            amount = f"{delta:,.0f}"
+            rate = f"{alert.slope_per_second:,.1f}/s"
+        parts = [f"+{amount} in {alert.window_seconds:.0f}s"]
+        growth = describe_type_growth(alert.growth_by_type or {}, limit=1)
+        if growth:
+            parts.append(growth.removeprefix("by type: "))
+        parts.append(rate)
+        return f" {self.glyphs.sep} ".join(parts)
 
     def _render_event_panel(self) -> Panel:
         return Panel(
@@ -780,22 +802,40 @@ class DashboardApp(MonitorSession):
         )
 
     def _event_table(self, width: int, height: int | None) -> RenderableType:
-        palette = self.palette
-        capacity = max(1, height or len(self._events) or 1)
-        events = list(self._events)[-capacity:]
-        if not events:
+        """Newest events that fit, each wrapped to at most ``EVENT_LINES`` lines."""
+        palette, glyphs = self.palette, self.glyphs
+        if not self._events:
             return Text("Waiting for telemetry events...", style=palette.muted)
+
+        # Time (8 cells), a gap, the icon, and another gap precede the message.
+        message_width = max(8, width - 11)
+        budget = height if height else len(self._events) * self.EVENT_LINES
+        rows: list[tuple[float, str, Text]] = []
+        for stamp, message, level in reversed(self._events):
+            if budget <= 0:
+                break
+            icon, color = self._event_icon(level)
+            styled = Text(message, style=color if level in {"error", "alert"} else "")
+            lines = list(styled.wrap(self.console, message_width))
+            limit = min(self.EVENT_LINES, budget)
+            if len(lines) > limit:
+                lines = lines[:limit]
+                last = lines[-1]
+                last.truncate(max(1, message_width - len(glyphs.ellipsis)))
+                last.append(glyphs.ellipsis)
+            budget -= len(lines)
+            rows.append((stamp, level, Text("\n").join(lines)))
 
         table = Table.grid(expand=True, padding=(0, 1))
         table.add_column(width=8, no_wrap=True, style=palette.muted)
         table.add_column(width=1, no_wrap=True)
         table.add_column(ratio=1, no_wrap=True, overflow="ellipsis")
-        for stamp, message, level in events:
+        for stamp, level, message in reversed(rows):
             icon, color = self._event_icon(level)
             table.add_row(
                 time.strftime("%H:%M:%S", time.localtime(stamp)),
                 Text(icon, style=f"bold {color}"),
-                Text(message, style=color if level in {"error", "alert"} else ""),
+                message,
             )
         return table
 

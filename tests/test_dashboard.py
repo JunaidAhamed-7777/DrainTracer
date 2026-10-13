@@ -219,6 +219,49 @@ class WarmupDisplayTests(unittest.TestCase):
         self.assertEqual(DashboardApp._countdown(64.1), "1m5s")
 
 
+class EventLogTests(unittest.TestCase):
+    def _lines(self, app: DashboardApp, width: int, height: int) -> list[str]:
+        with app.console.capture() as capture:
+            app.console.print(app._event_table(width, height))
+        return capture.get().splitlines()
+
+    def test_long_messages_wrap_onto_two_lines(self) -> None:
+        app = _app()
+        app._append_event("short", "info")
+        app._append_event("word " * 12 + "end", "info")
+        lines = self._lines(app, 40, 10)
+        self.assertEqual(len(lines), 3)  # one line, then a two-line message
+        self.assertIn("short", lines[0])
+        self.assertTrue(lines[2].rstrip().endswith("…"))
+
+    def test_the_newest_events_win_when_space_runs_out(self) -> None:
+        app = _app()
+        for index in range(10):
+            app._append_event(f"event {index}", "info")
+        lines = self._lines(app, 40, 3)
+        self.assertEqual(len(lines), 3)
+        self.assertIn("event 9", lines[-1])
+        self.assertIn("event 7", lines[0])
+
+    def test_a_long_newest_event_fits_a_one_line_budget(self) -> None:
+        app = _app()
+        app._append_event("word " * 30, "warn")
+        self.assertEqual(len(self._lines(app, 40, 1)), 1)
+
+
+class HealthDetailTests(unittest.TestCase):
+    def test_type_attribution_comes_before_the_rate(self) -> None:
+        from dataclasses import replace
+
+        app = _app()
+        alert = replace(
+            make_alert(LeakResource.HANDLES, LeakSeverity.HIGH),
+            growth_by_type={"file": 340, "event": 2},
+        )
+        self.assertEqual(app._health_detail(alert), "+10 in 10s · file +340 · 1.0/s")
+        self.assertEqual(app._health_detail(make_alert()), "+10.0 B in 10s · 1.0 B/s")
+
+
 class TimeLimitTests(unittest.TestCase):
     def _render(self, app: DashboardApp) -> str:
         with app.console.capture() as capture:
