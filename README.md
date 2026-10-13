@@ -91,7 +91,9 @@ python src/main.py --headless --pid 4820 --timeout 10m --fail-on medium
 - Launched targets are terminated at the time limit; attached targets are
   released and keep running.
 - On GitHub Actions (`GITHUB_ACTIONS=true`) the verdict is also emitted as an
-  error or warning annotation on the run.
+  error or warning annotation on the run, and a table of each resource's
+  strongest signal, growth, drift, and peak is added to the job summary
+  page (`GITHUB_STEP_SUMMARY`).
 - A clean run that never filled a single detection window (the tree exited
   or the time limit passed first, warm-up included) is reported as
   `INCONCLUSIVE` with the reason. It still exits `0`, so short smoke runs do
@@ -320,11 +322,13 @@ them per project and per profile.
   also shows read/write I/O rates; the memory card shows private and virtual
   bytes; the handles card shows the largest handle types.
 - **Process tree** — every tracked process drawn under its parent, with CPU,
-  memory, handle, thread, and status columns.
+  memory, handle, thread, and status columns; `S` switches to a flat list
+  sorted by memory, handles, or CPU.
 - **Leak health** — the overall signal plus a severity meter and growth
   summary for each resource.
-- **Event log** — attach/exit events, pause/kill/export actions, and leak
-  signals when they are raised, escalate, ease, or clear.
+- **Event log** — attach/exit events, pause/kill/export actions, the
+  warm-up, and leak signals when they are raised, escalate, ease, or clear.
+  Long messages wrap onto a second line.
 
 The layout adapts to the terminal: below 110 columns the panels stack, and
 below 30 rows the metric cards collapse into a one-line-per-metric strip.
@@ -342,8 +346,20 @@ glyphs.
   exit summary (`--report-dir` changes the directory)
 - `O` — open the latest HTML report in the default browser (shown after an
   export)
+- `S` — sort the process table: tree order, or largest first by memory,
+  handles, or CPU
+- `?` or `H` — show the help overlay: every key, how to read a leak signal,
+  and the windows, sampling, warm-up, thresholds, settings source, and report
+  folder in effect (`Esc` closes it)
 - `Q` — quit and cleanly terminate a launched target (detach and leave it
   running when attached with `--pid`)
+
+When the session ends, the summary lists how the target ended (exit code,
+stopped, or left running), the warm-up, the settings source, peaks, the
+strongest signal per resource with the handle type that grew, the verdict
+(`inconclusive` when no detection window ever filled), and the report
+files. If monitoring cannot start, the error comes with a hint, such as
+checking the path or PID or running elevated.
 
 ## Reports
 
