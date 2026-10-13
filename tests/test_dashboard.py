@@ -124,6 +124,28 @@ class LayoutTests(unittest.TestCase):
         self.assertIn("CRITICAL leak signal observed", capture.get())
 
 
+class TimeLimitTests(unittest.TestCase):
+    def _render(self, app: DashboardApp) -> str:
+        with app.console.capture() as capture:
+            app.console.print(app._render())
+        return capture.get()
+
+    def test_header_counts_down_with_a_time_limit(self) -> None:
+        import time
+
+        app = DashboardApp("C:/targets/worker.exe", console=make_console(), timeout=90)
+        app._deadline = time.monotonic() + 42.5
+        app._accept_snapshot(make_snapshot())
+        output = self._render(app)
+        self.assertIn("ENDS IN", output)
+        self.assertIn("00:00:42", output)
+
+    def test_no_countdown_without_a_time_limit(self) -> None:
+        app = _app()
+        app._accept_snapshot(make_snapshot())
+        self.assertNotIn("ENDS IN", self._render(app))
+
+
 class AttachModeTests(unittest.TestCase):
     def _attached_app(self) -> tuple[DashboardApp, list[str]]:
         app = DashboardApp(None, console=make_console(), attach_pid=4242)

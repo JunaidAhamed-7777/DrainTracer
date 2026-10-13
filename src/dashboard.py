@@ -28,6 +28,7 @@ from .events import (
 from .report import DEFAULT_REPORT_DIR
 from .session import MonitorSession
 from .theme import PALETTE
+from .units import format_duration
 from .widgets import Sized, Sparkline
 
 
@@ -47,6 +48,7 @@ class DashboardApp(MonitorSession):
         console: Console | None = None,
         report_dir: str | Path = DEFAULT_REPORT_DIR,
         attach_pid: int | None = None,
+        timeout: float | None = None,
     ) -> None:
         super().__init__(
             target_path,
@@ -54,6 +56,7 @@ class DashboardApp(MonitorSession):
             console=console,
             report_dir=report_dir,
             attach_pid=attach_pid,
+            timeout=timeout,
         )
         self.palette = PALETTE
         self._spark_rows = 2
@@ -104,6 +107,12 @@ class DashboardApp(MonitorSession):
                 while not self._quit_requested:
                     self.poll()
                     self._handle_key(self._read_key())
+                    if self.timed_out and not self._quit_requested:
+                        self._quit_requested = True
+                        self._append_event(
+                            f"Time limit of {format_duration(self.timeout or 0.0)} reached",
+                            "info",
+                        )
                     live.update(self._render(), refresh=True)
                     time.sleep(self.FRAME_SECONDS)
         except KeyboardInterrupt:
@@ -261,13 +270,17 @@ class DashboardApp(MonitorSession):
         root_name = self._process_name(snapshot)
         if roomy and root_name.lower() != target.lower():
             target = f"{target} via {root_name}"
-        info = self._label_values(
+        pairs = [
             ("TARGET", target),
             ("PID", f"{pid} (attached)" if self.attached else str(pid)),
             ("PROCESSES" if roomy else "PROCS", str(process_count)),
             ("UPTIME", self._format_duration(self._uptime())),
-            ("SAMPLES", f"{self._sample_count:,} @ {interval} ms"),
-        )
+        ]
+        remaining = self.time_remaining
+        if remaining is not None:
+            pairs.append(("ENDS IN", self._format_duration(remaining)))
+        pairs.append(("SAMPLES", f"{self._sample_count:,} @ {interval} ms"))
+        info = self._label_values(*pairs)
         path = Text.assemble((" PATH ", f"bold {palette.muted}"), (self.target_path, palette.muted))
         path.no_wrap = True
         path.overflow = "ellipsis"
