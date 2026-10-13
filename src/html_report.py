@@ -47,7 +47,7 @@ def render_html_report(report: Mapping[str, Any]) -> str:
     target = str(report.get("target_path") or "unknown target")
     name = Path(target).name or target
     version = str(report.get("version") or "")
-    title = f"DrainTracer · {name} · {summary.worst.upper() if summary.worst != 'none' else 'clear'}"
+    title = f"DrainTracer · {name} · {summary.worst.upper() if summary.worst != 'none' else 'CLEAR'}"
 
     body = "\n".join(
         (
