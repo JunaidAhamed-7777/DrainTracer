@@ -116,7 +116,8 @@ class MonitorSession:
     @property
     def root_pid(self) -> int | None:
         """Root PID of the session; kept after the manager releases it."""
-        return self.manager.root_pid or self._root_pid or self.attach_pid
+        snapshot_pid = self.snapshot.root_pid if self.snapshot is not None else None
+        return self.manager.root_pid or self._root_pid or self.attach_pid or snapshot_pid
 
     @property
     def stopped_target(self) -> bool:
