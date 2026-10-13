@@ -219,6 +219,63 @@ class WarmupDisplayTests(unittest.TestCase):
         self.assertEqual(DashboardApp._countdown(64.1), "1m5s")
 
 
+class HelpAndSortTests(unittest.TestCase):
+    def _render(self, app: DashboardApp) -> str:
+        with app.console.capture() as capture:
+            app.console.print(app._render())
+        return capture.get()
+
+    def test_help_toggles_and_escape_closes_it(self) -> None:
+        app = _app()
+        app._accept_snapshot(make_snapshot())
+        app._handle_key("?")
+        output = self._render(app)
+        self.assertIn("HELP", output)
+        self.assertIn("READING A SIGNAL", output)
+        self.assertIn("built-in defaults", output)
+        app._handle_key("\x1b")
+        self.assertNotIn("READING A SIGNAL", self._render(app))
+        app._handle_key("H")
+        app._handle_key("h")
+        self.assertFalse(app._show_help)
+
+    def test_help_fits_every_breakpoint(self) -> None:
+        for width, height in LayoutTests.SIZES:
+            with self.subTest(width=width, height=height):
+                app = _app(width, height)
+                app._accept_snapshot(make_snapshot())
+                app._handle_key("?")
+                lines = self._render(app).splitlines()
+                self.assertEqual(len(lines), height)
+                self.assertTrue(all(len(line) <= width for line in lines))
+
+    def test_sort_cycles_through_metrics(self) -> None:
+        from dataclasses import replace
+
+        app = _app()
+        processes = (
+            make_process(100, ppid=1, rss=10 * 1024 * 1024, handles=900),
+            replace(make_process(200, ppid=100, rss=90 * 1024 * 1024, handles=50), cpu_percent=7.0),
+            make_process(300, ppid=100, rss=40 * 1024 * 1024, handles=400),
+        )
+        app._accept_snapshot(make_snapshot(processes=processes, root_pid=100))
+
+        def order() -> list[int]:
+            return [proc.pid for proc, _ in app._ordered_processes(app.snapshot)]
+
+        self.assertEqual(order(), [100, 200, 300])
+        app._handle_key("s")
+        self.assertEqual(app._sort_mode, "memory")
+        self.assertEqual(order(), [200, 300, 100])
+        self.assertIn("by memory", self._render(app))
+        app._handle_key("S")
+        self.assertEqual(order(), [100, 300, 200])
+        app._handle_key("s")
+        self.assertEqual(order()[0], 200)  # cpu
+        app._handle_key("s")
+        self.assertEqual(app._sort_mode, "tree")
+
+
 class EventLogTests(unittest.TestCase):
     def _lines(self, app: DashboardApp, width: int, height: int) -> list[str]:
         with app.console.capture() as capture:

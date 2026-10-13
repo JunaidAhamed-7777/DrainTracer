@@ -36,6 +36,10 @@ from .units import format_duration
 from .widgets import Sized, Sparkline
 
 
+# Process table orders cycled with S.
+SORT_MODES = ("tree", "memory", "handles", "cpu")
+
+
 class DashboardApp(MonitorSession):
     """Render a monitor session live in the terminal and handle its controls."""
 
@@ -69,6 +73,8 @@ class DashboardApp(MonitorSession):
         self._spark_rows = 2
         self._health_spacious = True
         self._quit_requested = False
+        self._show_help = False
+        self._sort_mode = SORT_MODES[0]
         self._kill_armed_until = 0.0
         self._cpu_cores = psutil.cpu_count(logical=True) or 1
 
@@ -135,7 +141,13 @@ class DashboardApp(MonitorSession):
             return
         normalized = key.lower()
 
-        if key == " ":
+        if key in {"?", "\x1b"} or normalized == "h":
+            # Esc only closes; ? and H toggle.
+            self._show_help = False if key == "\x1b" else not self._show_help
+        elif normalized == "s":
+            position = SORT_MODES.index(self._sort_mode)
+            self._sort_mode = SORT_MODES[(position + 1) % len(SORT_MODES)]
+        elif key == " ":
             if self.detector.is_paused:
                 if self.manager.resume():
                     self.detector.resume()
@@ -201,6 +213,14 @@ class DashboardApp(MonitorSession):
     SPLIT_BOTTOM_COLUMNS = 80
 
     def _render(self) -> Layout:
+        if self._show_help:
+            layout = Layout(name="root")
+            layout.split_column(
+                Layout(self._render_header(), name="header", size=3),
+                Layout(self._render_help(), name="body", ratio=1),
+                Layout(self._render_footer(), name="footer", size=1),
+            )
+            return layout
         width, height = self.console.size
         wide = width >= self.WIDE_LAYOUT_COLUMNS
         compact = height < self.COMPACT_LAYOUT_ROWS
@@ -256,6 +276,86 @@ class DashboardApp(MonitorSession):
         layout["body"].split_column(metrics, health, bottom)
         return layout
 
+    def _render_help(self) -> Panel:
+        """Keys, how to read a signal, and the settings this session runs with."""
+        palette, glyphs = self.palette, self.glyphs
+
+        def section(title: str) -> Text:
+            return Text(title, style=f"bold {palette.muted}")
+
+        def grid() -> Table:
+            table = Table.grid(padding=(0, 2))
+            table.add_column(style=f"bold {palette.accent}", no_wrap=True, min_width=10)
+            table.add_column(overflow="fold")
+            return table
+
+        keys = grid()
+        kill = "Kill the monitored process tree"
+        if self.attached:
+            kill += " (press twice: DrainTracer did not start it)"
+        quit_text = (
+            "Detach and quit; the process keeps running"
+            if self.attached
+            else "Quit and stop the target"
+        )
+        for key, meaning in (
+            ("Space", "Pause or resume the target and sampling"),
+            ("K", kill),
+            ("E", "Export the JSON and HTML report"),
+            ("O", "Open the latest HTML report in the browser"),
+            ("S", f"Sort processes by tree, memory, handles, or CPU (now: {self._sort_mode})"),
+            ("? / H", "Show or hide this help; Esc closes it"),
+            ("Q", quit_text),
+        ):
+            keys.add_row(key, meaning)
+
+        signals = Text(
+            "A leak signal means private memory, handles, or threads kept growing "
+            "across a window: an upward trend, at least 65% of steps not falling, "
+            "and at most 15% of samples below the running peak. Severity rises with "
+            "the amount and rate of growth relative to the thresholds below. Signals "
+            "are heuristics that point at growth worth investigating, not proof of a "
+            "leak.",
+        )
+
+        session = grid()
+        detector = self.detector
+        windows = " / ".join(format_duration(window) for window in detector.window_seconds)
+        session.add_row("Windows", windows)
+        session.add_row("Sampling", f"every {detector.sample_interval_ms} ms")
+        session.add_row(
+            "Warm-up",
+            format_duration(detector.warmup_seconds) if detector.warmup_seconds else "none",
+        )
+        limits = detector.thresholds
+        memory = limits[LeakResource.MEMORY]
+        handles = limits[LeakResource.HANDLES]
+        threads = limits[LeakResource.THREADS]
+        session.add_row(
+            "Thresholds",
+            f"memory {self._format_bytes(memory.critical_delta)}, "
+            f"{self._format_bytes(memory.critical_slope)}/s {glyphs.sep} "
+            f"handles {handles.critical_delta:,.0f}, {handles.critical_slope:g}/s {glyphs.sep} "
+            f"threads {threads.critical_delta:,.0f}, {threads.critical_slope:g}/s",
+        )
+        session.add_row("Settings", self.settings.describe())
+        session.add_row("Reports", os.path.abspath(self.report_dir))
+
+        return Panel(
+            Group(
+                section("KEYS"), keys, Text(""),
+                section("READING A SIGNAL"), signals, Text(""),
+                section("THIS SESSION"), session,
+            ),
+            title=Text(" HELP ", style=f"bold {palette.accent}"),
+            title_align="left",
+            subtitle=Text(" ? or Esc to close ", style=palette.muted),
+            subtitle_align="right",
+            border_style=palette.border,
+            box=box.ROUNDED,
+            padding=(0, 1),
+        )
+
     def _render_header(self) -> RenderableType:
         palette, glyphs = self.palette, self.glyphs
         status, status_color = self._status(self.snapshot)
@@ -310,18 +410,22 @@ class DashboardApp(MonitorSession):
 
     def _render_footer(self) -> RenderableType:
         palette = self.palette
+        roomy = self.console.size.width >= 120
         keys = Text(no_wrap=True, overflow="ellipsis")
         controls = [
-            ("SPACE", "pause/resume", palette.accent),
-            ("K", "kill tree", palette.danger),
-            ("E", "export report", palette.warn),
+            ("SPACE", "pause/resume" if roomy else "pause", palette.accent),
+            ("K", "kill tree" if roomy else "kill", palette.danger),
+            ("E", "export report" if roomy else "export", palette.warn),
         ]
         if self._last_html_report is not None:
-            controls.append(("O", "open report", palette.teal))
-        controls.append(("Q", "detach & quit" if self.attached else "quit", palette.accent_alt))
+            controls.append(("O", "open report" if roomy else "open", palette.teal))
+        controls.append(("S", "sort", palette.cyan))
+        controls.append(("?", "help", palette.muted))
+        quit_label = ("detach & quit" if roomy else "detach") if self.attached else "quit"
+        controls.append(("Q", quit_label, palette.accent_alt))
         for key, label, color in controls:
             keys.append(f" {key} ", style=f"bold {palette.ink} on {color}")
-            keys.append(f" {label}   ", style=palette.muted)
+            keys.append(f" {label}  ", style=palette.muted)
 
         if self._last_report_id is not None:
             note = Text.assemble(
@@ -546,9 +650,13 @@ class DashboardApp(MonitorSession):
     def _render_process_panel(self) -> Panel:
         snapshot = self.snapshot
         count = len(snapshot.processes) if snapshot else 0
+        if self._sort_mode == "tree":
+            title = f" PROCESS TREE  {count} "
+        else:
+            title = f" PROCESSES  {count}  {self.glyphs.sep} by {self._sort_mode} "
         return Panel(
             Sized(self._process_table),
-            title=Text(f" PROCESS TREE  {count} ", style=f"bold {self.palette.accent_alt}"),
+            title=Text(title, style=f"bold {self.palette.accent_alt}"),
             title_align="left",
             border_style=self.palette.border,
             box=box.ROUNDED,
@@ -591,7 +699,7 @@ class DashboardApp(MonitorSession):
             justify = "left" if column == "status" else "right"
             table.add_column(headers[column], justify=justify, no_wrap=True)
 
-        ordered = self._tree_order(snapshot)
+        ordered = self._ordered_processes(snapshot)
         capacity = max(1, (height or len(ordered) + 2) - 2)
         shown = ordered if len(ordered) <= capacity else ordered[: capacity - 1]
 
@@ -625,6 +733,18 @@ class DashboardApp(MonitorSession):
             more = Text(f"{glyphs.ellipsis} {hidden} more", style=palette.muted)
             table.add_row("", more, *([""] * (len(table.columns) - 2)))
         return table
+
+    def _ordered_processes(self, snapshot: MetricsSnapshot) -> list[tuple[ProcessMetrics, str]]:
+        """Processes in tree order, or flat by the chosen metric, largest first."""
+        if self._sort_mode == "tree":
+            return self._tree_order(snapshot)
+        metric = {
+            "memory": lambda proc: proc.private_bytes,
+            "handles": lambda proc: proc.handles,
+            "cpu": lambda proc: proc.cpu_percent,
+        }[self._sort_mode]
+        ranked = sorted(snapshot.processes, key=lambda proc: (-metric(proc), proc.pid))
+        return [(proc, "") for proc in ranked]
 
     def _tree_order(self, snapshot: MetricsSnapshot) -> list[tuple[ProcessMetrics, str]]:
         """Return processes depth-first with box-drawing connector prefixes."""
