@@ -24,6 +24,7 @@ from src.dashboard import DashboardApp
 from src.events import LeakSeverity
 from src.headless import HeadlessRunner
 from src.config import resolve_settings
+from src.report_diff import DiffError, compare_reports, load_report
 
 
 @dataclass(frozen=True)
@@ -405,6 +406,28 @@ def _run_case(
     )
 
 
+# Report pairs compared with the diff command after their cases ran: the
+# tolerant profile must turn the memory signal into a resolved one.
+DIFF_CHECKS = (("memory-growth", "memory-growth-tolerated", "memory", "resolved"),)
+
+
+def _check_diff(
+    results: dict[str, CaseResult], before: str, after: str, resource: str, expected: str
+) -> tuple[bool, str, list[str]]:
+    """Compare two cases' reports; return (passed, summary, errors)."""
+    try:
+        comparison = compare_reports(
+            load_report(results[before].report_path), load_report(results[after].report_path)
+        )
+    except DiffError as exc:
+        return False, "verdict=error", [str(exc)]
+    item = next(entry for entry in comparison.resources if entry.resource == resource)
+    errors = []
+    if item.signal != expected:
+        errors.append(f"{resource} signal was {item.signal!r}; expected {expected!r}")
+    return not errors, f"verdict={comparison.verdict} {resource}={item.signal}", errors
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -445,10 +468,13 @@ def main(argv: list[str] | None = None) -> int:
         reports_dir.mkdir(parents=True, exist_ok=True)
 
     failures = 0
+    checks = 0
     name_width = max(len(case.name) for case in selected)
+    results: dict[str, CaseResult] = {}
     try:
         for case in selected:
             result = _run_case(case, args.monitor_seconds, reports_dir)
+            results[case.name] = result
             status = "PASS" if result.passed else "FAIL"
             alerts = ",".join(result.alert_resources) or "none"
             print(
@@ -458,11 +484,22 @@ def main(argv: list[str] | None = None) -> int:
             for error in result.errors:
                 print(f"      - {error}")
             failures += int(not result.passed)
+
+        for before, after, resource, expected in DIFF_CHECKS:
+            if before not in results or after not in results:
+                continue
+            checks += 1
+            passed, summary, errors = _check_diff(results, before, after, resource, expected)
+            print(f"{'PASS' if passed else 'FAIL':4}  diff {before} -> {after}  {summary}")
+            for error in errors:
+                print(f"      - {error}")
+            failures += int(not passed)
     finally:
         if temporary_reports is not None:
             temporary_reports.cleanup()
 
-    print(f"\n{len(selected) - failures}/{len(selected)} cases passed")
+    total = len(selected) + checks
+    print(f"\n{total - failures}/{total} cases passed")
     return 1 if failures else 0
 
 
