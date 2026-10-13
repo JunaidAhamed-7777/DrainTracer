@@ -48,6 +48,8 @@ class ParserTests(unittest.TestCase):
             ("--config", "a.toml", "--no-config"): "not allowed with argument",
             ("--interval", "10ms"): "between 100ms and 1m",
             ("--window", "2h"): "at most 1h",
+            ("--warmup", "2d"): "unknown duration unit",
+            ("--warmup", "30h"): "at most 24h",
             tuple(arg for seconds in range(10, 19) for arg in ("--window", f"{seconds}s")):
                 "at most 8 different --window values",
         }
@@ -66,7 +68,7 @@ class DispatchTests(unittest.TestCase):
                     "--headless", "--target", "app.exe", "--timeout", "2m",
                     "--fail-on", "medium", "--report-dir", "out", "--no-config",
                     "--interval", "250ms", "--window", "30s", "--window", "5s",
-                    "--", "--fast",
+                    "--warmup", "20s", "--", "--fast",
                 ],
             )
         self.assertEqual(code, 1)
@@ -80,6 +82,7 @@ class DispatchTests(unittest.TestCase):
         settings = kwargs["settings"]
         self.assertEqual(settings.sample_interval_ms, 250)
         self.assertEqual(settings.windows, (5.0, 30.0))
+        self.assertEqual(settings.warmup, 20.0)
         self.assertIsNone(settings.source)
 
     def test_headless_defaults_to_failing_on_high(self) -> None:
@@ -131,6 +134,15 @@ class DispatchTests(unittest.TestCase):
         output = console.file.getvalue()
         self.assertIn("Settings error:", output)
         self.assertIn("unknown setting timout (did you mean timeout?)", output)
+
+    def test_a_time_limit_inside_the_warmup_is_a_settings_error(self) -> None:
+        console = make_console()
+        code = cli._main(
+            console,
+            ["--headless", "--target", "a.exe", "--no-config", "--warmup", "1m", "--timeout", "30s"],
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("ends before the 1m warm-up does", console.file.getvalue())
 
     def test_ctrl_c_exits_130(self) -> None:
         with mock.patch.object(cli, "_main", side_effect=KeyboardInterrupt), \

@@ -55,6 +55,7 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(record["thresholds"]["handles"],
                          {"critical_delta": 1000, "critical_slope": 40})
         self.assertEqual(record["timeout_seconds"], 30.0)
+        self.assertEqual(record["warmup_seconds"], 0.0)
 
     def test_reports_describe_a_replaced_detector(self) -> None:
         from src.leak_detector import LeakDetector

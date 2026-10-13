@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -205,6 +206,8 @@ class HeadlessRunner(MonitorSession):
             self.console.print(
                 Text(f"Using {self.settings.describe()}", style=PALETTE.muted), soft_wrap=True
             )
+        for warning in replace(self.settings, timeout=self.timeout).warnings():
+            self._print_line("warn", warning)
 
     def _print_progress(self) -> None:
         totals = self._totals()

@@ -82,6 +82,7 @@ class MonitorSession:
             sample_interval_ms=self.settings.sample_interval_ms,
             window_seconds=self.settings.windows,
             thresholds=self.settings.thresholds,
+            warmup_seconds=self.settings.warmup,
         )
         self.report_dir = Path(report_dir)
 
@@ -363,6 +364,7 @@ class MonitorSession:
             "config_path": str(self.settings.source) if self.settings.source else None,
             "sample_interval_ms": detector.sample_interval_ms,
             "windows_seconds": list(detector.window_seconds),
+            "warmup_seconds": detector.warmup_seconds,
             "thresholds": {
                 resource.value: {
                     "critical_delta": limits.critical_delta,

@@ -48,9 +48,20 @@ MIN_SAMPLE_INTERVAL = 0.1
 MAX_SAMPLE_INTERVAL = 60.0
 MAX_WINDOW = 3600.0
 MAX_WINDOWS = 8
+MAX_WARMUP = 86400.0
 MIN_SAMPLES_PER_WINDOW = 4
+# A window is evaluated once its samples span this share of it.
+WINDOW_COVERAGE = 0.85
 
-_LAYER_KEYS = ("sample_interval", "windows", "timeout", "fail_on", "report_dir", "thresholds")
+_LAYER_KEYS = (
+    "sample_interval",
+    "windows",
+    "warmup",
+    "timeout",
+    "fail_on",
+    "report_dir",
+    "thresholds",
+)
 _ROOT_KEYS = (*_LAYER_KEYS, "profiles", "default_profile")
 _THRESHOLD_KEYS = ("critical_delta", "critical_slope")
 
@@ -66,6 +77,7 @@ class MonitorSettings:
     sample_interval_ms: int = DEFAULT_SAMPLE_INTERVAL_MS
     windows: tuple[float, ...] = DEFAULT_WINDOWS_SECONDS
     thresholds: Mapping[LeakResource, ResourceThresholds] = DEFAULT_THRESHOLDS
+    warmup: float = 0.0
     timeout: float | None = None
     fail_on: LeakSeverity = LeakSeverity.HIGH
     report_dir: str = DEFAULT_REPORT_DIR
@@ -80,6 +92,22 @@ class MonitorSettings:
             return f"profile {self.profile} from {self.source}"
         return f"settings from {self.source}"
 
+    def warnings(self) -> list[str]:
+        """Settings that are valid but cannot do what was probably meant."""
+        if self.timeout is None:
+            return []
+        detecting = self.timeout - self.warmup
+        needed = self.windows[0] * WINDOW_COVERAGE
+        if detecting >= needed:
+            return []
+        after = f" after the {format_duration(self.warmup)} warm-up" if self.warmup else ""
+        return [
+            f"the {format_duration(self.timeout)} time limit leaves "
+            f"{format_duration(detecting)} of leak detection{after}, but even the "
+            f"{format_duration(self.windows[0])} window needs {format_duration(needed)} "
+            "of samples, so no leak signal can be raised"
+        ]
+
 
 def resolve_settings(
     *,
@@ -92,7 +120,7 @@ def resolve_settings(
     """Combine defaults, a config file, a profile, and flag overrides.
 
     ``overrides`` uses ``MonitorSettings`` field names (``sample_interval_ms``,
-    ``windows``, ``timeout``, ``fail_on``, ``report_dir``). Raises
+    ``windows``, ``warmup``, ``timeout``, ``fail_on``, ``report_dir``). Raises
     ``ConfigError`` with the file and setting named on any problem.
     """
     settings = MonitorSettings()
@@ -214,6 +242,11 @@ def _parse_layer(table: Mapping[str, Any], where: str, folder: Path) -> dict[str
                     f"got {format_duration(window)}"
                 )
         overrides["windows"] = windows
+    if "warmup" in table:
+        seconds = _duration(table["warmup"], f"{where}warmup")
+        if seconds > MAX_WARMUP:
+            raise ConfigError(f"{where}warmup must be at most 24h, got {format_duration(seconds)}")
+        overrides["warmup"] = seconds
     if "timeout" in table:
         seconds = _duration(table["timeout"], f"{where}timeout")
         if seconds <= 0:
@@ -278,6 +311,11 @@ def _apply(settings: MonitorSettings, overrides: Mapping[str, Any]) -> MonitorSe
 
 
 def _check_consistency(settings: MonitorSettings) -> None:
+    if settings.timeout is not None and settings.warmup and settings.timeout <= settings.warmup:
+        raise ConfigError(
+            f"the {format_duration(settings.timeout)} time limit ends before the "
+            f"{format_duration(settings.warmup)} warm-up does, so leak detection would never run"
+        )
     interval = settings.sample_interval_ms / 1000
     shortest = settings.windows[0]
     needed = MIN_SAMPLES_PER_WINDOW * interval
@@ -324,6 +362,7 @@ def _has_draintracer_table(path: Path) -> bool:
 
 
 __all__ = [
+    "MAX_WARMUP",
     "CONFIG_FILENAMES",
     "ConfigError",
     "FAIL_ON_CHOICES",

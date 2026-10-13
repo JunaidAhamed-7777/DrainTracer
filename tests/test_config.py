@@ -196,6 +196,36 @@ class ValidationTests(ConfigTestCase):
         self.assertConfigError("cannot read the file", config_path=self.root / "missing.toml")
 
 
+class WarmupSettingsTests(ConfigTestCase):
+    def test_warmup_from_file_profile_and_flags(self) -> None:
+        self.write(".drainrc", 'warmup = "10s"\n[profiles.slow]\nwarmup = "1m"\n')
+        self.assertEqual(self.resolve().warmup, 10.0)
+        self.assertEqual(self.resolve(profile="slow").warmup, 60.0)
+        self.assertEqual(self.resolve(overrides={"warmup": 0.0}).warmup, 0.0)
+        self.assertEqual(MonitorSettings().warmup, 0.0)
+
+    def test_warmup_limits(self) -> None:
+        self.write(".drainrc", 'warmup = "25h"\n')
+        self.assertConfigError("warmup must be at most 24h")
+        self.write(".drainrc", 'warmup = "-1s"\n')
+        self.assertConfigError("warmup: expected a duration")
+
+    def test_a_time_limit_inside_the_warmup_is_rejected(self) -> None:
+        self.assertConfigError(
+            "the 30s time limit ends before the 1m warm-up does",
+            discover=False, overrides={"warmup": 60.0, "timeout": 30.0},
+        )
+
+    def test_warnings_when_no_window_can_fill(self) -> None:
+        settings = self.resolve(discover=False, overrides={"warmup": 10.0, "timeout": 15.0})
+        (warning,) = settings.warnings()
+        self.assertIn("leaves 5s of leak detection after the 10s warm-up", warning)
+        self.assertIn("the 10s window needs 8.5s", warning)
+        roomy = self.resolve(discover=False, overrides={"warmup": 10.0, "timeout": 30.0})
+        self.assertEqual(roomy.warnings(), [])
+        self.assertEqual(self.resolve(discover=False).warnings(), [])
+
+
 class ExampleFileTests(unittest.TestCase):
     def test_every_example_profile_resolves(self) -> None:
         example = Path(__file__).resolve().parents[1] / "examples" / "drainrc.toml"

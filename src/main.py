@@ -19,6 +19,7 @@ if __package__ in (None, ""):
 from src.config import (
     FAIL_ON_CHOICES,
     MAX_SAMPLE_INTERVAL,
+    MAX_WARMUP,
     MAX_WINDOW,
     MAX_WINDOWS,
     MIN_SAMPLE_INTERVAL,
@@ -101,6 +102,13 @@ def _sample_interval(value: str) -> float:
     return seconds
 
 
+def _warmup(value: str) -> float:
+    seconds = _duration_arg(value)
+    if seconds > MAX_WARMUP:
+        raise argparse.ArgumentTypeError("the warm-up must be at most 24h")
+    return seconds
+
+
 def _window(value: str) -> float:
     seconds = _duration_arg(value)
     if not 0 < seconds <= MAX_WINDOW:
@@ -114,6 +122,7 @@ examples:
   python src/main.py --target app.exe -- --port 8080   launch with arguments
   python src/main.py --pid 4820                        attach to a running process
   python src/main.py --profile ci --target app.exe     use a .drainrc profile
+  python src/main.py --warmup 15s --target server.exe  ignore startup growth
   python src/main.py --headless --target app.exe --timeout 2m --fail-on medium
 """
 
@@ -156,6 +165,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Leak detection window, e.g. 30s or 2m. Repeat for several windows; "
             "replaces the configured ones (default: 10s, 30s, and 60s)."
+        ),
+    )
+    monitoring.add_argument(
+        "--warmup",
+        type=_warmup,
+        metavar="DURATION",
+        help=(
+            "Sample for DURATION before leak detection starts, so startup growth "
+            "(cache warming, JIT, loading) is not reported, e.g. 10s (default: none)."
         ),
     )
     monitoring.add_argument(
@@ -232,6 +250,8 @@ def _resolve_settings(args: argparse.Namespace) -> MonitorSettings:
         overrides["sample_interval_ms"] = round(args.interval * 1000)
     if args.window:
         overrides["windows"] = tuple(sorted(set(args.window)))
+    if args.warmup is not None:
+        overrides["warmup"] = args.warmup
     if args.timeout is not None:
         overrides["timeout"] = args.timeout
     if args.fail_on is not None:
@@ -295,6 +315,8 @@ def _main(console: Console, argv: list[str] | None) -> int:
     _display_title(console)
     if settings.source is not None:
         console.print(Text(f"Using {settings.describe()}", style=PALETTE.muted))
+    for warning in settings.warnings():
+        console.print(Text.assemble(("Note: ", f"bold {PALETTE.warn}"), warning))
 
     if args.pid is not None:
         app = DashboardApp(
