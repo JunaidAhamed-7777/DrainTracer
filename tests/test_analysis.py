@@ -142,6 +142,44 @@ class SummaryTests(unittest.TestCase):
         self.assertIsNone(summary.resources["handles"].drift_per_second)
 
 
+class HandleTypeTests(unittest.TestCase):
+    def _typed(self, stamp: float, **counts: int) -> dict:
+        snapshot = _snap(stamp)
+        snapshot["handle_types"] = counts
+        return snapshot
+
+    def test_summary_reports_type_growth_and_final_counts(self) -> None:
+        report = _report(
+            self._typed(1.0, file=10, event=5, other=40),
+            _snap(2.0),
+            self._typed(3.0, file=60, event=5, other=41, socket=2),
+        )
+        summary = summarize(report)
+        self.assertEqual(summary.handle_types, {"file": 60, "event": 5, "other": 41, "socket": 2})
+        self.assertEqual(summary.handle_type_growth, {"file": 50, "socket": 2, "other": 1})
+
+    def test_one_classification_has_no_growth(self) -> None:
+        summary = summarize(_report(self._typed(1.0, file=3)))
+        self.assertEqual(summary.handle_types, {"file": 3})
+        self.assertIsNone(summary.handle_type_growth)
+        self.assertIsNone(summarize(_report(_snap(1.0))).handle_types)
+
+    def test_bad_counts_are_ignored(self) -> None:
+        report = _report(self._typed(1.0, file="many", event=-3, socket=2.0))
+        self.assertEqual(load_samples(report)[0].handle_types, {"socket": 2})
+
+    def test_chart_series_use_their_own_time_base(self) -> None:
+        report = _report(
+            self._typed(10.0, file=1, other=9, event=0),
+            _snap(11.0),
+            self._typed(12.0, file=5, other=9, event=0),
+        )
+        series = chart_payload(report)["handle_types"]
+        self.assertEqual(series["t"], [0.0, 2.0])
+        self.assertEqual(series["categories"], ["file", "other"])  # never-used types dropped
+        self.assertEqual(series["series"], {"file": [1, 5], "other": [9, 9]})
+
+
 class ChartPayloadTests(unittest.TestCase):
     def test_unmeasured_points_are_gaps_and_pauses_merge(self) -> None:
         exited = _snap(5.0)

@@ -12,6 +12,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from .handle_types import CATEGORIES as HANDLE_CATEGORIES
 from .stats import least_squares_slope
 
 SEVERITIES = ("none", "low", "medium", "high", "critical")
@@ -59,6 +60,7 @@ class Sample:
     process_count: int
     paused: bool
     error: bool
+    handle_types: Mapping[str, int] | None = None
 
     @property
     def measured(self) -> bool:
@@ -96,6 +98,7 @@ def load_samples(report: Mapping[str, Any]) -> list[Sample]:
                 alerts[str(alert["resource"])] = alert
         processes = item.get("processes")
         metadata = item.get("metadata")
+        handle_types = _handle_counts(item.get("handle_types"))
         samples.append(
             Sample(
                 timestamp=timestamp,
@@ -105,10 +108,23 @@ def load_samples(report: Mapping[str, Any]) -> list[Sample]:
                 process_count=len(processes) if isinstance(processes, _SEQUENCES) else 0,
                 paused=bool(item.get("monitoring_paused")),
                 error=isinstance(metadata, Mapping) and bool(metadata.get("sampling_error")),
+                handle_types=handle_types,
             )
         )
     samples.sort(key=lambda sample: sample.timestamp)
     return samples
+
+
+def _handle_counts(value: Any) -> dict[str, int] | None:
+    """Category counts from a snapshot's ``handle_types``, if it has any."""
+    if not isinstance(value, Mapping):
+        return None
+    counts: dict[str, int] = {}
+    for category, count in value.items():
+        number = finite(count)
+        if isinstance(category, str) and number is not None and number >= 0:
+            counts[category] = int(number)
+    return counts or None
 
 
 def _signal_samples(samples: Sequence[Sample]) -> list[Sample]:
@@ -245,6 +261,10 @@ class ReportSummary:
     resources: Mapping[str, ResourceSummary]
     episodes: tuple[AlertEpisode, ...]
     changes: tuple[SignalChange, ...]
+    # Handle counts per category from the last classification, and their
+    # change since the first one; None when handles were never classified.
+    handle_types: Mapping[str, int] | None = None
+    handle_type_growth: Mapping[str, int] | None = None
 
     @property
     def duration(self) -> float:
@@ -287,6 +307,17 @@ def summarize(report: Mapping[str, Any], samples: Sequence[Sample] | None = None
             episodes=sum(1 for episode in episodes if episode.resource == resource),
         )
 
+    classified = [sample for sample in measured if sample.handle_types]
+    last_types = dict(classified[-1].handle_types) if classified else None
+    type_growth = None
+    if len(classified) >= 2:
+        first_types = classified[0].handle_types or {}
+        type_growth = {
+            category: last_types.get(category, 0) - first_types.get(category, 0)
+            for category in _ordered_categories([first_types, last_types])
+            if last_types.get(category, 0) != first_types.get(category, 0)
+        } or None
+
     active = [sample for sample in samples if not sample.paused]
     return ReportSummary(
         started=samples[0].timestamp if samples else None,
@@ -298,7 +329,16 @@ def summarize(report: Mapping[str, Any], samples: Sequence[Sample] | None = None
         resources=resources,
         episodes=tuple(episodes),
         changes=tuple(changes),
+        handle_types=last_types,
+        handle_type_growth=type_growth,
     )
+
+
+def _ordered_categories(counts: Sequence[Mapping[str, int] | None]) -> list[str]:
+    """Known handle categories in display order, then any others by name."""
+    present = {category for mapping in counts if mapping for category in mapping}
+    known = [category for category in HANDLE_CATEGORIES if category in present]
+    return known + sorted(present.difference(HANDLE_CATEGORIES))
 
 
 # Series plotted in HTML reports: payload key, totals key, decimal places.
@@ -326,7 +366,8 @@ def chart_payload(
     summary = summarize(report, samples) if summary is None else summary
     if not samples:
         return {"start": None, "t": [], "series": {}, "paused": [], "spans": [],
-                "markers": [], "exits": [], "events": []}
+                "markers": [], "exits": [], "events": [],
+                "handle_types": {"t": [], "categories": [], "series": {}}}
 
     start = samples[0].timestamp
 
@@ -398,6 +439,34 @@ def chart_payload(
         ],
         "exits": exits,
         "events": events,
+        "handle_types": _handle_type_series(samples, offset),
+    }
+
+
+def _handle_type_series(samples: Sequence[Sample], offset) -> dict[str, Any]:
+    """Handle-type counts on their own time base (classified samples only).
+
+    Categories that never held a handle are left out; the rest are ordered
+    by peak count with ``other`` last, which is also the legend order.
+    """
+    classified = [sample for sample in samples if sample.measured and sample.handle_types]
+    categories = [
+        category
+        for category in _ordered_categories([sample.handle_types for sample in classified])
+        if any((sample.handle_types or {}).get(category, 0) for sample in classified)
+    ]
+    peaks = {
+        category: max((sample.handle_types or {}).get(category, 0) for sample in classified)
+        for category in categories
+    }
+    categories.sort(key=lambda category: (category == "other", -peaks[category]))
+    return {
+        "t": [offset(sample.timestamp) for sample in classified],
+        "categories": categories,
+        "series": {
+            category: [(sample.handle_types or {}).get(category, 0) for sample in classified]
+            for category in categories
+        },
     }
 
 
