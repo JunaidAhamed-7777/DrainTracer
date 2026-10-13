@@ -100,7 +100,7 @@ class LayeringTests(ConfigTestCase):
         self.assertEqual(settings.sample_interval_ms, 250)
         self.assertEqual(settings.windows, (10.0, 30.0))
         self.assertEqual(settings.fail_on, LeakSeverity.MEDIUM)
-        self.assertEqual(settings.report_dir, "out/reports")
+        self.assertEqual(Path(settings.report_dir), self.root / "out" / "reports")
         memory = settings.thresholds[LeakResource.MEMORY]
         self.assertEqual((memory.critical_delta, memory.critical_slope), (200 * MB, 20 * MB))
         self.assertEqual(
@@ -132,6 +132,15 @@ class LayeringTests(ConfigTestCase):
     def test_draintracer_table_works_in_any_file(self) -> None:
         path = self.write("custom.toml", '[draintracer]\n[draintracer.profiles.x]\ntimeout = "1m"\n')
         self.assertEqual(self.resolve(config_path=path, profile="x").timeout, 60.0)
+
+    def test_report_dir_is_relative_to_the_settings_file(self) -> None:
+        self.write(".drainrc", 'report_dir = "reports"\n[profiles.abs]\nreport_dir = "D:/x"\n')
+        nested = self.root / "a" / "b"
+        nested.mkdir(parents=True)
+        self.assertEqual(Path(self.resolve(start=nested).report_dir), self.root / "reports")
+        self.assertEqual(Path(self.resolve(profile="abs").report_dir), Path("D:/x"))
+        flag = self.resolve(overrides={"report_dir": "here"})
+        self.assertEqual(flag.report_dir, "here")  # flags stay relative to the working directory
 
     def test_explicit_path_skips_discovery(self) -> None:
         self.write(".drainrc", 'timeout = "1m"\n')

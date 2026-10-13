@@ -107,7 +107,7 @@ def resolve_settings(
 
     if path is not None:
         try:
-            settings = _apply_file(settings, load_config_file(path), profile)
+            settings = _apply_file(settings, load_config_file(path), profile, path.parent)
         except ConfigError as exc:
             raise ConfigError(f"{path}: {exc}") from None
         settings = replace(settings, source=path)
@@ -160,11 +160,11 @@ def load_config_file(path: Path) -> Mapping[str, Any]:
 
 
 def _apply_file(
-    settings: MonitorSettings, root: Mapping[str, Any], profile: str | None
+    settings: MonitorSettings, root: Mapping[str, Any], profile: str | None, folder: Path
 ) -> MonitorSettings:
     _reject_unknown(root, _ROOT_KEYS, "")
     base = {key: value for key, value in root.items() if key in _LAYER_KEYS}
-    settings = _apply(settings, _parse_layer(base, ""))
+    settings = _apply(settings, _parse_layer(base, "", folder))
 
     profiles = root.get("profiles", {})
     if not isinstance(profiles, dict) or not all(isinstance(v, dict) for v in profiles.values()):
@@ -179,12 +179,17 @@ def _apply_file(
     if chosen not in profiles:
         available = ", ".join(sorted(profiles)) or "none are defined"
         raise ConfigError(f"profile {chosen!r} is not defined (available: {available})")
-    settings = _apply(settings, _parse_layer(profiles[chosen], f"profiles.{chosen}."))
+    settings = _apply(settings, _parse_layer(profiles[chosen], f"profiles.{chosen}.", folder))
     return replace(settings, profile=chosen)
 
 
-def _parse_layer(table: Mapping[str, Any], where: str) -> dict[str, Any]:
-    """Validate one settings table into ``MonitorSettings`` overrides."""
+def _parse_layer(table: Mapping[str, Any], where: str, folder: Path) -> dict[str, Any]:
+    """Validate one settings table into ``MonitorSettings`` overrides.
+
+    A relative ``report_dir`` is resolved against ``folder``, the directory
+    of the settings file, so reports land in the same place wherever the
+    command runs.
+    """
     _reject_unknown(table, _LAYER_KEYS, where)
     overrides: dict[str, Any] = {}
     if "sample_interval" in table:
@@ -225,7 +230,7 @@ def _parse_layer(table: Mapping[str, Any], where: str) -> dict[str, Any]:
         value = table["report_dir"]
         if not isinstance(value, str) or not value.strip():
             raise ConfigError(f"{where}report_dir must be a non-empty path")
-        overrides["report_dir"] = value
+        overrides["report_dir"] = str(folder / value)
     if "thresholds" in table:
         overrides["thresholds"] = _parse_thresholds(table["thresholds"], f"{where}thresholds.")
     return overrides

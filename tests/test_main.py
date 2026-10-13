@@ -111,7 +111,7 @@ class DispatchTests(unittest.TestCase):
         kwargs = runner.call_args.kwargs
         self.assertEqual(kwargs["timeout"], 120.0)  # profile over the base
         self.assertEqual(kwargs["fail_on"], LeakSeverity.CRITICAL)  # flag over the file
-        self.assertEqual(kwargs["report_dir"], "from-file")
+        self.assertEqual(Path(kwargs["report_dir"]), config.parent / "from-file")
         self.assertEqual(kwargs["settings"].profile, "ci")
 
     def test_settings_errors_exit_2_before_anything_starts(self) -> None:

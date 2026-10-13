@@ -137,7 +137,7 @@ critical_slope = "1GB/s"
 | `windows` | Detection windows: up to 8, each at most `1h` and at least 4 samples long | `10s`, `30s`, `60s` |
 | `timeout` | Stop monitoring after this long | none |
 | `fail_on` | Headless failure threshold: `low`, `medium`, `high`, `critical` | `high` |
-| `report_dir` | Directory for exported reports | `leak_reports` |
+| `report_dir` | Directory for exported reports; a relative path is relative to the settings file | `leak_reports` |
 | `thresholds.memory.critical_delta` / `critical_slope` | Memory growth and growth rate that count as critical, as sizes (`50MB`) and rates (`5MB/s`, `300MB/min`) | `50MB`, `5MB/s` |
 | `thresholds.handles.*` / `thresholds.threads.*` | The same for handle and thread counts (`500`, `20/s`) | `500`, `20/s`; `50`, `2/s` |
 | `default_profile` | Profile applied when `--profile` is not given | none |
