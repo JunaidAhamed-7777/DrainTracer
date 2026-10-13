@@ -44,6 +44,12 @@ class ParserTests(unittest.TestCase):
             ("--timeout", "soon", "--target", "x.exe"): "expected a duration",
             ("--pid", "1", "--", "arg"): "only apply to launched targets",
             ("--headless", "--target", "x.exe", "--fail-on", "none"): "invalid choice",
+            ("--profile", "ci", "--no-config"): "--profile needs a settings file",
+            ("--config", "a.toml", "--no-config"): "not allowed with argument",
+            ("--interval", "10ms"): "between 100ms and 1m",
+            ("--window", "2h"): "at most 1h",
+            tuple(arg for seconds in range(10, 19) for arg in ("--window", f"{seconds}s")):
+                "at most 8 different --window values",
         }
         for argv, message in cases.items():
             with self.subTest(argv=argv):
@@ -58,7 +64,9 @@ class DispatchTests(unittest.TestCase):
                 make_console(),
                 [
                     "--headless", "--target", "app.exe", "--timeout", "2m",
-                    "--fail-on", "medium", "--report-dir", "out", "--", "--fast",
+                    "--fail-on", "medium", "--report-dir", "out", "--no-config",
+                    "--interval", "250ms", "--window", "30s", "--window", "5s",
+                    "--", "--fast",
                 ],
             )
         self.assertEqual(code, 1)
@@ -69,14 +77,60 @@ class DispatchTests(unittest.TestCase):
         self.assertEqual(kwargs["fail_on"], LeakSeverity.MEDIUM)
         self.assertEqual(kwargs["report_dir"], "out")
         self.assertIsNone(kwargs["attach_pid"])
+        settings = kwargs["settings"]
+        self.assertEqual(settings.sample_interval_ms, 250)
+        self.assertEqual(settings.windows, (5.0, 30.0))
+        self.assertIsNone(settings.source)
 
     def test_headless_defaults_to_failing_on_high(self) -> None:
         with mock.patch.object(cli, "HeadlessRunner") as runner:
             runner.return_value.run.return_value = 0
-            cli._main(make_console(), ["--headless", "--pid", "4242"])
+            cli._main(make_console(), ["--headless", "--pid", "4242", "--no-config"])
         kwargs = runner.call_args.kwargs
         self.assertEqual(kwargs["fail_on"], LeakSeverity.HIGH)
         self.assertEqual(kwargs["attach_pid"], 4242)
+
+    def test_settings_file_profile_and_flags_layer_in_order(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as temp:
+            config = Path(temp) / "draintracer.toml"
+            config.write_text(
+                'timeout = "1m"\nfail_on = "low"\nreport_dir = "from-file"\n'
+                '[profiles.ci]\ntimeout = "2m"\n',
+                encoding="utf-8",
+            )
+            with mock.patch.object(cli, "HeadlessRunner") as runner:
+                runner.return_value.run.return_value = 0
+                cli._main(
+                    make_console(),
+                    ["--headless", "--target", "a.exe", "--config", str(config),
+                     "--profile", "ci", "--fail-on", "critical"],
+                )
+        kwargs = runner.call_args.kwargs
+        self.assertEqual(kwargs["timeout"], 120.0)  # profile over the base
+        self.assertEqual(kwargs["fail_on"], LeakSeverity.CRITICAL)  # flag over the file
+        self.assertEqual(kwargs["report_dir"], "from-file")
+        self.assertEqual(kwargs["settings"].profile, "ci")
+
+    def test_settings_errors_exit_2_before_anything_starts(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as temp:
+            config = Path(temp) / ".drainrc"
+            config.write_text("timout = 5\n", encoding="utf-8")
+            console = make_console()
+            with mock.patch.object(cli, "HeadlessRunner") as runner:
+                code = cli._main(
+                    console, ["--headless", "--target", "a.exe", "--config", str(config)]
+                )
+        self.assertEqual(code, 2)
+        runner.assert_not_called()
+        output = console.file.getvalue()
+        self.assertIn("Settings error:", output)
+        self.assertIn("unknown setting timout (did you mean timeout?)", output)
 
     def test_ctrl_c_exits_130(self) -> None:
         with mock.patch.object(cli, "_main", side_effect=KeyboardInterrupt), \

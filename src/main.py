@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Any
 
 from rich import box
 from rich.console import Console
@@ -15,10 +16,20 @@ if __package__ in (None, ""):
     # Keep ``python src/main.py`` working when launched from the repository root.
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from src.config import (
+    FAIL_ON_CHOICES,
+    MAX_SAMPLE_INTERVAL,
+    MAX_WINDOW,
+    MAX_WINDOWS,
+    MIN_SAMPLE_INTERVAL,
+    ConfigError,
+    MonitorSettings,
+    resolve_settings,
+)
 from src.dashboard import DashboardApp
 from src.events import LeakSeverity
 from src.file_picker import select_target_file
-from src.headless import FAIL_ON_CHOICES, HeadlessRunner
+from src.headless import HeadlessRunner
 from src.process_runner import ProcessManagerError
 from src.report import DEFAULT_REPORT_DIR
 from src.theme import PALETTE, blend
@@ -69,21 +80,52 @@ def _positive_int(value: str) -> int:
     return parsed
 
 
-def _time_limit(value: str) -> float:
+def _duration_arg(value: str) -> float:
     try:
-        seconds = parse_duration(value)
+        return parse_duration(value)
     except ValueError as exc:
         raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
+def _time_limit(value: str) -> float:
+    seconds = _duration_arg(value)
     if seconds <= 0:
         raise argparse.ArgumentTypeError("the time limit must be greater than zero")
     return seconds
 
 
+def _sample_interval(value: str) -> float:
+    seconds = _duration_arg(value)
+    if not MIN_SAMPLE_INTERVAL <= seconds <= MAX_SAMPLE_INTERVAL:
+        raise argparse.ArgumentTypeError("the sample interval must be between 100ms and 1m")
+    return seconds
+
+
+def _window(value: str) -> float:
+    seconds = _duration_arg(value)
+    if not 0 < seconds <= MAX_WINDOW:
+        raise argparse.ArgumentTypeError("windows must be longer than 0s and at most 1h")
+    return seconds
+
+
+_EXAMPLES = """\
+examples:
+  python src/main.py                                   pick a target in a file dialog
+  python src/main.py --target app.exe -- --port 8080   launch with arguments
+  python src/main.py --pid 4820                        attach to a running process
+  python src/main.py --profile ci --target app.exe     use a .drainrc profile
+  python src/main.py --headless --target app.exe --timeout 2m --fail-on medium
+"""
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Monitor Windows process resources and detect likely leaks.",
+        epilog=_EXAMPLES,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    source = parser.add_mutually_exclusive_group()
+    target = parser.add_argument_group("target")
+    source = target.add_mutually_exclusive_group()
     source.add_argument(
         "--target",
         metavar="PATH",
@@ -98,25 +140,25 @@ def build_parser() -> argparse.ArgumentParser:
             "Quitting detaches and leaves it running."
         ),
     )
-    parser.add_argument(
-        "--report-dir",
-        default=DEFAULT_REPORT_DIR,
-        metavar="DIR",
+
+    monitoring = parser.add_argument_group("monitoring")
+    monitoring.add_argument(
+        "--interval",
+        type=_sample_interval,
+        metavar="DURATION",
+        help="Time between samples, e.g. 250ms or 2s (default: 500ms).",
+    )
+    monitoring.add_argument(
+        "--window",
+        type=_window,
+        action="append",
+        metavar="DURATION",
         help=(
-            "Directory for exported reports, named leak_report_<UUID>.json "
-            f"(default: {DEFAULT_REPORT_DIR})."
+            "Leak detection window, e.g. 30s or 2m. Repeat for several windows; "
+            "replaces the configured ones (default: 10s, 30s, and 60s)."
         ),
     )
-    parser.add_argument(
-        "--headless",
-        action="store_true",
-        help=(
-            "Run without the dashboard (for CI): print progress lines, export a "
-            "report when monitoring ends, and exit 1 if a leak signal reaches "
-            "--fail-on. Needs --target or --pid."
-        ),
-    )
-    parser.add_argument(
+    monitoring.add_argument(
         "--timeout",
         type=_time_limit,
         metavar="DURATION",
@@ -125,13 +167,54 @@ def build_parser() -> argparse.ArgumentParser:
             "Without it, headless runs last until the process tree exits."
         ),
     )
-    parser.add_argument(
+    monitoring.add_argument(
+        "--report-dir",
+        metavar="DIR",
+        help=(
+            "Directory for exported reports, named leak_report_<UUID>.json and "
+            f".html (default: {DEFAULT_REPORT_DIR})."
+        ),
+    )
+
+    files = parser.add_argument_group("settings files")
+    which = files.add_mutually_exclusive_group()
+    which.add_argument(
+        "--config",
+        metavar="FILE",
+        help=(
+            "Read settings from FILE instead of the nearest .drainrc, "
+            ".drainrc.toml, draintracer.toml, or config.toml with a "
+            "[draintracer] table."
+        ),
+    )
+    which.add_argument(
+        "--no-config",
+        action="store_true",
+        help="Ignore settings files; use built-in defaults and flags only.",
+    )
+    files.add_argument(
+        "--profile",
+        metavar="NAME",
+        help="Apply the [profiles.NAME] section of the settings file.",
+    )
+
+    headless = parser.add_argument_group("headless")
+    headless.add_argument(
+        "--headless",
+        action="store_true",
+        help=(
+            "Run without the dashboard (for CI): print progress lines, export a "
+            "report when monitoring ends, and exit 1 if a leak signal reaches "
+            "--fail-on. Needs --target or --pid."
+        ),
+    )
+    headless.add_argument(
         "--fail-on",
         choices=FAIL_ON_CHOICES,
         metavar="SEVERITY",
         help=(
-            "With --headless, the lowest leak severity that fails the run: "
-            "low, medium, high (default), or critical."
+            "The lowest leak severity that fails a headless run: low, medium, "
+            "high (default), or critical."
         ),
     )
     parser.add_argument(
@@ -140,6 +223,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="Arguments forwarded to the target after '--'.",
     )
     return parser
+
+
+def _resolve_settings(args: argparse.Namespace) -> MonitorSettings:
+    """Layer flag values over the settings file and its profile."""
+    overrides: dict[str, Any] = {}
+    if args.interval is not None:
+        overrides["sample_interval_ms"] = round(args.interval * 1000)
+    if args.window:
+        overrides["windows"] = tuple(sorted(set(args.window)))
+    if args.timeout is not None:
+        overrides["timeout"] = args.timeout
+    if args.fail_on is not None:
+        overrides["fail_on"] = LeakSeverity(args.fail_on)
+    if args.report_dir is not None:
+        overrides["report_dir"] = args.report_dir
+    return resolve_settings(
+        config_path=args.config,
+        profile=args.profile,
+        discover=not args.no_config,
+        overrides=overrides,
+    )
 
 
 def _run_dashboard(app: DashboardApp, console: Console) -> int:
@@ -171,22 +275,35 @@ def _main(console: Console, argv: list[str] | None) -> int:
         parser.error("arguments after '--' only apply to launched targets, not --pid")
     if args.fail_on is not None and not args.headless:
         parser.error("--fail-on only applies with --headless")
+    if args.headless and args.target is None and args.pid is None:
+        parser.error("--headless needs --target or --pid; the file picker is interactive")
+    if args.profile is not None and args.no_config:
+        parser.error("--profile needs a settings file; drop --no-config")
+    if args.window and len(set(args.window)) > MAX_WINDOWS:
+        parser.error(f"use at most {MAX_WINDOWS} different --window values")
+
+    try:
+        settings = _resolve_settings(args)
+    except ConfigError as exc:
+        console.print(Text.assemble(("Settings error: ", "bold red"), str(exc)))
+        return 2
 
     if args.headless:
-        if args.target is None and args.pid is None:
-            parser.error("--headless needs --target or --pid; the file picker is interactive")
-        return _run_headless(args, forwarded_args, console)
+        return _run_headless(args, forwarded_args, console, settings)
 
     console.clear()
     _display_title(console)
+    if settings.source is not None:
+        console.print(Text(f"Using {settings.describe()}", style=PALETTE.muted))
 
     if args.pid is not None:
         app = DashboardApp(
             None,
             console=console,
-            report_dir=args.report_dir,
+            report_dir=settings.report_dir,
             attach_pid=args.pid,
-            timeout=args.timeout,
+            timeout=settings.timeout,
+            settings=settings,
         )
         return _run_dashboard(app, console)
 
@@ -221,23 +338,28 @@ def _main(console: Console, argv: list[str] | None) -> int:
         target_path,
         args=forwarded_args or None,
         console=console,
-        report_dir=args.report_dir,
-        timeout=args.timeout,
+        report_dir=settings.report_dir,
+        timeout=settings.timeout,
+        settings=settings,
     )
     return _run_dashboard(app, console)
 
 
 def _run_headless(
-    args: argparse.Namespace, forwarded_args: list[str], console: Console
+    args: argparse.Namespace,
+    forwarded_args: list[str],
+    console: Console,
+    settings: MonitorSettings,
 ) -> int:
     runner = HeadlessRunner(
         args.target,
         args=forwarded_args or None,
         console=console,
-        report_dir=args.report_dir,
+        report_dir=settings.report_dir,
         attach_pid=args.pid,
-        timeout=args.timeout,
-        fail_on=LeakSeverity(args.fail_on or "high"),
+        timeout=settings.timeout,
+        fail_on=settings.fail_on,
+        settings=settings,
     )
     return runner.run()
 
