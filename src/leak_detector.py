@@ -20,6 +20,7 @@ from .events import (
     ProcessMetrics,
 )
 from .process_runner import ProcessManager
+from .stats import least_squares_slope
 
 logger = logging.getLogger(__name__)
 
@@ -434,20 +435,7 @@ class LeakDetector:
 
         return best_alert
 
-    @staticmethod
-    def _least_squares_slope(times: list[float], values: list[float]) -> float:
-        n = len(values)
-        if n < 2 or len(times) != n:
-            return 0.0
-        origin = times[0]
-        xs = [stamp - origin for stamp in times]
-        x_mean = sum(xs) / n
-        y_mean = sum(values) / n
-        numerator = sum((x - x_mean) * (y - y_mean) for x, y in zip(xs, values))
-        denominator = sum((x - x_mean) ** 2 for x in xs)
-        if denominator == 0:
-            return 0.0
-        return numerator / denominator
+    _least_squares_slope = staticmethod(least_squares_slope)
 
     @staticmethod
     def _monotonic_increase_ratio(values: list[float]) -> float:
