@@ -8,10 +8,28 @@ import subprocess
 import sys
 import threading
 import time
+from collections import deque
 from pathlib import Path
+
 import psutil
 
 logger = logging.getLogger(__name__)
+
+
+def _parent_pid_map() -> dict[int, int]:
+    """Return ``{pid: parent_pid}`` for every visible process in one pass."""
+    mapper = getattr(psutil, "_ppid_map", None)
+    if mapper is not None:
+        try:
+            return dict(mapper())
+        except (psutil.Error, OSError):
+            pass
+    mapping: dict[int, int] = {}
+    for proc in psutil.process_iter(["ppid"]):
+        ppid = proc.info.get("ppid")
+        if ppid is not None:
+            mapping[proc.pid] = ppid
+    return mapping
 
 
 class ProcessManagerError(Exception):
@@ -53,6 +71,7 @@ class ProcessManager:
         self._tracked_pids: set[int] = set()
         self._identities: dict[int, float] = {}
         self._depths: dict[int, int] = {}
+        self._parents: dict[int, int | None] = {}
         self._lock = threading.RLock()
         self._poll_stop = threading.Event()
         self._poll_thread: threading.Thread | None = None
@@ -82,6 +101,11 @@ class ProcessManager:
     def tracked_pids(self) -> frozenset[int]:
         with self._lock:
             return frozenset(self._tracked_pids)
+
+    def parent_of(self, pid: int) -> int | None:
+        """Return the recorded parent PID of a tracked process, if known."""
+        with self._lock:
+            return self._parents.get(pid)
 
     @property
     def has_tracked_processes(self) -> bool:
@@ -125,6 +149,7 @@ class ProcessManager:
             self._tracked_pids = {self._root_pid}
             self._identities.clear()
             self._depths = {self._root_pid: 0}
+            self._parents = {self._root_pid: None}
             self._remember_identity(self._root_pid)
             self._paused = False
             self._last_error = None
@@ -195,6 +220,7 @@ class ProcessManager:
                 self._tracked_pids.clear()
                 self._identities.clear()
                 self._depths.clear()
+                self._parents.clear()
                 self._root_pid = None
 
     def kill(self) -> None:
@@ -228,6 +254,7 @@ class ProcessManager:
                 self._tracked_pids.clear()
                 self._identities.clear()
                 self._depths.clear()
+                self._parents.clear()
             self._paused = False
 
     def refresh_process_tree(self) -> set[int]:
@@ -299,18 +326,60 @@ class ProcessManager:
             pid: created for pid, created in self._identities.items() if pid in alive
         }
         self._depths = {pid: depth for pid, depth in self._depths.items() if pid in alive}
+        self._parents = {
+            pid: parent for pid, parent in self._parents.items() if pid in alive
+        }
 
     def _collect_descendants(self, root: psutil.Process) -> set[int]:
+        """Walk the tree from one parent-PID snapshot.
+
+        Walking ``parent()`` per child costs a full process enumeration on
+        Windows each time; one map serves the whole refresh and also records
+        each child's parent for the dashboard tree view.
+        """
         pids: set[int] = {root.pid}
         self._depths[root.pid] = 0
+        self._parents[root.pid] = None
         self._remember_process(root)
         try:
-            for child in root.children(recursive=True):
-                pids.add(child.pid)
+            root_created = root.create_time()
+        except (psutil.Error, OSError):
+            root_created = None
+
+        children_of: dict[int, list[int]] = {}
+        for pid, ppid in _parent_pid_map().items():
+            if pid != ppid:
+                children_of.setdefault(ppid, []).append(pid)
+
+        queue: deque[tuple[int, int, float | None]] = deque([(root.pid, 0, root_created)])
+        while queue:
+            parent_pid, depth, parent_created = queue.popleft()
+            for child_pid in children_of.get(parent_pid, ()):
+                if child_pid in pids:
+                    continue
+                try:
+                    child = psutil.Process(child_pid)
+                except (psutil.Error, OSError):
+                    continue
+                try:
+                    created: float | None = child.create_time()
+                except (psutil.NoSuchProcess, psutil.ZombieProcess):
+                    continue
+                except (psutil.AccessDenied, OSError):
+                    # Still a descendant; it just cannot be age-checked.
+                    created = None
+                # A child older than its parent means the PID was reused.
+                if (
+                    parent_created is not None
+                    and created is not None
+                    and created < parent_created
+                ):
+                    continue
+                pids.add(child_pid)
                 self._remember_process(child)
-                self._depths[child.pid] = self._depth_from_root(child, root.pid)
-        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-            pass
+                self._depths[child_pid] = depth + 1
+                self._parents[child_pid] = parent_pid
+                queue.append((child_pid, depth + 1, created))
         return pids
 
     def _termination_order(self, pids: set[int]) -> list[int]:
@@ -328,24 +397,6 @@ class ProcessManager:
             self._identities[proc.pid] = proc.create_time()
         except (psutil.Error, OSError):
             return
-
-    def _depth_from_root(self, proc: psutil.Process, root_pid: int) -> int:
-        depth = 0
-        current = proc
-        seen: set[int] = set()
-        while current.pid != root_pid and depth < 64:
-            if current.pid in seen:
-                break
-            seen.add(current.pid)
-            depth += 1
-            try:
-                parent = current.parent()
-            except (psutil.Error, OSError):
-                break
-            if parent is None:
-                break
-            current = parent
-        return depth
 
     def _open_tracked(self, pid: int) -> psutil.Process | None:
         """Return the original process for a PID, rejecting reused PID values."""
@@ -383,6 +434,7 @@ class ProcessManager:
         if abs(created - expected) > 1.0:
             self._identities.pop(pid, None)
             self._depths.pop(pid, None)
+            self._parents.pop(pid, None)
             self._last_error = f"PID {pid} was reused; the new process was left untouched"
             return None
         return proc
