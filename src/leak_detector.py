@@ -282,6 +282,7 @@ class LeakDetector:
                 io_read_bytes_per_sec=0.0,
                 io_write_bytes_per_sec=0.0,
                 access_denied=isinstance(exc, psutil.AccessDenied),
+                ppid=self.process_manager.parent_of(pid),
             )
 
         return ProcessMetrics(
@@ -297,6 +298,7 @@ class LeakDetector:
             io_read_bytes_per_sec=io_read_bps,
             io_write_bytes_per_sec=io_write_bps,
             access_denied=access_denied,
+            ppid=self.process_manager.parent_of(pid),
         )
 
     @staticmethod
@@ -413,8 +415,9 @@ class LeakDetector:
 
             message = (
                 f"Potential {resource.value} leak: "
-                f"+{delta:.0f} over {window:.0f}s "
-                f"(slope {slope:.2f}/s, monotonic {monotonic_ratio:.0%})"
+                f"+{_format_quantity(resource, delta)} over {window:.0f}s "
+                f"(slope {_format_quantity(resource, slope, precise=True)}/s, "
+                f"monotonic {monotonic_ratio:.0%})"
             )
             candidate = LeakAlert(
                 resource=resource,
@@ -500,6 +503,18 @@ class LeakDetector:
         if not alerts:
             return LeakSeverity.NONE
         return max(alerts, key=lambda alert: _SEVERITY_RANK[alert.severity]).severity
+
+
+def _format_quantity(resource: LeakResource, value: float, precise: bool = False) -> str:
+    """Render memory in binary units and counts as plain numbers."""
+    if resource != LeakResource.MEMORY:
+        return f"{value:,.2f}" if precise else f"{value:,.0f}"
+    amount = float(value)
+    for unit in ("B", "KB", "MB", "GB"):
+        if abs(amount) < 1024 or unit == "GB":
+            return f"{amount:,.1f} {unit}"
+        amount /= 1024
+    return f"{amount:,.1f} GB"
 
 
 _SEVERITY_RANK = {

@@ -21,6 +21,20 @@ class LeakSeverity(str, Enum):
     CRITICAL = "critical"
 
 
+_SEVERITY_ORDER = {
+    LeakSeverity.NONE: 0,
+    LeakSeverity.LOW: 1,
+    LeakSeverity.MEDIUM: 2,
+    LeakSeverity.HIGH: 3,
+    LeakSeverity.CRITICAL: 4,
+}
+
+
+def severity_rank(severity: LeakSeverity) -> int:
+    """Return a sortable rank where higher means more severe."""
+    return _SEVERITY_ORDER[severity]
+
+
 class LeakResource(str, Enum):
     """Resource category flagged by leak heuristics."""
 
@@ -58,6 +72,7 @@ class ProcessMetrics:
     io_read_bytes_per_sec: float
     io_write_bytes_per_sec: float
     access_denied: bool = False
+    ppid: int | None = None
 
 
 @dataclass(frozen=True)
