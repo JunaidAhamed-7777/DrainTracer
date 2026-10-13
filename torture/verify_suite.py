@@ -45,6 +45,9 @@ class TortureCase:
     # A profile from examples/drainrc.toml applied under the suite's
     # short sampling settings.
     profile: str | None = None
+    warmup: float = 0.0
+    # Overrides --monitor-seconds for cases that need longer to judge.
+    monitor_seconds: float | None = None
 
 
 @dataclass(frozen=True)
@@ -92,6 +95,20 @@ CASES = (
         args=("--duration", "30", "--max-mb", "128"),
         expect_no_alerts=True,
         profile="heavy",
+    ),
+    TortureCase(
+        name="startup-spike",
+        target=TORTURE_ROOT / "startup_spike.py",
+        args=("--duration", "30", "--startup-seconds", "2.5", "--startup-mb", "96"),
+        expected_alert="memory",
+    ),
+    TortureCase(
+        name="startup-spike-warmup",
+        target=TORTURE_ROOT / "startup_spike.py",
+        args=("--duration", "30", "--startup-seconds", "2.5", "--startup-mb", "96"),
+        expect_no_alerts=True,
+        warmup=3.0,
+        monitor_seconds=9.0,
     ),
     TortureCase(
         name="thread-growth",
@@ -203,8 +220,9 @@ def _run_case(
         config_path=EXAMPLE_SETTINGS if case.profile else None,
         profile=case.profile,
         discover=False,
-        overrides={"sample_interval_ms": 100, "windows": (4.0,)},
+        overrides={"sample_interval_ms": 100, "windows": (4.0,), "warmup": case.warmup},
     )
+    monitor_seconds = case.monitor_seconds or monitor_seconds
     external: subprocess.Popen[bytes] | None = None
     app: DashboardApp | HeadlessRunner
     if case.headless:
@@ -364,6 +382,10 @@ def _run_case(
             "DrainTracer cleanup left tracked processes: "
             f"{sorted(app.manager.tracked_pids)}"
         )
+    if case.warmup:
+        warmup = report.get("warmup") or {}
+        if not warmup.get("completed") or not report.get("detection_ran"):
+            errors.append(f"the {case.warmup:g}s warm-up did not hand over to detection: {warmup}")
     recorded = report.get("settings") or {}
     if recorded.get("profile") != case.profile or recorded.get("windows_seconds") != [4.0]:
         errors.append(f"report settings do not match the case: {recorded}")
