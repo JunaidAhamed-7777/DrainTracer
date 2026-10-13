@@ -46,6 +46,26 @@ python src/main.py --target C:\path\to\worker.exe
 python src/main.py --target C:\path\to\worker.py -- --iterations 10
 ```
 
+### Attaching to a running process
+
+Use `--pid` to monitor something that is already running — a service, a
+web server (FastAPI, Node.js), or a database daemon — without restarting it:
+
+```powershell
+python src/main.py --pid 4820
+```
+
+DrainTracer tracks the process and any descendants it starts. Attached
+sessions are handled conservatively:
+
+- `Q` (or Ctrl+C) **detaches**: monitoring stops and the process keeps
+  running. A process paused with `Space` is resumed first.
+- `K` needs a second press within 3 seconds before it kills an attached tree.
+- Processes owned by other users or protected by Windows may show
+  `access denied`; run the terminal elevated to read them.
+
+`--pid` cannot be combined with `--target` or with arguments after `--`.
+
 ## Torture showcase
 
 The [`torture`](torture/README.md) directory contains bounded `.py`, `.bat`,
@@ -180,11 +200,13 @@ glyphs.
 ## Dashboard controls
 
 - `Space` — pause/resume monitoring and the target process
-- `K` — kill the monitored process tree
+- `K` — kill the monitored process tree (press twice when attached with
+  `--pid`)
 - `E` — export collected snapshots and events to
   `leak_reports/leak_report_<UUID>.json`; the UUID appears in the event log,
   footer, and exit summary (`--report-dir` changes the directory)
-- `Q` — quit and cleanly terminate a running target
+- `Q` — quit and cleanly terminate a launched target (detach and leave it
+  running when attached with `--pid`)
 
 ## Tests
 

@@ -38,6 +38,9 @@ time on resource-constrained systems.
   `process_tree.py`.
 - `quick_exit.cmd` exercises the command-script path, starts one short-lived
   child, and intentionally returns exit code 23.
+- The `attach-memory-growth` verifier case starts `memory_leak.py` outside
+  DrainTracer, attaches with `--pid` semantics, and checks that quitting
+  leaves the target running.
 - `fixtures/steady.exe` exercises direct executable launch with a stable
   .NET Framework workload.
 
