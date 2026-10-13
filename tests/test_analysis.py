@@ -180,6 +180,36 @@ class HandleTypeTests(unittest.TestCase):
         self.assertEqual(series["series"], {"file": [1, 5], "other": [9, 9]})
 
 
+class WarmupAnalysisTests(unittest.TestCase):
+    def _report(self) -> dict:
+        snapshots = []
+        for index, rss in enumerate((10, 60, 110, 110, 112, 114)):
+            snapshot = _snap(float(index), rss_mb=rss)
+            snapshot["warming_up"] = index < 3
+            snapshots.append(snapshot)
+        return _report(*snapshots)
+
+    def test_growth_starts_after_the_warmup_but_peaks_cover_the_run(self) -> None:
+        summary = summarize(self._report())
+        memory = summary.resources["memory"]
+        self.assertEqual((memory.first, memory.last), (110 * MB, 114 * MB))
+        self.assertEqual(memory.growth, 4 * MB)
+        self.assertEqual(summary.peaks["rss_bytes"], 114 * MB)
+        self.assertEqual(summary.warmup, (0.0, 3.0))
+
+    def test_chart_payload_marks_the_warmup(self) -> None:
+        self.assertEqual(chart_payload(self._report())["warmup"], [0.0, 3.0])
+        self.assertIsNone(chart_payload(_report(_snap(1.0), _snap(2.0)))["warmup"])
+
+    def test_an_unfinished_warmup_leaves_no_growth(self) -> None:
+        report = self._report()
+        for snapshot in report["snapshots"]:
+            snapshot["warming_up"] = True
+        summary = summarize(report)
+        self.assertIsNone(summary.resources["memory"].growth)
+        self.assertEqual(summary.warmup, (0.0, 5.0))
+
+
 class ChartPayloadTests(unittest.TestCase):
     def test_unmeasured_points_are_gaps_and_pauses_merge(self) -> None:
         exited = _snap(5.0)

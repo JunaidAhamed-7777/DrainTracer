@@ -61,6 +61,7 @@ class Sample:
     paused: bool
     error: bool
     handle_types: Mapping[str, int] | None = None
+    warming_up: bool = False
 
     @property
     def measured(self) -> bool:
@@ -109,6 +110,7 @@ def load_samples(report: Mapping[str, Any]) -> list[Sample]:
                 paused=bool(item.get("monitoring_paused")),
                 error=isinstance(metadata, Mapping) and bool(metadata.get("sampling_error")),
                 handle_types=handle_types,
+                warming_up=bool(item.get("warming_up")),
             )
         )
     samples.sort(key=lambda sample: sample.timestamp)
@@ -265,6 +267,8 @@ class ReportSummary:
     # change since the first one; None when handles were never classified.
     handle_types: Mapping[str, int] | None = None
     handle_type_growth: Mapping[str, int] | None = None
+    # First and last timestamps of the warm-up, when the run had one.
+    warmup: tuple[float, float] | None = None
 
     @property
     def duration(self) -> float:
@@ -277,6 +281,8 @@ def summarize(report: Mapping[str, Any], samples: Sequence[Sample] | None = None
     """Summarize a report; pass ``samples`` to reuse an earlier ``load_samples``."""
     samples = load_samples(report) if samples is None else samples
     measured = [sample for sample in samples if sample.measured]
+    # Growth and drift start from the post-warm-up baseline, like detection.
+    judged = [sample for sample in measured if not sample.warming_up]
     episodes = alert_episodes(samples)
     changes = signal_changes(samples)
 
@@ -291,7 +297,7 @@ def summarize(report: Mapping[str, Any], samples: Sequence[Sample] | None = None
 
     resources: dict[str, ResourceSummary] = {}
     for resource, key in SIGNAL_TOTALS.items():
-        points = [(sample.timestamp, sample.totals[key]) for sample in measured if key in sample.totals]
+        points = [(sample.timestamp, sample.totals[key]) for sample in judged if key in sample.totals]
         drift = (
             least_squares_slope([stamp for stamp, _ in points], [value for _, value in points])
             if len(points) >= 2
@@ -307,7 +313,7 @@ def summarize(report: Mapping[str, Any], samples: Sequence[Sample] | None = None
             episodes=sum(1 for episode in episodes if episode.resource == resource),
         )
 
-    classified = [sample for sample in measured if sample.handle_types]
+    classified = [sample for sample in judged if sample.handle_types]
     last_types = dict(classified[-1].handle_types) if classified else None
     type_growth = None
     if len(classified) >= 2:
@@ -331,7 +337,18 @@ def summarize(report: Mapping[str, Any], samples: Sequence[Sample] | None = None
         changes=tuple(changes),
         handle_types=last_types,
         handle_type_growth=type_growth,
+        warmup=_warmup_span(samples),
     )
+
+
+def _warmup_span(samples: Sequence[Sample]) -> tuple[float, float] | None:
+    """From the first warming sample to the first sample after the warm-up."""
+    warming = [index for index, sample in enumerate(samples) if sample.warming_up]
+    if not warming:
+        return None
+    last = warming[-1]
+    end = samples[last + 1].timestamp if last + 1 < len(samples) else samples[last].timestamp
+    return samples[warming[0]].timestamp, end
 
 
 def _ordered_categories(counts: Sequence[Mapping[str, int] | None]) -> list[str]:
@@ -366,7 +383,7 @@ def chart_payload(
     summary = summarize(report, samples) if summary is None else summary
     if not samples:
         return {"start": None, "t": [], "series": {}, "paused": [], "spans": [],
-                "markers": [], "exits": [], "events": [],
+                "markers": [], "exits": [], "events": [], "warmup": None,
                 "handle_types": {"t": [], "categories": [], "series": {}}}
 
     start = samples[0].timestamp
@@ -439,6 +456,7 @@ def chart_payload(
         ],
         "exits": exits,
         "events": events,
+        "warmup": [offset(summary.warmup[0]), offset(summary.warmup[1])] if summary.warmup else None,
         "handle_types": _handle_type_series(samples, offset),
     }
 
