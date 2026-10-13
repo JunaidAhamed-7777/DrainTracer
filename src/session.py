@@ -309,6 +309,15 @@ class MonitorSession:
                 f"{time.strftime('%H:%M:%S', time.localtime(stamp))} {message}"
                 for stamp, message, _level in self._events
             ],
+            "event_log": [
+                {
+                    "time": iso_timestamp(stamp),
+                    "timestamp": stamp,
+                    "level": level,
+                    "message": message,
+                }
+                for stamp, message, level in self._events
+            ],
             "snapshots": list(self._snapshot_history),
         }
         path = write_json_report(report, self.report_dir)
