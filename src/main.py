@@ -112,6 +112,15 @@ def _run_dashboard(app: DashboardApp, console: Console) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     console = Console()
+    try:
+        return _main(console, argv)
+    except KeyboardInterrupt:
+        # Startup cleans up after itself before re-raising; just exit quietly.
+        console.print("[yellow]Interrupted.[/yellow]")
+        return 130
+
+
+def _main(console: Console, argv: list[str] | None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
