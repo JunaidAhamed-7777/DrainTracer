@@ -1,11 +1,11 @@
 # Plans for the future
 
-1. **Dedicated Report Directory & Unique IDs**
+1. **Dedicated Report Directory & Unique IDs** — done in v0.8
    - Save reports to a dedicated `leak_reports/` folder.
    - Assign a unique UUID to each report (displayed in the TUI on generation) and format filenames as `leak_report_<UUID>.json`.
    - Embed ISO 8601 creation timestamps at the root level of the JSON report.
 
-2. **Target Attachment (`--pid`)**
+2. **Target Attachment (`--pid`)** — done in v0.9
    - Support attaching DrainTracer to an already running process using its Process ID (`python src/main.py --pid 4820`).
    - *Real-world use case:* Debugging background services, web servers (e.g., FastAPI, Node.js), or long-running database daemons without needing to restart them.
 
