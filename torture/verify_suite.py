@@ -23,7 +23,7 @@ if str(REPOSITORY_ROOT) not in sys.path:
 from src.dashboard import DashboardApp
 from src.events import LeakSeverity
 from src.headless import HeadlessRunner
-from src.leak_detector import LeakDetector
+from src.config import resolve_settings
 
 
 @dataclass(frozen=True)
@@ -42,6 +42,9 @@ class TortureCase:
     headless: bool = False
     fail_on: str = "high"
     expected_exit_code: int = 0
+    # A profile from examples/drainrc.toml applied under the suite's
+    # short sampling settings.
+    profile: str | None = None
 
 
 @dataclass(frozen=True)
@@ -55,6 +58,7 @@ class CaseResult:
 
 
 TORTURE_ROOT = Path(__file__).resolve().parent
+EXAMPLE_SETTINGS = REPOSITORY_ROOT / "examples" / "drainrc.toml"
 CASES = (
     TortureCase(
         name="steady-python",
@@ -81,6 +85,13 @@ CASES = (
         args=("--duration", "30", "--max-connections", "300"),
         expected_alert="handles",
         expected_handle_type="socket",
+    ),
+    TortureCase(
+        name="memory-growth-tolerated",
+        target=TORTURE_ROOT / "memory_leak.py",
+        args=("--duration", "30", "--max-mb", "128"),
+        expect_no_alerts=True,
+        profile="heavy",
     ),
     TortureCase(
         name="thread-growth",
@@ -187,6 +198,13 @@ def _run_case(
         color_system=None,
         width=140,
     )
+    # Short samples and a 4 s window keep every case to a few seconds.
+    settings = resolve_settings(
+        config_path=EXAMPLE_SETTINGS if case.profile else None,
+        profile=case.profile,
+        discover=False,
+        overrides={"sample_interval_ms": 100, "windows": (4.0,)},
+    )
     external: subprocess.Popen[bytes] | None = None
     app: DashboardApp | HeadlessRunner
     if case.headless:
@@ -198,6 +216,7 @@ def _run_case(
             report_dir=reports_dir / case.name,
             timeout=monitor_seconds,
             fail_on=LeakSeverity(case.fail_on),
+            settings=settings,
         )
     elif case.attach:
         # Start the target outside DrainTracer, then attach by PID.
@@ -212,6 +231,7 @@ def _run_case(
             console=console,
             report_dir=reports_dir / case.name,
             attach_pid=external.pid,
+            settings=settings,
         )
     else:
         app = DashboardApp(
@@ -219,13 +239,9 @@ def _run_case(
             args=list(case.args),
             console=console,
             report_dir=reports_dir / case.name,
+            settings=settings,
         )
-    app.detector = LeakDetector(
-        app.manager,
-        sample_interval_ms=100,
-        window_seconds=(4.0,),
-        handle_types_interval=1.0,
-    )
+    app.detector.handle_types_interval = 1.0
 
     timer: threading.Timer | None = None
     if not case.headless:
@@ -348,6 +364,9 @@ def _run_case(
             "DrainTracer cleanup left tracked processes: "
             f"{sorted(app.manager.tracked_pids)}"
         )
+    recorded = report.get("settings") or {}
+    if recorded.get("profile") != case.profile or recorded.get("windows_seconds") != [4.0]:
+        errors.append(f"report settings do not match the case: {recorded}")
     if report.get("version") != DashboardApp.VERSION:
         errors.append(
             f"report version {report.get('version')!r} did not match "
@@ -404,13 +423,14 @@ def main(argv: list[str] | None = None) -> int:
         reports_dir.mkdir(parents=True, exist_ok=True)
 
     failures = 0
+    name_width = max(len(case.name) for case in selected)
     try:
         for case in selected:
             result = _run_case(case, args.monitor_seconds, reports_dir)
             status = "PASS" if result.passed else "FAIL"
             alerts = ",".join(result.alert_resources) or "none"
             print(
-                f"{status:4}  {case.name:22} "
+                f"{status:4}  {case.name:{name_width}} "
                 f"processes={result.max_processes:<2} alerts={alerts}"
             )
             for error in result.errors:
