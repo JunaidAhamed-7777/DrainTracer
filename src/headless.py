@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import time
 from dataclasses import replace
@@ -194,10 +195,12 @@ class HeadlessRunner(MonitorSession):
             if self.timeout
             else "until the process tree exits"
         )
+        warmup = self.detector.warmup_seconds
+        warmup_text = f"warm-up {format_duration(warmup)} {sep} " if warmup else ""
         self.console.print(
             Text.assemble(
                 (f"{self.TITLE} {self.VERSION} headless", f"bold {PALETTE.accent}"),
-                (f" {sep} {action} {sep} {limit} {sep} ", PALETTE.muted),
+                (f" {sep} {action} {sep} {limit} {sep} {warmup_text}", PALETTE.muted),
                 (f"fails on {self.fail_on.value.upper()} or above", PALETTE.muted),
             ),
             soft_wrap=True,
@@ -218,6 +221,9 @@ class HeadlessRunner(MonitorSession):
             alert.resource.value for alert in (self.snapshot.alerts if self.snapshot else ())
         )
         signal = severity.value.upper() + (f" ({active})" if active else "")
+        if self.snapshot is not None and self.snapshot.warming_up:
+            left = format_duration(max(1.0, math.ceil(self.detector.warmup_remaining)))
+            signal = f"WARMING UP ({left} left)"
         self._print_line(
             "stat",
             f"cpu {totals.get('cpu_percent', 0.0):.1f}% {sep} "
@@ -227,6 +233,23 @@ class HeadlessRunner(MonitorSession):
             f"threads {int(totals.get('threads', 0.0)):,} {sep} "
             f"{processes} process{'es' if processes != 1 else ''} {sep} "
             f"signal {signal}",
+        )
+
+    @property
+    def conclusive(self) -> bool:
+        """Whether a leak window was ever judged, so a clean result means something."""
+        return self.detector.detection_started
+
+    def _inconclusive_reason(self) -> str:
+        detector = self.detector
+        if detector.warmup_seconds and detector.warming_up:
+            return (
+                f"the {format_duration(detector.warmup_seconds)} warm-up never finished, "
+                "so leak detection did not run"
+            )
+        return (
+            f"monitoring ended before the {format_duration(detector.window_seconds[0])} "
+            "window filled, so no leak window was judged"
         )
 
     def _print_summary(self) -> None:
@@ -244,6 +267,11 @@ class HeadlessRunner(MonitorSession):
             if worst == LeakSeverity.NONE
             else f"worst leak signal {worst.value.upper()}"
         )
+        if status == EXIT_PASS and not self.conclusive:
+            # Still exit 0: a short smoke run is not a failure, but say so.
+            verdict, color = "INCONCLUSIVE", PALETTE.warn
+            reason = self._inconclusive_reason()
+            self._print_line("warn", f"Inconclusive: {reason}")
 
         if self.attached:
             mode = "attached, " + ("left running" if self._left_running else "no longer running")
@@ -267,6 +295,14 @@ class HeadlessRunner(MonitorSession):
                       f"{int(self._peaks['threads']):,} threads"),
             ("signals", signals),
         ]
+        warmup = self.detector.warmup_seconds
+        if warmup:
+            finished = self.detector.warmup_completed_at
+            if finished is not None and self._started_at is not None:
+                done = f"finished at +{self._format_duration(finished - self._started_at)}"
+            else:
+                done = "did not finish"
+            rows.append(("warm-up", f"{format_duration(warmup)} {sep} {done}"))
         if self._last_report is not None:
             rows.append(("report", str(self._last_report)))
         if self._last_html_report is not None:
@@ -294,7 +330,11 @@ class HeadlessRunner(MonitorSession):
             return
         if status == EXIT_LEAK:
             command = "error"
-        elif self.worst_severity != LeakSeverity.NONE or status != EXIT_PASS:
+        elif (
+            self.worst_severity != LeakSeverity.NONE
+            or status != EXIT_PASS
+            or not self.conclusive
+        ):
             command = "warning"
         else:
             return

@@ -100,6 +100,55 @@ class OutputTests(unittest.TestCase):
         self.assertIn("FAIL", _output(runner))
 
 
+class ConclusivenessTests(unittest.TestCase):
+    def _runner(self, warmup: float = 0.0) -> HeadlessRunner:
+        from dataclasses import replace
+
+        from src.config import MonitorSettings
+
+        return HeadlessRunner(
+            "C:/targets/worker.exe",
+            console=make_console(),
+            settings=replace(MonitorSettings(), warmup=warmup),
+        )
+
+    def _result_line(self, runner: HeadlessRunner) -> str:
+        return next(line for line in _output(runner).splitlines() if line.startswith("RESULT"))
+
+    def test_a_run_that_never_judged_a_window_is_inconclusive(self) -> None:
+        runner = self._runner()
+        runner._github_actions = True
+        runner._accept_snapshot(make_snapshot())
+        runner._print_summary()
+        self.assertEqual(runner.exit_status(), EXIT_PASS)
+        self.assertIn("INCONCLUSIVE", self._result_line(runner))
+        self.assertIn("monitoring ended before the 10s window filled", _output(runner))
+        self.assertIn("::warning title=DrainTracer leak check::", _output(runner))
+
+    def test_an_unfinished_warmup_is_named(self) -> None:
+        runner = self._runner(warmup=30.0)
+        runner._accept_snapshot(make_snapshot())
+        runner._print_summary()
+        output = _output(runner)
+        self.assertIn("the 30s warm-up never finished", output)
+        self.assertIn("warm-up   30s | did not finish", output.replace("·", "|"))
+
+    def test_a_judged_clean_run_passes(self) -> None:
+        runner = self._runner()
+        runner._github_actions = True
+        runner.detector._detection_started = True
+        runner._accept_snapshot(make_snapshot())
+        runner._print_summary()
+        self.assertIn("PASS", self._result_line(runner))
+        self.assertNotIn("::", _output(runner))
+
+    def test_a_breach_is_a_failure_even_before_a_window_filled(self) -> None:
+        runner = self._runner()
+        runner._accept_snapshot(make_snapshot(alerts=(make_alert(severity=LeakSeverity.HIGH),)))
+        runner._print_summary()
+        self.assertIn("FAIL", self._result_line(runner))
+
+
 class EndToEndTests(unittest.TestCase):
     def setUp(self) -> None:
         temp = tempfile.TemporaryDirectory()
