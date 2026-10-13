@@ -123,6 +123,38 @@ class LayoutTests(unittest.TestCase):
             app.console.print(app.render_summary())
         self.assertIn("CRITICAL leak signal observed", capture.get())
 
+    def test_summary_names_signals_outcome_and_settings(self) -> None:
+        from dataclasses import replace
+        from pathlib import Path
+
+        from src.config import MonitorSettings
+
+        settings = replace(MonitorSettings(), warmup=5.0, profile="ci",
+                           source=Path("C:/p/.drainrc"))
+        app = DashboardApp("C:/targets/worker.exe", console=make_console(), settings=settings)
+        alert = replace(make_alert(LeakResource.HANDLES, LeakSeverity.MEDIUM),
+                        growth_by_type={"socket": 40})
+        app._accept_snapshot(make_snapshot(alerts=(alert,)))
+        app._stopped_target = True
+        with app.console.capture() as capture:
+            app.console.print(app.render_summary())
+        output = capture.get()
+        self.assertIn("worker.exe · PID 100 · launched, stopped by DrainTracer", output)
+        self.assertIn("memory clear · handles MEDIUM (socket +40) · threads clear", output)
+        self.assertIn("5s · did not finish", output)
+        self.assertIn("profile ci from", output)
+
+    def test_clean_summary_is_inconclusive_until_a_window_was_judged(self) -> None:
+        app = _app()
+        app._accept_snapshot(make_snapshot())
+        with app.console.capture() as capture:
+            app.console.print(app.render_summary())
+        self.assertIn("inconclusive: monitoring ended before the 10s window filled", capture.get())
+        app.detector._detection_started = True
+        with app.console.capture() as capture:
+            app.console.print(app.render_summary())
+        self.assertIn("no leak signals observed", capture.get())
+
 
 class HandleTypeDisplayTests(unittest.TestCase):
     def _types(self, **values: int) -> dict[str, int]:

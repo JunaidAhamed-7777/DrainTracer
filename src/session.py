@@ -96,6 +96,7 @@ class MonitorSession:
         self._events: deque[tuple[float, str, str]] = deque(maxlen=self.EVENT_LIMIT)
         self._resource_severity: dict[LeakResource, LeakSeverity] = {}
         self._worst_by_resource: dict[LeakResource, LeakSeverity] = {}
+        self._last_alert_by_resource: dict[LeakResource, LeakAlert] = {}
         self._handle_types: dict[str, int] | None = None
         self._worst_severity = LeakSeverity.NONE
         self._sample_count = 0
@@ -142,6 +143,60 @@ class MonitorSession:
     def worst_severity_for(self, resource: LeakResource) -> LeakSeverity:
         """Strongest signal observed for one resource during the session."""
         return self._worst_by_resource.get(resource, LeakSeverity.NONE)
+
+    @property
+    def conclusive(self) -> bool:
+        """Whether a leak window was ever judged, so a clean result means something."""
+        return self.detector.detection_started
+
+    def inconclusive_reason(self) -> str:
+        """Why no leak window was judged, for summaries of clean runs."""
+        detector = self.detector
+        if detector.warmup_seconds and detector.warming_up:
+            return (
+                f"the {format_duration(detector.warmup_seconds)} warm-up never finished, "
+                "so leak detection did not run"
+            )
+        return (
+            f"monitoring ended before the {format_duration(detector.window_seconds[0])} "
+            "window filled, so no leak window was judged"
+        )
+
+    def outcome_text(self) -> str:
+        """How the session left the target: running, exited, or stopped."""
+        if self.attached:
+            return "attached, " + ("left running" if self._left_running else "no longer running")
+        if self.stopped_target:
+            return "launched, stopped by DrainTracer"
+        code = self.manager.exit_code
+        if code is not None:
+            return f"launched, exited with code {code}"
+        return "launched"
+
+    def signals_text(self) -> str:
+        """Strongest signal per resource, naming the handle types that grew."""
+        parts = []
+        for resource in LeakResource:
+            worst = self.worst_severity_for(resource)
+            part = f"{resource.value} {worst.value.upper() if worst != LeakSeverity.NONE else 'clear'}"
+            alert = self._last_alert_by_resource.get(resource)
+            growth = describe_type_growth(alert.growth_by_type or {}, limit=1) if alert else ""
+            if worst != LeakSeverity.NONE and growth:
+                part += f" ({growth.removeprefix('by type: ')})"
+            parts.append(part)
+        return f" {self.glyphs.sep} ".join(parts)
+
+    def warmup_text(self) -> str | None:
+        """Warm-up length and when it finished, or ``None`` without one."""
+        detector = self.detector
+        if not detector.warmup_seconds:
+            return None
+        finished = detector.warmup_completed_at
+        if finished is not None and self._started_at is not None:
+            done = f"finished at +{self._format_duration(finished - self._started_at)}"
+        else:
+            done = "did not finish"
+        return f"{format_duration(detector.warmup_seconds)} {self.glyphs.sep} {done}"
 
     @property
     def tree_finished(self) -> bool:
@@ -245,6 +300,7 @@ class MonitorSession:
         if severity_rank(snapshot.severity) > severity_rank(self._worst_severity):
             self._worst_severity = snapshot.severity
         for alert in snapshot.alerts:
+            self._last_alert_by_resource[alert.resource] = alert
             worst = self._worst_by_resource.get(alert.resource, LeakSeverity.NONE)
             if severity_rank(alert.severity) > severity_rank(worst):
                 self._worst_by_resource[alert.resource] = alert.severity

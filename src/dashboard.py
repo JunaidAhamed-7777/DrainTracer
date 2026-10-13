@@ -978,32 +978,38 @@ class DashboardApp(MonitorSession):
         grid = Table.grid(padding=(0, 2))
         grid.add_column(style=f"bold {palette.muted}", no_wrap=True)
         grid.add_column()
-        grid.add_row("Target", f"{Path(self.target_path).name}")
-        if self.attached:
-            grid.add_row(
-                "Mode",
-                f"attached to PID {self.attach_pid} {glyphs.sep} "
-                + ("left running" if self._left_running else "no longer running"),
-            )
+        grid.add_row(
+            "Target",
+            f"{Path(self.target_path).name} {glyphs.sep} PID {self.root_pid or '-'} "
+            f"{glyphs.sep} {self.outcome_text()}",
+        )
         grid.add_row(
             "Duration",
             f"{self._format_duration(self._uptime())} {glyphs.sep} {self._sample_count:,} samples",
         )
+        warmup = self.warmup_text()
+        if warmup:
+            grid.add_row("Warm-up", warmup)
+        if self.settings.source is not None:
+            grid.add_row("Settings", self.settings.describe())
         grid.add_row(
             "Peaks",
             f"RSS {self._format_bytes(self._peaks['rss_bytes'])} {glyphs.sep} "
+            f"private {self._format_bytes(self._peaks['private_bytes'])} {glyphs.sep} "
             f"{int(self._peaks['handles']):,} handles {glyphs.sep} "
             f"{int(self._peaks['threads']):,} threads",
         )
-        worst_color = self._severity_color(self._worst_severity)
-        verdict = (
-            Text("no leak signals observed", style=f"bold {palette.ok}")
-            if self._worst_severity == LeakSeverity.NONE
-            else Text(
-                f"{self._worst_severity.value.upper()} leak signal observed",
-                style=f"bold {worst_color}",
+        grid.add_row("Signals", self.signals_text())
+        worst = self._worst_severity
+        if worst != LeakSeverity.NONE:
+            verdict = Text(
+                f"{worst.value.upper()} leak signal observed",
+                style=f"bold {self._severity_color(worst)}",
             )
-        )
+        elif self.conclusive:
+            verdict = Text("no leak signals observed", style=f"bold {palette.ok}")
+        else:
+            verdict = Text(f"inconclusive: {self.inconclusive_reason()}", style=f"bold {palette.warn}")
         grid.add_row("Verdict", verdict)
         if self._last_report:
             report = Text.assemble(

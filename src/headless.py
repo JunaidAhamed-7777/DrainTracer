@@ -14,7 +14,7 @@ from rich.text import Text
 
 from .config import FAIL_ON_CHOICES, MonitorSettings
 from .dashboard import DashboardApp
-from .events import LeakResource, LeakSeverity, severity_rank
+from .events import LeakSeverity, severity_rank
 from .report import DEFAULT_REPORT_DIR
 from .session import MonitorSession
 from .theme import PALETTE
@@ -235,23 +235,6 @@ class HeadlessRunner(MonitorSession):
             f"signal {signal}",
         )
 
-    @property
-    def conclusive(self) -> bool:
-        """Whether a leak window was ever judged, so a clean result means something."""
-        return self.detector.detection_started
-
-    def _inconclusive_reason(self) -> str:
-        detector = self.detector
-        if detector.warmup_seconds and detector.warming_up:
-            return (
-                f"the {format_duration(detector.warmup_seconds)} warm-up never finished, "
-                "so leak detection did not run"
-            )
-        return (
-            f"monitoring ended before the {format_duration(detector.window_seconds[0])} "
-            "window filled, so no leak window was judged"
-        )
-
     def _print_summary(self) -> None:
         sep = self.glyphs.sep
         status = self.exit_status()
@@ -270,39 +253,23 @@ class HeadlessRunner(MonitorSession):
         if status == EXIT_PASS and not self.conclusive:
             # Still exit 0: a short smoke run is not a failure, but say so.
             verdict, color = "INCONCLUSIVE", PALETTE.warn
-            reason = self._inconclusive_reason()
+            reason = self.inconclusive_reason()
             self._print_line("warn", f"Inconclusive: {reason}")
 
-        if self.attached:
-            mode = "attached, " + ("left running" if self._left_running else "no longer running")
-        elif self.stopped_target:
-            mode = "launched, stopped by DrainTracer"
-        elif self.manager.exit_code is not None:
-            mode = f"launched, exited with code {self.manager.exit_code}"
-        else:
-            mode = "launched"
-        signals = f" {sep} ".join(
-            f"{resource.value} {self.worst_severity_for(resource).value.upper()}"
-            for resource in LeakResource
-        )
         rows = [
-            ("target", f"{Path(self.target_path).name} {sep} PID {self.root_pid or '-'} ({mode})"),
+            ("target", f"{Path(self.target_path).name} {sep} PID {self.root_pid or '-'} "
+                       f"({self.outcome_text()})"),
             ("duration", f"{self._format_duration(self._uptime())} {sep} "
                          f"{self._sample_count:,} samples"),
             ("peaks", f"RSS {self._format_bytes(self._peaks['rss_bytes'])} {sep} "
                       f"private {self._format_bytes(self._peaks['private_bytes'])} {sep} "
                       f"{int(self._peaks['handles']):,} handles {sep} "
                       f"{int(self._peaks['threads']):,} threads"),
-            ("signals", signals),
+            ("signals", self.signals_text()),
         ]
-        warmup = self.detector.warmup_seconds
+        warmup = self.warmup_text()
         if warmup:
-            finished = self.detector.warmup_completed_at
-            if finished is not None and self._started_at is not None:
-                done = f"finished at +{self._format_duration(finished - self._started_at)}"
-            else:
-                done = "did not finish"
-            rows.append(("warm-up", f"{format_duration(warmup)} {sep} {done}"))
+            rows.append(("warm-up", warmup))
         if self._last_report is not None:
             rows.append(("report", str(self._last_report)))
         if self._last_html_report is not None:
