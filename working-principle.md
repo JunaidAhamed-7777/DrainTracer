@@ -258,6 +258,25 @@ Pausing the monitor does not append another sample and does not clear the last
 alert. The paused snapshot repeats the last process totals so the dashboard
 does not fall to zero while sampling is stopped.
 
+### Warm-up
+
+With a warm-up (`--warmup` or the `warmup` setting), the sampler runs
+normally but feeds nothing to the three leak series and evaluates no window
+until that much *active* sampling time has passed. Active time is the sum
+of the gaps between consecutive collected samples; the gap that spans a
+pause is not counted. Snapshots taken meanwhile carry `warming_up: true` and
+no alerts.
+
+The first sample after the warm-up starts the series, so every window
+fills with post-warm-up samples only and initialization growth can never
+reach one. That sample's totals are kept as the warm-up baseline, reported
+in the event log and in the report's `warmup` block.
+
+Separately, the detector notes when its shortest window first holds four
+samples covering 85% of its length: before that no signal can be raised at
+all. Reports record this as `detection_ran`; a headless run that ends clean
+without it is `INCONCLUSIVE`, and its HTML report says so.
+
 ## Process identity and cleanup
 
 DrainTracer records each tracked process's creation time. Before it samples,
@@ -360,6 +379,11 @@ the failure is logged.
   directly comparable.
 - `headless` — present for `--headless` runs: the `fail_on` severity and
   whether it was `breached`.
+- `warmup` — `null` without a warm-up; otherwise its length in `seconds`,
+  whether it `completed`, `completed_at` (ISO 8601), and the `baseline`
+  totals at that moment.
+- `detection_ran` — whether the shortest window ever held enough samples
+  to be judged. When it is `false`, the absence of signals means nothing.
 - `snapshots` — chronological exported telemetry snapshots.
 
 The dashboard retains up to 7,200 snapshots (one hour at the default
@@ -381,6 +405,7 @@ Each item in `snapshots` contains:
 - `metadata` — tracked PIDs or sampling diagnostics.
 - `handle_types` — tree-wide handle counts per category on samples where
   handles were classified; `null` on the others.
+- `warming_up` — `true` while a warm-up defers the leak heuristics.
 
 ### Per-process fields
 
@@ -453,7 +478,10 @@ file, so both always describe the same samples.
 - **Verdict and cards.** The strongest severity seen per resource, plus
   growth (last measured value minus first), peak, and drift. Drift is the
   least-squares slope over every measured sample of the run, shown per
-  second or, for slow growth, per minute.
+  second or, for slow growth, per minute. With a warm-up, growth and drift
+  start after it, matching what the detector judged; peaks cover the whole
+  run. A report whose detection never ran is `INCONCLUSIVE` rather than
+  clean.
 - **Charts.** Private bytes and RSS, handles, handle types, threads, and CPU
   over time. Handle types are plotted on their own time base because they
   are classified every two seconds rather than every sample.
@@ -461,8 +489,8 @@ file, so both always describe the same samples.
   dragging zooms every chart to the same range; legend entries toggle
   series. A chart line breaks where nothing was measured (paused
   monitoring, a failed sample, or no live process) instead of dropping to
-  zero. Shaded bands mark paused periods and continuous signals; dashed
-  lines mark the moment the root process exited.
+  zero. Shaded bands mark the warm-up, paused periods, and continuous
+  signals; dashed lines mark the moment the root process exited.
 - **Signal markers.** A red dot marks each sample where a resource's
   signal was raised from clear or escalated to a stronger tier. Easing and
   clearing are not marked. Paused and failed samples neither raise nor

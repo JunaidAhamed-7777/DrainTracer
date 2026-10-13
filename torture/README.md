@@ -37,6 +37,10 @@ time on resource-constrained systems.
 - `thread_leak.py` retains blocked workers and should raise a thread alert.
 - `burst_recovery.py` repeatedly opens and releases handles and threads. Its
   recoveries should prevent a sustained leak alert.
+- `startup_spike.py` allocates 96 MiB during a 2.5-second "startup" and then
+  holds steady. Without a warm-up the ramp raises a memory signal
+  (`startup-spike`); with `--warmup 3s` it stays clean while detection still
+  starts afterwards (`startup-spike-warmup`).
 - `process_tree.py` creates a stable recursive Python tree. The default depth
   and fan-out produce seven Python processes.
 - `parent_exits.py` exits its root after DrainTracer has had time to discover
@@ -69,6 +73,7 @@ python src/main.py --target .\torture\handle_leak.py
 python src/main.py --target .\torture\socket_leak.py
 python src/main.py --target .\torture\thread_leak.py
 python src/main.py --target .\torture\burst_recovery.py
+python src/main.py --target .\torture\startup_spike.py --warmup 5s
 python src/main.py --target .\torture\parent_exits.py
 python src/main.py --target .\torture\process_tree.bat
 python src/main.py --target .\torture\quick_exit.cmd
@@ -108,7 +113,7 @@ pages in a browser, when diagnosis is useful:
 python torture\verify_suite.py --reports-dir .\torture\reports
 ```
 
-A successful full run ends with `14/14 cases passed`. The runner fails when an
+A successful full run ends with `16/16 cases passed`. The runner fails when an
 expected alert is absent, a handle alert names the wrong handle type, a
 stable/recovering target alerts, a run returns the wrong exit code, descendants are not observed, a report is invalid, or
 DrainTracer leaves tracked processes behind.

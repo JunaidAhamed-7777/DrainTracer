@@ -92,6 +92,10 @@ python src/main.py --headless --pid 4820 --timeout 10m --fail-on medium
   released and keep running.
 - On GitHub Actions (`GITHUB_ACTIONS=true`) the verdict is also emitted as an
   error or warning annotation on the run.
+- A clean run that never filled a single detection window (the tree exited
+  or the time limit passed first, warm-up included) is reported as
+  `INCONCLUSIVE` with the reason. It still exits `0`, so short smoke runs do
+  not fail, but its clean result says nothing about leaks.
 
 A Windows job step:
 
@@ -106,6 +110,25 @@ report when the check fails.
 
 `--timeout` also works with the dashboard: the title bar shows an `ENDS IN`
 countdown and the session closes into its summary when the limit passes.
+
+### Warm-up period
+
+Servers, game engines, and JIT runtimes grow quickly while they start: they
+load assets, fill caches, and compile hot paths. `--warmup` keeps that
+startup growth from reading as a leak:
+
+```powershell
+python src/main.py --target .\build\server.exe --warmup 15s
+```
+
+During the warm-up DrainTracer samples as usual, so charts, peaks, and
+reports are complete, but the leak heuristics wait. Their windows start
+empty once it ends, and the totals at that moment become the baseline that
+later growth is measured against. Paused time does not count toward the
+warm-up. The dashboard shows `WARMING UP` with a countdown, and the event
+log records the baseline when detection starts. A `--timeout` that ends
+inside the warm-up is rejected, and one too short for a detection window
+to fill afterwards prints a warning.
 
 ### Settings files and profiles
 
@@ -135,6 +158,7 @@ critical_slope = "1GB/s"
 | --- | --- | --- |
 | `sample_interval` | Time between samples, `100ms` to `1m` | `500ms` |
 | `windows` | Detection windows: up to 8, each at most `1h` and at least 4 samples long | `10s`, `30s`, `60s` |
+| `warmup` | Sampling time before leak detection starts, up to `24h` | none |
 | `timeout` | Stop monitoring after this long | none |
 | `fail_on` | Headless failure threshold: `low`, `medium`, `high`, `critical` | `high` |
 | `report_dir` | Directory for exported reports; a relative path is relative to the settings file | `leak_reports` |
@@ -144,7 +168,7 @@ critical_slope = "1GB/s"
 
 A `[profiles.NAME]` table takes the same settings and overrides the base
 settings field by field. Flags override both: `--interval`, `--window`
-(repeatable), `--timeout`, `--fail-on`, and `--report-dir`. Unknown or
+(repeatable), `--warmup`, `--timeout`, `--fail-on`, and `--report-dir`. Unknown or
 misspelled settings stop DrainTracer with a suggestion before anything
 starts. The dashboard shows the active profile in its leak-health panel,
 and every report records the settings it ran with.
@@ -161,6 +185,7 @@ The [`torture`](torture/README.md) directory contains bounded `.py`, `.bat`,
 
 - sustained memory, file-handle, socket, and thread growth;
 - normal resource bursts that recover;
+- startup growth that a warm-up absorbs;
 - recursive process-tree tracking;
 - cleanup after the root exits before a child;
 - stable and fast-exit baselines; and
@@ -286,7 +311,7 @@ them per project and per profile.
 
 ## Dashboard layout
 
-- **Title bar** — status pill (`RUNNING`, `PAUSED`, `EXITED`), target, root
+- **Title bar** — status pill (`RUNNING`, `WARMING UP`, `PAUSED`, `EXITED`), target, root
   PID, process count, uptime, the `--timeout` countdown when set, and sample
   count.
 - **Metric cards** — CPU, memory (RSS), handles, and threads, each with a
