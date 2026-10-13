@@ -187,5 +187,16 @@ class ValidationTests(ConfigTestCase):
         self.assertConfigError("cannot read the file", config_path=self.root / "missing.toml")
 
 
+class ExampleFileTests(unittest.TestCase):
+    def test_every_example_profile_resolves(self) -> None:
+        example = Path(__file__).resolve().parents[1] / "examples" / "drainrc.toml"
+        for profile in (None, "ci", "heavy", "strict"):
+            with self.subTest(profile=profile):
+                settings = resolve_settings(config_path=example, profile=profile)
+                self.assertEqual(settings.profile, profile)
+        heavy = resolve_settings(config_path=example, profile="heavy")
+        self.assertEqual(heavy.thresholds[LeakResource.MEMORY].critical_delta, 4 * 1024 * MB)
+
+
 if __name__ == "__main__":
     unittest.main()

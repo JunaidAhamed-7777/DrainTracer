@@ -1,0 +1,55 @@
+# Example DrainTracer settings. Copy this file into your project as
+# .drainrc (or draintracer.toml) and keep the parts you need; DrainTracer
+# finds it by searching the working directory and its parents. Flags such
+# as --interval, --window, --timeout, --fail-on, and --report-dir override
+# anything set here.
+#
+# Durations: 250ms, 10s, 2m, 1h30m. Sizes: binary units, so 1MB = 1024 KB.
+# Rates: 5MB/s, 300MB/min, 20/s.
+
+sample_interval = "500ms"
+windows = ["10s", "30s", "60s"]
+report_dir = "leak_reports"
+
+# Used when no --profile is given; remove it to start from the settings above.
+# default_profile = "ci"
+
+# Thresholds normalize the severity score: growth of critical_delta within a
+# window, or growth at critical_slope, each push a signal toward CRITICAL.
+# They are not hard limits. These are the built-in values.
+[thresholds.memory]
+critical_delta = "50MB"
+critical_slope = "5MB/s"
+
+[thresholds.handles]
+critical_delta = 500
+critical_slope = "20/s"
+
+[thresholds.threads]
+critical_delta = 50
+critical_slope = "2/s"
+
+# Leak regression checks in CI: fail on MEDIUM signals and never hang.
+[profiles.ci]
+timeout = "2m"
+fail_on = "medium"
+
+# Game engines and data pipelines legitimately grow memory fast while they
+# load assets and warm caches. Longer windows and much higher memory
+# tolerances keep that from reading as a leak.
+[profiles.heavy]
+windows = ["30s", "60s", "2m"]
+
+[profiles.heavy.thresholds.memory]
+critical_delta = "4GB"
+critical_slope = "1GB/s"
+
+# Small utilities should hold steady; flag even slow growth.
+[profiles.strict]
+[profiles.strict.thresholds.memory]
+critical_delta = "10MB"
+critical_slope = "1MB/s"
+
+[profiles.strict.thresholds.handles]
+critical_delta = 100
+critical_slope = "5/s"
