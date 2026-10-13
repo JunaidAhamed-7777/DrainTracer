@@ -181,7 +181,9 @@ glyphs.
 
 - `Space` — pause/resume monitoring and the target process
 - `K` — kill the monitored process tree
-- `E` — export collected snapshots and events to `leak_report.json`
+- `E` — export collected snapshots and events to
+  `leak_reports/leak_report_<UUID>.json`; the UUID appears in the event log,
+  footer, and exit summary (`--report-dir` changes the directory)
 - `Q` — quit and cleanly terminate a running target
 
 ## Tests

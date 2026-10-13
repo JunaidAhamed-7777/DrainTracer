@@ -212,41 +212,60 @@ creation time differs by more than one second. Windows reuses PID values, so
 this check avoids operating on a different process that inherited a stale
 number.
 
+Each refresh takes one `{pid: parent_pid}` snapshot of the system and walks
+it breadth-first from the root, recording every descendant's depth and
+parent. A child whose creation time is earlier than its parent's is skipped
+as a reused PID. (Calling `parent()` per child would enumerate every system
+process on each call.)
+
 Descendants are terminated before their parents. The tree is resolved first,
 then walked from the deepest recorded process upward, so parent links are
 still available while cleanup is in progress. Previously discovered children
 remain tracked after the root exits until they themselves exit or their
 recorded identity no longer matches.
 
-## 7. `leak_report.json` structure
+## 7. Leak report structure
 
-The dashboard exports a JSON session envelope:
+Each export writes a new file to the report directory (`leak_reports/` by
+default; change it with `--report-dir`). The filename embeds a random UUID4,
+`leak_report_<UUID>.json`, so repeated exports never overwrite each other.
+Files are written to a temporary sibling first and then renamed into place.
 
 ```json
 {
+  "report_id": "3f2a9c1e-5b7d-4e0a-9c61-0d2f7e8b4a10",
+  "report_schema": 2,
+  "created_at": "2026-10-13T07:25:21.161+05:30",
+  "session_started_at": "2026-10-13T07:25:15.621+05:30",
   "app": "DRAINTRACER",
   "version": "vX.Y",
   "target_path": "C:\\path\\to\\target.exe",
   "root_pid": 1234,
-  "exported_at": 1789932789.395636,
-  "events": ["12:00:00 Attached to target.exe | PID 1234"],
+  "events": ["12:00:00 Attached to target.exe · PID 1234"],
   "snapshots": []
 }
 ```
 
 ### Top-level fields
 
+- `report_id` — UUID4 that also appears in the filename and in the
+  dashboard event log, footer, and exit summary.
+- `report_schema` — report layout version. Schema `2` introduced the
+  fields above; older reports have no `report_id` and carry a Unix
+  `exported_at` instead.
+- `created_at` — ISO 8601 local time, with UTC offset, when the report was
+  written.
+- `session_started_at` — ISO 8601 time the monitor attached.
 - `app` — application name.
 - `version` — runtime application version.
 - `target_path` — absolute selected target path.
 - `root_pid` — root PID when available.
-- `exported_at` — Unix timestamp for report generation.
 - `events` — the most recent dashboard messages, each prefixed with its
   local `HH:MM:SS` timestamp.
 - `snapshots` — chronological exported telemetry snapshots.
 
-The dashboard retains up to 600 snapshots and the most recent 8 event
-messages in memory for export.
+The dashboard retains up to 7,200 snapshots (one hour at the default
+interval) and the most recent 200 event messages in memory for export.
 
 ### Snapshot fields
 
@@ -280,7 +299,11 @@ cpu_percent
 io_read_bytes_per_sec
 io_write_bytes_per_sec
 access_denied
+ppid
 ```
+
+`ppid` is the parent PID recorded while walking the tree; it is `null` for
+the root and for processes whose parent was never tracked.
 
 ### Aggregate fields
 
