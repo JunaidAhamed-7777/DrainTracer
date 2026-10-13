@@ -100,6 +100,41 @@ class OutputTests(unittest.TestCase):
         self.assertIn("FAIL", _output(runner))
 
 
+class StepSummaryTests(unittest.TestCase):
+    def test_github_step_summary_gets_a_result_table(self) -> None:
+        import os
+
+        with tempfile.TemporaryDirectory() as temp:
+            summary_file = Path(temp) / "summary.md"
+            runner = HeadlessRunner("C:/targets/a|b*.exe", console=make_console())
+            runner._github_actions = True
+            runner._accept_snapshot(make_snapshot(alerts=(make_alert(severity=LeakSeverity.HIGH),)))
+            runner._last_report_data = runner.build_report()
+            runner._last_report = Path(temp) / "leak_report_x.json"
+            with mock.patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": str(summary_file)}):
+                runner._print_summary()
+                runner._print_summary()  # a second run appends
+            markdown = summary_file.read_text(encoding="utf-8")
+        self.assertEqual(markdown.count("### DrainTracer leak check: FAIL"), 2)
+        self.assertIn("**a\\|b\\*.exe**", markdown)
+        self.assertIn("| memory | **HIGH** |", markdown)
+        self.assertIn("| handles | clear |", markdown)
+        self.assertIn("Worst leak signal HIGH.", markdown)
+        self.assertIn("leak_report_x.json` (HTML alongside)", markdown)
+
+    def test_no_step_summary_outside_github_actions(self) -> None:
+        import os
+
+        with tempfile.TemporaryDirectory() as temp:
+            summary_file = Path(temp) / "summary.md"
+            runner = HeadlessRunner("C:/targets/worker.exe", console=make_console())
+            runner._github_actions = False
+            runner._accept_snapshot(make_snapshot())
+            with mock.patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": str(summary_file)}):
+                runner._print_summary()
+            self.assertFalse(summary_file.exists())
+
+
 class ConclusivenessTests(unittest.TestCase):
     def _runner(self, warmup: float = 0.0) -> HeadlessRunner:
         from dataclasses import replace

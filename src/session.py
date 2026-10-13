@@ -107,6 +107,7 @@ class MonitorSession:
         self._last_report: Path | None = None
         self._last_report_id: str | None = None
         self._last_html_report: Path | None = None
+        self._last_report_data: dict[str, Any] | None = None
         self._left_running = False
 
     @property
@@ -400,6 +401,7 @@ class MonitorSession:
         path = write_json_report(report, self.report_dir)
         self._last_report = path
         self._last_report_id = report["report_id"]
+        self._last_report_data = report
         self._last_html_report = None
         try:
             self._last_html_report = write_html_report(report, self.report_dir)

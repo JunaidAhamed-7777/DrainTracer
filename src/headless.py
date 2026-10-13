@@ -13,9 +13,11 @@ from rich.console import Console
 from rich.text import Text
 
 from .config import FAIL_ON_CHOICES, MonitorSettings
+from .analysis import RESOURCES, summarize
 from .dashboard import DashboardApp
 from .events import LeakSeverity, severity_rank
 from .report import DEFAULT_REPORT_DIR
+from .report_diff import format_amount, format_drift
 from .session import MonitorSession
 from .theme import PALETTE
 from .units import format_duration
@@ -290,6 +292,48 @@ class HeadlessRunner(MonitorSession):
             soft_wrap=True,
         )
         self._annotate(status, reason)
+        self._write_step_summary(verdict, reason)
+
+    def _write_step_summary(self, verdict: str, reason: str) -> None:
+        """Append a Markdown result table to the GitHub Actions job summary."""
+        destination = os.environ.get("GITHUB_STEP_SUMMARY")
+        if not self._github_actions or not destination:
+            return
+        lines = [
+            f"### DrainTracer leak check: {verdict}",
+            "",
+            f"**{_markdown(Path(self.target_path).name)}** · {_markdown(self.outcome_text())} · "
+            f"{format_duration(self._uptime())} · fails on {self.fail_on.value.upper()} or above",
+            "",
+        ]
+        if self._last_report_data is not None:
+            summary = summarize(self._last_report_data)
+            lines += [
+                "| Resource | Strongest signal | Growth | Drift | Peak |",
+                "| --- | --- | --- | --- | --- |",
+            ]
+            for resource in RESOURCES:
+                stats = summary.resources[resource]
+                signal = stats.worst.upper() if stats.worst != "none" else "clear"
+                if stats.worst != "none":
+                    signal = f"**{signal}**"
+                lines.append(
+                    f"| {resource} | {signal} | {format_amount(resource, stats.growth, signed=True)}"
+                    f" | {format_drift(resource, stats.drift_per_second)}"
+                    f" | {format_amount(resource, stats.peak)} |"
+                )
+            lines.append("")
+        else:
+            lines += [_markdown(self.signals_text()), ""]
+        lines.append(_markdown(reason[:1].upper() + reason[1:]) + ".")
+        if self._last_report is not None:
+            lines.append("")
+            lines.append(f"Report: `{self._last_report}` (HTML alongside)")
+        try:
+            with open(destination, "a", encoding="utf-8") as handle:
+                handle.write("\n".join(lines) + "\n\n")
+        except OSError as exc:
+            self._print_line("warn", f"Could not write the GitHub step summary: {exc}")
 
     def _annotate(self, status: int, reason: str) -> None:
         """Surface the verdict as a GitHub Actions annotation on CI runs."""
@@ -318,6 +362,13 @@ class HeadlessRunner(MonitorSession):
             highlight=False,
             soft_wrap=True,
         )
+
+
+def _markdown(value: str) -> str:
+    """Escape text for a GitHub Markdown table cell."""
+    for character in "\\`*_[]<>|":
+        value = value.replace(character, "\\" + character)
+    return value.replace("\r", " ").replace("\n", " ")
 
 
 def _escape_data(value: str) -> str:
