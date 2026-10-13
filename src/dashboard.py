@@ -36,7 +36,7 @@ from .widgets import Sized, Sparkline
 class DashboardApp(MonitorSession):
     """Render a monitor session live in the terminal and handle its controls."""
 
-    VERSION = "v1.1"
+    VERSION = "v1.2"
     DELTA_WINDOW_SECONDS = 10.0
     FRAME_SECONDS = 0.1
 
