@@ -56,14 +56,34 @@ def _display_title(console: Console) -> None:
     )
 
 
+def _positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected a process ID, got {value!r}") from exc
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("process IDs are positive integers")
+    return parsed
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Monitor Windows process resources and detect likely leaks.",
     )
-    parser.add_argument(
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument(
         "--target",
         metavar="PATH",
         help="Target executable/script. If omitted, open the native file picker.",
+    )
+    source.add_argument(
+        "--pid",
+        type=_positive_int,
+        metavar="PID",
+        help=(
+            "Attach to an already running process instead of launching one. "
+            "Quitting detaches and leaves it running."
+        ),
     )
     parser.add_argument(
         "--report-dir",
@@ -82,11 +102,36 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _run_dashboard(app: DashboardApp, console: Console) -> int:
+    try:
+        return app.run()
+    except ProcessManagerError as exc:
+        console.print(f"[bold red]Process error:[/bold red] {exc}")
+        return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     console = Console()
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    forwarded_args = list(args.target_args or [])
+    if forwarded_args[:1] == ["--"]:
+        forwarded_args = forwarded_args[1:]
+    if args.pid is not None and forwarded_args:
+        parser.error("arguments after '--' only apply to launched targets, not --pid")
+
     console.clear()
     _display_title(console)
+
+    if args.pid is not None:
+        app = DashboardApp(
+            None,
+            console=console,
+            report_dir=args.report_dir,
+            attach_pid=args.pid,
+        )
+        return _run_dashboard(app, console)
 
     target_path = args.target
     if target_path is None:
@@ -111,10 +156,6 @@ def main(argv: list[str] | None = None) -> int:
             console.print(f"[bold red]File picker failed:[/bold red] {exc}")
             return 1
 
-    forwarded_args = list(args.target_args or [])
-    if forwarded_args[:1] == ["--"]:
-        forwarded_args = forwarded_args[1:]
-
     if not target_path:
         console.print("[yellow]Selection canceled. Nothing to monitor.[/yellow]")
         return 0
@@ -125,11 +166,7 @@ def main(argv: list[str] | None = None) -> int:
         console=console,
         report_dir=args.report_dir,
     )
-    try:
-        return app.run()
-    except ProcessManagerError as exc:
-        console.print(f"[bold red]Process error:[/bold red] {exc}")
-        return 1
+    return _run_dashboard(app, console)
 
 
 if __name__ == "__main__":
