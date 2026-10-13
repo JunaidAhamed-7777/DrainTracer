@@ -22,7 +22,7 @@
    - Categorize Windows handles into specific types (File handles, Socket/Network handles, Registry keys, Thread/Process handles, Mutexes) rather than just a total count.
    - *Real-world use case:* Identifying whether an application is leaking unclosed file streams vs. unclosed database socket connections.
 
-6. **Custom Configuration Profiles (`.drainrc` / `config.toml`)**
+6. **Custom Configuration Profiles (`.drainrc` / `config.toml`)** — done in v1.3
    - Allow users to define custom leak thresholds and window durations per project.
    - *Real-world use case:* Game engines or heavy data-processing pipelines legitimate require higher baseline memory slope tolerances than lightweight utility scripts.
 
