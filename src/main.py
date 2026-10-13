@@ -16,10 +16,13 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.dashboard import DashboardApp
+from src.events import LeakSeverity
 from src.file_picker import select_target_file
+from src.headless import FAIL_ON_CHOICES, HeadlessRunner
 from src.process_runner import ProcessManagerError
 from src.report import DEFAULT_REPORT_DIR
 from src.theme import PALETTE, blend
+from src.units import parse_duration
 
 
 def _load_title_art() -> str:
@@ -66,6 +69,16 @@ def _positive_int(value: str) -> int:
     return parsed
 
 
+def _time_limit(value: str) -> float:
+    try:
+        seconds = parse_duration(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+    if seconds <= 0:
+        raise argparse.ArgumentTypeError("the time limit must be greater than zero")
+    return seconds
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Monitor Windows process resources and detect likely leaks.",
@@ -92,6 +105,33 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Directory for exported reports, named leak_report_<UUID>.json "
             f"(default: {DEFAULT_REPORT_DIR})."
+        ),
+    )
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help=(
+            "Run without the dashboard (for CI): print progress lines, export a "
+            "report when monitoring ends, and exit 1 if a leak signal reaches "
+            "--fail-on. Needs --target or --pid."
+        ),
+    )
+    parser.add_argument(
+        "--timeout",
+        type=_time_limit,
+        metavar="DURATION",
+        help=(
+            "Stop monitoring after DURATION, e.g. 90, 90s, 5m, or 1h30m. "
+            "Without it, headless runs last until the process tree exits."
+        ),
+    )
+    parser.add_argument(
+        "--fail-on",
+        choices=FAIL_ON_CHOICES,
+        metavar="SEVERITY",
+        help=(
+            "With --headless, the lowest leak severity that fails the run: "
+            "low, medium, high (default), or critical."
         ),
     )
     parser.add_argument(
@@ -129,6 +169,13 @@ def _main(console: Console, argv: list[str] | None) -> int:
         forwarded_args = forwarded_args[1:]
     if args.pid is not None and forwarded_args:
         parser.error("arguments after '--' only apply to launched targets, not --pid")
+    if args.fail_on is not None and not args.headless:
+        parser.error("--fail-on only applies with --headless")
+
+    if args.headless:
+        if args.target is None and args.pid is None:
+            parser.error("--headless needs --target or --pid; the file picker is interactive")
+        return _run_headless(args, forwarded_args, console)
 
     console.clear()
     _display_title(console)
@@ -139,6 +186,7 @@ def _main(console: Console, argv: list[str] | None) -> int:
             console=console,
             report_dir=args.report_dir,
             attach_pid=args.pid,
+            timeout=args.timeout,
         )
         return _run_dashboard(app, console)
 
@@ -174,8 +222,24 @@ def _main(console: Console, argv: list[str] | None) -> int:
         args=forwarded_args or None,
         console=console,
         report_dir=args.report_dir,
+        timeout=args.timeout,
     )
     return _run_dashboard(app, console)
+
+
+def _run_headless(
+    args: argparse.Namespace, forwarded_args: list[str], console: Console
+) -> int:
+    runner = HeadlessRunner(
+        args.target,
+        args=forwarded_args or None,
+        console=console,
+        report_dir=args.report_dir,
+        attach_pid=args.pid,
+        timeout=args.timeout,
+        fail_on=LeakSeverity(args.fail_on or "high"),
+    )
+    return runner.run()
 
 
 if __name__ == "__main__":
