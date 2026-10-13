@@ -21,6 +21,8 @@ if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from src.dashboard import DashboardApp
+from src.events import LeakSeverity
+from src.headless import HeadlessRunner
 from src.leak_detector import LeakDetector
 
 
@@ -35,6 +37,9 @@ class TortureCase:
     expect_root_exit: bool = False
     expect_root_exit_with_child: bool = False
     attach: bool = False
+    headless: bool = False
+    fail_on: str = "high"
+    expected_exit_code: int = 0
 
 
 @dataclass(frozen=True)
@@ -120,6 +125,23 @@ CASES = (
         args=("--duration", "30", "--memory-mb", "8", "--threads", "2"),
         expect_no_alerts=True,
     ),
+    TortureCase(
+        name="headless-memory-fails",
+        target=TORTURE_ROOT / "memory_leak.py",
+        args=("--duration", "30", "--max-mb", "128"),
+        expected_alert="memory",
+        headless=True,
+        fail_on="medium",
+        expected_exit_code=1,
+    ),
+    TortureCase(
+        name="headless-steady-passes",
+        target=TORTURE_ROOT / "steady.py",
+        args=("--duration", "30"),
+        expect_no_alerts=True,
+        headless=True,
+        fail_on="low",
+    ),
 )
 
 
@@ -156,7 +178,18 @@ def _run_case(
         width=140,
     )
     external: subprocess.Popen[bytes] | None = None
-    if case.attach:
+    app: DashboardApp | HeadlessRunner
+    if case.headless:
+        # The runner stops itself at the time limit and exports on exit.
+        app = HeadlessRunner(
+            str(case.target),
+            args=list(case.args),
+            console=console,
+            report_dir=reports_dir / case.name,
+            timeout=monitor_seconds,
+            fail_on=LeakSeverity(case.fail_on),
+        )
+    elif case.attach:
         # Start the target outside DrainTracer, then attach by PID.
         external = subprocess.Popen(
             [sys.executable, str(case.target), *case.args],
@@ -183,17 +216,20 @@ def _run_case(
         window_seconds=(4.0,),
     )
 
-    timer = threading.Timer(
-        monitor_seconds,
-        setattr,
-        args=(app, "_quit_requested", True),
-    )
-    timer.daemon = True
-    timer.start()
+    timer: threading.Timer | None = None
+    if not case.headless:
+        timer = threading.Timer(
+            monitor_seconds,
+            setattr,
+            args=(app, "_quit_requested", True),
+        )
+        timer.daemon = True
+        timer.start()
     try:
         exit_code = app.run()
     finally:
-        timer.cancel()
+        if timer is not None:
+            timer.cancel()
         attached_survived = external is not None and external.poll() is None
         if external is not None:
             external.kill()
@@ -202,15 +238,23 @@ def _run_case(
     if case.attach and not attached_survived:
         errors.append("quitting an attached session terminated the target")
 
-    if exit_code != 0:
-        errors.append(f"dashboard returned exit code {exit_code}")
+    if exit_code != case.expected_exit_code:
+        errors.append(
+            f"{'headless run' if case.headless else 'dashboard'} returned exit code "
+            f"{exit_code}; expected {case.expected_exit_code}"
+        )
         rendered = capture.getvalue().strip()
         if rendered:
-            errors.append(f"dashboard output ended with: {rendered[-300:]}")
+            errors.append(f"output ended with: {rendered[-300:]}")
 
     report_path = reports_dir / case.name
     try:
-        report_path = app.export_log()
+        if case.headless:
+            if app._last_report is None:
+                raise OSError("the headless run did not export a report")
+            report_path = app._last_report
+        else:
+            report_path = app.export_log()
         report = json.loads(report_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         errors.append(f"report export failed: {exc}")
