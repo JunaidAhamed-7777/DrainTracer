@@ -47,6 +47,7 @@ class Glyphs:
     tree_mid: str
     tree_last: str
     tree_pipe: str
+    arrow: str
 
 
 UNICODE_GLYPHS = Glyphs(
@@ -67,6 +68,7 @@ UNICODE_GLYPHS = Glyphs(
     tree_mid="├─ ",
     tree_last="└─ ",
     tree_pipe="│  ",
+    arrow="→",
 )
 
 ASCII_GLYPHS = Glyphs(
@@ -87,6 +89,7 @@ ASCII_GLYPHS = Glyphs(
     tree_mid="|- ",
     tree_last="`- ",
     tree_pipe="|  ",
+    arrow="->",
 )
 
 PALETTE = Palette()

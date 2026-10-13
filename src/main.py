@@ -28,6 +28,7 @@ from src.config import (
     resolve_settings,
 )
 from src.dashboard import DashboardApp
+from src.diff_command import run_diff
 from src.events import LeakSeverity
 from src.file_picker import select_target_file
 from src.headless import HeadlessRunner
@@ -124,6 +125,7 @@ examples:
   python src/main.py --profile ci --target app.exe     use a .drainrc profile
   python src/main.py --warmup 15s --target server.exe  ignore startup growth
   python src/main.py --headless --target app.exe --timeout 2m --fail-on medium
+  python src/main.py diff before.json after.json       compare two reports
 """
 
 
@@ -285,8 +287,11 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _main(console: Console, argv: list[str] | None) -> int:
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments[:1] == ["diff"]:
+        return run_diff(arguments[1:], console)
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(arguments)
 
     forwarded_args = list(args.target_args or [])
     if forwarded_args[:1] == ["--"]:

@@ -89,6 +89,23 @@ class ResourceComparison:
             return None
         return change / abs(before)
 
+    def change_magnitude(self) -> str:
+        """Size of the drift change: ``99%``, ``40%``, or ``135x`` for big rises."""
+        ratio = self.drift_change_ratio
+        if ratio is None:
+            return ""
+        before = self.before.drift_per_second or 0.0
+        after = self.after.drift_per_second or 0.0
+        if before > 0 and after > 0 and after / before >= 2:
+            return f"{after / before:,.0f}x"
+        return f"{abs(ratio):.0%}"
+
+    def describe_change(self) -> str:
+        """Drift change in words: ``down 99%``, ``up 40%``, or ``up 135x``."""
+        direction = "down" if self.trend == IMPROVED else "up"
+        magnitude = self.change_magnitude()
+        return f"{direction} {magnitude}" if magnitude else direction
+
     @property
     def improved(self) -> bool:
         return self.signal in {"resolved", "eased"} or self.trend == IMPROVED
@@ -133,10 +150,7 @@ class ReportComparison:
                 )
         for item in self.resources:
             if item.trend in {IMPROVED, REGRESSED}:
-                ratio = item.drift_change_ratio
-                change = f" {abs(ratio):.0%}" if ratio is not None else ""
-                direction = "down" if item.trend == IMPROVED else "up"
-                notes.append(f"{item.resource} drift {direction}{change}")
+                notes.append(f"{item.resource} drift {item.describe_change()}")
         if not notes:
             return "no meaningful change in leak signals or drift"
         return "; ".join(notes)
