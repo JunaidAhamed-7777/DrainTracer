@@ -28,7 +28,7 @@ from .analysis import (
 )
 from .handle_types import describe_type_growth
 from .report import report_filename, write_text_atomic
-from .units import format_bytes, format_clock
+from .units import format_bytes, format_clock, format_duration
 
 _RESOURCE_TITLES = {
     "memory": "Memory · private bytes",
@@ -54,7 +54,7 @@ def render_html_report(report: Mapping[str, Any]) -> str:
         (
             _masthead(report, summary, name, target, version),
             '<main>',
-            _verdict(summary),
+            _verdict(report, summary),
             _cards(summary),
             _charts_panel(),
             _episodes_panel(summary, start),
@@ -117,6 +117,10 @@ def _masthead(
         ),
         ("Processes", f"up to {summary.max_processes}"),
     ]
+    warmup = report.get("warmup")
+    if isinstance(warmup, Mapping) and finite(warmup.get("seconds")):
+        seconds = format_duration(finite(warmup.get("seconds")) or 0.0)
+        facts.append(("Warm-up", seconds if warmup.get("completed") else f"{seconds}, did not finish"))
     exit_code = report.get("target_exit_code")
     if isinstance(exit_code, int) and not isinstance(exit_code, bool):
         facts.append(("Exit code", str(exit_code)))
@@ -132,8 +136,18 @@ def _masthead(
     )
 
 
-def _verdict(summary: ReportSummary) -> str:
+def _verdict(report: Mapping[str, Any], summary: ReportSummary) -> str:
     worst = summary.worst
+    if worst == "none" and report.get("detection_ran") is False:
+        # Older reports lack the field; only an explicit False is inconclusive.
+        return (
+            '<section class="verdict sev-low" aria-label="Verdict">'
+            '<span class="badge sev-low">INCONCLUSIVE</span>'
+            "<div><h2>No leak window was judged</h2>"
+            f"<p>{_e(_inconclusive_reason(report))} A clean result here says nothing "
+            "about leaks; monitor for longer.</p></div>"
+            "</section>"
+        )
     if worst == "none":
         headline = "No leak signals"
         detail = (
@@ -170,7 +184,8 @@ def _cards(summary: ReportSummary) -> str:
             big = _signed(resource, stats.growth or 0.0)
             line = (
                 f"{_amount(resource, stats.first)} → {_amount(resource, stats.last)}"
-                f" · peak {_amount(resource, stats.peak or 0.0)}"
+                + (" since warm-up" if summary.warmup else "")
+                + f" · peak {_amount(resource, stats.peak or 0.0)}"
             )
             drift = "drift " + _rate(resource, stats.drift_per_second or 0.0)
         episodes = f"{stats.episodes} signal episode{'s' if stats.episodes != 1 else ''}"
@@ -435,6 +450,19 @@ def _last_snapshot_with_processes(report: Mapping[str, Any]) -> Mapping[str, Any
     return None
 
 
+def _inconclusive_reason(report: Mapping[str, Any]) -> str:
+    warmup = report.get("warmup")
+    if isinstance(warmup, Mapping) and warmup.get("seconds") and not warmup.get("completed"):
+        seconds = format_duration(finite(warmup.get("seconds")) or 0.0)
+        return f"The {seconds} warm-up never finished, so leak detection did not run."
+    settings = report.get("settings")
+    windows = settings.get("windows_seconds") if isinstance(settings, Mapping) else None
+    shortest = finite(windows[0]) if isinstance(windows, (list, tuple)) and windows else None
+    if shortest:
+        return f"Monitoring ended before the {format_duration(shortest)} window filled."
+    return "Monitoring ended before any detection window filled."
+
+
 def _type_breakdown(counts: Mapping[str, int] | None, limit: int = 3) -> str:
     """Largest named handle categories first: ``file 120 · event 80 · registry 12``."""
     if not counts:
@@ -584,6 +612,8 @@ font:inherit;font-size:12.5px;cursor:pointer}
 .axis-label.y{text-anchor:end;dominant-baseline:middle}
 .axis-label.x{text-anchor:middle}
 .paused{fill:var(--paused)}
+.warmup{fill:var(--accent);fill-opacity:.08}
+.warmup-label{fill:var(--muted);font-size:11px}
 .span{fill:var(--sev);opacity:.14}
 .exit{stroke:var(--muted);stroke-dasharray:3 4}
 .marker{fill:var(--marker);stroke:var(--surface);stroke-width:2}
@@ -959,6 +989,17 @@ _SCRIPT = """
     }
 
     const area = svgNode("g", { "clip-path": "url(#" + clipId + ")" }, svg);
+    const warm = data.warmup;
+    if (Array.isArray(warm) && warm[1] >= a && warm[0] <= b) {
+      const left = x(Math.max(a, warm[0]));
+      const right = x(Math.min(b, warm[1]));
+      svgNode("rect", { x: left, y: m.top, width: Math.max(1, right - left), height: plotHeight,
+        class: "warmup" }, area);
+      if (right - left > 64) {
+        svgNode("text", { x: left + 6, y: m.top + 14, class: "warmup-label" }, area)
+          .textContent = "warm-up";
+      }
+    }
     for (const range of data.paused || []) {
       if (range[1] < a || range[0] > b) continue;
       svgNode("rect", { x: x(range[0]), y: m.top, width: Math.max(1, x(range[1]) - x(range[0])),
@@ -1097,6 +1138,10 @@ _SCRIPT = """
       html("span", "swatch", null, row);
       html("span", "tip-label", series.label, row);
       html("span", "tip-value", value == null ? "not measured" : FORMAT[def.unit](value), row);
+    }
+    const warmAt = line.times[index];
+    if (Array.isArray(data.warmup) && warmAt >= data.warmup[0] && warmAt < data.warmup[1]) {
+      html("div", "tip-message", "Warm-up: leak detection deferred", tip);
     }
     if (def.resource) {
       const at = line.times[index];

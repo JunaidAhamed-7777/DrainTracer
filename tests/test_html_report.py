@@ -122,6 +122,37 @@ class RenderTests(unittest.TestCase):
         payload = json.loads(_data_block(document))
         self.assertEqual(payload["handle_types"]["categories"], ["file", "socket", "other"])
 
+    def test_warmup_and_inconclusive_runs(self) -> None:
+        snapshots = []
+        for index in range(4):
+            snapshot = snapshot_to_dict(make_snapshot(timestamp=1000.0 + index))
+            snapshot["warming_up"] = index < 2
+            snapshots.append(snapshot)
+        finished = _report(
+            snapshots=snapshots,
+            warmup={"seconds": 2.0, "completed": True},
+            detection_ran=True,
+        )
+        document = render_html_report(finished)
+        self.assertIn("<dt>Warm-up</dt><dd>2s</dd>", document)
+        self.assertIn("since warm-up", document)
+        self.assertEqual(json.loads(_data_block(document))["warmup"], [0.0, 2.0])
+
+        unfinished = _report(
+            snapshots=[s | {"warming_up": True} for s in snapshots],
+            warmup={"seconds": 30.0, "completed": False},
+            detection_ran=False,
+        )
+        document = render_html_report(unfinished)
+        self.assertIn("INCONCLUSIVE", document)
+        self.assertIn("The 30s warm-up never finished", document)
+        self.assertIn("<dd>30s, did not finish</dd>", document)
+
+        short = _report(detection_ran=False, settings={"windows_seconds": [10.0]})
+        short["snapshots"] = [snapshot_to_dict(make_snapshot(timestamp=1000.0))]
+        self.assertIn("Monitoring ended before the 10s window filled.", render_html_report(short))
+        self.assertNotIn("INCONCLUSIVE", render_html_report(_report()))  # field absent
+
     def test_legacy_and_empty_reports_render(self) -> None:
         legacy = render_html_report(
             {"events": ["10:00:00 Launched old.exe"], "snapshots": [], "target_path": "old.exe"}
