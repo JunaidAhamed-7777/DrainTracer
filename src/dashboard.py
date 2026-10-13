@@ -987,7 +987,8 @@ class DashboardApp(MonitorSession):
         palette, glyphs = self.palette, self.glyphs
         grid = Table.grid(padding=(0, 2))
         grid.add_column(style=f"bold {palette.muted}", no_wrap=True)
-        grid.add_column()
+        # Fold rather than truncate: report paths are meant to be copied.
+        grid.add_column(overflow="fold")
         grid.add_row(
             "Target",
             f"{Path(self.target_path).name} {glyphs.sep} PID {self.root_pid or '-'} "

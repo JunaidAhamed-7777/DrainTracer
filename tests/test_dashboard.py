@@ -144,6 +144,20 @@ class LayoutTests(unittest.TestCase):
         self.assertIn("5s · did not finish", output)
         self.assertIn("profile ci from", output)
 
+    def test_summary_folds_long_report_paths_instead_of_cutting_them(self) -> None:
+        from pathlib import Path
+
+        app = _app(60, 40)
+        app._accept_snapshot(make_snapshot())
+        app._last_report = Path("C:/very/long/directory/name/for/reports/leak_report_"
+                                "11111111-2222-4333-8444-555555555555.json")
+        app._last_report_id = "11111111-2222-4333-8444-555555555555"
+        with app.console.capture() as capture:
+            app.console.print(app.render_summary())
+        joined = "".join(line.strip("│ ") for line in capture.get().splitlines())
+        self.assertIn("555555555555.json", joined)
+        self.assertNotIn("…", capture.get())
+
     def test_clean_summary_is_inconclusive_until_a_window_was_judged(self) -> None:
         app = _app()
         app._accept_snapshot(make_snapshot())
