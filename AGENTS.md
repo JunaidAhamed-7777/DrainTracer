@@ -63,3 +63,9 @@ Before finishing a change:
 
 Do not commit generated caches, virtual environments, logs, or leak reports;
 the repository `.gitignore` already excludes them.
+
+## Commit authorship
+
+Commits are authored solely by the repository owner. Do not add AI agents or
+assistants as co-authors: no `Co-Authored-By:` trailers, "Generated with"
+footers, or similar attribution lines in commit messages or pull requests.
