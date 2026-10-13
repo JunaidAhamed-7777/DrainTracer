@@ -9,7 +9,11 @@
 
 sample_interval = "500ms"
 windows = ["10s", "30s", "60s"]
-report_dir = "leak_reports"
+report_dir = "leak_reports"   # relative to this file
+
+# Sample this long before leak detection starts, so startup growth
+# (loading, cache warming, JIT) is not reported.
+# warmup = "10s"
 
 # Used when no --profile is given; remove it to start from the settings above.
 # default_profile = "ci"
@@ -36,9 +40,11 @@ fail_on = "medium"
 
 # Game engines and data pipelines legitimately grow memory fast while they
 # load assets and warm caches. Longer windows and much higher memory
-# tolerances keep that from reading as a leak.
+# tolerances keep that from reading as a leak, and a warm-up skips the
+# loading phase entirely.
 [profiles.heavy]
 windows = ["30s", "60s", "2m"]
+warmup = "30s"
 
 [profiles.heavy.thresholds.memory]
 critical_delta = "4GB"
