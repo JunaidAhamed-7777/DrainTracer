@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import logging
+import math
 import threading
 import time
 from collections import deque
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
-from typing import Iterable
+from types import MappingProxyType
 
 import psutil
 
@@ -34,8 +36,39 @@ logger = logging.getLogger(__name__)
 DEFAULT_SAMPLE_INTERVAL_MS = 500
 DEFAULT_WINDOWS_SECONDS = (10.0, 30.0, 60.0)
 DEFAULT_HANDLE_TYPES_INTERVAL = 2.0
+MIB = 1024 * 1024
 # Back off handle classification so it stays near 5% of one core.
 _CLASSIFY_COST_FACTOR = 20.0
+
+
+@dataclass(frozen=True)
+class ResourceThresholds:
+    """Growth a resource must show to count as critical.
+
+    ``critical_delta`` is accumulated growth over a window and
+    ``critical_slope`` a growth rate per second. They normalize the severity
+    score rather than acting as hard limits.
+    """
+
+    critical_delta: float
+    critical_slope: float
+
+    def __post_init__(self) -> None:
+        for name in ("critical_delta", "critical_slope"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f"{name} must be a number, got {value!r}")
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError(f"{name} must be greater than zero, got {value!r}")
+
+
+DEFAULT_THRESHOLDS: Mapping[LeakResource, ResourceThresholds] = MappingProxyType(
+    {
+        LeakResource.MEMORY: ResourceThresholds(critical_delta=50 * MIB, critical_slope=5 * MIB),
+        LeakResource.HANDLES: ResourceThresholds(critical_delta=500, critical_slope=20),
+        LeakResource.THREADS: ResourceThresholds(critical_delta=50, critical_slope=2),
+    }
+)
 
 
 @dataclass
@@ -77,14 +110,24 @@ class LeakDetector:
         window_seconds: Iterable[float] = DEFAULT_WINDOWS_SECONDS,
         handle_types_interval: float = DEFAULT_HANDLE_TYPES_INTERVAL,
         classifier: HandleClassifier | None = None,
+        thresholds: Mapping[LeakResource, ResourceThresholds] | None = None,
     ) -> None:
+        windows = tuple(sorted(set(float(window) for window in window_seconds)))
+        if not windows or any(not math.isfinite(window) or window <= 0 for window in windows):
+            raise ValueError("window_seconds needs at least one positive window")
+        if not sample_interval_ms > 0:
+            raise ValueError("sample_interval_ms must be greater than zero")
         self.process_manager = process_manager
         self.stream = stream or MetricsStream()
         self.sample_interval_ms = sample_interval_ms
         self.handle_types_interval = handle_types_interval
         self.classifier = classifier or HandleClassifier()
-        self.window_seconds = tuple(sorted(window_seconds))
-        self.max_window_seconds = max(self.window_seconds, default=60.0)
+        self.window_seconds = windows
+        self.max_window_seconds = windows[-1]
+        # Resources without an override keep the defaults.
+        self.thresholds: Mapping[LeakResource, ResourceThresholds] = MappingProxyType(
+            {**DEFAULT_THRESHOLDS, **(thresholds or {})}
+        )
 
         self._stop_event = threading.Event()
         self._pause_event = threading.Event()
@@ -500,7 +543,9 @@ class LeakDetector:
             if drop_ratio > 0.15:
                 continue
 
-            severity = self._score_severity(resource, slope, delta, monotonic_ratio, window)
+            severity = self._score_severity(
+                resource, slope, delta, monotonic_ratio, window, self.thresholds
+            )
             if severity == LeakSeverity.NONE:
                 continue
 
@@ -563,12 +608,13 @@ class LeakDetector:
         delta: float,
         monotonic_ratio: float,
         window: float,
+        thresholds: Mapping[LeakResource, ResourceThresholds] | None = None,
     ) -> LeakSeverity:
-        thresholds = _RESOURCE_THRESHOLDS[resource]
+        limits = (thresholds or DEFAULT_THRESHOLDS)[resource]
         score = 0.0
 
-        score += min(delta / thresholds["delta_critical"], 3.0)
-        score += min(slope / thresholds["slope_critical"], 3.0)
+        score += min(delta / limits.critical_delta, 3.0)
+        score += min(slope / limits.critical_slope, 3.0)
         score += monotonic_ratio
 
         if window >= 60:
@@ -611,19 +657,4 @@ _SEVERITY_RANK = {
     LeakSeverity.MEDIUM: 2,
     LeakSeverity.HIGH: 3,
     LeakSeverity.CRITICAL: 4,
-}
-
-_RESOURCE_THRESHOLDS = {
-    LeakResource.MEMORY: {
-        "delta_critical": 50 * 1024 * 1024,  # 50 MB
-        "slope_critical": 5 * 1024 * 1024,  # 5 MB/s
-    },
-    LeakResource.HANDLES: {
-        "delta_critical": 500,
-        "slope_critical": 20,
-    },
-    LeakResource.THREADS: {
-        "delta_critical": 50,
-        "slope_critical": 2,
-    },
 }

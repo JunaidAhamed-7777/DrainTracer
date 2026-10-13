@@ -223,6 +223,56 @@ class HandleTypeSamplingTests(unittest.TestCase):
         self.assertNotIn("by type", alert.message)
 
 
+class ThresholdTests(unittest.TestCase):
+    def test_higher_tolerances_quiet_the_same_growth(self) -> None:
+        from src.leak_detector import ResourceThresholds
+
+        values = [100 * MB + index * 4 * MB for index in range(21)]  # 8 MB/s for 10 s
+        tolerant = _detector(
+            window_seconds=(10.0,),
+            thresholds={LeakResource.MEMORY: ResourceThresholds(1024 * MB, 100 * MB)},
+        )
+        now = _feed(tolerant, values)
+        self.assertIsNone(
+            tolerant._evaluate_series(tolerant._memory_series, LeakResource.MEMORY, now, values[-1])
+        )
+        strict = _detector(
+            window_seconds=(10.0,),
+            thresholds={LeakResource.MEMORY: ResourceThresholds(10 * MB, 1 * MB)},
+        )
+        now = _feed(strict, values)
+        alert = strict._evaluate_series(strict._memory_series, LeakResource.MEMORY, now, values[-1])
+        self.assertEqual(alert.severity, LeakSeverity.CRITICAL)
+
+    def test_overrides_keep_defaults_for_other_resources(self) -> None:
+        from src.leak_detector import DEFAULT_THRESHOLDS, ResourceThresholds
+
+        detector = _detector(thresholds={LeakResource.THREADS: ResourceThresholds(5, 1)})
+        self.assertEqual(detector.thresholds[LeakResource.THREADS], ResourceThresholds(5, 1))
+        self.assertEqual(
+            detector.thresholds[LeakResource.MEMORY], DEFAULT_THRESHOLDS[LeakResource.MEMORY]
+        )
+
+    def test_invalid_parameters_are_rejected(self) -> None:
+        from src.leak_detector import ResourceThresholds
+
+        for delta, slope in ((0, 1), (1, -1), (float("inf"), 1), (True, 1)):
+            with self.subTest(delta=delta, slope=slope):
+                with self.assertRaises(ValueError):
+                    ResourceThresholds(delta, slope)
+        for windows in ((), (0.0,), (-5.0, 10.0), (float("nan"),)):
+            with self.subTest(windows=windows):
+                with self.assertRaises(ValueError):
+                    _detector(window_seconds=windows)
+        with self.assertRaises(ValueError):
+            _detector(sample_interval_ms=0)
+
+    def test_windows_are_sorted_and_deduplicated(self) -> None:
+        detector = _detector(window_seconds=(60, 10, 30, 10))
+        self.assertEqual(detector.window_seconds, (10.0, 30.0, 60.0))
+        self.assertEqual(detector.max_window_seconds, 60.0)
+
+
 class SeverityScoreTests(unittest.TestCase):
     def test_score_tiers(self) -> None:
         score = LeakDetector._score_severity
