@@ -92,6 +92,58 @@ class SeriesEvaluationTests(unittest.TestCase):
         self.assertEqual(alert.severity, LeakSeverity.CRITICAL)
 
 
+class CpuSamplingTests(unittest.TestCase):
+    def test_cpu_percent_comes_from_cpu_time_deltas(self) -> None:
+        from types import SimpleNamespace
+        from unittest import mock
+
+        detector = _detector()
+        proc = mock.Mock(pid=42)
+        proc.cpu_times.side_effect = [
+            SimpleNamespace(user=1.0, system=0.5),
+            SimpleNamespace(user=1.6, system=0.9),
+            SimpleNamespace(user=4.6, system=0.9),
+        ]
+        with mock.patch("src.leak_detector.time.monotonic", side_effect=[10.0, 11.0, 12.0]):
+            self.assertEqual(detector._sample_cpu_percent(proc), 0.0)  # first sight: baseline
+            self.assertAlmostEqual(detector._sample_cpu_percent(proc), 100.0)
+            self.assertAlmostEqual(detector._sample_cpu_percent(proc), 300.0)  # three cores
+
+    def test_baselines_of_departed_processes_are_dropped(self) -> None:
+        from unittest import mock
+
+        from helpers import make_process
+
+        detector = _detector()
+        detector._cpu_baselines = {1: (0.0, 0.0), 2: (0.0, 0.0)}
+        detector._io_baselines = {1: (0.0, 0, 0), 2: (0.0, 0, 0)}
+        with mock.patch.object(
+            detector.process_manager, "iter_psutil_processes", return_value=[mock.Mock(pid=2)]
+        ), mock.patch.object(detector, "_sample_process", return_value=make_process(2)):
+            detector._sample_processes()
+        self.assertEqual(list(detector._cpu_baselines), [2])
+        self.assertEqual(list(detector._io_baselines), [2])
+
+    def test_a_busy_process_registers_cpu_use(self) -> None:
+        import subprocess
+        import sys
+        import time
+
+        python = getattr(sys, "_base_executable", None) or sys.executable
+        busy = subprocess.Popen([python, "-c", "while True: pass"])
+        self.addCleanup(busy.wait, 10)
+        self.addCleanup(busy.kill)
+        manager = ProcessManager(None)
+        manager.attach(busy.pid)
+        self.addCleanup(manager.detach)
+        detector = LeakDetector(manager)
+        detector.sample_once()
+        time.sleep(0.6)
+        snapshot = detector.sample_once()
+        root = next(p for p in snapshot.processes if p.pid == busy.pid)
+        self.assertGreater(root.cpu_percent, 30.0)
+
+
 class SeverityScoreTests(unittest.TestCase):
     def test_score_tiers(self) -> None:
         score = LeakDetector._score_severity

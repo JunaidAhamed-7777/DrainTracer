@@ -199,7 +199,7 @@ class LeakDetector:
     def _collect_snapshot(self) -> MetricsSnapshot:
         now = time.time()
         self.process_manager.refresh_process_tree()
-        processes = self._sample_processes(now)
+        processes = self._sample_processes()
         totals = self._aggregate_totals(processes)
 
         self._last_processes = tuple(processes)
@@ -226,13 +226,19 @@ class LeakDetector:
             metadata={"tracked_pids": sorted(self.process_manager.tracked_pids)},
         )
 
-    def _sample_processes(self, now: float) -> list[ProcessMetrics]:
+    def _sample_processes(self) -> list[ProcessMetrics]:
         metrics: list[ProcessMetrics] = []
         for proc in self.process_manager.iter_psutil_processes():
-            metrics.append(self._sample_process(proc, now))
+            metrics.append(self._sample_process(proc))
+        # Forget rate baselines of processes that left the tree, so a long
+        # session with many short-lived children does not accumulate them.
+        sampled = {process.pid for process in metrics}
+        for baselines in (self._cpu_baselines, self._io_baselines):
+            for pid in [pid for pid in baselines if pid not in sampled]:
+                del baselines[pid]
         return metrics
 
-    def _sample_process(self, proc: psutil.Process, now: float) -> ProcessMetrics:
+    def _sample_process(self, proc: psutil.Process) -> ProcessMetrics:
         access_denied = False
         pid = proc.pid
 
@@ -246,8 +252,8 @@ class LeakDetector:
                 private_bytes = int(getattr(mem, "private", mem.rss))
                 handles = self._safe_num_handles(proc)
                 threads = proc.num_threads()
-                cpu_percent = self._sample_cpu_percent(proc, now)
-                io_read_bps, io_write_bps = self._sample_io_rates(proc, now)
+                cpu_percent = self._sample_cpu_percent(proc)
+                io_read_bps, io_write_bps = self._sample_io_rates(proc)
         except psutil.AccessDenied:
             access_denied = True
             name = "access-denied"
@@ -309,40 +315,48 @@ class LeakDetector:
         except (AttributeError, OSError, psutil.AccessDenied, NotImplementedError):
             return 0
 
-    def _sample_cpu_percent(self, proc: psutil.Process, now: float) -> float:
-        pid = proc.pid
+    def _sample_cpu_percent(self, proc: psutil.Process) -> float:
+        """CPU used since the previous sample, as a percentage of one core.
+
+        psutil's ``cpu_percent(interval=None)`` keeps its baseline on the
+        ``Process`` object, and tracked processes are reopened for every
+        sample, so it would always report zero. Keep a CPU-time baseline
+        per PID instead; like psutil, the result can exceed 100% when a
+        process uses several cores.
+        """
         try:
-            cpu = proc.cpu_percent(interval=None)
-        except (psutil.Error, OSError):
+            times = proc.cpu_times()
+            used = float(times.user) + float(times.system)
+        except (psutil.Error, OSError, AttributeError):
             return 0.0
-
-        last = self._cpu_baselines.get(pid)
-        if last is None:
-            self._cpu_baselines[pid] = (now, cpu)
+        stamp = time.monotonic()
+        baseline = self._cpu_baselines.get(proc.pid)
+        self._cpu_baselines[proc.pid] = (stamp, used)
+        if baseline is None:
             return 0.0
+        elapsed = stamp - baseline[0]
+        if elapsed <= 0:
+            return 0.0
+        return max(0.0, (used - baseline[1]) / elapsed * 100.0)
 
-        self._cpu_baselines[pid] = (now, cpu)
-        return float(cpu)
-
-    def _sample_io_rates(self, proc: psutil.Process, now: float) -> tuple[float, float]:
-        pid = proc.pid
+    def _sample_io_rates(self, proc: psutil.Process) -> tuple[float, float]:
         try:
             counters = proc.io_counters()
             read_bytes = int(counters.read_bytes)
             write_bytes = int(counters.write_bytes)
         except (psutil.Error, OSError, AttributeError):
             return 0.0, 0.0
-
-        baseline = self._io_baselines.get(pid)
+        stamp = time.monotonic()
+        baseline = self._io_baselines.get(proc.pid)
+        self._io_baselines[proc.pid] = (stamp, read_bytes, write_bytes)
         if baseline is None:
-            self._io_baselines[pid] = (now, read_bytes, write_bytes)
             return 0.0, 0.0
-
         last_time, last_read, last_write = baseline
-        elapsed = max(now - last_time, 1e-6)
+        elapsed = stamp - last_time
+        if elapsed <= 0:
+            return 0.0, 0.0
         read_bps = max(0.0, (read_bytes - last_read) / elapsed)
         write_bps = max(0.0, (write_bytes - last_write) / elapsed)
-        self._io_baselines[pid] = (now, read_bytes, write_bytes)
         return read_bps, write_bps
 
     @staticmethod
