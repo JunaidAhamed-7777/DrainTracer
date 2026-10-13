@@ -403,10 +403,14 @@ class DashboardApp(MonitorSession):
         palette, glyphs = self.palette, self.glyphs
         handles = totals.get("handles", 0.0)
         processes = max(1, len(self.snapshot.processes) if self.snapshot else 1)
-        detail = (
-            f"peak {int(self._peaks['handles']):,} {glyphs.sep} "
-            f"{handles / processes:,.0f} per process"
-        )
+        breakdown = self._handle_breakdown()
+        if breakdown:
+            detail = breakdown
+        else:
+            detail = (
+                f"peak {int(self._peaks['handles']):,} {glyphs.sep} "
+                f"{handles / processes:,.0f} per process"
+            )
         return self._metric_card(
             "HANDLES",
             palette.warn,
@@ -415,6 +419,23 @@ class DashboardApp(MonitorSession):
             self._spark("handles", palette.warn, min_span=8.0),
             detail,
         )
+
+    def _handle_breakdown(self, limit: int = 4) -> str:
+        """Largest named handle categories first, ``other`` last.
+
+        For example ``file 120 · event 80 · registry 12 · other 40``.
+        """
+        counts = self._handle_types
+        if not counts:
+            return ""
+        ranked = sorted(
+            ((count, category) for category, count in counts.items() if count > 0),
+            key=lambda item: (item[1] == "other", -item[0]),
+        )
+        shown = ranked[:limit]
+        text = f" {self.glyphs.sep} ".join(f"{category} {count:,}" for count, category in shown)
+        hidden = len(ranked) - len(shown)
+        return f"{text} {self.glyphs.sep} +{hidden} more" if hidden > 0 else text
 
     def _render_threads_card(self) -> Panel:
         totals = self._totals()

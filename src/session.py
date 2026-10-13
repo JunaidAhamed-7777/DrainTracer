@@ -16,6 +16,7 @@ from .events import (
     MetricsSnapshot,
     severity_rank,
 )
+from .handle_types import describe_type_growth
 from .html_report import write_html_report
 from .leak_detector import LeakDetector
 from .process_runner import ProcessManager, describe_pid
@@ -84,6 +85,7 @@ class MonitorSession:
         self._events: deque[tuple[float, str, str]] = deque(maxlen=self.EVENT_LIMIT)
         self._resource_severity: dict[LeakResource, LeakSeverity] = {}
         self._worst_by_resource: dict[LeakResource, LeakSeverity] = {}
+        self._handle_types: dict[str, int] | None = None
         self._worst_severity = LeakSeverity.NONE
         self._sample_count = 0
         self._started_at: float | None = None
@@ -219,6 +221,8 @@ class MonitorSession:
                 value = float(snapshot.totals.get(key, 0.0))
                 self._history[key].append((snapshot.timestamp, value))
                 self._peaks[key] = max(self._peaks[key], value)
+            if snapshot.handle_types is not None:
+                self._handle_types = dict(snapshot.handle_types)
         self._snapshot_history.append(snapshot_to_dict(snapshot))
 
         if severity_rank(snapshot.severity) > severity_rank(self._worst_severity):
@@ -283,7 +287,9 @@ class MonitorSession:
         else:
             amount = f"{delta:,.0f}"
             rate = f"{alert.slope_per_second:,.1f}/s"
-        return f"+{amount} in {alert.window_seconds:.0f}s {self.glyphs.sep} {rate}"
+        summary = f"+{amount} in {alert.window_seconds:.0f}s {self.glyphs.sep} {rate}"
+        types = describe_type_growth(alert.growth_by_type or {})
+        return f"{summary} {self.glyphs.sep} {types}" if types else summary
 
     # ------------------------------------------------------------------
     # Reports

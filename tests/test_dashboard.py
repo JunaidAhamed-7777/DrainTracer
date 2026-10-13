@@ -124,6 +124,55 @@ class LayoutTests(unittest.TestCase):
         self.assertIn("CRITICAL leak signal observed", capture.get())
 
 
+class HandleTypeDisplayTests(unittest.TestCase):
+    def _types(self, **values: int) -> dict[str, int]:
+        from src.handle_types import CATEGORIES
+
+        return {**dict.fromkeys(CATEGORIES, 0), **values}
+
+    def test_card_lists_named_types_before_other(self) -> None:
+        from dataclasses import replace
+
+        app = _app()
+        snapshot = replace(
+            make_snapshot(),
+            handle_types=self._types(other=900, file=120, event=80, registry=12, socket=3, thread=2),
+        )
+        app._accept_snapshot(snapshot)
+        self.assertEqual(
+            app._handle_breakdown(), "file 120 · event 80 · registry 12 · socket 3 · +2 more"
+        )
+        with app.console.capture() as capture:
+            app.console.print(app._render())
+        self.assertIn("file 120", capture.get())
+
+    def test_breakdown_survives_samples_without_classification(self) -> None:
+        from dataclasses import replace
+
+        app = _app()
+        app._accept_snapshot(replace(make_snapshot(), handle_types=self._types(file=7)))
+        app._accept_snapshot(make_snapshot())
+        self.assertEqual(app._handle_breakdown(), "file 7")
+
+    def test_without_classification_the_card_shows_per_process_handles(self) -> None:
+        app = _app()
+        app._accept_snapshot(make_snapshot())
+        self.assertEqual(app._handle_breakdown(), "")
+        with app.console.capture() as capture:
+            app.console.print(app._render())
+        self.assertIn("per process", capture.get())
+
+    def test_handle_signal_events_name_the_growing_type(self) -> None:
+        from dataclasses import replace
+
+        app = _app()
+        alert = replace(
+            make_alert(LeakResource.HANDLES, LeakSeverity.MEDIUM), growth_by_type={"socket": 40}
+        )
+        app._accept_snapshot(make_snapshot(alerts=(alert,)))
+        self.assertTrue(app._events[-1][1].endswith("by type: socket +40"))
+
+
 class TimeLimitTests(unittest.TestCase):
     def _render(self, app: DashboardApp) -> str:
         with app.console.capture() as capture:
