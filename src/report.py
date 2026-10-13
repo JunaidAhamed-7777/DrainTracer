@@ -54,12 +54,25 @@ def snapshot_to_dict(snapshot: MetricsSnapshot) -> dict[str, Any]:
     return data
 
 
-def write_text_atomic(path: Path, content: str) -> Path:
-    """Write via a temporary sibling so readers never see a partial file."""
+def write_text_atomic(path: Path, content: str, newline: str | None = None) -> Path:
+    """Write via a temporary sibling so readers never see a partial file.
+
+    ``newline`` is passed to ``open``; ``"\\n"`` writes the text exactly
+    as given instead of translating line endings for the platform.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.tmp")
-    temporary.write_text(content, encoding="utf-8")
-    os.replace(temporary, path)
+    try:
+        with open(temporary, "w", encoding="utf-8", newline=newline) as handle:
+            handle.write(content)
+        os.replace(temporary, path)
+    except BaseException:
+        # Do not leave a half-written temporary behind on failure.
+        try:
+            temporary.unlink()
+        except OSError:
+            pass
+        raise
     return path
 
 

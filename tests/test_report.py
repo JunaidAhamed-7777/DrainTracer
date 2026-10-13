@@ -48,6 +48,25 @@ class ReportStorageTests(unittest.TestCase):
             self.assertEqual(json.loads(path.read_text(encoding="utf-8")), report)
             self.assertEqual(sorted(p.name for p in directory.iterdir()), [path.name])
 
+    def test_failed_write_leaves_no_temporary_file(self) -> None:
+        from unittest import mock
+
+        from src.report import write_text_atomic
+
+        with tempfile.TemporaryDirectory() as temp:
+            target = Path(temp) / "report.json"
+            with mock.patch("src.report.os.replace", side_effect=OSError("locked")):
+                with self.assertRaises(OSError):
+                    write_text_atomic(target, "{}")
+            self.assertEqual(list(Path(temp).iterdir()), [])
+
+    def test_exact_newlines_are_preserved_on_request(self) -> None:
+        from src.report import write_text_atomic
+
+        with tempfile.TemporaryDirectory() as temp:
+            target = write_text_atomic(Path(temp) / "page.html", "a\nb\n", newline="\n")
+            self.assertEqual(target.read_bytes(), b"a\nb\n")
+
     def test_write_requires_an_id(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             with self.assertRaises(ValueError):
