@@ -187,6 +187,38 @@ class SettingsDisplayTests(unittest.TestCase):
         self.assertIn("profile game · windows 30s/2m", capture.get())
 
 
+class WarmupDisplayTests(unittest.TestCase):
+    def test_warmup_shows_in_the_status_and_health_panel(self) -> None:
+        from dataclasses import replace
+
+        from src.config import MonitorSettings
+
+        for width, height in LayoutTests.SIZES:
+            with self.subTest(width=width, height=height):
+                app = DashboardApp(
+                    "C:/targets/worker.exe",
+                    console=make_console(width, height),
+                    settings=replace(MonitorSettings(), warmup=12.0),
+                )
+                app.detector._warmup_elapsed = 4.2
+                app._accept_snapshot(replace(make_snapshot(), warming_up=True))
+                with app.console.capture() as capture:
+                    app.console.print(app._render())
+                output = capture.get()
+                self.assertIn("WARMING UP", output)
+                lines = output.splitlines()
+                self.assertEqual(len(lines), height)
+                if width >= 96:
+                    self.assertIn("detection in 8s", output)
+
+    def test_status_returns_to_running_after_the_warmup(self) -> None:
+        app = _app()
+        app._accept_snapshot(make_snapshot())
+        self.assertEqual(app._status(app.snapshot)[0], "RUNNING")
+        self.assertEqual(DashboardApp._countdown(0.2), "1s")
+        self.assertEqual(DashboardApp._countdown(64.1), "1m5s")
+
+
 class TimeLimitTests(unittest.TestCase):
     def _render(self, app: DashboardApp) -> str:
         with app.console.capture() as capture:

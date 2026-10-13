@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import select
 import sys
@@ -691,8 +692,15 @@ class DashboardApp(MonitorSession):
         snapshot = self.snapshot
         severity = snapshot.severity if snapshot else LeakSeverity.NONE
         color = self._severity_color(severity)
+        warming = snapshot is not None and snapshot.warming_up
 
-        if severity == LeakSeverity.NONE:
+        if warming:
+            banner = Text(
+                f" {glyphs.dot} WARMING UP {glyphs.sep} detection in "
+                f"{self._countdown(self.detector.warmup_remaining)} ",
+                style=f"bold {palette.ink} on {palette.accent}",
+            )
+        elif severity == LeakSeverity.NONE:
             banner = Text(f" {glyphs.ok} NO ACTIVE LEAK SIGNALS ", style=f"bold {palette.ink} on {color}")
         else:
             banner = Text(
@@ -720,7 +728,7 @@ class DashboardApp(MonitorSession):
         rows.add_column(min_width=8, no_wrap=True)
         rows.add_column(ratio=1, no_wrap=True, overflow="ellipsis")
         for resource in (LeakResource.MEMORY, LeakResource.HANDLES, LeakResource.THREADS):
-            name, meter, label, detail = self._health_row(resource, alerts.get(resource))
+            name, meter, label, detail = self._health_row(resource, alerts.get(resource), warming)
             if show_meter:
                 rows.add_row(name, meter, label, detail)
             else:
@@ -740,7 +748,7 @@ class DashboardApp(MonitorSession):
         return Group(top, rows, footnote)
 
     def _health_row(
-        self, resource: LeakResource, alert: LeakAlert | None
+        self, resource: LeakResource, alert: LeakAlert | None, warming: bool = False
     ) -> tuple[RenderableType, ...]:
         palette, glyphs = self.palette, self.glyphs
         severity = alert.severity if alert else LeakSeverity.NONE
@@ -750,12 +758,15 @@ class DashboardApp(MonitorSession):
             (glyphs.meter_full * level, color),
             (glyphs.meter_empty * (4 - level), palette.border),
         )
+        name = Text(resource.value.upper(), style=f"bold {palette.muted}")
+        if warming:
+            label = Text("WAIT", style=f"bold {palette.accent}")
+            return name, meter, label, Text("sampling during warm-up", style=palette.muted)
         label = Text("CLEAR" if alert is None else severity.value.upper(), style=f"bold {color}")
         if alert is None:
             detail = Text("no sustained growth", style=palette.muted)
         else:
             detail = Text(self._alert_summary(alert), style=color)
-        name = Text(resource.value.upper(), style=f"bold {palette.muted}")
         return name, meter, label, detail
 
     def _render_event_panel(self) -> Panel:
@@ -882,7 +893,14 @@ class DashboardApp(MonitorSession):
             return "EXITED", palette.danger
         if self.detector.is_paused or self.manager.is_paused:
             return "PAUSED", palette.warn
+        if snapshot.warming_up:
+            return "WARMING UP", palette.accent
         return "RUNNING", palette.ok
+
+    @staticmethod
+    def _countdown(seconds: float) -> str:
+        """Whole seconds left, rounded up, as ``7s`` or ``1m5s``."""
+        return format_duration(max(1.0, math.ceil(seconds)))
 
     def _severity_color(self, severity: LeakSeverity) -> str:
         palette = self.palette
