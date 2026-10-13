@@ -188,8 +188,9 @@ The [`torture`](torture/README.md) directory contains bounded `.py`, `.bat`,
 - startup growth that a warm-up absorbs;
 - recursive process-tree tracking;
 - cleanup after the root exits before a child;
-- stable and fast-exit baselines; and
-- headless pass/fail exit codes.
+- stable and fast-exit baselines;
+- headless pass/fail exit codes; and
+- a report comparison that sees a signal resolved.
 
 Run every target through the real dashboard, headless runner, and JSON
 export path:
@@ -361,15 +362,40 @@ for exact values, drag across a chart to zoom, and double-click or press Esc
 to reset. See [working-principle.md](working-principle.md#8-html-report) for
 how each element is derived.
 
+### Comparing reports
+
+`diff` compares two JSON reports, for example from before and after a
+fix, or from two releases:
+
+```powershell
+python src/main.py diff leak_reports\leak_report_<before>.json leak_reports\leak_report_<after>.json
+```
+
+For each resource it shows the strongest signal in each run and how it
+changed (`resolved`, `new`, `eased`, `worsened`, `persists`), the drift
+(growth rate after any warm-up) in each run and how much it moved, and the
+total growth. It ends with a verdict, `IMPROVED`, `REGRESSED`, `MIXED`, or
+`UNCHANGED`, and a one-line summary such as
+`memory leak signal resolved; memory drift down 99%`. Handle-type growth is
+paired when both runs classified handles. Warnings flag comparisons that
+may mislead: different targets, different settings, very different run
+lengths, or a run that never filled a detection window.
+
+- `--json` prints the comparison as JSON for scripts.
+- `--fail-on-regression` exits `1` when the verdict is `REGRESSED` or
+  `MIXED`, so CI can compare a branch's report with the main branch's.
+- Exit code `2` means a report could not be read.
+
 ## Tests
 
 ```powershell
 python -m unittest discover -s tests
 ```
 
-Unit tests cover the leak heuristics, rendering at each layout breakpoint,
-the session lifecycle, headless exit codes, report analysis, HTML escaping,
-and CLI parsing. The torture suite above exercises real processes.
+Unit tests cover the leak heuristics, handle classification, warm-up,
+settings files, rendering at each layout breakpoint, the session lifecycle,
+headless exit codes, report analysis, HTML escaping, report comparison, and
+CLI parsing. The torture suite above exercises real processes.
 
 ## Project layout
 
@@ -383,6 +409,8 @@ src/
 ├── report.py           # Report IDs, timestamps, and atomic JSON writes
 ├── analysis.py         # Report summaries, signal episodes, chart data
 ├── html_report.py      # Self-contained interactive HTML reports
+├── report_diff.py      # Comparison of two reports: signals and drift
+├── diff_command.py     # The diff command's terminal and JSON output
 ├── stats.py            # Least-squares slope shared with the detector
 ├── units.py            # Duration, byte, and clock formatting
 ├── theme.py            # Palette and Unicode/ASCII glyph sets

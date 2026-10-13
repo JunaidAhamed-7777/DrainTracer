@@ -113,7 +113,9 @@ pages in a browser, when diagnosis is useful:
 python torture\verify_suite.py --reports-dir .\torture\reports
 ```
 
-A successful full run ends with `16/16 cases passed`. The runner fails when an
+A successful full run ends with `17/17 cases passed`: sixteen targets plus a
+`diff` of the `memory-growth` and `memory-growth-tolerated` reports, which
+must show the memory signal as resolved. The runner fails when an
 expected alert is absent, a handle alert names the wrong handle type, a
 stable/recovering target alerts, a run returns the wrong exit code, descendants are not observed, a report is invalid, or
 DrainTracer leaves tracked processes behind.

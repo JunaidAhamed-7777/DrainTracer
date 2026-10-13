@@ -504,3 +504,42 @@ script, and the data are inline; every value is HTML-escaped, the embedded
 JSON escapes `<`, `>`, and `&` so it cannot close its script element, and a
 Content-Security-Policy allows only the page's own inline style and script
 (pinned by SHA-256) with no network access.
+
+## 9. Report comparison
+
+`diff` loads two JSON reports, summarizes each with the same analysis as
+the HTML report, and compares them resource by resource.
+
+**Signals.** The strongest severity each run reached is compared:
+
+| Earlier run | Later run | Status |
+| --- | --- | --- |
+| none | none | `clear` |
+| any | none | `resolved` |
+| none | any | `new` |
+| any | weaker | `eased` |
+| any | stronger | `worsened` |
+| any | the same | `persists` |
+
+**Drift.** Each run's drift is the least-squares slope over its measured
+samples after any warm-up. A change counts only when it exceeds a noise
+band: the larger of 10% of the faster drift and a floor of 1 KiB/s for
+memory, 0.01 handles/s, or 0.005 threads/s (each roughly a few units per
+hour). Slower drift is `improved`. Faster drift is `regressed` only when
+the later run is actually growing faster than the floor; a run that
+merely shrinks more slowly is `unchanged`. Big rises are shown as a factor
+(`135x`) rather than a percentage.
+
+**Verdict.** A resource improves when its signal resolved or eased or its
+drift improved, and regresses when its signal is new or worsened or its
+drift regressed. The verdict is `MIXED` when some resources improved and
+others regressed, `IMPROVED` or `REGRESSED` when only one direction
+occurred, and `UNCHANGED` otherwise. `--fail-on-regression` exits `1` for
+`REGRESSED` and `MIXED`.
+
+**Warnings.** The comparison warns when the reports name different
+targets, when their recorded settings (windows, sample interval, warm-up,
+thresholds) differ, when one run is less than half as long as the other,
+and when a run never filled a detection window. Reports written before
+v1.3 have no settings block and before v1.4 no `detection_ran` field; they
+are compared on what they contain.
