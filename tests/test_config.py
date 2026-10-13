@@ -1,0 +1,191 @@
+"""Config discovery, profile layering, validation, and precedence."""
+
+from __future__ import annotations
+
+import tempfile
+import textwrap
+import unittest
+from pathlib import Path
+
+import helpers  # noqa: F401  (adds the repository root to sys.path)
+
+from src.config import ConfigError, MonitorSettings, find_config, resolve_settings
+from src.events import LeakResource, LeakSeverity
+from src.leak_detector import DEFAULT_THRESHOLDS
+
+MB = 1024 * 1024
+
+
+class ConfigTestCase(unittest.TestCase):
+    def setUp(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name).resolve()
+
+    def write(self, name: str, body: str) -> Path:
+        path = self.root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(textwrap.dedent(body), encoding="utf-8")
+        return path
+
+    def resolve(self, **kwargs) -> MonitorSettings:
+        kwargs.setdefault("start", self.root)
+        return resolve_settings(**kwargs)
+
+    def assertConfigError(self, message: str, **kwargs) -> None:
+        with self.assertRaises(ConfigError) as caught:
+            self.resolve(**kwargs)
+        self.assertIn(message, str(caught.exception))
+
+
+class DiscoveryTests(ConfigTestCase):
+    def test_defaults_without_a_file(self) -> None:
+        settings = self.resolve()
+        self.assertEqual(settings, MonitorSettings())
+        self.assertEqual(settings.describe(), "built-in defaults")
+
+    def test_nearest_file_wins_and_parents_are_searched(self) -> None:
+        outer = self.write(".drainrc", 'sample_interval = "1s"\n')
+        nested = self.root / "project" / "src"
+        nested.mkdir(parents=True)
+        self.assertEqual(find_config(nested), outer)
+        inner = self.write("project/draintracer.toml", 'sample_interval = "250ms"\n')
+        self.assertEqual(find_config(nested), inner)
+        self.assertEqual(self.resolve(start=nested).sample_interval_ms, 250)
+
+    def test_dedicated_names_take_priority_in_a_directory(self) -> None:
+        self.write("draintracer.toml", "")
+        rc = self.write(".drainrc", "")
+        self.assertEqual(find_config(self.root), rc)
+
+    def test_shared_config_toml_needs_a_draintracer_table(self) -> None:
+        self.write("config.toml", '[other_tool]\nname = "x"\n')
+        self.assertIsNone(find_config(self.root))
+        self.write("config.toml", "not = valid = toml")
+        self.assertIsNone(find_config(self.root))
+        shared = self.write("config.toml", '[draintracer]\ntimeout = "90s"\n[other_tool]\nx = 1\n')
+        self.assertEqual(find_config(self.root), shared)
+        self.assertEqual(self.resolve().timeout, 90.0)
+
+    def test_discovery_can_be_disabled(self) -> None:
+        self.write(".drainrc", 'timeout = "5m"\n')
+        self.assertIsNone(self.resolve(discover=False).timeout)
+
+
+class LayeringTests(ConfigTestCase):
+    CONFIG = """
+        sample_interval = "250ms"
+        windows = ["30s", "10s", "30s"]
+        fail_on = "medium"
+        report_dir = "out/reports"
+
+        [thresholds.memory]
+        critical_delta = "200MB"
+        critical_slope = "20MB/s"
+
+        [profiles.game]
+        windows = ["30s", "60s", "2m"]
+        timeout = "10m"
+        [profiles.game.thresholds.memory]
+        critical_slope = "3GB/min"
+
+        [profiles.ci]
+        fail_on = "low"
+        timeout = 120
+    """
+
+    def test_base_settings_and_units(self) -> None:
+        self.write(".drainrc", self.CONFIG)
+        settings = self.resolve()
+        self.assertEqual(settings.sample_interval_ms, 250)
+        self.assertEqual(settings.windows, (10.0, 30.0))
+        self.assertEqual(settings.fail_on, LeakSeverity.MEDIUM)
+        self.assertEqual(settings.report_dir, "out/reports")
+        memory = settings.thresholds[LeakResource.MEMORY]
+        self.assertEqual((memory.critical_delta, memory.critical_slope), (200 * MB, 20 * MB))
+        self.assertEqual(
+            settings.thresholds[LeakResource.HANDLES], DEFAULT_THRESHOLDS[LeakResource.HANDLES]
+        )
+        self.assertIsNone(settings.profile)
+        self.assertTrue(settings.describe().startswith("settings from "))
+
+    def test_profile_overrides_the_base_field_by_field(self) -> None:
+        self.write(".drainrc", self.CONFIG)
+        settings = self.resolve(profile="game")
+        self.assertEqual(settings.windows, (30.0, 60.0, 120.0))
+        self.assertEqual(settings.timeout, 600.0)
+        self.assertEqual(settings.sample_interval_ms, 250)  # inherited from the base
+        memory = settings.thresholds[LeakResource.MEMORY]
+        self.assertEqual(memory.critical_delta, 200 * MB)  # inherited
+        self.assertEqual(memory.critical_slope, 3 * 1024 * MB / 60)
+        self.assertEqual(settings.profile, "game")
+        self.assertIn("profile game from", settings.describe())
+
+    def test_default_profile_and_flags_take_precedence_in_order(self) -> None:
+        self.write(".drainrc", 'default_profile = "ci"\n' + textwrap.dedent(self.CONFIG))
+        self.assertEqual(self.resolve().profile, "ci")
+        self.assertEqual(self.resolve().fail_on, LeakSeverity.LOW)
+        self.assertEqual(self.resolve(profile="game").profile, "game")
+        flags = self.resolve(overrides={"fail_on": LeakSeverity.CRITICAL, "timeout": 5.0})
+        self.assertEqual((flags.fail_on, flags.timeout), (LeakSeverity.CRITICAL, 5.0))
+
+    def test_draintracer_table_works_in_any_file(self) -> None:
+        path = self.write("custom.toml", '[draintracer]\n[draintracer.profiles.x]\ntimeout = "1m"\n')
+        self.assertEqual(self.resolve(config_path=path, profile="x").timeout, 60.0)
+
+    def test_explicit_path_skips_discovery(self) -> None:
+        self.write(".drainrc", 'timeout = "1m"\n')
+        other = self.write("elsewhere/settings.toml", 'timeout = "2m"\n')
+        self.assertEqual(self.resolve(config_path=other).timeout, 120.0)
+
+
+class ValidationTests(ConfigTestCase):
+    def test_typos_are_reported_with_a_suggestion(self) -> None:
+        self.write(".drainrc", "[thresholds.memory]\ncritical_slop = 5\n")
+        self.assertConfigError("unknown setting thresholds.memory.critical_slop "
+                               "(did you mean thresholds.memory.critical_slope?)")
+
+    def test_errors_name_the_file(self) -> None:
+        path = self.write(".drainrc", 'timeout = "soon"\n')
+        self.assertConfigError(f"{path}: timeout: expected a duration")
+
+    def test_invalid_values(self) -> None:
+        cases = {
+            'fail_on = "never"': "fail_on must be one of low, medium, high, critical",
+            'sample_interval = "10ms"': "sample_interval must be between 100ms and 1m",
+            "windows = []": "windows must be a list",
+            'windows = ["2h"]': "at most 1h",
+            "timeout = 0": "timeout must be greater than zero",
+            'report_dir = " "': "report_dir must be a non-empty path",
+            "[thresholds.gpu]\ncritical_delta = 1": "unknown setting thresholds.gpu",
+            '[thresholds.memory]\ncritical_delta = "5 parsecs"': "unknown size unit",
+            '[thresholds.handles]\ncritical_slope = "20/fortnight"': "unknown rate period",
+            "[thresholds.threads]\ncritical_delta = 0": "must be greater than zero",
+            "profiles = 3": "profiles must be tables",
+            'default_profile = "nope"': "default_profile 'nope' is not one of",
+            "this is not toml": "not valid TOML",
+        }
+        for body, message in cases.items():
+            with self.subTest(body=body):
+                self.write(".drainrc", body + "\n")
+                self.assertConfigError(message)
+
+    def test_missing_profiles(self) -> None:
+        self.write(".drainrc", "[profiles.ci]\n[profiles.game]\n")
+        self.assertConfigError("profile 'gpu' is not defined (available: ci, game)", profile="gpu")
+        (self.root / ".drainrc").unlink()
+        self.assertConfigError("--profile ci needs a config file", profile="ci")
+
+    def test_windows_must_hold_enough_samples(self) -> None:
+        self.write(".drainrc", 'sample_interval = "1s"\nwindows = ["3s", "30s"]\n')
+        self.assertConfigError("the 3s window is too short for a 1s sample interval")
+        self.assertConfigError(
+            "too short", overrides={"sample_interval_ms": 2000, "windows": (5.0,)}
+        )
+
+    def test_unreadable_explicit_path(self) -> None:
+        self.assertConfigError("cannot read the file", config_path=self.root / "missing.toml")
+
+
+if __name__ == "__main__":
+    unittest.main()
