@@ -124,6 +124,45 @@ class LayoutTests(unittest.TestCase):
         self.assertIn("CRITICAL leak signal observed", capture.get())
 
 
+class AttachModeTests(unittest.TestCase):
+    def _attached_app(self) -> tuple[DashboardApp, list[str]]:
+        app = DashboardApp(None, console=make_console(), attach_pid=4242)
+        calls: list[str] = []
+        app.manager.kill = lambda: calls.append("kill")  # type: ignore[method-assign]
+        return app, calls
+
+    def test_kill_needs_a_second_press_when_attached(self) -> None:
+        app, calls = self._attached_app()
+        app._handle_key("k")
+        self.assertEqual(calls, [])
+        self.assertIn("Press K again", app._events[-1][1])
+        app._handle_key("K")
+        self.assertEqual(calls, ["kill"])
+
+    def test_kill_confirmation_expires(self) -> None:
+        app, calls = self._attached_app()
+        app._handle_key("k")
+        app._kill_armed_until = 0.0  # simulate the confirmation window passing
+        app._handle_key("k")
+        self.assertEqual(calls, [])
+
+    def test_launched_targets_kill_immediately(self) -> None:
+        app = _app()
+        calls: list[str] = []
+        app.manager.kill = lambda: calls.append("kill")  # type: ignore[method-assign]
+        app._handle_key("k")
+        self.assertEqual(calls, ["kill"])
+
+    def test_attached_labels(self) -> None:
+        app, _calls = self._attached_app()
+        app._accept_snapshot(make_snapshot(root_pid=4242, processes=(make_process(4242),)))
+        with app.console.capture() as capture:
+            app.console.print(app._render())
+        output = capture.get()
+        self.assertIn("4242 (attached)", output)
+        self.assertIn("detach & quit", output)
+
+
 class ExportTests(unittest.TestCase):
     def test_each_export_gets_a_new_uuid_file_in_the_report_dir(self) -> None:
         import json

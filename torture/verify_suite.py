@@ -7,8 +7,10 @@ import io
 import json
 import os
 import sys
+import subprocess
 import tempfile
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -32,6 +34,7 @@ class TortureCase:
     min_processes: int = 1
     expect_root_exit: bool = False
     expect_root_exit_with_child: bool = False
+    attach: bool = False
 
 
 @dataclass(frozen=True)
@@ -75,6 +78,13 @@ CASES = (
         target=TORTURE_ROOT / "burst_recovery.py",
         args=("--duration", "30"),
         expect_no_alerts=True,
+    ),
+    TortureCase(
+        name="attach-memory-growth",
+        target=TORTURE_ROOT / "memory_leak.py",
+        args=("--duration", "30", "--max-mb", "128"),
+        expected_alert="memory",
+        attach=True,
     ),
     TortureCase(
         name="root-exits-first",
@@ -145,12 +155,28 @@ def _run_case(
         color_system=None,
         width=140,
     )
-    app = DashboardApp(
-        str(case.target),
-        args=list(case.args),
-        console=console,
-        report_dir=reports_dir / case.name,
-    )
+    external: subprocess.Popen[bytes] | None = None
+    if case.attach:
+        # Start the target outside DrainTracer, then attach by PID.
+        external = subprocess.Popen(
+            [sys.executable, str(case.target), *case.args],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        time.sleep(0.5)
+        app = DashboardApp(
+            None,
+            console=console,
+            report_dir=reports_dir / case.name,
+            attach_pid=external.pid,
+        )
+    else:
+        app = DashboardApp(
+            str(case.target),
+            args=list(case.args),
+            console=console,
+            report_dir=reports_dir / case.name,
+        )
     app.detector = LeakDetector(
         app.manager,
         sample_interval_ms=100,
@@ -168,6 +194,13 @@ def _run_case(
         exit_code = app.run()
     finally:
         timer.cancel()
+        attached_survived = external is not None and external.poll() is None
+        if external is not None:
+            external.kill()
+            external.wait(timeout=10)
+
+    if case.attach and not attached_survived:
+        errors.append("quitting an attached session terminated the target")
 
     if exit_code != 0:
         errors.append(f"dashboard returned exit code {exit_code}")
