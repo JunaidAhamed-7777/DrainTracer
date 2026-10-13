@@ -18,7 +18,7 @@
    - Generate self-contained HTML reports alongside JSON exports (`leak_report_<UUID>.html`) featuring interactive line graphs (using Chart.js or Plotly).
    - Visualize memory, handle, and thread trends over time with highlighted red markers where alerts were triggered.
 
-5. **Granular Handle Classification**
+5. **Granular Handle Classification** — done in v1.2
    - Categorize Windows handles into specific types (File handles, Socket/Network handles, Registry keys, Thread/Process handles, Mutexes) rather than just a total count.
    - *Real-world use case:* Identifying whether an application is leaking unclosed file streams vs. unclosed database socket connections.
 
