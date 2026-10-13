@@ -18,6 +18,7 @@ if __package__ in (None, ""):
 from src.dashboard import DashboardApp
 from src.file_picker import select_target_file
 from src.process_runner import ProcessManagerError
+from src.report import DEFAULT_REPORT_DIR
 from src.theme import PALETTE, blend
 
 
@@ -65,10 +66,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Target executable/script. If omitted, open the native file picker.",
     )
     parser.add_argument(
-        "--export",
-        default="leak_report.json",
-        metavar="PATH",
-        help="Report path used by the [E] export action.",
+        "--report-dir",
+        default=DEFAULT_REPORT_DIR,
+        metavar="DIR",
+        help=(
+            "Directory for exported reports, named leak_report_<UUID>.json "
+            f"(default: {DEFAULT_REPORT_DIR})."
+        ),
     )
     parser.add_argument(
         "target_args",
@@ -119,7 +123,7 @@ def main(argv: list[str] | None = None) -> int:
         target_path,
         args=forwarded_args or None,
         console=console,
-        export_path=args.export,
+        report_dir=args.report_dir,
     )
     try:
         return app.run()

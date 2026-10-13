@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import json
 import os
 import select
 import sys
 import time
 from collections import deque
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +29,14 @@ from .events import (
 )
 from .leak_detector import LeakDetector
 from .process_runner import ProcessManager
+from .report import (
+    DEFAULT_REPORT_DIR,
+    REPORT_SCHEMA,
+    iso_timestamp,
+    new_report_id,
+    snapshot_to_dict,
+    write_json_report,
+)
 from .theme import PALETTE, select_glyphs
 from .widgets import Sized, Sparkline
 
@@ -44,6 +50,7 @@ class DashboardApp:
     VERSION = "v0.7"
     HISTORY_LIMIT = 240
     EVENT_LIMIT = 200
+    SNAPSHOT_LIMIT = 7200
     DELTA_WINDOW_SECONDS = 10.0
     FRAME_SECONDS = 0.1
 
@@ -52,13 +59,13 @@ class DashboardApp:
         target_path: str,
         args: list[str] | None = None,
         console: Console | None = None,
-        export_path: str = "leak_report.json",
+        report_dir: str | Path = DEFAULT_REPORT_DIR,
     ) -> None:
         self.target_path = str(Path(target_path).resolve())
         self.console = console or Console()
         self.manager = ProcessManager(self.target_path, args=args)
         self.detector = LeakDetector(self.manager)
-        self.export_path = Path(export_path)
+        self.report_dir = Path(report_dir)
 
         self.palette = PALETTE
         self.glyphs = select_glyphs(self.console)
@@ -67,7 +74,7 @@ class DashboardApp:
             key: deque(maxlen=self.HISTORY_LIMIT) for key in _HISTORY_KEYS
         }
         self._peaks: dict[str, float] = {key: 0.0 for key in _HISTORY_KEYS}
-        self._snapshot_history: deque[dict[str, Any]] = deque(maxlen=600)
+        self._snapshot_history: deque[dict[str, Any]] = deque(maxlen=self.SNAPSHOT_LIMIT)
         self._events: deque[tuple[float, str, str]] = deque(maxlen=self.EVENT_LIMIT)
         self._resource_severity: dict[LeakResource, LeakSeverity] = {}
         self._worst_severity = LeakSeverity.NONE
@@ -76,6 +83,7 @@ class DashboardApp:
         self._sample_count = 0
         self._started_at: float | None = None
         self._last_report: Path | None = None
+        self._last_report_id: str | None = None
         self._quit_requested = False
         self._cpu_cores = psutil.cpu_count(logical=True) or 1
 
@@ -159,7 +167,7 @@ class DashboardApp:
                 value = float(snapshot.totals.get(key, 0.0))
                 self._history[key].append((snapshot.timestamp, value))
                 self._peaks[key] = max(self._peaks[key], value)
-        self._snapshot_history.append(self._snapshot_to_dict(snapshot))
+        self._snapshot_history.append(snapshot_to_dict(snapshot))
 
         if severity_rank(snapshot.severity) > severity_rank(self._worst_severity):
             self._worst_severity = snapshot.severity
@@ -245,31 +253,37 @@ class DashboardApp:
             except OSError as exc:
                 self._append_event(f"Export failed: {exc}", "error")
             else:
-                self._append_event(f"Report saved to {path}", "ok")
+                self._append_event(f"Report {self._last_report_id} saved to {path}", "ok")
         elif normalized == "q":
             self._quit_requested = True
             self._append_event("Quit requested", "info")
 
     def export_log(self) -> Path:
-        """Write collected snapshots and event messages to a JSON report."""
+        """Write snapshots and events to ``leak_report_<uuid>.json``.
+
+        Every export gets a fresh UUID so repeated exports never overwrite
+        an earlier report.
+        """
+        report_id = new_report_id()
         report = {
+            "report_id": report_id,
+            "report_schema": REPORT_SCHEMA,
+            "created_at": iso_timestamp(),
+            "session_started_at": iso_timestamp(self._started_at) if self._started_at else None,
             "app": self.TITLE,
             "version": self.VERSION,
             "target_path": self.target_path,
             "root_pid": self.manager.root_pid,
-            "exported_at": time.time(),
             "events": [
                 f"{time.strftime('%H:%M:%S', time.localtime(stamp))} {message}"
                 for stamp, message, _level in self._events
             ],
             "snapshots": list(self._snapshot_history),
         }
-        self.export_path.write_text(
-            json.dumps(report, indent=2),
-            encoding="utf-8",
-        )
-        self._last_report = self.export_path
-        return self.export_path
+        path = write_json_report(report, self.report_dir)
+        self._last_report = path
+        self._last_report_id = report_id
+        return path
 
     # ------------------------------------------------------------------
     # Layout
@@ -395,9 +409,9 @@ class DashboardApp:
             keys.append(f" {key} ", style=f"bold {palette.ink} on {color}")
             keys.append(f" {label}   ", style=palette.muted)
 
-        if self._last_report is not None:
+        if self._last_report_id is not None:
             note = Text.assemble(
-                ("last report ", palette.muted), (str(self._last_report), palette.teal)
+                ("last report ", palette.muted), (self._last_report_id, f"bold {palette.teal}")
             )
         else:
             note = Text("no report exported yet ", style=palette.muted)
@@ -892,7 +906,10 @@ class DashboardApp:
         grid.add_row("Verdict", verdict)
         grid.add_row(
             "Report",
-            Text(str(self._last_report), style=palette.teal)
+            Text.assemble(
+                (self._last_report_id or "", f"bold {palette.teal}"),
+                (f"\n{self._last_report}", palette.muted),
+            )
             if self._last_report
             else Text("not exported (press E during a session)", style=palette.muted),
         )
@@ -978,24 +995,6 @@ class DashboardApp:
 
     def _append_event(self, message: str, level: str = "info") -> None:
         self._events.append((time.time(), message, level))
-
-    @staticmethod
-    def _snapshot_to_dict(snapshot: MetricsSnapshot) -> dict[str, Any]:
-        data = asdict(snapshot)
-        data["alerts"] = [
-            {
-                "resource": alert.resource.value,
-                "severity": alert.severity.value,
-                "message": alert.message,
-                "slope_per_second": alert.slope_per_second,
-                "window_seconds": alert.window_seconds,
-                "current_value": alert.current_value,
-                "baseline_value": alert.baseline_value,
-            }
-            for alert in snapshot.alerts
-        ]
-        data["severity"] = snapshot.severity.value
-        return data
 
     @staticmethod
     def _read_key() -> str | None:
