@@ -1,4 +1,4 @@
-"""Parse and format the human-friendly durations used by flags and reports."""
+"""Parse and format the durations and sizes used by flags, the UI, and reports."""
 
 from __future__ import annotations
 
@@ -87,4 +87,28 @@ def format_duration(seconds: float) -> str:
     return "".join(f"{amount}{unit}" for amount, unit in parts if amount)
 
 
-__all__ = ["format_duration", "parse_duration"]
+def format_clock(seconds: float) -> str:
+    """Render elapsed seconds as ``HH:MM:SS``, prefixed by days when needed."""
+    whole = int(max(0.0, seconds)) if math.isfinite(seconds) else 0
+    days, remainder = divmod(whole, 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes, secs = divmod(remainder, 60)
+    clock = f"{hours:02d}:{minutes:02d}:{secs:02d}"
+    return f"{days}d {clock}" if days else clock
+
+
+def format_bytes(value: float) -> str:
+    """Render a byte count in binary units: ``512.0 B``, ``1.5 MB``.
+
+    Negative and non-finite values render as zero; callers add signs.
+    """
+    units = ("B", "KB", "MB", "GB", "TB")
+    amount = max(0.0, value) if math.isfinite(value) else 0.0
+    for unit in units:
+        if amount < 1024 or unit == units[-1]:
+            return f"{amount:,.1f} {unit}"
+        amount /= 1024
+    return f"{amount:,.1f} TB"
+
+
+__all__ = ["format_bytes", "format_clock", "format_duration", "parse_duration"]

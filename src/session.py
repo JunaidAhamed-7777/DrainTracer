@@ -27,6 +27,7 @@ from .report import (
     write_json_report,
 )
 from .theme import select_glyphs
+from .units import format_bytes, format_clock
 
 HISTORY_KEYS = ("cpu_percent", "rss_bytes", "private_bytes", "handles", "threads")
 
@@ -358,24 +359,8 @@ class MonitorSession:
             return "ok"
         return "alert"
 
-    @staticmethod
-    def _format_bytes(value: float) -> str:
-        units = ("B", "KB", "MB", "GB", "TB")
-        amount = max(0.0, value)
-        for unit in units:
-            if amount < 1024 or unit == units[-1]:
-                return f"{amount:,.1f} {unit}"
-            amount /= 1024
-        return f"{value:,.1f} B"
-
-    @staticmethod
-    def _format_duration(seconds: float) -> str:
-        whole = int(max(0.0, seconds))
-        days, remainder = divmod(whole, 86400)
-        hours, remainder = divmod(remainder, 3600)
-        minutes, secs = divmod(remainder, 60)
-        clock = f"{hours:02d}:{minutes:02d}:{secs:02d}"
-        return f"{days}d {clock}" if days else clock
+    _format_bytes = staticmethod(format_bytes)
+    _format_duration = staticmethod(format_clock)
 
 
 __all__ = ["HISTORY_KEYS", "MonitorSession"]

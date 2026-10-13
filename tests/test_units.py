@@ -6,7 +6,7 @@ import unittest
 
 import helpers  # noqa: F401  (adds the repository root to sys.path)
 
-from src.units import format_duration, parse_duration
+from src.units import format_bytes, format_clock, format_duration, parse_duration
 
 
 class ParseDurationTests(unittest.TestCase):
@@ -66,6 +66,23 @@ class FormatDurationTests(unittest.TestCase):
     def test_round_trip(self) -> None:
         for seconds in (0.25, 5.0, 90.0, 3900.0):
             self.assertAlmostEqual(parse_duration(format_duration(seconds)), seconds)
+
+
+class FormatClockAndBytesTests(unittest.TestCase):
+    def test_clock(self) -> None:
+        self.assertEqual(format_clock(0), "00:00:00")
+        self.assertEqual(format_clock(3725.9), "01:02:05")
+        self.assertEqual(format_clock(90061), "1d 01:01:01")
+        self.assertEqual(format_clock(-5), "00:00:00")
+        self.assertEqual(format_clock(float("nan")), "00:00:00")
+
+    def test_bytes(self) -> None:
+        self.assertEqual(format_bytes(512), "512.0 B")
+        self.assertEqual(format_bytes(1536), "1.5 KB")
+        self.assertEqual(format_bytes(5 * 1024**3), "5.0 GB")
+        self.assertEqual(format_bytes(3 * 1024**5), "3,072.0 TB")
+        self.assertEqual(format_bytes(-10), "0.0 B")
+        self.assertEqual(format_bytes(float("inf")), "0.0 B")
 
 
 if __name__ == "__main__":
