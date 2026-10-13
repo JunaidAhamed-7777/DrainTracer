@@ -645,6 +645,7 @@ tr.root td:nth-child(3){font-weight:700}
 footer{margin-top:24px;color:var(--muted);font-size:12px;text-align:center}
 footer p{margin:2px 0}
 @media (max-width:640px){.wrap{padding:18px 12px 32px}h1{font-size:22px}
+.facts{grid-template-columns:1fr 1fr;gap:8px 12px}
 .latest{width:100%;margin-left:0}.verdict{align-items:flex-start}}
 @media print{body{background:#fff;color:#000}.reset,.hint{display:none}
 .panel,.card,.verdict{break-inside:avoid}}
