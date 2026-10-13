@@ -45,7 +45,12 @@ class LeakResource(str, Enum):
 
 @dataclass(frozen=True)
 class LeakAlert:
-    """A single leak heuristic result for one resource category."""
+    """A single leak heuristic result for one resource category.
+
+    ``growth_by_type`` is set for handle alerts when handle types were
+    classified during the window: the change per handle category between
+    the first classification in the window and the latest one.
+    """
 
     resource: LeakResource
     severity: LeakSeverity
@@ -54,11 +59,16 @@ class LeakAlert:
     window_seconds: float
     current_value: float
     baseline_value: float
+    growth_by_type: dict[str, int] | None = None
 
 
 @dataclass(frozen=True)
 class ProcessMetrics:
-    """Aggregated metrics for one process in the monitored tree."""
+    """Aggregated metrics for one process in the monitored tree.
+
+    ``handle_types`` maps handle categories (see ``handle_types.CATEGORIES``)
+    to counts on samples where handle types were classified, else ``None``.
+    """
 
     pid: int
     name: str
@@ -73,11 +83,16 @@ class ProcessMetrics:
     io_write_bytes_per_sec: float
     access_denied: bool = False
     ppid: int | None = None
+    handle_types: dict[str, int] | None = None
 
 
 @dataclass(frozen=True)
 class MetricsSnapshot:
-    """Point-in-time view of the monitored process tree and leak state."""
+    """Point-in-time view of the monitored process tree and leak state.
+
+    ``handle_types`` holds tree-wide handle counts per category on samples
+    where handle types were classified (every few seconds), else ``None``.
+    """
 
     timestamp: float
     root_pid: int | None
@@ -89,6 +104,7 @@ class MetricsSnapshot:
     severity: LeakSeverity
     sample_interval_ms: int
     metadata: dict[str, Any] = field(default_factory=dict)
+    handle_types: dict[str, int] | None = None
 
 
 SnapshotCallback = Callable[[MetricsSnapshot], None]

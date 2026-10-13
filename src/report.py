@@ -47,6 +47,7 @@ def snapshot_to_dict(snapshot: MetricsSnapshot) -> dict[str, Any]:
             "window_seconds": alert.window_seconds,
             "current_value": alert.current_value,
             "baseline_value": alert.baseline_value,
+            "growth_by_type": alert.growth_by_type,
         }
         for alert in snapshot.alerts
     ]

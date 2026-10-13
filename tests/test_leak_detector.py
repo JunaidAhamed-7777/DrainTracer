@@ -144,6 +144,85 @@ class CpuSamplingTests(unittest.TestCase):
         self.assertGreater(root.cpu_percent, 30.0)
 
 
+def _counts(**values: int) -> dict[str, int]:
+    from src.handle_types import CATEGORIES
+
+    return {**dict.fromkeys(CATEGORIES, 0), **values}
+
+
+class HandleTypeSamplingTests(unittest.TestCase):
+    def _detector_with(self, *results):
+        from unittest import mock
+
+        classifier = mock.Mock(available=True)
+        classifier.classify.side_effect = list(results)
+        return _detector(handle_types_interval=2.0, classifier=classifier), classifier
+
+    def test_classification_follows_its_interval_and_skips_unreadable_processes(self) -> None:
+        from dataclasses import replace
+        from unittest import mock
+
+        from helpers import make_process
+
+        first = {1: _counts(file=5, event=2)}
+        detector, classifier = self._detector_with(first, first)
+        processes = [make_process(1), replace(make_process(2), access_denied=True)]
+        clock = [100.0, 100.01, 101.0, 102.5, 102.51]
+        with mock.patch("src.leak_detector.time.monotonic", side_effect=clock):
+            classified, totals = detector._classify_handles(processes)
+            self.assertEqual(classifier.classify.call_args.args[0], {1})
+            self.assertEqual(classified[0].handle_types, first[1])
+            self.assertIsNone(classified[1].handle_types)
+            self.assertEqual(totals["file"], 5)
+            self.assertEqual(sum(totals.values()), 7)
+
+            _, skipped = detector._classify_handles(processes)  # 101.0: not due yet
+            self.assertIsNone(skipped)
+            _, again = detector._classify_handles(processes)  # 102.5: due
+            self.assertIsNotNone(again)
+        self.assertEqual(classifier.classify.call_count, 2)
+
+    def test_slow_passes_back_off(self) -> None:
+        from unittest import mock
+
+        from helpers import make_process
+
+        detector, _classifier = self._detector_with({1: _counts(file=1)})
+        with mock.patch("src.leak_detector.time.monotonic", side_effect=[50.0, 50.5]):
+            detector._classify_handles([make_process(1)])
+        self.assertEqual(detector._next_classification, 60.0)  # 0.5 s pass x 20
+
+    def test_handle_alert_names_the_type_that_grew(self) -> None:
+        detector = _detector(window_seconds=(10.0,))
+        values = [200 + index * 10 for index in range(21)]  # 20 handles/s for 10 s
+        now = 1000.0
+        for index, value in enumerate(values):
+            now = 1000.0 + index * 0.5
+            detector._handle_series.add(now, value, 90.0)
+        detector._handle_type_history.extend([
+            (1000.0, _counts(file=100, event=40)),
+            (1004.0, _counts(file=150, event=40)),
+            (1010.0, _counts(file=290, event=48, thread=1)),
+        ])
+        alert = detector._evaluate_series(
+            detector._handle_series, LeakResource.HANDLES, now, values[-1]
+        )
+        self.assertIsNotNone(alert)
+        self.assertEqual(alert.growth_by_type, {"file": 190, "event": 8, "thread": 1})
+        self.assertTrue(alert.message.endswith("; by type: file +190, event +8"))
+
+    def test_memory_alerts_carry_no_type_growth(self) -> None:
+        detector = _detector(window_seconds=(10.0,))
+        values = [100 * MB + index * 4 * MB for index in range(21)]
+        now = _feed(detector, values)
+        detector._handle_type_history.extend([(1000.0, _counts(file=1)), (1010.0, _counts(file=9))])
+        alert = detector._evaluate_series(
+            detector._memory_series, LeakResource.MEMORY, now, values[-1]
+        )
+        self.assertIsNone(alert.growth_by_type)
+        self.assertNotIn("by type", alert.message)
+
+
 class SeverityScoreTests(unittest.TestCase):
     def test_score_tiers(self) -> None:
         score = LeakDetector._score_severity

@@ -6,7 +6,7 @@ import logging
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Iterable
 
 import psutil
@@ -19,6 +19,13 @@ from .events import (
     MetricsStream,
     ProcessMetrics,
 )
+from .handle_types import (
+    CATEGORIES,
+    HandleClassifier,
+    HandleCounts,
+    describe_type_growth,
+    total_counts,
+)
 from .process_runner import ProcessManager
 from .stats import least_squares_slope
 
@@ -26,6 +33,9 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_SAMPLE_INTERVAL_MS = 500
 DEFAULT_WINDOWS_SECONDS = (10.0, 30.0, 60.0)
+DEFAULT_HANDLE_TYPES_INTERVAL = 2.0
+# Back off handle classification so it stays near 5% of one core.
+_CLASSIFY_COST_FACTOR = 20.0
 
 
 @dataclass
@@ -65,10 +75,14 @@ class LeakDetector:
         stream: MetricsStream | None = None,
         sample_interval_ms: int = DEFAULT_SAMPLE_INTERVAL_MS,
         window_seconds: Iterable[float] = DEFAULT_WINDOWS_SECONDS,
+        handle_types_interval: float = DEFAULT_HANDLE_TYPES_INTERVAL,
+        classifier: HandleClassifier | None = None,
     ) -> None:
         self.process_manager = process_manager
         self.stream = stream or MetricsStream()
         self.sample_interval_ms = sample_interval_ms
+        self.handle_types_interval = handle_types_interval
+        self.classifier = classifier or HandleClassifier()
         self.window_seconds = tuple(sorted(window_seconds))
         self.max_window_seconds = max(self.window_seconds, default=60.0)
 
@@ -86,6 +100,8 @@ class LeakDetector:
         self._last_totals: dict[str, float] | None = None
         self._last_alerts: tuple[LeakAlert, ...] = ()
         self._last_severity = LeakSeverity.NONE
+        self._next_classification = 0.0
+        self._handle_type_history: deque[tuple[float, HandleCounts]] = deque()
 
     @property
     def is_running(self) -> bool:
@@ -201,12 +217,18 @@ class LeakDetector:
         self.process_manager.refresh_process_tree()
         processes = self._sample_processes()
         totals = self._aggregate_totals(processes)
+        processes, handle_types = self._classify_handles(processes)
+        max_age = self.max_window_seconds * 1.5
+        if handle_types is not None:
+            self._handle_type_history.append((now, handle_types))
+        while self._handle_type_history and self._handle_type_history[0][0] < now - max_age:
+            self._handle_type_history.popleft()
 
         self._last_processes = tuple(processes)
         self._last_totals = dict(totals)
-        self._memory_series.add(now, totals["private_bytes"], self.max_window_seconds * 1.5)
-        self._handle_series.add(now, totals["handles"], self.max_window_seconds * 1.5)
-        self._thread_series.add(now, totals["threads"], self.max_window_seconds * 1.5)
+        self._memory_series.add(now, totals["private_bytes"], max_age)
+        self._handle_series.add(now, totals["handles"], max_age)
+        self._thread_series.add(now, totals["threads"], max_age)
 
         alerts = self._evaluate_leaks(now, totals)
         severity = self._max_severity(alerts)
@@ -224,7 +246,60 @@ class LeakDetector:
             severity=severity,
             sample_interval_ms=self.sample_interval_ms,
             metadata={"tracked_pids": sorted(self.process_manager.tracked_pids)},
+            handle_types=handle_types,
         )
+
+    def _classify_handles(
+        self, processes: list[ProcessMetrics]
+    ) -> tuple[list[ProcessMetrics], HandleCounts | None]:
+        """Attach handle-type counts when a classification pass is due.
+
+        Classification reads the whole system handle table, so it runs every
+        ``handle_types_interval`` seconds rather than every sample, and backs
+        off further when a pass is slow. Processes whose metrics could not
+        be read are left out so the type counts add up to the handle total.
+        """
+        clock = time.monotonic()
+        if not self.classifier.available or clock < self._next_classification:
+            return processes, None
+        measured = {
+            process.pid
+            for process in processes
+            if not process.access_denied and process.status != psutil.STATUS_DEAD
+        }
+        if not measured:
+            return processes, None
+        per_pid = self.classifier.classify(measured)
+        cost = time.monotonic() - clock
+        self._next_classification = clock + max(
+            self.handle_types_interval, cost * _CLASSIFY_COST_FACTOR
+        )
+        if per_pid is None:
+            return processes, None
+        classified = [
+            replace(process, handle_types=per_pid[process.pid])
+            if process.pid in measured and process.pid in per_pid
+            else process
+            for process in processes
+        ]
+        totals = total_counts({pid: counts for pid, counts in per_pid.items() if pid in measured})
+        return classified, totals
+
+    def _handle_growth_since(self, since: float) -> dict[str, int] | None:
+        """Per-category handle change from the first classification at or after ``since``."""
+        history = self._handle_type_history
+        if len(history) < 2:
+            return None
+        baseline = next((counts for stamp, counts in history if stamp >= since), None)
+        latest = history[-1][1]
+        if baseline is None or baseline is latest:
+            return None
+        growth = {
+            category: latest[category] - baseline[category]
+            for category in CATEGORIES
+            if latest[category] != baseline[category]
+        }
+        return growth or None
 
     def _sample_processes(self) -> list[ProcessMetrics]:
         metrics: list[ProcessMetrics] = []
@@ -400,6 +475,7 @@ class LeakDetector:
         current_value: float,
     ) -> LeakAlert | None:
         best_alert: LeakAlert | None = None
+        best_since = timestamp
 
         for window in self.window_seconds:
             points = series.points_in_window(timestamp, window)
@@ -446,7 +522,17 @@ class LeakDetector:
 
             if best_alert is None or _SEVERITY_RANK[candidate.severity] > _SEVERITY_RANK[best_alert.severity]:
                 best_alert = candidate
+                best_since = times[0]
 
+        if best_alert is not None and resource == LeakResource.HANDLES:
+            growth = self._handle_growth_since(best_since)
+            if growth:
+                described = describe_type_growth(growth)
+                best_alert = replace(
+                    best_alert,
+                    growth_by_type=growth,
+                    message=f"{best_alert.message}; {described}" if described else best_alert.message,
+                )
         return best_alert
 
     _least_squares_slope = staticmethod(least_squares_slope)
