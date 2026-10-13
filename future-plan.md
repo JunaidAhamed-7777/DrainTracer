@@ -30,6 +30,6 @@
    - Add an initial startup grace period (e.g., `--warmup 10s`) during which resource sampling occurs but leak detection heuristics are deferred.
    - *Real-world use case:* Preventing false-positive alerts triggered by standard application initialization, cache warming, or JIT compilation spikes.
 
-8. **Report Comparison & Diffing Tool (`draintracer diff`)**
+8. **Report Comparison & Diffing Tool (`draintracer diff`)** — done in v1.5
    - Add a CLI command to compare two JSON leak reports: `python src/main.py diff reportA.json reportB.json`.
    - Highlight whether a patch reduced memory drift rates or resolved handle leaks between software versions.
