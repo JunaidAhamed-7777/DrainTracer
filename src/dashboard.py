@@ -160,6 +160,7 @@ class DashboardApp(MonitorSession):
                 )
                 return
             self._kill_armed_until = 0.0
+            self._stopped_target = True
             self.manager.kill()
             if self.manager.has_tracked_processes:
                 self._append_event(
