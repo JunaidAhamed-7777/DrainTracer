@@ -92,6 +92,7 @@ class MetricsSnapshot:
 
     ``handle_types`` holds tree-wide handle counts per category on samples
     where handle types were classified (every few seconds), else ``None``.
+    ``warming_up`` is true while leak heuristics are deferred by a warm-up.
     """
 
     timestamp: float
@@ -105,6 +106,7 @@ class MetricsSnapshot:
     sample_interval_ms: int
     metadata: dict[str, Any] = field(default_factory=dict)
     handle_types: dict[str, int] | None = None
+    warming_up: bool = False
 
 
 SnapshotCallback = Callable[[MetricsSnapshot], None]

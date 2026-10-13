@@ -273,6 +273,68 @@ class ThresholdTests(unittest.TestCase):
         self.assertEqual(detector.max_window_seconds, 60.0)
 
 
+class WarmupTests(unittest.TestCase):
+    def _detector(self, warmup: float) -> LeakDetector:
+        from unittest import mock
+
+        return _detector(
+            window_seconds=(10.0,), warmup_seconds=warmup,
+            classifier=mock.Mock(available=False),
+        )
+
+    def _collect(self, detector: LeakDetector, values: list[float], clock_gaps=()):
+        """Collect one snapshot per private-bytes value, 0.5 s apart."""
+        from unittest import mock
+
+        from helpers import make_process
+
+        snapshots = []
+        clock = 50.0
+        for index, value in enumerate(values):
+            clock += 0.5
+            if index in clock_gaps:
+                detector._last_active_sample = None  # what a paused stretch leaves behind
+                clock += 100.0
+            with mock.patch.object(
+                detector, "_sample_processes", return_value=[make_process(1, rss=int(value))]
+            ), mock.patch("src.leak_detector.time.time", return_value=1000.0 + index * 0.5), \
+                    mock.patch("src.leak_detector.time.monotonic", return_value=clock):
+                snapshots.append(detector._collect_snapshot())
+        return snapshots
+
+    def test_heuristics_wait_for_the_warmup_and_start_clean(self) -> None:
+        detector = self._detector(warmup=5.0)
+        values = [100 * MB + index * 4 * MB for index in range(31)]  # 8 MB/s throughout
+        snapshots = self._collect(detector, values)
+        warm = [snapshot.warming_up for snapshot in snapshots]
+        self.assertEqual(warm, [True] * 10 + [False] * 21)
+        self.assertFalse(any(snapshot.alerts for snapshot in snapshots[:27]))
+        self.assertTrue(snapshots[-1].alerts)  # the window refilled after the warm-up
+        self.assertEqual(detector.warmup_baseline["private_bytes"], values[10])
+        self.assertEqual(detector.warmup_completed_at, 1005.0)
+        self.assertEqual(len(detector._memory_series.points), 21)
+        self.assertEqual(detector.warmup_remaining, 0.0)
+
+    def test_startup_growth_is_only_a_leak_without_warmup(self) -> None:
+        spike = [100 * MB + min(index, 10) * 8 * MB for index in range(31)]  # 5 s ramp, then flat
+        quiet = self._collect(self._detector(warmup=5.0), spike)
+        self.assertFalse(any(snapshot.alerts for snapshot in quiet))
+        noisy = self._collect(self._detector(warmup=0.0), spike)
+        self.assertTrue(any(snapshot.alerts for snapshot in noisy))
+        self.assertFalse(any(snapshot.warming_up for snapshot in noisy))
+
+    def test_paused_time_does_not_count_toward_the_warmup(self) -> None:
+        detector = self._detector(warmup=5.0)
+        snapshots = self._collect(detector, [100 * MB] * 12, clock_gaps={4})
+        self.assertTrue(snapshots[10].warming_up)  # the 100 s gap was not counted
+        self.assertFalse(snapshots[11].warming_up)
+
+    def test_negative_warmup_is_rejected(self) -> None:
+        for value in (-1.0, float("nan")):
+            with self.assertRaises(ValueError):
+                _detector(warmup_seconds=value)
+
+
 class SeverityScoreTests(unittest.TestCase):
     def test_score_tiers(self) -> None:
         score = LeakDetector._score_severity

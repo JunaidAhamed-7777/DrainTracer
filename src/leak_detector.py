@@ -111,12 +111,15 @@ class LeakDetector:
         handle_types_interval: float = DEFAULT_HANDLE_TYPES_INTERVAL,
         classifier: HandleClassifier | None = None,
         thresholds: Mapping[LeakResource, ResourceThresholds] | None = None,
+        warmup_seconds: float = 0.0,
     ) -> None:
         windows = tuple(sorted(set(float(window) for window in window_seconds)))
         if not windows or any(not math.isfinite(window) or window <= 0 for window in windows):
             raise ValueError("window_seconds needs at least one positive window")
         if not sample_interval_ms > 0:
             raise ValueError("sample_interval_ms must be greater than zero")
+        if not math.isfinite(warmup_seconds) or warmup_seconds < 0:
+            raise ValueError("warmup_seconds must be zero or a positive number of seconds")
         self.process_manager = process_manager
         self.stream = stream or MetricsStream()
         self.sample_interval_ms = sample_interval_ms
@@ -146,6 +149,14 @@ class LeakDetector:
         self._next_classification = 0.0
         self._handle_type_history: deque[tuple[float, HandleCounts]] = deque()
 
+        # Warm-up: sampling runs but leak heuristics wait until this much
+        # active (unpaused) sampling time has passed.
+        self.warmup_seconds = float(warmup_seconds)
+        self._warmup_elapsed = 0.0
+        self._last_active_sample: float | None = None
+        self.warmup_completed_at: float | None = None
+        self.warmup_baseline: dict[str, float] | None = None
+
     @property
     def is_running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
@@ -153,6 +164,16 @@ class LeakDetector:
     @property
     def is_paused(self) -> bool:
         return self._pause_event.is_set()
+
+    @property
+    def warming_up(self) -> bool:
+        """Whether leak heuristics are still deferred by the warm-up."""
+        return self._warmup_elapsed < self.warmup_seconds
+
+    @property
+    def warmup_remaining(self) -> float:
+        """Active sampling seconds left before leak detection starts."""
+        return max(0.0, self.warmup_seconds - self._warmup_elapsed)
 
     def start(self) -> None:
         with self._lifecycle_lock:
@@ -197,6 +218,8 @@ class LeakDetector:
         while not self._stop_event.wait(interval):
             try:
                 if self._pause_event.is_set():
+                    # Paused time does not count toward the warm-up.
+                    self._last_active_sample = None
                     snapshot = self._build_paused_snapshot()
                 else:
                     snapshot = self._collect_snapshot()
@@ -240,6 +263,7 @@ class LeakDetector:
             severity=self._last_severity,
             sample_interval_ms=self.sample_interval_ms,
             metadata={"last_error": self.process_manager.last_error, "paused": True},
+            warming_up=self.warming_up,
         )
 
     @staticmethod
@@ -269,11 +293,15 @@ class LeakDetector:
 
         self._last_processes = tuple(processes)
         self._last_totals = dict(totals)
-        self._memory_series.add(now, totals["private_bytes"], max_age)
-        self._handle_series.add(now, totals["handles"], max_age)
-        self._thread_series.add(now, totals["threads"], max_age)
-
-        alerts = self._evaluate_leaks(now, totals)
+        warming_up = self._advance_warmup(now, totals)
+        alerts: list[LeakAlert] = []
+        if not warming_up:
+            # Series start empty after the warm-up, so initialization growth
+            # never reaches a window.
+            self._memory_series.add(now, totals["private_bytes"], max_age)
+            self._handle_series.add(now, totals["handles"], max_age)
+            self._thread_series.add(now, totals["threads"], max_age)
+            alerts = self._evaluate_leaks(now, totals)
         severity = self._max_severity(alerts)
         self._last_alerts = tuple(alerts)
         self._last_severity = severity
@@ -290,7 +318,25 @@ class LeakDetector:
             sample_interval_ms=self.sample_interval_ms,
             metadata={"tracked_pids": sorted(self.process_manager.tracked_pids)},
             handle_types=handle_types,
+            warming_up=warming_up,
         )
+
+    def _advance_warmup(self, now: float, totals: dict[str, float]) -> bool:
+        """Count active sampling time; return whether the warm-up continues.
+
+        The totals of the first sample after the warm-up become the baseline
+        that later growth is measured against.
+        """
+        clock = time.monotonic()
+        if self._last_active_sample is not None:
+            self._warmup_elapsed += clock - self._last_active_sample
+        self._last_active_sample = clock
+        if self.warming_up:
+            return True
+        if self.warmup_seconds > 0 and self.warmup_baseline is None:
+            self.warmup_baseline = dict(totals)
+            self.warmup_completed_at = now
+        return False
 
     def _classify_handles(
         self, processes: list[ProcessMetrics]
