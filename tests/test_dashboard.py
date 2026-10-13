@@ -124,5 +124,38 @@ class LayoutTests(unittest.TestCase):
         self.assertIn("CRITICAL leak signal observed", capture.get())
 
 
+class ExportTests(unittest.TestCase):
+    def test_each_export_gets_a_new_uuid_file_in_the_report_dir(self) -> None:
+        import json
+        import tempfile
+        from datetime import datetime
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as temp:
+            report_dir = Path(temp) / "leak_reports"
+            app = DashboardApp(
+                "C:/targets/worker.exe", console=make_console(), report_dir=report_dir
+            )
+            app._accept_snapshot(make_snapshot())
+            app._handle_key("e")
+            app._handle_key("e")
+
+            files = sorted(report_dir.glob("leak_report_*.json"))
+            self.assertEqual(len(files), 2)
+            ids = set()
+            for path in files:
+                report = json.loads(path.read_text(encoding="utf-8"))
+                self.assertEqual(path.name, f"leak_report_{report['report_id']}.json")
+                self.assertIsNotNone(datetime.fromisoformat(report["created_at"]).tzinfo)
+                self.assertEqual(report["version"], DashboardApp.VERSION)
+                self.assertEqual(len(report["snapshots"]), 1)
+                ids.add(report["report_id"])
+            self.assertEqual(len(ids), 2)
+            self.assertEqual(app._last_report_id, json.loads(app._last_report.read_text())["report_id"])
+            saved = [message for _s, message, _l in app._events if message.startswith("Report ")]
+            self.assertEqual(len(saved), 2)
+            self.assertIn(app._last_report_id, saved[-1])
+
+
 if __name__ == "__main__":
     unittest.main()

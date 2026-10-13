@@ -135,7 +135,7 @@ def _run_case(
             max_processes=0,
             alert_resources=(),
             errors=(f"target does not exist: {case.target}",),
-            report_path=reports_dir / f"{case.name}.json",
+            report_path=reports_dir / case.name,
         )
 
     capture = io.StringIO()
@@ -145,12 +145,11 @@ def _run_case(
         color_system=None,
         width=140,
     )
-    report_path = reports_dir / f"{case.name}.json"
     app = DashboardApp(
         str(case.target),
         args=list(case.args),
         console=console,
-        export_path=str(report_path),
+        report_dir=reports_dir / case.name,
     )
     app.detector = LeakDetector(
         app.manager,
@@ -176,12 +175,17 @@ def _run_case(
         if rendered:
             errors.append(f"dashboard output ended with: {rendered[-300:]}")
 
+    report_path = reports_dir / case.name
     try:
-        exported_path = app.export_log()
-        report = json.loads(exported_path.read_text(encoding="utf-8"))
+        report_path = app.export_log()
+        report = json.loads(report_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         errors.append(f"report export failed: {exc}")
         report = {"snapshots": []}
+    if report_path.name != f"leak_report_{report.get('report_id')}.json":
+        errors.append(f"report filename {report_path.name!r} does not embed its UUID")
+    if not report.get("created_at"):
+        errors.append("report has no ISO 8601 created_at timestamp")
 
     snapshots = report.get("snapshots", [])
     if not snapshots:
