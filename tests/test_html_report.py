@@ -7,6 +7,8 @@ import hashlib
 import html
 import json
 import re
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -107,6 +109,19 @@ class RenderTests(unittest.TestCase):
             digest = base64.b64encode(hashlib.sha256(body.encode("utf-8")).digest()).decode()
             self.assertIn(f"'sha256-{digest}'", policy)
 
+    def test_handle_types_reach_the_card_chart_and_process_table(self) -> None:
+        snapshots = []
+        for index in range(3):
+            snapshot = snapshot_to_dict(make_snapshot(timestamp=1000.0 + index))
+            snapshot["handle_types"] = {"file": 10 + 30 * index, "socket": 4, "other": 50}
+            snapshot["processes"][0]["handle_types"] = snapshot["handle_types"]
+            snapshots.append(snapshot)
+        document = render_html_report(_report(snapshots=snapshots))
+        self.assertIn("by type: file +60", document)
+        self.assertIn("file 70 · socket 4 · other 50", document)
+        payload = json.loads(_data_block(document))
+        self.assertEqual(payload["handle_types"]["categories"], ["file", "socket", "other"])
+
     def test_legacy_and_empty_reports_render(self) -> None:
         legacy = render_html_report(
             {"events": ["10:00:00 Launched old.exe"], "snapshots": [], "target_path": "old.exe"}
@@ -116,6 +131,20 @@ class RenderTests(unittest.TestCase):
         empty = render_html_report({})
         self.assertIn("No events were recorded.", empty)
         self.assertIn("No process measurements were recorded.", empty)
+
+
+@unittest.skipUnless(shutil.which("node"), "Node.js is not installed")
+class ScriptSyntaxTests(unittest.TestCase):
+    def test_chart_script_parses(self) -> None:
+        from src.html_report import _SCRIPT
+
+        with tempfile.TemporaryDirectory() as temp:
+            script = Path(temp) / "report.js"
+            script.write_text(_SCRIPT, encoding="utf-8")
+            result = subprocess.run(
+                ["node", "--check", str(script)], capture_output=True, text=True, timeout=60
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 class WriteTests(unittest.TestCase):

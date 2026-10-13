@@ -26,6 +26,7 @@ from .analysis import (
     load_samples,
     summarize,
 )
+from .handle_types import describe_type_growth
 from .report import report_filename, write_text_atomic
 from .units import format_bytes, format_clock
 
@@ -173,13 +174,15 @@ def _cards(summary: ReportSummary) -> str:
             )
             drift = "drift " + _rate(resource, stats.drift_per_second or 0.0)
         episodes = f"{stats.episodes} signal episode{'s' if stats.episodes != 1 else ''}"
+        types = _handle_type_line(summary) if resource == "handles" else ""
         cards.append(
             f'<article class="card"><h3>{_e(_RESOURCE_TITLES[resource])}'
             f'<span class="badge sev-{_e(stats.worst)}">{_e(badge)}</span></h3>'
             f'<div class="big">{_e(big)}</div>'
             f'<div class="sub">{_e(line)}</div>'
             f'<div class="sub">{_e(" · ".join(part for part in (drift, episodes) if part))}</div>'
-            "</article>"
+            + (f'<div class="sub">{_e(types)}</div>' if types else "")
+            + "</article>"
         )
     peaks = summary.peaks
     cards.append(
@@ -287,6 +290,7 @@ def _processes_panel(report: Mapping[str, Any]) -> str:
         caption = ""
     else:
         root_pid = snapshot.get("root_pid")
+        types_by_pid = _process_handle_types(report)
         processes = [p for p in snapshot.get("processes", ()) if isinstance(p, Mapping)]
         processes.sort(key=lambda p: (p.get("pid") != root_pid, _int(p.get("pid"))))
         rows = []
@@ -299,7 +303,7 @@ def _processes_panel(report: Mapping[str, Any]) -> str:
                 ("access denied" if denied else str(process.get("status", "")), ""),
             ]
             if denied:
-                cells += [("n/a", "num")] * 5
+                cells += [("n/a", "num")] * 5 + [("n/a", "")]
             else:
                 cells += [
                     (f"{finite(process.get('cpu_percent')) or 0.0:.1f}%", "num"),
@@ -307,6 +311,7 @@ def _processes_panel(report: Mapping[str, Any]) -> str:
                     (format_bytes(finite(process.get("private_bytes")) or 0.0), "num"),
                     (f"{_int(process.get('handles')):,}", "num"),
                     (f"{_int(process.get('threads')):,}", "num"),
+                    (_type_breakdown(types_by_pid.get(process.get("pid"))) or "—", ""),
                 ]
             row_class = ' class="root"' if process.get("pid") == root_pid else ""
             rows.append(
@@ -321,6 +326,7 @@ def _processes_panel(report: Mapping[str, Any]) -> str:
             (
                 ("PID", "num"), ("Parent", "num"), "Name", "Status", ("CPU", "num"),
                 ("RSS", "num"), ("Private", "num"), ("Handles", "num"), ("Threads", "num"),
+                "Handle types",
             ),
             rows,
         )
@@ -429,6 +435,44 @@ def _last_snapshot_with_processes(report: Mapping[str, Any]) -> Mapping[str, Any
     return None
 
 
+def _type_breakdown(counts: Mapping[str, int] | None, limit: int = 3) -> str:
+    """Largest named handle categories first: ``file 120 · event 80 · registry 12``."""
+    if not counts:
+        return ""
+    ranked = sorted(
+        ((count, category) for category, count in counts.items() if count > 0),
+        key=lambda item: (item[1] == "other", -item[0]),
+    )
+    return " · ".join(f"{category} {count:,}" for count, category in ranked[:limit])
+
+
+def _handle_type_line(summary: ReportSummary) -> str:
+    """Which handle types grew over the run, or what the handles were at the end."""
+    growth = describe_type_growth(summary.handle_type_growth or {})
+    if growth:
+        return growth
+    breakdown = _type_breakdown(summary.handle_types)
+    return f"at the end: {breakdown}" if breakdown else ""
+
+
+def _process_handle_types(report: Mapping[str, Any]) -> dict[Any, Mapping[str, int]]:
+    """Per-PID handle types from the last snapshot where they were classified."""
+    snapshots = report.get("snapshots")
+    if not isinstance(snapshots, (list, tuple)):
+        return {}
+    for snapshot in reversed(snapshots):
+        if not isinstance(snapshot, Mapping) or not snapshot.get("handle_types"):
+            continue
+        found = {
+            process.get("pid"): process["handle_types"]
+            for process in snapshot.get("processes") or ()
+            if isinstance(process, Mapping) and isinstance(process.get("handle_types"), Mapping)
+        }
+        if found:
+            return found
+    return {}
+
+
 def _int(value: Any) -> int:
     number = finite(value)
     return int(number) if number is not None else 0
@@ -527,8 +571,13 @@ font:inherit;font-size:12.5px;cursor:pointer}
 -webkit-user-select:none}
 .s-private{--series:var(--accent)}.s-rss{--series:var(--cyan)}.s-handles{--series:var(--low)}
 .s-threads{--series:var(--teal)}.s-cpu{--series:var(--accent-alt)}
+.h-file{--series:var(--low)}.h-socket{--series:var(--critical)}.h-registry{--series:var(--teal)}
+.h-event{--series:var(--accent-alt)}.h-thread{--series:var(--cyan)}.h-process{--series:var(--accent)}
+.h-mutex{--series:var(--medium)}.h-semaphore{--series:var(--ok)}.h-section{--series:var(--text)}
+.h-other{--series:var(--muted)}
 .line{fill:none;stroke:var(--series);stroke-width:1.8;stroke-linejoin:round;stroke-linecap:round}
 .line.s-rss{stroke-width:1.4;stroke-dasharray:5 4;opacity:.85}
+.line.h-other{stroke-width:1.4;stroke-dasharray:2 3}
 .grid line{stroke:var(--grid)}
 .grid .tick,.axis{stroke:var(--border)}
 .axis-label{fill:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
@@ -603,8 +652,30 @@ _SCRIPT = """
     return;
   }
 
-  const T = data.t;
-  const seriesData = data.series || {};
+  // A timeline is one time base and the series sampled on it. Handle types
+  // are classified every few seconds, so they have their own.
+  function timeline(times, values) {
+    const firstAtOrAfter = (t) => {
+      let low = 0;
+      let high = times.length;
+      while (low < high) {
+        const middle = (low + high) >> 1;
+        if (times[middle] < t) low = middle + 1; else high = middle;
+      }
+      return low;
+    };
+    const nearestIndex = (t) => {
+      const index = firstAtOrAfter(t);
+      if (index <= 0) return 0;
+      if (index >= times.length) return times.length - 1;
+      return t - times[index - 1] <= times[index] - t ? index - 1 : index;
+    };
+    return { times, values, firstAtOrAfter, nearestIndex };
+  }
+  const main = timeline(data.t, data.series || {});
+  const typeData = data.handle_types || {};
+  const types = timeline(Array.isArray(typeData.t) ? typeData.t : [], typeData.series || {});
+  const T = main.times;
   const full = [T[0], T[T.length - 1] > T[0] ? T[T.length - 1] : T[0] + 1];
   const step = T.length > 1 ? (T[T.length - 1] - T[0]) / (T.length - 1) : 1;
   let view = full.slice();
@@ -613,20 +684,34 @@ _SCRIPT = """
 
   const CHARTS = [
     // minSpan keeps small noise on a large baseline from filling the chart.
-    { key: "memory", title: "Memory", unit: "bytes", resource: "memory",
+    { key: "memory", title: "Memory", unit: "bytes", resource: "memory", line: main,
       minSpan: (top) => Math.max(1048576, top * 0.02), series: [
       { key: "private", label: "Private bytes", cls: "s-private" },
       { key: "rss", label: "Working set (RSS)", cls: "s-rss" } ] },
-    { key: "handles", title: "Handles", unit: "count", resource: "handles",
+    { key: "handles", title: "Handles", unit: "count", resource: "handles", line: main,
       minSpan: (top) => Math.max(10, top * 0.05), series: [
       { key: "handles", label: "Handles", cls: "s-handles" } ] },
-    { key: "threads", title: "Threads", unit: "count", resource: "threads",
+    { key: "threads", title: "Threads", unit: "count", resource: "threads", line: main,
       minSpan: (top) => Math.max(4, top * 0.05), series: [
       { key: "threads", label: "Threads", cls: "s-threads" } ] },
-    { key: "cpu", title: "CPU", unit: "percent", resource: null,
+    { key: "cpu", title: "CPU", unit: "percent", resource: null, line: main,
       minSpan: () => 10, series: [
       { key: "cpu", label: "CPU, sum of processes", cls: "s-cpu" } ] },
   ];
+  const HANDLE_LABELS = { file: "Files", socket: "Sockets", registry: "Registry keys",
+    event: "Events", thread: "Threads", process: "Processes", mutex: "Mutexes",
+    semaphore: "Semaphores", section: "Sections", other: "Other" };
+  const known = (category) => Object.prototype.hasOwnProperty.call(HANDLE_LABELS, category);
+  const categories = Array.isArray(typeData.categories) ? typeData.categories : [];
+  if (types.times.length > 0 && categories.length > 0) {
+    // Handle signals shade this chart too; markers stay on the total.
+    CHARTS.splice(2, 0, { key: "types", title: "Handle types", unit: "count",
+      resource: "handles", markers: false, line: types,
+      minSpan: (top) => Math.max(10, top * 0.05),
+      series: categories.map((category) => ({ key: category,
+        label: known(category) ? HANDLE_LABELS[category] : category,
+        cls: "h-" + (known(category) ? category : "other") })) });
+  }
 
   const pad2 = (value) => String(value).padStart(2, "0");
   const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB"];
@@ -658,21 +743,6 @@ _SCRIPT = """
     return pad2(date.getHours()) + ":" + pad2(date.getMinutes()) + ":" + pad2(date.getSeconds());
   }
 
-  function firstAtOrAfter(t) {
-    let low = 0;
-    let high = T.length;
-    while (low < high) {
-      const middle = (low + high) >> 1;
-      if (T[middle] < t) low = middle + 1; else high = middle;
-    }
-    return low;
-  }
-  function nearestIndex(t) {
-    const index = firstAtOrAfter(t);
-    if (index <= 0) return 0;
-    if (index >= T.length) return T.length - 1;
-    return t - T[index - 1] <= T[index] - t ? index - 1 : index;
-  }
   function valueNear(values, index) {
     for (let offset = 0; offset <= 3; offset += 1) {
       for (const candidate of [index - offset, index + offset]) {
@@ -696,7 +766,7 @@ _SCRIPT = """
     let high = -Infinity;
     for (const series of chart.series) {
       if (isHidden(chart, series)) continue;
-      const values = seriesData[series.key] || [];
+      const values = chart.line.values[series.key] || [];
       for (let index = first; index < last; index += 1) {
         const value = values[index];
         if (value == null) continue;
@@ -762,11 +832,11 @@ _SCRIPT = """
     return { values, precise: chosen < 1 };
   }
 
-  function linePath(values, first, last, x, y, pixels) {
+  function linePath(times, values, first, last, x, y, pixels) {
     let path = "";
     let pen = false;
     const to = (index) => {
-      path += (pen ? "L" : "M") + x(T[index]).toFixed(1) + "," + y(values[index]).toFixed(1);
+      path += (pen ? "L" : "M") + x(times[index]).toFixed(1) + "," + y(values[index]).toFixed(1);
       pen = true;
     };
     const count = last - first;
@@ -801,8 +871,13 @@ _SCRIPT = """
   }
 
   function peakText(chart) {
+    if (chart.key === "types") {
+      const times = chart.line.times;
+      const every = times.length > 1 ? (times[times.length - 1] - times[0]) / (times.length - 1) : 0;
+      return every > 0 ? "classified about every " + every.toFixed(1) + " s" : "classified once";
+    }
     const series = chart.series[0];
-    const values = seriesData[series.key] || [];
+    const values = chart.line.values[series.key] || [];
     let peak = null;
     for (const value of values) if (value != null && (peak === null || value > peak)) peak = value;
     return peak === null ? "no measurements" : "peak " + FORMAT[chart.unit](peak);
@@ -852,8 +927,9 @@ _SCRIPT = """
     const plotHeight = height - m.top - m.bottom;
     const a = view[0];
     const b = view[1];
-    const first = Math.max(0, firstAtOrAfter(a) - 1);
-    const last = Math.min(T.length, firstAtOrAfter(b) + 1);
+    const line = def.line;
+    const first = Math.max(0, line.firstAtOrAfter(a) - 1);
+    const last = Math.min(line.times.length, line.firstAtOrAfter(b) + 1);
     const scale = yScale(def, first, last);
     const x = (t) => m.left + ((t - a) / (b - a)) * plotWidth;
     const y = (value) => scale
@@ -903,7 +979,8 @@ _SCRIPT = """
     if (scale) {
       for (const series of def.series) {
         if (isHidden(def, series)) continue;
-        const path = linePath(seriesData[series.key] || [], first, last, x, y, plotWidth);
+        const path = linePath(line.times, line.values[series.key] || [], first, last, x, y,
+          plotWidth);
         if (path) svgNode("path", { d: path, class: "line " + series.cls }, area);
       }
     }
@@ -912,10 +989,10 @@ _SCRIPT = """
 
     chart.markers = [];
     const signal = def.series[0];
-    if (scale && def.resource && !isHidden(def, signal)) {
+    if (scale && def.resource && def.markers !== false && !isHidden(def, signal)) {
       for (const marker of data.markers || []) {
         if (marker.resource !== def.resource || marker.t < a || marker.t > b) continue;
-        const value = valueNear(seriesData[signal.key] || [], nearestIndex(marker.t));
+        const value = valueNear(line.values[signal.key] || [], line.nearestIndex(marker.t));
         if (value == null) continue;
         const cx = x(marker.t);
         const dot = svgNode("circle", { cx, cy: y(value), r: 5.5, class: "marker" }, svg);
@@ -927,7 +1004,8 @@ _SCRIPT = """
     }
 
     const group = svgNode("g", { class: "cross", visibility: "hidden" }, svg);
-    const line = svgNode("line", { x1: 0, x2: 0, y1: m.top, y2: m.top + plotHeight }, group);
+    const crossLine = svgNode("line", { x1: 0, x2: 0, y1: m.top, y2: m.top + plotHeight },
+      group);
     const dots = def.series.map((series) => svgNode("circle", { r: 3.5,
       class: "dot " + series.cls }, group));
     chart.brush = svgNode("rect", { x: 0, y: m.top, width: 0, height: plotHeight,
@@ -937,7 +1015,7 @@ _SCRIPT = """
         svg).textContent = "No measurements in this range";
     }
     chart.geom = { m, plotWidth, plotHeight, a, b, x, y, scale, width };
-    chart.cross = { group, line, dots };
+    chart.cross = { group, line: crossLine, dots };
   }
 
   function drawAll() {
@@ -972,11 +1050,13 @@ _SCRIPT = """
     }
   }
   function showAt(t, source, pointerX) {
-    const index = nearestIndex(t);
-    const at = T[index];
+    // Every chart's crosshair sits on the nearest main sample; dots and the
+    // tooltip use each chart's own nearest sample.
+    const at = T[main.nearestIndex(t)];
     for (const chart of charts) {
       const geom = chart.geom;
-      if (!geom || !chart.cross) continue;
+      const line = chart.def.line;
+      if (!geom || !chart.cross || line.times.length === 0) continue;
       if (at < geom.a || at > geom.b) {
         chart.cross.group.setAttribute("visibility", "hidden");
         continue;
@@ -984,38 +1064,42 @@ _SCRIPT = """
       const xx = geom.x(at);
       chart.cross.line.setAttribute("x1", xx);
       chart.cross.line.setAttribute("x2", xx);
+      const index = line.nearestIndex(at);
       chart.def.series.forEach((series, position) => {
         const dot = chart.cross.dots[position];
-        const value = (seriesData[series.key] || [])[index];
+        const value = (line.values[series.key] || [])[index];
         if (value == null || !geom.scale || isHidden(chart.def, series)) {
           dot.setAttribute("visibility", "hidden");
           return;
         }
         dot.setAttribute("visibility", "visible");
-        dot.setAttribute("cx", xx);
+        dot.setAttribute("cx", geom.x(line.times[index]));
         dot.setAttribute("cy", geom.y(value));
       });
       chart.cross.group.setAttribute("visibility", "visible");
       if (chart !== source) chart.tip.hidden = true;
     }
-    if (source) fillTip(source, index, pointerX);
+    if (source && source.def.line.times.length > 0) {
+      fillTip(source, source.def.line.nearestIndex(at), pointerX);
+    }
   }
   function fillTip(chart, index, pointerX) {
     const def = chart.def;
+    const line = def.line;
     const tip = chart.tip;
     tip.textContent = "";
-    const when = clock(T[index]);
-    html("div", "tip-time", "+" + elapsed(T[index]) + (when ? " · " + when : ""), tip);
+    const when = clock(line.times[index]);
+    html("div", "tip-time", "+" + elapsed(line.times[index]) + (when ? " · " + when : ""), tip);
     for (const series of def.series) {
       if (isHidden(def, series)) continue;
-      const value = (seriesData[series.key] || [])[index];
+      const value = (line.values[series.key] || [])[index];
       const row = html("div", "tip-row " + series.cls, null, tip);
       html("span", "swatch", null, row);
       html("span", "tip-label", series.label, row);
       html("span", "tip-value", value == null ? "not measured" : FORMAT[def.unit](value), row);
     }
     if (def.resource) {
-      const at = T[index];
+      const at = line.times[index];
       const span = (data.spans || []).find((item) => item.resource === def.resource &&
         at >= item.start && at <= item.end);
       if (span) {
