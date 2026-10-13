@@ -66,6 +66,47 @@ sessions are handled conservatively:
 
 `--pid` cannot be combined with `--target` or with arguments after `--`.
 
+### Headless mode for CI
+
+`--headless` monitors without the dashboard, for pipelines such as GitHub
+Actions. It needs `--target` or `--pid`, prints each event and a statistics
+line every five seconds, stops when the time limit passes or the monitored
+tree exits, exports a report to `--report-dir`, and sets the exit code:
+
+| Exit code | Meaning |
+| --- | --- |
+| `0` | No leak signal reached the `--fail-on` severity |
+| `1` | A leak signal reached `--fail-on` (default `high`: HIGH or CRITICAL) |
+| `2` | Usage error, monitoring could not start, or the report could not be written |
+| `130` | Interrupted with Ctrl+C before a failing signal |
+
+```powershell
+python src/main.py --headless --target .\build\server.exe --timeout 60s
+python src/main.py --headless --pid 4820 --timeout 10m --fail-on medium
+```
+
+- `--timeout` accepts `90`, `90s`, `5m`, `1h30m`, or `250ms`. Without it a
+  headless run lasts until the process tree exits.
+- `--fail-on` takes `low`, `medium`, `high` (default), or `critical`.
+- Launched targets are terminated at the time limit; attached targets are
+  released and keep running.
+- On GitHub Actions (`GITHUB_ACTIONS=true`) the verdict is also emitted as an
+  error or warning annotation on the run.
+
+A Windows job step:
+
+```yaml
+- name: Leak check
+  shell: pwsh
+  run: python src/main.py --headless --target .\dist\app.exe --timeout 2m
+```
+
+Upload `leak_reports/` as a build artifact with `if: always()` to keep the
+report when the check fails.
+
+`--timeout` also works with the dashboard: the title bar shows an `ENDS IN`
+countdown and the session closes into its summary when the limit passes.
+
 ## Torture showcase
 
 The [`torture`](torture/README.md) directory contains bounded `.py`, `.bat`,
@@ -74,17 +115,19 @@ The [`torture`](torture/README.md) directory contains bounded `.py`, `.bat`,
 - sustained memory, handle, and thread growth;
 - normal resource bursts that recover;
 - recursive process-tree tracking;
-- cleanup after the root exits before a child; and
-- stable and fast-exit baselines.
+- cleanup after the root exits before a child;
+- stable and fast-exit baselines; and
+- headless pass/fail exit codes.
 
-Run every target through the real dashboard and JSON export path:
+Run every target through the real dashboard, headless runner, and JSON
+export path:
 
 ```powershell
 python torture\verify_suite.py
 ```
 
-The full suite takes about a minute and exits non-zero if an expected alert,
-process-tree observation, report, or cleanup check fails.
+The full suite takes about 90 seconds and exits non-zero if an expected
+alert, exit code, process-tree observation, report, or cleanup check fails.
 
 ## How active leak signals are detected
 
@@ -180,7 +223,8 @@ growth is persistent and highly monotonic.
 ## Dashboard layout
 
 - **Title bar** — status pill (`RUNNING`, `PAUSED`, `EXITED`), target, root
-  PID, process count, uptime, and sample count.
+  PID, process count, uptime, the `--timeout` countdown when set, and sample
+  count.
 - **Metric cards** — CPU, memory (RSS), handles, and threads, each with a
   multi-row sparkline and the change over the last 10 seconds. The CPU card
   also shows read/write I/O rates; the memory card shows private and virtual
@@ -214,15 +258,20 @@ glyphs.
 python -m unittest discover -s tests
 ```
 
-Unit tests cover rendering at each layout breakpoint and the detector,
-report, and CLI helpers. The torture suite above exercises real processes.
+Unit tests cover rendering at each layout breakpoint, the session
+lifecycle, headless exit codes, reports, and CLI parsing. The torture suite
+above exercises real processes.
 
 ## Project layout
 
 ```text
 src/
 ├── main.py             # CLI entry point, title, and picker workflow
+├── session.py          # Monitor lifecycle, collected telemetry, export
 ├── dashboard.py        # Rich terminal UI and controls
+├── headless.py         # Non-interactive CI runner and exit codes
+├── report.py           # Report IDs, timestamps, and atomic JSON writes
+├── units.py            # Duration parsing and formatting
 ├── theme.py            # Palette and Unicode/ASCII glyph sets
 ├── widgets.py          # Sparkline and size-aware renderables
 ├── events.py           # Snapshot models and MetricsStream

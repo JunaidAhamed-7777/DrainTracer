@@ -224,6 +224,28 @@ still available while cleanup is in progress. Previously discovered children
 remain tracked after the root exits until they themselves exit or their
 recorded identity no longer matches.
 
+## Headless runs
+
+`--headless` uses the same session, sampler, and detector as the dashboard;
+only the presentation differs. The main thread polls the snapshot stream
+every 100 ms and ends monitoring when either:
+
+1. the time limit passes (`--timeout`, wall-clock, counted from the moment
+   the target was launched or attached), or
+2. the root and every tracked descendant have exited. A child that outlives
+   its root keeps the run going until it exits too.
+
+When the tree exits on its own, the sampler is stopped and one final sample
+is taken so the exit (and a launched root's exit code) reaches the event log
+and the report. Shutdown then terminates a launched tree that is still
+running or releases an attached one, and a report is exported.
+
+The exit code is `1` when the strongest signal seen during the run reached
+`--fail-on` (default `high`), otherwise `130` after Ctrl+C, `2` when the
+report could not be written, and `0` for a clean run. Startup failures and
+usage errors also return `2`. Because the verdict uses the strongest signal
+seen at any point, a signal that later clears still fails the run.
+
 ## 7. Leak report structure
 
 Each export writes a new file to the report directory (`leak_reports/` by
@@ -237,11 +259,14 @@ Files are written to a temporary sibling first and then renamed into place.
   "report_schema": 2,
   "created_at": "2026-10-13T07:25:21.161+05:30",
   "session_started_at": "2026-10-13T07:25:15.621+05:30",
+  "session_ended_at": null,
   "app": "DRAINTRACER",
   "version": "vX.Y",
   "target_path": "C:\\path\\to\\target.exe",
   "root_pid": 1234,
-  "events": ["12:00:00 Attached to target.exe · PID 1234"],
+  "mode": "launch",
+  "target_exit_code": null,
+  "events": ["12:00:00 Launched target.exe · PID 1234"],
   "snapshots": []
 }
 ```
@@ -256,10 +281,16 @@ Files are written to a temporary sibling first and then renamed into place.
 - `created_at` — ISO 8601 local time, with UTC offset, when the report was
   written.
 - `session_started_at` — ISO 8601 time the monitor attached.
+- `session_ended_at` — ISO 8601 time monitoring stopped, or `null` when the
+  report was exported from a session that is still running (dashboard `E`).
 - `app` — application name.
 - `version` — runtime application version.
 - `target_path` — absolute selected target path.
-- `root_pid` — root PID when available.
+- `root_pid` — root PID; kept after cleanup releases the process.
+- `mode` — `launch` or `attach`.
+- `target_exit_code` — exit code of a launched root that exited on its own;
+  `null` while it runs, when DrainTracer had to stop it, and for attached
+  processes.
 - `events` — the most recent dashboard messages, each prefixed with its
   local `HH:MM:SS` timestamp.
 - `snapshots` — chronological exported telemetry snapshots.

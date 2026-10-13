@@ -41,6 +41,9 @@ time on resource-constrained systems.
 - The `attach-memory-growth` verifier case starts `memory_leak.py` outside
   DrainTracer, attaches with `--pid` semantics, and checks that quitting
   leaves the target running.
+- The `headless-memory-fails` and `headless-steady-passes` verifier cases run
+  `memory_leak.py` and `steady.py` through the `--headless` runner and check
+  its exit code (`1` and `0`) and its automatically exported report.
 - `fixtures/steady.exe` exercises direct executable launch with a stable
   .NET Framework workload.
 
@@ -73,9 +76,10 @@ python src/main.py --target .\torture\process_tree.bat -- --depth 3 --fanout 2
 
 ## Automated verification
 
-The verification runner uses the real `DashboardApp`, `ProcessManager`,
-`LeakDetector`, cleanup path, and JSON exporter. It shortens the detector
-window to four seconds so all cases finish in about a minute.
+The verification runner uses the real `DashboardApp`, `HeadlessRunner`,
+`ProcessManager`, `LeakDetector`, cleanup path, and JSON exporter. It
+shortens the detector window to four seconds so all cases finish in about
+90 seconds.
 
 ```powershell
 python torture\verify_suite.py
@@ -94,10 +98,10 @@ Reports are temporary by default. Keep them when diagnosis is useful:
 python torture\verify_suite.py --reports-dir .\torture\reports
 ```
 
-A successful full run ends with `9/9 cases passed`. The runner fails when an
-expected alert is absent, a stable/recovering target alerts, descendants are
-not observed, a report is invalid, or DrainTracer leaves tracked processes
-behind.
+A successful full run ends with `12/12 cases passed`. The runner fails when an
+expected alert is absent, a stable/recovering target alerts, a run returns the
+wrong exit code, descendants are not observed, a report is invalid, or
+DrainTracer leaves tracked processes behind.
 
 ## Rebuilding the executable
 
