@@ -21,9 +21,11 @@ proof that a particular allocation or handle is permanently unreleased.
 4. `LeakDetector` samples the tracked process tree every 500 ms and publishes
    `MetricsSnapshot` objects through `MetricsStream`.
 5. The Rich dashboard consumes snapshots on the main thread and renders
-   telemetry, alerts, trends, and the event log.
-6. On exit, the detector stops and the target process tree is terminated or
-   force-killed if it does not exit within the cleanup timeout.
+   telemetry, alerts, trends, the process tree, and the event log in the
+   terminal's alternate screen.
+6. On exit, the detector stops, the target process tree is terminated or
+   force-killed if it does not exit within the cleanup timeout, and a session
+   summary (duration, peaks, worst severity, report path) is printed.
 
 ## Quick start
 
@@ -155,6 +157,26 @@ growth is persistent and highly monotonic.
 - A `NONE` severity means no active heuristic signal was found in the current
   sample; it does not prove that the program has no leaks.
 
+## Dashboard layout
+
+- **Title bar** — status pill (`RUNNING`, `PAUSED`, `EXITED`), target, root
+  PID, process count, uptime, and sample count.
+- **Metric cards** — CPU, memory (RSS), handles, and threads, each with a
+  multi-row sparkline and the change over the last 10 seconds. The CPU card
+  also shows read/write I/O rates; the memory card shows private and virtual
+  bytes.
+- **Process tree** — every tracked process drawn under its parent, with CPU,
+  memory, handle, thread, and status columns.
+- **Leak health** — the overall signal plus a severity meter and growth
+  summary for each resource.
+- **Event log** — attach/exit events, pause/kill/export actions, and leak
+  signals when they are raised, escalate, ease, or clear.
+
+The layout adapts to the terminal: below 110 columns the panels stack, and
+below 30 rows the metric cards collapse into a one-line-per-metric strip.
+Terminals whose encoding cannot show Unicode fall back to ASCII boxes and
+glyphs.
+
 ## Dashboard controls
 
 - `Space` — pause/resume monitoring and the target process
@@ -162,16 +184,28 @@ growth is persistent and highly monotonic.
 - `E` — export collected snapshots and events to `leak_report.json`
 - `Q` — quit and cleanly terminate a running target
 
+## Tests
+
+```powershell
+python -m unittest discover -s tests
+```
+
+Unit tests cover rendering at each layout breakpoint and the detector,
+report, and CLI helpers. The torture suite above exercises real processes.
+
 ## Project layout
 
 ```text
 src/
 ├── main.py             # CLI entry point, title, and picker workflow
 ├── dashboard.py        # Rich terminal UI and controls
+├── theme.py            # Palette and Unicode/ASCII glyph sets
+├── widgets.py          # Sparkline and size-aware renderables
 ├── events.py           # Snapshot models and MetricsStream
 ├── file_picker.py      # Native Windows file selection
 ├── process_runner.py   # Process lifecycle and PID tree tracking
 └── leak_detector.py    # Sampling loop and leak heuristics
+tests/                  # Unit tests (stdlib unittest)
 torture/                # Bounded demonstration and edge-case targets
 ```
 
