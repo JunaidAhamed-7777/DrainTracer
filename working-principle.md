@@ -229,14 +229,23 @@ Severity thresholds are:
 - `HIGH` — score `>= 3.5`
 - `CRITICAL` — score `>= 4.5`
 
-The critical reference thresholds are resource-specific:
+The critical reference thresholds are resource-specific. These are the
+defaults:
 
 - Memory: 50 MiB accumulated growth or 5 MiB/s slope
 - Handles: 500 accumulated handles or 20 handles/s slope
 - Threads: 50 accumulated threads or 2 threads/s slope
 
 These are normalization references, not hard limits. A persistent but smaller
-growth pattern can still produce a low-severity signal.
+growth pattern can still produce a low-severity signal. A settings file can
+set `critical_delta` and `critical_slope` per resource and per profile; a
+profile that changes only one of them keeps the other. The score formula,
+the tiers, the monotonic and drop-ratio checks, and the window coverage
+rule are the same for every profile.
+
+The sample interval and the windows are configurable too. Every window must
+be at least four sample intervals long so it can hold the four samples the
+detector requires; settings that break this are rejected at startup.
 
 The detector emits at most one alert per resource in a snapshot: the alert
 with the strongest severity across the eligible windows. The snapshot's
@@ -344,6 +353,13 @@ the failure is logged.
 - `event_log` — the same messages as objects with `time` (ISO 8601),
   `timestamp` (Unix), `level` (`ok`, `info`, `warn`, `alert`, or `error`),
   and `message`.
+- `settings` — the configuration the detector ran with: `profile`,
+  `config_path`, `sample_interval_ms`, `windows_seconds`, `thresholds`
+  (per resource, `critical_delta` and `critical_slope`), and
+  `timeout_seconds`. Reports from runs with different settings are not
+  directly comparable.
+- `headless` — present for `--headless` runs: the `fail_on` severity and
+  whether it was `breached`.
 - `snapshots` — chronological exported telemetry snapshots.
 
 The dashboard retains up to 7,200 snapshots (one hour at the default

@@ -31,6 +31,9 @@ time on resource-constrained systems.
   attributed to `file` handles.
 - `socket_leak.py` retains loopback TCP connections and should raise a handle
   alert attributed to `socket` handles.
+- The `memory-growth-tolerated` verifier case runs `memory_leak.py` under the
+  `heavy` profile of `examples/drainrc.toml`, whose memory thresholds are
+  meant for workloads that legitimately grow fast, and expects no signal.
 - `thread_leak.py` retains blocked workers and should raise a thread alert.
 - `burst_recovery.py` repeatedly opens and releases handles and threads. Its
   recoveries should prevent a sustained leak alert.
@@ -82,9 +85,9 @@ python src/main.py --target .\torture\process_tree.bat -- --depth 3 --fanout 2
 ## Automated verification
 
 The verification runner uses the real `DashboardApp`, `HeadlessRunner`,
-`ProcessManager`, `LeakDetector`, cleanup path, and JSON exporter. It
-shortens the detector window to four seconds so all cases finish in about
-90 seconds.
+`ProcessManager`, `LeakDetector`, settings resolution, cleanup path, and
+report exporters. It samples every 100 ms with a four-second window so all
+cases finish in about 90 seconds.
 
 ```powershell
 python torture\verify_suite.py
@@ -105,7 +108,7 @@ pages in a browser, when diagnosis is useful:
 python torture\verify_suite.py --reports-dir .\torture\reports
 ```
 
-A successful full run ends with `13/13 cases passed`. The runner fails when an
+A successful full run ends with `14/14 cases passed`. The runner fails when an
 expected alert is absent, a handle alert names the wrong handle type, a
 stable/recovering target alerts, a run returns the wrong exit code, descendants are not observed, a report is invalid, or
 DrainTracer leaves tracked processes behind.

@@ -107,6 +107,53 @@ report when the check fails.
 `--timeout` also works with the dashboard: the title bar shows an `ENDS IN`
 countdown and the session closes into its summary when the limit passes.
 
+### Settings files and profiles
+
+Per-project settings live in a TOML file. DrainTracer uses the nearest
+`.drainrc`, `.drainrc.toml`, or `draintracer.toml` in the working directory
+or its parents; a shared `config.toml` counts when it has a `[draintracer]`
+table. `--config FILE` picks a file explicitly and `--no-config` ignores
+them all.
+
+```toml
+sample_interval = "500ms"
+windows = ["10s", "30s", "60s"]
+
+[thresholds.memory]
+critical_delta = "50MB"     # growth within a window that counts as critical
+critical_slope = "5MB/s"    # growth rate that counts as critical
+
+[profiles.heavy]            # python src/main.py --profile heavy --target ...
+windows = ["30s", "60s", "2m"]
+
+[profiles.heavy.thresholds.memory]
+critical_delta = "4GB"
+critical_slope = "1GB/s"
+```
+
+| Setting | Meaning | Default |
+| --- | --- | --- |
+| `sample_interval` | Time between samples, `100ms` to `1m` | `500ms` |
+| `windows` | Detection windows: up to 8, each at most `1h` and at least 4 samples long | `10s`, `30s`, `60s` |
+| `timeout` | Stop monitoring after this long | none |
+| `fail_on` | Headless failure threshold: `low`, `medium`, `high`, `critical` | `high` |
+| `report_dir` | Directory for exported reports | `leak_reports` |
+| `thresholds.memory.critical_delta` / `critical_slope` | Memory growth and growth rate that count as critical, as sizes (`50MB`) and rates (`5MB/s`, `300MB/min`) | `50MB`, `5MB/s` |
+| `thresholds.handles.*` / `thresholds.threads.*` | The same for handle and thread counts (`500`, `20/s`) | `500`, `20/s`; `50`, `2/s` |
+| `default_profile` | Profile applied when `--profile` is not given | none |
+
+A `[profiles.NAME]` table takes the same settings and overrides the base
+settings field by field. Flags override both: `--interval`, `--window`
+(repeatable), `--timeout`, `--fail-on`, and `--report-dir`. Unknown or
+misspelled settings stop DrainTracer with a suggestion before anything
+starts. The dashboard shows the active profile in its leak-health panel,
+and every report records the settings it ran with.
+[examples/drainrc.toml](examples/drainrc.toml) is a commented example with
+`ci`, `heavy`, and `strict` profiles.
+
+Python 3.10 reads TOML through the `tomli` package, which
+`requirements.txt` installs there automatically.
+
 ## Torture showcase
 
 The [`torture`](torture/README.md) directory contains bounded `.py`, `.bat`,
@@ -220,7 +267,8 @@ Critical reference thresholds are resource-specific:
 
 These thresholds normalize the score; they are not hard limits. A process can
 produce a low-severity signal before reaching a reference threshold when its
-growth is persistent and highly monotonic.
+growth is persistent and highly monotonic. Settings files can raise or lower
+them per project and per profile.
 
 ### Important interpretation notes
 
@@ -303,6 +351,7 @@ and CLI parsing. The torture suite above exercises real processes.
 ```text
 src/
 ├── main.py             # CLI entry point, title, and picker workflow
+├── config.py           # Settings files, profiles, and precedence
 ├── session.py          # Monitor lifecycle, collected telemetry, export
 ├── dashboard.py        # Rich terminal UI and controls
 ├── headless.py         # Non-interactive CI runner and exit codes
@@ -320,6 +369,7 @@ src/
 └── leak_detector.py    # Sampling loop and leak heuristics
 tests/                  # Unit tests (stdlib unittest)
 torture/                # Bounded demonstration and edge-case targets
+examples/drainrc.toml   # Commented settings file with example profiles
 ```
 
 ## License
