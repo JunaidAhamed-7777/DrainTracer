@@ -82,6 +82,46 @@ process disappears during sampling, the per-process value is reported as
 
 The aggregate handle series is one of the three inputs to leak detection.
 
+### Handle types
+
+Every two seconds DrainTracer also classifies each readable process's
+handles by kernel object type. One call to
+`NtQuerySystemInformation(SystemExtendedHandleInformation)` returns the
+system handle table, whose entries carry the owning PID and an object-type
+index; `NtQueryObject(ObjectTypesInformation)` maps indexes to names such
+as `File` or `Key`. No handle is ever duplicated into DrainTracer, so
+classification needs no access to the monitored processes and cannot hang
+on pipe handles the way per-handle name queries can.
+
+Types map to these categories:
+
+| Category | Kernel types |
+| --- | --- |
+| `file` | `File` (files, pipes, devices), minus sockets |
+| `socket` | TCP/UDP sockets owned by the process |
+| `registry` | `Key` |
+| `event`, `thread`, `process`, `mutex`, `semaphore`, `section` | `Event`, `Thread`, `Process`, `Mutant`, `Semaphore`, `Section` |
+| `other` | everything else (ALPC ports, timers, ETW registrations, ...) |
+
+Sockets are `File` objects on `\Device\Afd`, so the per-PID count of open
+TCP and UDP connections (from the connection table, which needs no
+privileges) is moved from `file` to `socket`. A socket that was never bound
+or connected is not in that table and stays counted as a file.
+
+Reading the table takes roughly 20 to 30 ms on a desktop with about 200,000
+system handles. When a pass is slower, the next one is scheduled at least
+20 times its duration later, keeping classification near 5% of one core.
+Processes whose metrics could not be read are left out so the categories
+add up to the handle total. After three consecutive failures (for example,
+a sandbox that blocks the call), classification turns itself off and the
+dashboard falls back to totals.
+
+When a handle signal is raised, the alert records `growth_by_type`: the
+change per category between the first classification inside the signal's
+window and the latest one. Its message names the categories that grew
+most, for example `by type: socket +171, file +2`, which separates leaked
+file streams from leaked connections.
+
 ## 4. Thread count
 
 For every accessible process, DrainTracer calls:
@@ -323,6 +363,8 @@ Each item in `snapshots` contains:
 - `severity` — snapshot-wide severity: `none`, `low`, `medium`, `high`, or `critical`.
 - `sample_interval_ms` — configured sampling interval.
 - `metadata` — tracked PIDs or sampling diagnostics.
+- `handle_types` — tree-wide handle counts per category on samples where
+  handles were classified; `null` on the others.
 
 ### Per-process fields
 
@@ -342,10 +384,13 @@ io_read_bytes_per_sec
 io_write_bytes_per_sec
 access_denied
 ppid
+handle_types
 ```
 
 `ppid` is the parent PID recorded while walking the tree; it is `null` for
-the root and for processes whose parent was never tracked.
+the root and for processes whose parent was never tracked. `handle_types`
+holds the process's handle counts per category on classified samples and is
+`null` otherwise.
 
 ### Aggregate fields
 
@@ -374,7 +419,12 @@ slope_per_second
 window_seconds
 current_value
 baseline_value
+growth_by_type
 ```
+
+`growth_by_type` is set on handle alerts when handles were classified
+during the window (change per category, for example `{"socket": 171}`) and
+is `null` otherwise.
 
 Enum values are exported as lowercase strings so reports can be consumed by
 simple JSON tooling without importing DrainTracer's Python classes.
@@ -388,7 +438,9 @@ file, so both always describe the same samples.
   growth (last measured value minus first), peak, and drift. Drift is the
   least-squares slope over every measured sample of the run, shown per
   second or, for slow growth, per minute.
-- **Charts.** Private bytes and RSS, handles, threads, and CPU over time.
+- **Charts.** Private bytes and RSS, handles, handle types, threads, and CPU
+  over time. Handle types are plotted on their own time base because they
+  are classified every two seconds rather than every sample.
   Hovering shows exact values with a crosshair shared by all charts;
   dragging zooms every chart to the same range; legend entries toggle
   series. A chart line breaks where nothing was measured (paused

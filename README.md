@@ -112,7 +112,7 @@ countdown and the session closes into its summary when the limit passes.
 The [`torture`](torture/README.md) directory contains bounded `.py`, `.bat`,
 `.cmd`, and `.exe` targets that demonstrate:
 
-- sustained memory, handle, and thread growth;
+- sustained memory, file-handle, socket, and thread growth;
 - normal resource bursts that recover;
 - recursive process-tree tracking;
 - cleanup after the root exits before a child;
@@ -145,6 +145,22 @@ tracked descendants:
 The dashboard displays all of these metrics. Leak heuristics currently use
 the aggregated **private-byte**, **handle**, and **thread** series. CPU and I/O
 are diagnostic telemetry, not leak-alert inputs.
+
+### Handle types
+
+Every two seconds DrainTracer also sorts the tree's handles into **file**,
+**socket**, **registry**, **event**, **thread**, **process**, **mutex**,
+**semaphore**, **section**, and **other** handles, read from the Windows
+system handle table without touching the monitored processes. Sockets are
+counted from the TCP/UDP connection table and separated from files.
+
+- The handles card shows the largest categories, for example
+  `file 1,204 · event 80 · registry 12 · socket 3`.
+- A handle signal names the categories that grew, for example
+  `by type: socket +171`, so leaked file streams and leaked connections are
+  easy to tell apart.
+- Reports record the counts per process and for the whole tree, and the
+  HTML report charts each category over time.
 
 ### Sliding windows
 
@@ -228,7 +244,7 @@ growth is persistent and highly monotonic.
 - **Metric cards** — CPU, memory (RSS), handles, and threads, each with a
   multi-row sparkline and the change over the last 10 seconds. The CPU card
   also shows read/write I/O rates; the memory card shows private and virtual
-  bytes.
+  bytes; the handles card shows the largest handle types.
 - **Process tree** — every tracked process drawn under its parent, with CPU,
   memory, handle, thread, and status columns.
 - **Leak health** — the overall signal plus a severity meter and growth
@@ -300,6 +316,7 @@ src/
 ├── events.py           # Snapshot models and MetricsStream
 ├── file_picker.py      # Native Windows file selection
 ├── process_runner.py   # Process lifecycle and PID tree tracking
+├── handle_types.py     # Windows handle classification by object type
 └── leak_detector.py    # Sampling loop and leak heuristics
 tests/                  # Unit tests (stdlib unittest)
 torture/                # Bounded demonstration and edge-case targets

@@ -12,6 +12,7 @@ bounded:
 
 - `memory_leak.py` stops at 128 MiB.
 - `handle_leak.py` stops at 800 open files.
+- `socket_leak.py` stops at 300 loopback connections (600 sockets).
 - `thread_leak.py` stops at 80 worker threads.
 - Every long-running target exits after 20 seconds by default.
 - `parent_exits.py` leaves a child for DrainTracer to discover, but that child
@@ -26,7 +27,10 @@ time on resource-constrained systems.
   should remain clear of leak alerts.
 - `memory_leak.py` commits memory at a steady rate and should raise a memory
   alert.
-- `handle_leak.py` retains file objects and should raise a handle alert.
+- `handle_leak.py` retains file objects and should raise a handle alert
+  attributed to `file` handles.
+- `socket_leak.py` retains loopback TCP connections and should raise a handle
+  alert attributed to `socket` handles.
 - `thread_leak.py` retains blocked workers and should raise a thread alert.
 - `burst_recovery.py` repeatedly opens and releases handles and threads. Its
   recoveries should prevent a sustained leak alert.
@@ -59,6 +63,7 @@ Run these commands from the repository root:
 python src/main.py --target .\torture\steady.py
 python src/main.py --target .\torture\memory_leak.py
 python src/main.py --target .\torture\handle_leak.py
+python src/main.py --target .\torture\socket_leak.py
 python src/main.py --target .\torture\thread_leak.py
 python src/main.py --target .\torture\burst_recovery.py
 python src/main.py --target .\torture\parent_exits.py
@@ -100,9 +105,9 @@ pages in a browser, when diagnosis is useful:
 python torture\verify_suite.py --reports-dir .\torture\reports
 ```
 
-A successful full run ends with `12/12 cases passed`. The runner fails when an
-expected alert is absent, a stable/recovering target alerts, a run returns the
-wrong exit code, descendants are not observed, a report is invalid, or
+A successful full run ends with `13/13 cases passed`. The runner fails when an
+expected alert is absent, a handle alert names the wrong handle type, a
+stable/recovering target alerts, a run returns the wrong exit code, descendants are not observed, a report is invalid, or
 DrainTracer leaves tracked processes behind.
 
 ## Rebuilding the executable
