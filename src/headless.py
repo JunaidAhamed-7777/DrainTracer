@@ -5,10 +5,12 @@ from __future__ import annotations
 import os
 import time
 from pathlib import Path
+from typing import Any
 
 from rich.console import Console
 from rich.text import Text
 
+from .config import FAIL_ON_CHOICES, MonitorSettings
 from .dashboard import DashboardApp
 from .events import LeakResource, LeakSeverity, severity_rank
 from .report import DEFAULT_REPORT_DIR
@@ -21,7 +23,6 @@ EXIT_LEAK = 1
 EXIT_ERROR = 2
 EXIT_INTERRUPTED = 130
 
-FAIL_ON_CHOICES = ("low", "medium", "high", "critical")
 
 _LEVEL_TAGS = {
     "ok": ("OK", PALETTE.ok),
@@ -55,6 +56,7 @@ class HeadlessRunner(MonitorSession):
         attach_pid: int | None = None,
         timeout: float | None = None,
         fail_on: LeakSeverity = LeakSeverity.HIGH,
+        settings: MonitorSettings | None = None,
     ) -> None:
         if fail_on == LeakSeverity.NONE:
             raise ValueError("fail_on must be a leak severity, not NONE")
@@ -65,6 +67,7 @@ class HeadlessRunner(MonitorSession):
             report_dir=report_dir,
             attach_pid=attach_pid,
             timeout=timeout,
+            settings=settings,
         )
         self.fail_on = fail_on
         self._github_actions = os.environ.get("GITHUB_ACTIONS") == "true"
@@ -138,6 +141,11 @@ class HeadlessRunner(MonitorSession):
         except Exception as exc:  # the tree is gone; a failed sample is harmless
             self._print_line("warn", f"Final sample failed: {exc}")
 
+    def build_report(self) -> dict[str, Any]:
+        report = super().build_report()
+        report["headless"] = {"fail_on": self.fail_on.value, "breached": self.breached}
+        return report
+
     def exit_status(self) -> int:
         """Map the session outcome to the process exit code."""
         if self.breached:
@@ -193,6 +201,10 @@ class HeadlessRunner(MonitorSession):
             ),
             soft_wrap=True,
         )
+        if self.settings.source is not None:
+            self.console.print(
+                Text(f"Using {self.settings.describe()}", style=PALETTE.muted), soft_wrap=True
+            )
 
     def _print_progress(self) -> None:
         totals = self._totals()

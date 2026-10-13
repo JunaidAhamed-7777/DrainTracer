@@ -25,6 +25,48 @@ def _wait_for(predicate, timeout: float = 15.0) -> bool:
     return predicate()
 
 
+class SettingsTests(unittest.TestCase):
+    def test_settings_configure_the_detector_and_reach_reports(self) -> None:
+        from dataclasses import replace
+
+        from src.config import MonitorSettings
+        from src.events import LeakResource
+        from src.leak_detector import ResourceThresholds
+
+        settings = replace(
+            MonitorSettings(),
+            sample_interval_ms=250,
+            windows=(5.0, 20.0),
+            thresholds={
+                **MonitorSettings().thresholds,
+                LeakResource.HANDLES: ResourceThresholds(1000, 40),
+            },
+            profile="ci",
+            source=Path("C:/project/.drainrc"),
+        )
+        session = _Session("C:/targets/worker.exe", console=make_console(), settings=settings,
+                           timeout=30.0)
+        self.assertEqual(session.detector.sample_interval_ms, 250)
+        self.assertEqual(session.detector.window_seconds, (5.0, 20.0))
+        record = session.build_report()["settings"]
+        self.assertEqual(record["profile"], "ci")
+        self.assertEqual(Path(record["config_path"]), Path("C:/project/.drainrc"))
+        self.assertEqual(record["windows_seconds"], [5.0, 20.0])
+        self.assertEqual(record["thresholds"]["handles"],
+                         {"critical_delta": 1000, "critical_slope": 40})
+        self.assertEqual(record["timeout_seconds"], 30.0)
+
+    def test_reports_describe_a_replaced_detector(self) -> None:
+        from src.leak_detector import LeakDetector
+
+        session = _Session("C:/targets/worker.exe", console=make_console())
+        session.detector = LeakDetector(session.manager, sample_interval_ms=100,
+                                        window_seconds=(4.0,))
+        record = session.build_report()["settings"]
+        self.assertEqual((record["sample_interval_ms"], record["windows_seconds"]), (100, [4.0]))
+        self.assertIsNone(record["profile"])
+
+
 class SessionLifecycleTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()

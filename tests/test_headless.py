@@ -57,6 +57,11 @@ class ExitStatusTests(unittest.TestCase):
         runner._accept_snapshot(make_snapshot(alerts=(make_alert(severity=LeakSeverity.HIGH),)))
         self.assertEqual(runner.exit_status(), EXIT_LEAK)
 
+    def test_reports_record_the_threshold_and_outcome(self) -> None:
+        runner = self._runner(LeakSeverity.MEDIUM)
+        runner._accept_snapshot(make_snapshot(alerts=(make_alert(severity=LeakSeverity.HIGH),)))
+        self.assertEqual(runner.build_report()["headless"], {"fail_on": "medium", "breached": True})
+
     def test_none_is_not_a_failure_threshold(self) -> None:
         with self.assertRaises(ValueError):
             self._runner(LeakSeverity.NONE)

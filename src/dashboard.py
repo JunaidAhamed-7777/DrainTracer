@@ -26,6 +26,7 @@ from .events import (
     ProcessMetrics,
     severity_rank,
 )
+from .config import MonitorSettings
 from .report import DEFAULT_REPORT_DIR
 from .session import MonitorSession
 from .theme import PALETTE
@@ -50,6 +51,7 @@ class DashboardApp(MonitorSession):
         report_dir: str | Path = DEFAULT_REPORT_DIR,
         attach_pid: int | None = None,
         timeout: float | None = None,
+        settings: MonitorSettings | None = None,
     ) -> None:
         super().__init__(
             target_path,
@@ -58,6 +60,7 @@ class DashboardApp(MonitorSession):
             report_dir=report_dir,
             attach_pid=attach_pid,
             timeout=timeout,
+            settings=settings,
         )
         self.palette = PALETTE
         self._spark_rows = 2
@@ -723,9 +726,11 @@ class DashboardApp(MonitorSession):
             else:
                 rows.add_row(name, label, detail)
 
-        windows = "/".join(f"{window:g}s" for window in self.detector.window_seconds)
+        windows = "/".join(format_duration(window) for window in self.detector.window_seconds)
+        profile = f"profile {self.settings.profile} {glyphs.sep} " if self.settings.profile else ""
         footnote = Text(
-            f"windows {windows} {glyphs.sep} sample every {self.detector.sample_interval_ms} ms",
+            f"{profile}windows {windows} {glyphs.sep} "
+            f"sample every {self.detector.sample_interval_ms} ms",
             style=palette.muted,
             no_wrap=True,
             overflow="ellipsis",

@@ -173,6 +173,20 @@ class HandleTypeDisplayTests(unittest.TestCase):
         self.assertTrue(app._events[-1][1].endswith("by type: socket +40"))
 
 
+class SettingsDisplayTests(unittest.TestCase):
+    def test_health_panel_names_the_profile_and_windows(self) -> None:
+        from dataclasses import replace
+
+        from src.config import MonitorSettings
+
+        settings = replace(MonitorSettings(), windows=(30.0, 120.0), profile="game")
+        app = DashboardApp("C:/targets/worker.exe", console=make_console(), settings=settings)
+        app._accept_snapshot(make_snapshot())
+        with app.console.capture() as capture:
+            app.console.print(app._render())
+        self.assertIn("profile game · windows 30s/2m", capture.get())
+
+
 class TimeLimitTests(unittest.TestCase):
     def _render(self, app: DashboardApp) -> str:
         with app.console.capture() as capture:

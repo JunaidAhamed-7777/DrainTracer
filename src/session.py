@@ -9,6 +9,7 @@ from typing import Any
 
 from rich.console import Console
 
+from .config import MonitorSettings
 from .events import (
     LeakAlert,
     LeakResource,
@@ -57,9 +58,13 @@ class MonitorSession:
         report_dir: str | Path = DEFAULT_REPORT_DIR,
         attach_pid: int | None = None,
         timeout: float | None = None,
+        settings: MonitorSettings | None = None,
     ) -> None:
         if timeout is not None and not timeout > 0:
             raise ValueError("timeout must be a positive number of seconds")
+        # Detector configuration and its origin (profile, config file).
+        # report_dir and timeout stay explicit so callers decide on them.
+        self.settings = settings or MonitorSettings()
         self.timeout = timeout
         self._deadline: float | None = None
         self.attach_pid = attach_pid
@@ -72,7 +77,12 @@ class MonitorSession:
             self.target_path = str(Path(target_path).resolve())
             self.manager = ProcessManager(self.target_path, args=args)
         self.console = console or Console()
-        self.detector = LeakDetector(self.manager)
+        self.detector = LeakDetector(
+            self.manager,
+            sample_interval_ms=self.settings.sample_interval_ms,
+            window_seconds=self.settings.windows,
+            thresholds=self.settings.thresholds,
+        )
         self.report_dir = Path(report_dir)
 
         self.glyphs = select_glyphs(self.console)
@@ -341,7 +351,26 @@ class MonitorSession:
                 }
                 for stamp, message, level in self._events
             ],
+            "settings": self._settings_record(),
             "snapshots": list(self._snapshot_history),
+        }
+
+    def _settings_record(self) -> dict[str, Any]:
+        """The detector configuration in effect, for reports and comparisons."""
+        detector = self.detector
+        return {
+            "profile": self.settings.profile,
+            "config_path": str(self.settings.source) if self.settings.source else None,
+            "sample_interval_ms": detector.sample_interval_ms,
+            "windows_seconds": list(detector.window_seconds),
+            "thresholds": {
+                resource.value: {
+                    "critical_delta": limits.critical_delta,
+                    "critical_slope": limits.critical_slope,
+                }
+                for resource, limits in detector.thresholds.items()
+            },
+            "timeout_seconds": self.timeout,
         }
 
     # ------------------------------------------------------------------
