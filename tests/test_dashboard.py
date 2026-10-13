@@ -216,6 +216,71 @@ class ExportTests(unittest.TestCase):
             saved = [message for _s, message, _l in app._events if message.startswith("Report ")]
             self.assertEqual(len(saved), 2)
             self.assertIn(app._last_report_id, saved[-1])
+            self.assertIn("(JSON + HTML)", saved[-1])
+
+            pages = sorted(report_dir.glob("leak_report_*.html"))
+            self.assertEqual([page.stem for page in pages], [path.stem for path in files])
+            self.assertEqual(app._last_html_report, report_dir / f"{app._last_report.stem}.html")
+
+    def test_html_failure_keeps_the_json_report(self) -> None:
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as temp:
+            app = DashboardApp("C:/targets/worker.exe", console=make_console(), report_dir=temp)
+            app._accept_snapshot(make_snapshot())
+            with mock.patch("src.session.write_html_report", side_effect=RuntimeError("boom")):
+                app._handle_key("e")
+            self.assertTrue(app._last_report.is_file())
+            self.assertIsNone(app._last_html_report)
+            self.assertEqual(list(Path(temp).glob("*.html")), [])
+            messages = [message for _s, message, _l in app._events]
+            self.assertIn("HTML report failed: boom", messages)
+            self.assertTrue(messages[-1].endswith("(JSON)"))
+
+
+class OpenReportTests(unittest.TestCase):
+    def test_open_without_a_report_explains_how_to_export(self) -> None:
+        app = _app()
+        app._handle_key("o")
+        self.assertIn("press E", app._events[-1][1])
+
+    def test_open_launches_the_html_report(self) -> None:
+        from pathlib import Path
+        from unittest import mock
+
+        app = _app()
+        app._last_html_report = Path("C:/reports/leak_report_x.html")
+        with mock.patch("src.dashboard.os.startfile", create=True) as startfile, \
+                mock.patch("src.dashboard.os.name", "nt"):
+            app._handle_key("O")
+        startfile.assert_called_once_with(app._last_html_report)
+        self.assertEqual(app._events[-1][1], "Opened leak_report_x.html")
+
+    def test_open_failure_is_logged(self) -> None:
+        from pathlib import Path
+        from unittest import mock
+
+        app = _app()
+        app._last_html_report = Path("C:/reports/leak_report_x.html")
+        with mock.patch("src.dashboard.os.startfile", create=True, side_effect=OSError("denied")), \
+                mock.patch("src.dashboard.os.name", "nt"):
+            app._handle_key("o")
+        self.assertIn("Could not open leak_report_x.html: denied", app._events[-1][1])
+
+    def test_footer_offers_open_only_after_an_html_export(self) -> None:
+        from pathlib import Path
+
+        app = _app()
+        app._accept_snapshot(make_snapshot())
+        with app.console.capture() as capture:
+            app.console.print(app._render())
+        self.assertNotIn("open report", capture.get())
+        app._last_html_report = Path("C:/reports/leak_report_x.html")
+        with app.console.capture() as capture:
+            app.console.print(app._render())
+        self.assertIn("open report", capture.get())
 
 
 if __name__ == "__main__":

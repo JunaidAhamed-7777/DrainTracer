@@ -6,6 +6,7 @@ import os
 import select
 import sys
 import time
+import webbrowser
 from pathlib import Path
 
 import psutil
@@ -175,7 +176,12 @@ class DashboardApp(MonitorSession):
             except OSError as exc:
                 self._append_event(f"Export failed: {exc}", "error")
             else:
-                self._append_event(f"Report {self._last_report_id} saved to {path}", "ok")
+                formats = "JSON + HTML" if self._last_html_report else "JSON"
+                self._append_event(
+                    f"Report {self._last_report_id} saved to {path.parent} ({formats})", "ok"
+                )
+        elif normalized == "o":
+            self._open_last_report()
         elif normalized == "q":
             self._quit_requested = True
             self._append_event("Quit requested", "info")
@@ -299,12 +305,15 @@ class DashboardApp(MonitorSession):
     def _render_footer(self) -> RenderableType:
         palette = self.palette
         keys = Text(no_wrap=True, overflow="ellipsis")
-        for key, label, color in (
+        controls = [
             ("SPACE", "pause/resume", palette.accent),
             ("K", "kill tree", palette.danger),
             ("E", "export report", palette.warn),
-            ("Q", "detach & quit" if self.attached else "quit", palette.accent_alt),
-        ):
+        ]
+        if self._last_html_report is not None:
+            controls.append(("O", "open report", palette.teal))
+        controls.append(("Q", "detach & quit" if self.attached else "quit", palette.accent_alt))
+        for key, label, color in controls:
             keys.append(f" {key} ", style=f"bold {palette.ink} on {color}")
             keys.append(f" {label}   ", style=palette.muted)
 
@@ -799,15 +808,16 @@ class DashboardApp(MonitorSession):
             )
         )
         grid.add_row("Verdict", verdict)
-        grid.add_row(
-            "Report",
-            Text.assemble(
+        if self._last_report:
+            report = Text.assemble(
                 (self._last_report_id or "", f"bold {palette.teal}"),
                 (f"\n{self._last_report}", palette.muted),
             )
-            if self._last_report
-            else Text("not exported (press E during a session)", style=palette.muted),
-        )
+            if self._last_html_report is not None:
+                report.append(f"\n{self._last_html_report}", style=palette.muted)
+        else:
+            report = Text("not exported (press E during a session)", style=palette.muted)
+        grid.add_row("Report", report)
         return Panel(
             grid,
             title=Text(f" {glyphs.brand} {self.TITLE} SESSION SUMMARY ", style=f"bold {palette.accent}"),
@@ -821,6 +831,22 @@ class DashboardApp(MonitorSession):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _open_last_report(self) -> None:
+        """Open the latest HTML report in the default browser."""
+        path = self._last_html_report
+        if path is None:
+            self._append_event("No HTML report yet; press E to export one", "warn")
+            return
+        try:
+            if os.name == "nt":
+                os.startfile(path)  # type: ignore[attr-defined]
+            elif not webbrowser.open(path.resolve().as_uri()):
+                raise OSError("no browser is available")
+        except OSError as exc:
+            self._append_event(f"Could not open {path.name}: {exc}", "error")
+        else:
+            self._append_event(f"Opened {path.name}", "info")
 
     def _status(self, snapshot: MetricsSnapshot | None) -> tuple[str, str]:
         palette = self.palette

@@ -16,6 +16,7 @@ from .events import (
     MetricsSnapshot,
     severity_rank,
 )
+from .html_report import write_html_report
 from .leak_detector import LeakDetector
 from .process_runner import ProcessManager, describe_pid
 from .report import (
@@ -91,6 +92,7 @@ class MonitorSession:
         self._stopped_target = False
         self._last_report: Path | None = None
         self._last_report_id: str | None = None
+        self._last_html_report: Path | None = None
         self._left_running = False
 
     @property
@@ -288,14 +290,28 @@ class MonitorSession:
     # ------------------------------------------------------------------
 
     def export_log(self) -> Path:
-        """Write snapshots and events to ``leak_report_<uuid>.json``.
+        """Write ``leak_report_<uuid>.json`` and its HTML companion.
 
         Every export gets a fresh UUID so repeated exports never overwrite
-        an earlier report.
+        an earlier report. Returns the JSON path. The HTML report is best
+        effort: if it cannot be rendered or written, the JSON report still
+        stands and the failure is logged.
         """
-        report_id = new_report_id()
-        report = {
-            "report_id": report_id,
+        report = self.build_report()
+        path = write_json_report(report, self.report_dir)
+        self._last_report = path
+        self._last_report_id = report["report_id"]
+        self._last_html_report = None
+        try:
+            self._last_html_report = write_html_report(report, self.report_dir)
+        except Exception as exc:  # never lose the JSON report to a rendering bug
+            self._append_event(f"HTML report failed: {exc}", "error")
+        return path
+
+    def build_report(self) -> dict[str, Any]:
+        """Assemble the report dictionary for the session so far."""
+        return {
+            "report_id": new_report_id(),
             "report_schema": REPORT_SCHEMA,
             "created_at": iso_timestamp(),
             "session_started_at": iso_timestamp(self._started_at) if self._started_at else None,
@@ -321,10 +337,6 @@ class MonitorSession:
             ],
             "snapshots": list(self._snapshot_history),
         }
-        path = write_json_report(report, self.report_dir)
-        self._last_report = path
-        self._last_report_id = report_id
-        return path
 
     # ------------------------------------------------------------------
     # Helpers

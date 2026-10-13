@@ -254,6 +254,8 @@ class HeadlessRunner(MonitorSession):
         ]
         if self._last_report is not None:
             rows.append(("report", str(self._last_report)))
+        if self._last_html_report is not None:
+            rows.append(("html", str(self._last_html_report)))
 
         self.console.print()
         for label, value in rows:
