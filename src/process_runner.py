@@ -54,13 +54,14 @@ class ProcessManager:
 
     def __init__(
         self,
-        target_path: str,
+        target_path: str | None,
         args: list[str] | None = None,
         cwd: str | None = None,
         env: dict[str, str] | None = None,
         poll_interval: float = 0.5,
     ) -> None:
-        self.target_path = str(Path(target_path).resolve())
+        # ``None`` builds a manager that can only attach() to a running PID.
+        self.target_path = str(Path(target_path).resolve()) if target_path else None
         self.args = list(args or [])
         self.cwd = cwd
         self.env = env
@@ -76,6 +77,7 @@ class ProcessManager:
         self._poll_stop = threading.Event()
         self._poll_thread: threading.Thread | None = None
         self._paused = False
+        self._attached = False
         self._last_error: str | None = None
 
     @property
@@ -83,8 +85,15 @@ class ProcessManager:
         return self._root_pid
 
     @property
+    def is_attached(self) -> bool:
+        """Whether the root was attached by PID rather than launched."""
+        return self._attached
+
+    @property
     def is_running(self) -> bool:
         with self._lock:
+            if self._attached:
+                return self._root_pid is not None and self._pid_is_alive(self._root_pid)
             if self._process is None:
                 return False
             return self._process.poll() is None
@@ -121,6 +130,8 @@ class ProcessManager:
                     raise ProcessManagerError("Process is running but root PID is unknown.")
                 return self._root_pid
 
+            if self.target_path is None:
+                raise ProcessManagerError("No target path to launch; use attach() instead.")
             if not os.path.isfile(self.target_path):
                 raise ProcessNotFoundError(f"Target file not found: {self.target_path}")
 
@@ -152,9 +163,63 @@ class ProcessManager:
             self._parents = {self._root_pid: None}
             self._remember_identity(self._root_pid)
             self._paused = False
+            self._attached = False
             self._last_error = None
             self._start_poll_thread()
             return self._root_pid
+
+    def attach(self, pid: int) -> int:
+        """Track an already running process (and its descendants) by PID.
+
+        Attached processes are never terminated implicitly: ``detach()``
+        releases them, and only an explicit ``kill()``/``terminate()`` ends
+        them.
+        """
+        with self._lock:
+            if self.is_running:
+                raise ProcessManagerError("Already monitoring a process.")
+            if pid <= 0:
+                raise ProcessNotFoundError(f"Invalid PID: {pid}")
+            if pid == os.getpid():
+                raise ProcessManagerError("DrainTracer cannot attach to itself.")
+            try:
+                proc = psutil.Process(pid)
+                if not proc.is_running() or proc.status() == psutil.STATUS_ZOMBIE:
+                    raise psutil.NoSuchProcess(pid)
+            except (psutil.NoSuchProcess, psutil.ZombieProcess) as exc:
+                raise ProcessNotFoundError(f"No running process with PID {pid}") from exc
+            except psutil.AccessDenied:
+                # Protected processes can still be listed; metrics will show
+                # as unavailable rather than failing the attach.
+                pass
+
+            self._process = None
+            self._root_pid = pid
+            self._tracked_pids = {pid}
+            self._identities.clear()
+            self._depths = {pid: 0}
+            self._parents = {pid: None}
+            self._remember_identity(pid)
+            self._paused = False
+            self._attached = True
+            self._last_error = None
+            self._refresh_tracked_pids()
+            self._start_poll_thread()
+            return pid
+
+    def detach(self) -> None:
+        """Stop tracking without terminating; resume first if suspended."""
+        with self._lock:
+            self._stop_poll_thread()
+            if self._paused:
+                self.resume()
+            self._process = None
+            self._tracked_pids.clear()
+            self._identities.clear()
+            self._depths.clear()
+            self._parents.clear()
+            self._root_pid = None
+            self._paused = False
 
     def pause(self) -> bool:
         """Suspend the root process and all tracked descendants."""
@@ -310,6 +375,8 @@ class ProcessManager:
                 if self._process is not None and self._process.poll() is not None:
                     if not self._any_tracked_alive():
                         break
+                if self._attached and not self._tracked_pids:
+                    break
 
     def _refresh_tracked_pids(self) -> None:
         if self._root_pid is None:
