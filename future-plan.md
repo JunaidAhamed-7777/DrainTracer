@@ -9,7 +9,7 @@
    - Support attaching DrainTracer to an already running process using its Process ID (`python src/main.py --pid 4820`).
    - *Real-world use case:* Debugging background services, web servers (e.g., FastAPI, Node.js), or long-running database daemons without needing to restart them.
 
-3. **CI/CD & Headless Test Mode (`--headless` / `--timeout`)**
+3. **CI/CD & Headless Test Mode (`--headless` / `--timeout`)** — done in v1.0
    - Add a non-interactive CLI flag that runs target processes for a set duration (e.g., `--timeout 60s`) without launching the Rich TUI.
    - Return exit code `1` if any `HIGH` or `CRITICAL` leak threshold is breached during execution.
    - *Real-world use case:* Running automated leak regression tests in GitHub Actions pipelines before merging Pull Requests.
