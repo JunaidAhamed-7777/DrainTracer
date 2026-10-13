@@ -92,7 +92,9 @@ python torture\verify_suite.py --case memory-growth
 python torture\verify_suite.py --case batch-process-tree --case command-quick-exit
 ```
 
-Reports are temporary by default. Keep them when diagnosis is useful:
+Every case also checks that an HTML report was written next to its JSON
+report. Reports are temporary by default. Keep them, and open the HTML
+pages in a browser, when diagnosis is useful:
 
 ```powershell
 python torture\verify_suite.py --reports-dir .\torture\reports
