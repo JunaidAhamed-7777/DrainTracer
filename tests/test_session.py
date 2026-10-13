@@ -116,6 +116,38 @@ class WarmupEventTests(unittest.TestCase):
         self.assertIsNone(self._session(0.0).build_report()["warmup"])
 
 
+class StartupHintTests(unittest.TestCase):
+    def test_hints_for_common_failures(self) -> None:
+        from src.process_runner import (
+            ProcessAccessDeniedError,
+            ProcessManagerError,
+            ProcessNotFoundError,
+        )
+
+        launched = _Session("C:/targets/worker.exe", console=make_console())
+        attached = _Session(None, console=make_console(), attach_pid=4242)
+        self.assertIn("Check the path", launched.startup_hint(ProcessNotFoundError("x")))
+        self.assertIn("Task Manager", attached.startup_hint(ProcessNotFoundError("x")))
+        self.assertIn("administrator", launched.startup_hint(ProcessAccessDeniedError("x")))
+
+        bad_image = OSError(8, "bad image")
+        bad_image.winerror = 216
+        error = ProcessManagerError("Failed to start process")
+        error.__cause__ = bad_image
+        self.assertIn("not a Windows program", launched.startup_hint(error))
+        self.assertIsNone(launched.startup_hint(ProcessManagerError("other")))
+
+    def test_dashboard_startup_panel_shows_the_hint(self) -> None:
+        from src.dashboard import DashboardApp
+
+        console = make_console()
+        app = DashboardApp("C:/definitely/missing/worker.exe", console=console)
+        self.assertEqual(app.run(), 1)
+        output = console.file.getvalue()
+        self.assertIn("STARTUP ERROR", output)
+        self.assertIn("Check the path", output)
+
+
 class SessionLifecycleTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()

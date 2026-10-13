@@ -94,6 +94,9 @@ class HeadlessRunner(MonitorSession):
             self.start()
         except Exception as exc:
             self._print_line("error", f"Could not start monitoring: {exc}")
+            hint = self.startup_hint(exc)
+            if hint:
+                self._print_line("info", hint)
             return EXIT_ERROR
 
         try:
@@ -189,7 +192,10 @@ class HeadlessRunner(MonitorSession):
     def _print_banner(self) -> None:
         sep = self.glyphs.sep
         if self.attached:
-            action = f"attaching to PID {self.attach_pid} ({Path(self.target_path).name})"
+            action = f"attaching to PID {self.attach_pid}"
+            name = Path(self.target_path).name
+            if name != f"PID {self.attach_pid}":
+                action += f" ({name})"
         else:
             action = f"launching {Path(self.target_path).name}"
         limit = (

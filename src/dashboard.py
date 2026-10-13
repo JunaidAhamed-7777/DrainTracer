@@ -94,12 +94,15 @@ class DashboardApp(MonitorSession):
             ):
                 self.start()
         except Exception as exc:
+            message = Text.assemble(
+                ("Unable to start monitor\n\n", f"bold {palette.danger}"), (str(exc), "")
+            )
+            hint = self.startup_hint(exc)
+            if hint:
+                message.append(f"\n\n{hint}", style=palette.muted)
             self.console.print(
                 Panel(
-                    Text.assemble(
-                        ("Unable to start monitor\n\n", f"bold {palette.danger}"),
-                        (str(exc), ""),
-                    ),
+                    message,
                     title=Text(" STARTUP ERROR ", style=f"bold {palette.danger}"),
                     title_align="left",
                     border_style=palette.danger,

@@ -20,7 +20,12 @@ from .events import (
 from .handle_types import describe_type_growth
 from .html_report import write_html_report
 from .leak_detector import LeakDetector
-from .process_runner import ProcessManager, describe_pid
+from .process_runner import (
+    ProcessAccessDeniedError,
+    ProcessManager,
+    ProcessNotFoundError,
+    describe_pid,
+)
 from .report import (
     DEFAULT_REPORT_DIR,
     REPORT_SCHEMA,
@@ -33,6 +38,9 @@ from .theme import select_glyphs
 from .units import format_bytes, format_clock, format_duration
 
 HISTORY_KEYS = ("cpu_percent", "rss_bytes", "private_bytes", "handles", "threads")
+# Windows errors for files that cannot be started as programs: bad image,
+# bad format, wrong signature, or the wrong machine type.
+_NOT_A_PROGRAM = {129, 191, 193, 216}
 
 
 class MonitorSession:
@@ -246,6 +254,24 @@ class MonitorSession:
                 "leak detection starts after that",
                 "info",
             )
+
+    def startup_hint(self, error: BaseException) -> str | None:
+        """A suggestion for a startup failure, or ``None`` when there is none."""
+        cause = error.__cause__
+        if isinstance(error, ProcessNotFoundError):
+            if self.attached:
+                return "Check the PID in Task Manager or with tasklist; the process may have exited."
+            return "Check the path, or run without --target to pick the file in a dialog."
+        if isinstance(error, (ProcessAccessDeniedError, PermissionError)) or isinstance(
+            cause, PermissionError
+        ):
+            return "Run the terminal as administrator to start or inspect this process."
+        if isinstance(cause, OSError) and getattr(cause, "winerror", None) in _NOT_A_PROGRAM:
+            return (
+                "That file is not a Windows program. DrainTracer runs .exe files directly, "
+                ".py files with Python, and .bat or .cmd files with cmd.exe."
+            )
+        return None
 
     def _abort_start(self) -> None:
         self.detector.stop()
