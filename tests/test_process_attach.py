@@ -13,6 +13,10 @@ import psutil
 
 from src.process_runner import ProcessManager, ProcessManagerError, ProcessNotFoundError
 
+# A virtual environment's python.exe on Windows is a redirector that starts
+# the real interpreter as a child. The base interpreter keeps the tree exact.
+_PYTHON = getattr(sys, "_base_executable", None) or sys.executable
+
 # Parent sleeps after starting one sleeping child, giving a two-level tree.
 _TREE_SCRIPT = (
     "import subprocess, sys, time\n"
@@ -32,7 +36,7 @@ def _wait_for(predicate, timeout: float = 10.0) -> bool:
 
 class AttachTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.target = subprocess.Popen([sys.executable, "-c", _TREE_SCRIPT])
+        self.target = subprocess.Popen([_PYTHON, "-c", _TREE_SCRIPT])
         self.addCleanup(self._cleanup)
         self.assertTrue(
             _wait_for(lambda: len(psutil.Process(self.target.pid).children()) == 1),
