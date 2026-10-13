@@ -95,6 +95,7 @@ class ProcessManager:
         self._paused = False
         self._attached = False
         self._last_error: str | None = None
+        self._exit_code: int | None = None
 
     @property
     def root_pid(self) -> int | None:
@@ -112,7 +113,25 @@ class ProcessManager:
                 return self._root_pid is not None and self._pid_is_alive(self._root_pid)
             if self._process is None:
                 return False
-            return self._process.poll() is None
+            return self._poll_launched() is None
+
+    @property
+    def exit_code(self) -> int | None:
+        """Exit code of a launched root once it has exited.
+
+        Attached processes were not started by DrainTracer, so their exit
+        code is not available and this stays ``None``.
+        """
+        with self._lock:
+            if self._process is not None:
+                self._poll_launched()
+            return self._exit_code
+
+    def _poll_launched(self) -> int | None:
+        code = self._process.poll() if self._process is not None else None
+        if code is not None:
+            self._exit_code = code
+        return code
 
     @property
     def is_paused(self) -> bool:
@@ -181,6 +200,7 @@ class ProcessManager:
             self._paused = False
             self._attached = False
             self._last_error = None
+            self._exit_code = None
             self._start_poll_thread()
             return self._root_pid
 
@@ -219,6 +239,7 @@ class ProcessManager:
             self._paused = False
             self._attached = True
             self._last_error = None
+            self._exit_code = None
             self._refresh_tracked_pids()
             self._start_poll_thread()
             return pid
@@ -289,6 +310,7 @@ class ProcessManager:
                     self._terminate_pid(pid, graceful=False)
                 remaining = self._wait_for_pids(remaining, 0.5)
 
+            self._poll_launched()
             self._process = None
             self._paused = False
             if remaining:
@@ -321,9 +343,10 @@ class ProcessManager:
                     self._process.kill()
                 except OSError:
                     pass
-                self._process = None
 
             remaining = self._wait_for_pids(targets, 0.5)
+            self._poll_launched()
+            self._process = None
             if remaining:
                 self._tracked_pids = remaining
                 self._last_error = (
