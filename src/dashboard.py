@@ -47,7 +47,7 @@ class DashboardApp:
     """Own the monitor lifecycle and render live snapshots in the terminal."""
 
     TITLE = "DRAINTRACER"
-    VERSION = "v0.7"
+    VERSION = "v0.8"
     HISTORY_LIMIT = 240
     EVENT_LIMIT = 200
     SNAPSHOT_LIMIT = 7200
