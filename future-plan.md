@@ -26,7 +26,7 @@
    - Allow users to define custom leak thresholds and window durations per project.
    - *Real-world use case:* Game engines or heavy data-processing pipelines legitimate require higher baseline memory slope tolerances than lightweight utility scripts.
 
-7. **Warm-Up / Calibration Phase**
+7. **Warm-Up / Calibration Phase** — done in v1.4
    - Add an initial startup grace period (e.g., `--warmup 10s`) during which resource sampling occurs but leak detection heuristics are deferred.
    - *Real-world use case:* Preventing false-positive alerts triggered by standard application initialization, cache warming, or JIT compilation spikes.
 
