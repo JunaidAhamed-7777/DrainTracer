@@ -46,6 +46,8 @@ class DashboardApp(MonitorSession):
     VERSION = "v1.6"
     DELTA_WINDOW_SECONDS = 10.0
     FRAME_SECONDS = 0.1
+    # Redraw at least this often so the clock and countdowns keep moving.
+    CLOCK_SECONDS = 1.0
 
     KILL_CONFIRM_SECONDS = 3.0
     EVENT_LINES = 2
@@ -120,16 +122,29 @@ class DashboardApp(MonitorSession):
                 screen=self.console.is_terminal,
                 transient=False,
             ) as live:
+                # Keys are read every frame, but the layout is only rebuilt
+                # when something changed: a snapshot, a key, a resize, or the
+                # once-a-second clock. Rendering every frame cost far more
+                # CPU than sampling.
+                last_render = time.monotonic()
+                last_size = self.console.size
                 while not self._quit_requested:
-                    self.poll()
-                    self._handle_key(self._read_key())
+                    changed = self.poll() > 0
+                    key = self._read_key()
+                    if key:
+                        self._handle_key(key)
+                        changed = True
                     if self.timed_out and not self._quit_requested:
                         self._quit_requested = True
                         self._append_event(
                             f"Time limit of {format_duration(self.timeout or 0.0)} reached",
                             "info",
                         )
-                    live.update(self._render(), refresh=True)
+                    now = time.monotonic()
+                    size = self.console.size
+                    if changed or size != last_size or now - last_render >= self.CLOCK_SECONDS:
+                        live.update(self._render(), refresh=True)
+                        last_render, last_size = now, size
                     time.sleep(self.FRAME_SECONDS)
         except KeyboardInterrupt:
             self._append_event("Dashboard interrupted by user", "warn")

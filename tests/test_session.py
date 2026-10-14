@@ -205,6 +205,26 @@ class SessionLifecycleTests(unittest.TestCase):
         self.assertTrue(session.stopped_target)
         self.assertFalse(session.detector.is_running)
 
+    def test_the_dashboard_redraws_only_when_something_changes(self) -> None:
+        import threading
+
+        from src.dashboard import DashboardApp
+
+        app = DashboardApp(
+            str(self._script("import time\ntime.sleep(60)\n")), console=make_console()
+        )
+        renders: list[int] = []
+        original = app._render
+        app._render = lambda: (renders.append(1), original())[1]  # type: ignore[method-assign]
+        timer = threading.Timer(1.6, setattr, args=(app, "_quit_requested", True))
+        timer.start()
+        self.addCleanup(timer.cancel)
+        self.assertEqual(app.run(), 0)
+        # 16 frames passed; snapshots arrive twice a second plus a clock tick.
+        self.assertGreaterEqual(len(renders), 3)
+        self.assertLessEqual(len(renders), 9)
+        self.assertFalse(app.manager.has_tracked_processes)
+
     def test_failed_start_leaves_nothing_running(self) -> None:
         session = _Session(str(Path(self.temp.name) / "missing.py"), console=make_console())
         with self.assertRaises(Exception):

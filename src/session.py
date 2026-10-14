@@ -316,10 +316,12 @@ class MonitorSession:
         except KeyboardInterrupt:
             pass  # A third Ctrl+C: stop trying rather than loop.
 
-    def poll(self) -> None:
-        """Apply every snapshot the detector published since the last poll."""
-        for snapshot in self.detector.stream.drain():
+    def poll(self) -> int:
+        """Apply every snapshot published since the last poll; return how many."""
+        snapshots = self.detector.stream.drain()
+        for snapshot in snapshots:
             self._accept_snapshot(snapshot)
+        return len(snapshots)
 
     def _warn_if_inaccessible(self) -> None:
         snapshot = self.snapshot
