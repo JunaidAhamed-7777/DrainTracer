@@ -249,7 +249,12 @@ class LeakDetector:
                 self.stream.publish(snapshot)
             except Exception:
                 logger.exception("Publishing a snapshot failed")
-            next_tick = max(next_tick + interval, time.monotonic() + interval / 2)
+            next_tick = self._next_tick(next_tick, time.monotonic(), interval)
+
+    @staticmethod
+    def _next_tick(previous: float, now: float, interval: float) -> float:
+        """The next sample time: on the cadence, but at least half an interval away."""
+        return max(previous + interval, now + interval / 2)
 
     def _build_error_snapshot(self, error: str) -> MetricsSnapshot:
         try:

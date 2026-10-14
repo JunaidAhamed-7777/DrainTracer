@@ -363,23 +363,23 @@ class SamplingLoopTests(unittest.TestCase):
         self.assertTrue(all(s.metadata.get("sampling_error") == "boom" for s in snapshots))
         self.assertFalse(snapshots[-1].process_alive)
 
-    def test_cheap_samples_keep_the_configured_cadence(self) -> None:
+    def test_ticks_follow_the_cadence_but_back_off_after_slow_samples(self) -> None:
+        tick = LeakDetector._next_tick
+        self.assertAlmostEqual(tick(10.0, 10.01, 0.05), 10.05)  # cheap: stay on cadence
+        self.assertAlmostEqual(tick(10.0, 10.2, 0.05), 10.225)  # slow: idle half a tick
+        self.assertAlmostEqual(tick(10.0, 10.04, 0.1), 10.1)
+
+    def test_the_loop_keeps_sampling(self) -> None:
         import time
         from unittest import mock
 
         detector = _detector(sample_interval_ms=50, classifier=mock.Mock(available=False))
-
-        def slowish():
-            time.sleep(0.03)  # 30 ms of work per 50 ms tick
-            return detector._build_paused_snapshot()
-
-        with mock.patch.object(detector, "_collect_snapshot", side_effect=slowish):
+        with mock.patch.object(detector, "_collect_snapshot",
+                               side_effect=lambda: detector._build_paused_snapshot()):
             detector.start()
-            time.sleep(1.0)
+            time.sleep(0.6)
             detector.stop()
-        count = len(detector.stream.drain())
-        # Waiting a full interval after each sample would give about 12.
-        self.assertGreaterEqual(count, 16)
+        self.assertGreaterEqual(len(detector.stream.drain()), 5)
 
 
 class SeverityScoreTests(unittest.TestCase):
