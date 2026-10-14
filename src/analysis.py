@@ -45,7 +45,10 @@ def finite(value: Any) -> float | None:
     """A finite float from a JSON number, or ``None`` for anything else."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    number = float(value)
+    try:
+        number = float(value)
+    except OverflowError:  # a JSON integer beyond the float range
+        return None
     return number if math.isfinite(number) else None
 
 

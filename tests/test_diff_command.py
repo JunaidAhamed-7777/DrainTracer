@@ -70,6 +70,22 @@ class DiffCommandTests(unittest.TestCase):
         self.assertIn("Diff error:", output)
         self.assertIn("no such file", output)
 
+    def test_numbers_beyond_float_range_never_read_as_a_regression(self) -> None:
+        report = json.loads(self.fixed.read_text(encoding="utf-8"))
+        report["snapshots"][1]["totals"]["handles"] = 10**400
+        huge = self.root / "huge.json"
+        huge.write_text(json.dumps(report), encoding="utf-8")
+        # An integer above the float range is skipped like any non-number.
+        code, output = self._run(str(self.fixed), str(huge), "--fail-on-regression")
+        self.assertEqual(code, EXIT_OK, output)
+        # One too long to parse at all is an unreadable report.
+        endless = self.root / "endless.json"
+        endless.write_text(json.dumps(report).replace("1" + "0" * 400, "1" + "0" * 5000),
+                           encoding="utf-8")
+        code, output = self._run(str(self.fixed), str(endless), "--fail-on-regression")
+        self.assertEqual(code, EXIT_ERROR)
+        self.assertIn("not a usable JSON report", output)
+
     def test_main_dispatches_the_diff_command(self) -> None:
         console = make_console()
         code = cli._main(console, ["diff", str(self.fixed), str(self.leaky), "--fail-on-regression"])

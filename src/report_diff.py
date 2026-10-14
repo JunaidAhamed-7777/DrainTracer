@@ -215,11 +215,17 @@ def load_report(path: str | Path) -> LoadedReport:
         raise DiffError(f"{report_path}: not valid JSON ({exc.msg} at line {exc.lineno})") from None
     except RecursionError:
         raise DiffError(f"{report_path}: JSON nested too deeply to be a report") from None
+    except ValueError as exc:  # such as an integer too long to convert
+        raise DiffError(f"{report_path}: not a usable JSON report ({exc})") from None
     if not isinstance(data, dict) or not isinstance(data.get("snapshots"), list):
         raise DiffError(f"{report_path}: not a DrainTracer report (no snapshots list)")
     if not data["snapshots"]:
         raise DiffError(f"{report_path}: the report has no snapshots to compare")
-    return LoadedReport(path=report_path, data=data, summary=summarize(data))
+    try:
+        summary = summarize(data)
+    except Exception as exc:  # malformed in a way the analysis did not expect
+        raise DiffError(f"{report_path}: could not analyse the report ({exc})") from None
+    return LoadedReport(path=report_path, data=data, summary=summary)
 
 
 def compare_reports(before: LoadedReport, after: LoadedReport) -> ReportComparison:
