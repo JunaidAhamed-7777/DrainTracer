@@ -19,6 +19,7 @@ from .events import (
     severity_rank,
 )
 from .handle_types import describe_type_growth
+from .history import SnapshotHistory
 from .html_report import write_html_report
 from .leak_detector import LeakDetector
 from .process_runner import (
@@ -106,8 +107,9 @@ class MonitorSession:
         }
         self._peaks: dict[str, float] = {key: 0.0 for key in HISTORY_KEYS}
         # Frozen snapshots are about a third the size of their dict form, so
-        # conversion waits until a report is exported.
-        self._snapshot_history: deque[MetricsSnapshot] = deque(maxlen=self.SNAPSHOT_LIMIT)
+        # conversion waits until a report is exported. A long session is
+        # thinned rather than cut, so reports always cover all of it.
+        self._snapshot_history = SnapshotHistory(self.SNAPSHOT_LIMIT)
         self._events: deque[tuple[float, str, str]] = deque(maxlen=self.EVENT_LIMIT)
         self._resource_severity: dict[LeakResource, LeakSeverity] = {}
         self._worst_by_resource: dict[LeakResource, LeakSeverity] = {}
@@ -514,6 +516,10 @@ class MonitorSession:
             "settings": self._settings_record(),
             "warmup": self._warmup_record(),
             "detection_ran": self.detector.detection_started,
+            # Samples taken, and how many the snapshot list skips between
+            # entries once a long session has been thinned (1: none).
+            "sample_count": self._sample_count,
+            "snapshot_stride": self._snapshot_history.stride,
             "snapshots": [snapshot_to_dict(snapshot) for snapshot in self._snapshot_history],
         }
 

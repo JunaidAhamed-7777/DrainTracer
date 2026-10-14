@@ -371,7 +371,9 @@ checking the path or PID or running elevated.
 Every export (and every headless run) writes two files with the same UUID:
 
 - `leak_report_<UUID>.json` — every snapshot, alert, and event, for tools
-  and for later comparison.
+  and for later comparison. Sessions longer than an hour are thinned
+  evenly rather than cut, keeping every signal change, so a report always
+  covers the whole session.
 - `leak_report_<UUID>.html` — a self-contained page to read or share: the
   verdict, growth and drift per resource, interactive memory, handle,
   thread, and CPU charts with red markers where a leak signal was raised or
@@ -440,6 +442,7 @@ src/
 ├── main.py             # CLI entry point, title, and picker workflow
 ├── config.py           # Settings files, profiles, and precedence
 ├── session.py          # Monitor lifecycle, collected telemetry, export
+├── history.py          # Session-long snapshot history, thinned as it grows
 ├── dashboard.py        # Rich terminal UI and controls
 ├── headless.py         # Non-interactive CI runner and exit codes
 ├── report.py           # Report IDs, timestamps, and atomic JSON writes
@@ -454,6 +457,7 @@ src/
 ├── events.py           # Snapshot models and MetricsStream
 ├── file_picker.py      # Native Windows file selection
 ├── process_runner.py   # Process lifecycle and PID tree tracking
+├── process_table.py    # Thread counts and suspended state in one system query
 ├── handle_types.py     # Windows handle classification by object type
 └── leak_detector.py    # Sampling loop and leak heuristics
 tests/                  # Unit tests (stdlib unittest)

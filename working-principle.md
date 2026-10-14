@@ -407,10 +407,22 @@ the failure is logged.
   totals at that moment.
 - `detection_ran` — whether the shortest window ever held enough samples
   to be judged. When it is `false`, the absence of signals means nothing.
+- `sample_count` — samples taken during the session.
+- `snapshot_stride` — `1` when `snapshots` holds every sample; `N` when a
+  long session was thinned to every Nth sample plus every state change.
 - `snapshots` — chronological exported telemetry snapshots.
 
-The dashboard retains up to 7,200 snapshots (one hour at the default
-interval) and the most recent 200 event messages in memory for export.
+A session keeps up to 7,200 snapshots in memory for export (one hour at
+the default interval) and the most recent 200 event messages. A longer
+session is thinned instead of cut: when the history fills, every other
+snapshot is dropped and only every second new sample is kept, then every
+fourth, and so on. Reports therefore always span the whole session, from
+its first sample to its last, and their verdict, growth, and drift agree
+with the session's. Snapshots where a signal is raised, escalates, eases,
+or clears, the warm-up ends, monitoring pauses or resumes, the root exits,
+or sampling fails are kept regardless, so thinning never hides a signal.
+(If signals flap on nearly every sample, only the first 1,800 such changes
+are exempt, which keeps memory bounded.)
 
 ### Snapshot fields
 

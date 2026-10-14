@@ -55,7 +55,7 @@ def render_html_report(report: Mapping[str, Any]) -> str:
             _masthead(report, summary, name, target, version),
             '<main>',
             _verdict(report, summary),
-            _cards(summary),
+            _cards(summary, _sample_count(report, summary)),
             _charts_panel(),
             _episodes_panel(summary, start),
             _events_panel(report, start),
@@ -104,6 +104,7 @@ def _masthead(
 ) -> str:
     mode = "Attached to a running process" if report.get("mode") == "attach" else "Launched by DrainTracer"
     interval = _first_interval(report)
+    stride = _positive_int(report.get("snapshot_stride")) or 1
     facts: list[tuple[str, str]] = [
         ("Report ID", str(report.get("report_id") or "—")),
         ("Created", _local_time(report.get("created_at"))),
@@ -114,7 +115,9 @@ def _masthead(
         ("Monitored", format_clock(summary.duration)),
         (
             "Samples",
-            f"{summary.sample_count:,}" + (f" every {interval:g} ms" if interval else ""),
+            f"{_sample_count(report, summary):,}"
+            + (f" every {interval:g} ms" if interval else "")
+            + (f"; this report keeps 1 in {stride}" if stride > 1 else ""),
         ),
         ("Processes", f"up to {summary.max_processes}"),
     ]
@@ -174,7 +177,7 @@ def _verdict(report: Mapping[str, Any], summary: ReportSummary) -> str:
     )
 
 
-def _cards(summary: ReportSummary) -> str:
+def _cards(summary: ReportSummary, sample_count: int) -> str:
     cards = []
     for resource in RESOURCES:
         stats = summary.resources[resource]
@@ -204,7 +207,7 @@ def _cards(summary: ReportSummary) -> str:
     cards.append(
         '<article class="card"><h3>Session</h3>'
         f'<div class="big">{_e(format_clock(summary.duration))}</div>'
-        f'<div class="sub">{_e(f"{summary.sample_count:,} samples · up to {summary.max_processes} processes")}</div>'
+        f'<div class="sub">{_e(f"{sample_count:,} samples · up to {summary.max_processes} processes")}</div>'
         f'<div class="sub">{_e("peak RSS " + format_bytes(peaks.get("rss_bytes", 0.0)) + " · peak CPU " + format(peaks.get("cpu_percent", 0.0), ".1f") + "%")}</div>'
         "</article>"
     )
@@ -425,6 +428,18 @@ def _offset(stamp: float | None, start: float | None) -> str:
     if stamp is None or start is None:
         return ""
     return "+" + format_clock(stamp - start)
+
+
+def _positive_int(value: Any) -> int | None:
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return value
+    return None
+
+
+def _sample_count(report: Mapping[str, Any], summary: ReportSummary) -> int:
+    """Samples the session took; a thinned report holds fewer snapshots."""
+    recorded = _positive_int(report.get("sample_count"))
+    return max(recorded or 0, summary.sample_count)
 
 
 def _first_interval(report: Mapping[str, Any]) -> float | None:
