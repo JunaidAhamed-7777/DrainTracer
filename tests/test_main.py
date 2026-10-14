@@ -144,6 +144,15 @@ class DispatchTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("ends before the 1m warm-up does", console.file.getvalue())
 
+    def test_process_errors_print_paths_literally(self) -> None:
+        from src.process_runner import ProcessManagerError
+
+        console = make_console()
+        app = mock.Mock()
+        app.run.side_effect = ProcessManagerError("cannot run C:\\x\\app[red].exe")
+        self.assertEqual(cli._run_dashboard(app, console), 1)
+        self.assertIn("cannot run C:\\x\\app[red].exe", console.file.getvalue())
+
     def test_ctrl_c_exits_130(self) -> None:
         with mock.patch.object(cli, "_main", side_effect=KeyboardInterrupt), \
                 mock.patch.object(cli, "Console", return_value=make_console()):

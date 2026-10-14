@@ -272,7 +272,7 @@ def _run_dashboard(app: DashboardApp, console: Console) -> int:
     try:
         return app.run()
     except ProcessManagerError as exc:
-        console.print(f"[bold red]Process error:[/bold red] {exc}")
+        console.print(Text.assemble(("Process error: ", "bold red"), str(exc)))
         return 1
 
 
@@ -351,10 +351,10 @@ def _main(console: Console, argv: list[str] | None) -> int:
         try:
             target_path = select_target_file()
         except FileNotFoundError as exc:
-            console.print(f"[bold red]File picker unavailable:[/bold red] {exc}")
+            console.print(Text.assemble(("File picker unavailable: ", "bold red"), str(exc)))
             return 1
         except OSError as exc:
-            console.print(f"[bold red]File picker failed:[/bold red] {exc}")
+            console.print(Text.assemble(("File picker failed: ", "bold red"), str(exc)))
             return 1
 
     if not target_path:

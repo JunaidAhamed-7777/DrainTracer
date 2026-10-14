@@ -158,6 +158,26 @@ class LayoutTests(unittest.TestCase):
         self.assertIn("555555555555.json", joined)
         self.assertNotIn("…", capture.get())
 
+    def test_bracketed_names_are_shown_literally(self) -> None:
+        from dataclasses import replace
+        from pathlib import Path
+
+        from src.config import MonitorSettings
+
+        settings = replace(MonitorSettings(), source=Path("C:/p[red]/.drainrc"))
+        app = DashboardApp("C:/x/app[red].exe", console=make_console(), settings=settings,
+                           report_dir="C:/out[bold]")
+        app._accept_snapshot(make_snapshot())
+        with app.console.capture() as capture:
+            app.console.print(app.render_summary())
+        summary = capture.get()
+        self.assertIn("app[red].exe", summary)
+        self.assertIn("p[red]", summary)
+        app._handle_key("?")
+        with app.console.capture() as capture:
+            app.console.print(app._render())
+        self.assertIn("out[bold]", capture.get())
+
     def test_clean_summary_is_inconclusive_until_a_window_was_judged(self) -> None:
         app = _app()
         app._accept_snapshot(make_snapshot())

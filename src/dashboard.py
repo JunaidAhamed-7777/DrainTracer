@@ -343,8 +343,9 @@ class DashboardApp(MonitorSession):
             f"handles {handles.critical_delta:,.0f}, {handles.critical_slope:g}/s {glyphs.sep} "
             f"threads {threads.critical_delta:,.0f}, {threads.critical_slope:g}/s",
         )
-        session.add_row("Settings", self.settings.describe())
-        session.add_row("Reports", os.path.abspath(self.report_dir))
+        # Paths and names are user data: Text keeps Rich from reading them as markup.
+        session.add_row("Settings", Text(self.settings.describe()))
+        session.add_row("Reports", Text(os.path.abspath(self.report_dir)))
 
         return Panel(
             Group(
@@ -991,8 +992,10 @@ class DashboardApp(MonitorSession):
         grid.add_column(overflow="fold")
         grid.add_row(
             "Target",
-            f"{Path(self.target_path).name} {glyphs.sep} PID {self.root_pid or '-'} "
-            f"{glyphs.sep} {self.outcome_text()}",
+            Text(
+                f"{Path(self.target_path).name} {glyphs.sep} PID {self.root_pid or '-'} "
+                f"{glyphs.sep} {self.outcome_text()}"
+            ),
         )
         grid.add_row(
             "Duration",
@@ -1002,7 +1005,7 @@ class DashboardApp(MonitorSession):
         if warmup:
             grid.add_row("Warm-up", warmup)
         if self.settings.source is not None:
-            grid.add_row("Settings", self.settings.describe())
+            grid.add_row("Settings", Text(self.settings.describe()))
         grid.add_row(
             "Peaks",
             f"RSS {self._format_bytes(self._peaks['rss_bytes'])} {glyphs.sep} "
@@ -1010,7 +1013,7 @@ class DashboardApp(MonitorSession):
             f"{int(self._peaks['handles']):,} handles {glyphs.sep} "
             f"{int(self._peaks['threads']):,} threads",
         )
-        grid.add_row("Signals", self.signals_text())
+        grid.add_row("Signals", Text(self.signals_text()))
         worst = self._worst_severity
         if worst != LeakSeverity.NONE:
             verdict = Text(
