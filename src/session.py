@@ -282,16 +282,37 @@ class MonitorSession:
             self.manager.kill()
 
     def shutdown(self) -> None:
-        """Stop sampling; terminate launched targets, release attached ones."""
+        """Stop sampling; terminate launched targets, release attached ones.
+
+        Graceful termination can take a few seconds. If Ctrl+C interrupts
+        it, cleanup finishes at once (kill, or resume and detach) before the
+        interrupt propagates, so the target is never abandoned half-handled.
+        """
         if self._started_at is not None and self._ended_at is None:
             self._ended_at = time.time()
-        self.detector.stop()
-        if self.attached:
-            self._left_running = self.manager.is_running
-            self.manager.detach()
-        elif self.manager.is_running or self.manager.has_tracked_processes:
-            self._stopped_target = True
-            self.manager.terminate()
+        try:
+            self.detector.stop()
+            if self.attached:
+                self._left_running = self.manager.is_running
+                self.manager.detach()
+            elif self.manager.is_running or self.manager.has_tracked_processes:
+                self._stopped_target = True
+                self.manager.terminate()
+        except KeyboardInterrupt:
+            self._force_cleanup()
+            raise
+
+    def _force_cleanup(self) -> None:
+        """Finish cleanup without waiting; used when shutdown is interrupted."""
+        try:
+            self.detector.stop()
+            if self.attached:
+                self.manager.detach()
+            elif self.manager.is_running or self.manager.has_tracked_processes:
+                self._stopped_target = True
+                self.manager.kill()
+        except KeyboardInterrupt:
+            pass  # A third Ctrl+C: stop trying rather than loop.
 
     def poll(self) -> None:
         """Apply every snapshot the detector published since the last poll."""

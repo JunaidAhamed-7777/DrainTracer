@@ -190,6 +190,21 @@ class SessionLifecycleTests(unittest.TestCase):
         self.assertTrue(_wait_for(lambda: session.timed_out, timeout=5.0))
         self.assertEqual(session.time_remaining, 0.0)
 
+    def test_ctrl_c_during_termination_kills_the_tree(self) -> None:
+        from unittest import mock
+
+        session = _Session(
+            str(self._script("import time\ntime.sleep(60)\n")), console=make_console()
+        )
+        session.start()
+        self.addCleanup(session.manager.kill)
+        with mock.patch.object(session.manager, "terminate", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                session.shutdown()
+        self.assertFalse(session.manager.has_tracked_processes)
+        self.assertTrue(session.stopped_target)
+        self.assertFalse(session.detector.is_running)
+
     def test_failed_start_leaves_nothing_running(self) -> None:
         session = _Session(str(Path(self.temp.name) / "missing.py"), console=make_console())
         with self.assertRaises(Exception):
