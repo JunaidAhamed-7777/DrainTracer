@@ -67,6 +67,21 @@ class ReportStorageTests(unittest.TestCase):
             target = write_text_atomic(Path(temp) / "page.html", "a\nb\n", newline="\n")
             self.assertEqual(target.read_bytes(), b"a\nb\n")
 
+    def test_reports_are_strict_json(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            report = {
+                "report_id": "abc",
+                "snapshots": [{"cpu": float("nan"), "values": (1.0, float("inf"))}],
+                "path": Path("C:/x"),
+            }
+            path = write_json_report(report, temp)
+            text = path.read_text(encoding="utf-8")
+        self.assertNotIn("NaN", text)
+        self.assertNotIn("Infinity", text)
+        loaded = json.loads(text)
+        self.assertEqual(loaded["snapshots"][0], {"cpu": None, "values": [1.0, None]})
+        self.assertEqual(Path(loaded["path"]), Path("C:/x"))
+
     def test_write_requires_an_id(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             with self.assertRaises(ValueError):

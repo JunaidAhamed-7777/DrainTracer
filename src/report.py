@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import uuid
 from dataclasses import asdict
@@ -78,12 +79,31 @@ def write_text_atomic(path: Path, content: str, newline: str | None = None) -> P
 
 
 def write_json_report(report: dict[str, Any], directory: str | Path) -> Path:
-    """Store ``report`` as ``<directory>/leak_report_<report_id>.json``."""
+    """Store ``report`` as ``<directory>/leak_report_<report_id>.json``.
+
+    The file is always strict JSON: non-finite numbers become ``null`` and
+    any unexpected object is written as its string form.
+    """
     report_id = report.get("report_id")
     if not report_id:
         raise ValueError("report has no report_id")
     path = Path(directory) / report_filename(str(report_id))
-    return write_text_atomic(path, json.dumps(report, indent=2))
+    try:
+        text = json.dumps(report, indent=2, allow_nan=False, default=str)
+    except ValueError:
+        text = json.dumps(_finite_only(report), indent=2, allow_nan=False, default=str)
+    return write_text_atomic(path, text)
+
+
+def _finite_only(value: Any) -> Any:
+    """Copy ``value`` with NaN and infinities replaced by ``None``."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, dict):
+        return {key: _finite_only(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_finite_only(item) for item in value]
+    return value
 
 
 __all__ = [
