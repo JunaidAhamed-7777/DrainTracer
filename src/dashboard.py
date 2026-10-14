@@ -120,7 +120,7 @@ class DashboardApp(MonitorSession):
 
         try:
             with Live(
-                self._render(),
+                self._frame(),
                 console=self.console,
                 auto_refresh=False,
                 screen=self.console.is_terminal,
@@ -155,11 +155,35 @@ class DashboardApp(MonitorSession):
         finally:
             self.shutdown()
 
-        self.console.print(self.render_summary())
+        try:
+            self.console.print(self.render_summary())
+        except Exception as exc:
+            # The session itself succeeded; still say where the report went.
+            logger.exception("Session summary failed")
+            self.console.print(Text(f"Session summary unavailable: {exc}"))
+            if self._last_report is not None:
+                self.console.print(Text(f"Report: {self._last_report}"))
         return 0
 
     def _refresh(self, live: Live) -> None:
-        live.update(self._render(), refresh=True)
+        live.update(self._frame(), refresh=True)
+
+    def _frame(self) -> RenderableType:
+        """The dashboard, or a plain notice while it cannot be drawn.
+
+        A stale frame would suggest the target went quiet; the notice says
+        monitoring continues and which keys still work.
+        """
+        try:
+            return self._render()
+        except Exception as exc:
+            self._note_loop_error("Drawing the dashboard", exc)
+            return Text.assemble(
+                (f"{self.TITLE} could not draw its dashboard: ", f"bold {self.palette.danger}"),
+                str(exc),
+                ("\nMonitoring continues. Press E to export a report or Q to quit.",
+                 self.palette.muted),
+            )
 
     def _guarded(self, action: str, function, *args):
         """Run one step of the live loop; log a failure instead of ending the session.
@@ -171,12 +195,15 @@ class DashboardApp(MonitorSession):
         try:
             return function(*args)
         except Exception as exc:
-            message = f"{action} failed: {exc}"
-            if message not in self._loop_errors:
-                self._loop_errors.add(message)
-                logger.exception("%s failed", action)
-                self._append_event(message, "error")
+            self._note_loop_error(action, exc)
             return None
+
+    def _note_loop_error(self, action: str, exc: Exception) -> None:
+        message = f"{action} failed: {exc}"
+        if message not in self._loop_errors:
+            self._loop_errors.add(message)
+            logger.exception("%s failed", action)
+            self._append_event(message, "error")
 
     def _handle_key(self, key: str | None) -> None:
         if not key:

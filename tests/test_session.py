@@ -251,16 +251,14 @@ class SessionLifecycleTests(unittest.TestCase):
         app = DashboardApp(
             str(self._script("import time\ntime.sleep(60)\n")), console=make_console()
         )
-        original = app._render
         calls: list[int] = []
 
-        def flaky_render():
+        def broken_render():
             calls.append(1)
-            if len(calls) > 1:
-                raise ValueError("layout bug")
-            return original()
+            raise ValueError("layout bug")
 
-        app._render = flaky_render  # type: ignore[method-assign]
+        # Broken from the very first frame.
+        app._render = broken_render  # type: ignore[method-assign]
         timer = threading.Timer(1.2, setattr, args=(app, "_quit_requested", True))
         timer.start()
         self.addCleanup(timer.cancel)
@@ -270,6 +268,30 @@ class SessionLifecycleTests(unittest.TestCase):
         failures = [m for _s, m, _l in app._events if "failed: layout bug" in m]
         self.assertEqual(failures, ["Drawing the dashboard failed: layout bug"])
         self.assertGreater(len(calls), 2)  # kept trying to draw
+        output = app.console.file.getvalue()
+        self.assertIn("could not draw its dashboard: layout bug", output)
+        self.assertIn("SESSION SUMMARY", output)
+        self.assertFalse(app.manager.has_tracked_processes)
+
+    def test_a_summary_bug_still_ends_cleanly_with_the_report_path(self) -> None:
+        import threading
+        from unittest import mock
+
+        from src.dashboard import DashboardApp
+
+        app = DashboardApp(
+            str(self._script("import time\ntime.sleep(60)\n")), console=make_console()
+        )
+        app._last_report = Path(self.temp.name) / "leak_report_x.json"
+        timer = threading.Timer(0.5, setattr, args=(app, "_quit_requested", True))
+        timer.start()
+        self.addCleanup(timer.cancel)
+        with mock.patch.object(app, "render_summary", side_effect=ValueError("summary bug")), \
+                self.assertLogs("src.dashboard", "ERROR"):
+            self.assertEqual(app.run(), 0)
+        output = app.console.file.getvalue()
+        self.assertIn("Session summary unavailable: summary bug", output)
+        self.assertIn("leak_report_x.json", output)
         self.assertFalse(app.manager.has_tracked_processes)
 
     def test_failed_start_leaves_nothing_running(self) -> None:
