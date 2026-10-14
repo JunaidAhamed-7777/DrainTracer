@@ -296,8 +296,9 @@ class MonitorSession:
         """Stop sampling; terminate launched targets, release attached ones.
 
         Graceful termination can take a few seconds. If Ctrl+C interrupts
-        it, cleanup finishes at once (kill, or resume and detach) before the
-        interrupt propagates, so the target is never abandoned half-handled.
+        it, or a step fails, cleanup finishes at once (kill, or resume and
+        detach) before the error propagates, so the target is never
+        abandoned half-handled.
         """
         if self._started_at is not None and self._ended_at is None:
             self._ended_at = time.time()
@@ -309,19 +310,23 @@ class MonitorSession:
             elif self.manager.is_running or self.manager.has_tracked_processes:
                 self._stopped_target = True
                 self.manager.terminate()
-        except KeyboardInterrupt:
+        except BaseException:
             self._force_cleanup()
             raise
 
     def _force_cleanup(self) -> None:
-        """Finish cleanup without waiting; used when shutdown is interrupted."""
+        """Finish cleanup without waiting; used when shutdown is interrupted or fails."""
         try:
-            self.detector.stop()
-            if self.attached:
-                self.manager.detach()
-            elif self.manager.is_running or self.manager.has_tracked_processes:
-                self._stopped_target = True
-                self.manager.kill()
+            try:
+                self.detector.stop()
+            finally:
+                # Release or kill the target even if the sampler will not stop.
+                if self.attached:
+                    self._left_running = self._left_running or self.manager.is_running
+                    self.manager.detach()
+                elif self.manager.is_running or self.manager.has_tracked_processes:
+                    self._stopped_target = True
+                    self.manager.kill()
         except KeyboardInterrupt:
             pass  # A third Ctrl+C: stop trying rather than loop.
 

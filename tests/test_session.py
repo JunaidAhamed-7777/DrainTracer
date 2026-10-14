@@ -205,6 +205,24 @@ class SessionLifecycleTests(unittest.TestCase):
         self.assertTrue(session.stopped_target)
         self.assertFalse(session.detector.is_running)
 
+    def test_a_failing_shutdown_step_still_ends_the_tree(self) -> None:
+        from unittest import mock
+
+        for broken in ("terminate", "stop"):
+            with self.subTest(broken=broken):
+                session = _Session(
+                    str(self._script("import time\ntime.sleep(60)\n")), console=make_console()
+                )
+                session.start()
+                self.addCleanup(session.manager.kill)
+                self.addCleanup(session.detector.stop)
+                owner = session.manager if broken == "terminate" else session.detector
+                with mock.patch.object(owner, broken, side_effect=RuntimeError("stuck")):
+                    with self.assertRaises(RuntimeError):
+                        session.shutdown()
+                self.assertFalse(session.manager.has_tracked_processes)
+                self.assertTrue(session.stopped_target)
+
     def test_the_dashboard_redraws_only_when_something_changes(self) -> None:
         import threading
 
