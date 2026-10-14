@@ -302,9 +302,14 @@ are refused for such a tree and only detaching remains.
 
 Launched targets get an empty standard input, so they cannot read or block
 on the keys meant for the dashboard. Batch files run through
-`cmd.exe /d /s /c` with every argument quoted for cmd.exe, so spaces and
-characters such as `&`, `|`, `<`, `>`, `^`, and parentheses reach the
-script intact instead of splitting the command line.
+`cmd.exe /d /e:on /v:off /s /c` with every argument quoted for cmd.exe, so
+spaces and characters such as `&`, `|`, `<`, `>`, `^`, `!`, and parentheses
+reach the script intact instead of splitting the command line. cmd.exe
+expands `%NAME%` even inside quotes, before it looks for `&`, so each `%`
+is written as `%%cd:~,%`: the empty substring of `%cd%` between it and the
+next character keeps any variable name from forming, and an argument such
+as `%PATH%` arrives as written. Arguments with line breaks cannot be passed
+to a batch file and are refused.
 
 If Ctrl+C arrives while a launched tree is being terminated gracefully,
 cleanup switches to an immediate kill (or, for an attached tree, resume and

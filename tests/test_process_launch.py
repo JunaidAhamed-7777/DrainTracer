@@ -11,7 +11,7 @@ from pathlib import Path
 import helpers  # noqa: F401  (adds the repository root to sys.path)
 import psutil
 
-from src.process_runner import ProcessManager, _quote_for_cmd
+from src.process_runner import ProcessManager, ProcessManagerError, _quote_for_cmd
 
 
 class QuoteTests(unittest.TestCase):
@@ -27,10 +27,23 @@ class QuoteTests(unittest.TestCase):
             "a|b": '"a|b"',
             "(p)": '"(p)"',
             'say "hi"': '"say ""hi"""',
+            "!x!": '"!x!"',
+            "a,b;c": '"a,b;c"',
+            "café": "café",  # printable non-ASCII needs no quotes
+            "no break": '"no break"',
         }
         for argument, quoted in cases.items():
             with self.subTest(argument=argument):
                 self.assertEqual(_quote_for_cmd(argument), quoted)
+
+    def test_percent_signs_cannot_form_variable_names(self) -> None:
+        self.assertEqual(_quote_for_cmd("%PATH%"), '"%%cd:~,%PATH%%cd:~,%"')
+        self.assertEqual(_quote_for_cmd("100%"), '"100%%cd:~,%"')
+
+    def test_line_breaks_are_refused(self) -> None:
+        for argument in ("a\nb", "a\rb", "a\0b"):
+            with self.subTest(argument=argument), self.assertRaises(ProcessManagerError):
+                _quote_for_cmd(argument)
 
 
 class StdinTests(unittest.TestCase):
@@ -75,6 +88,35 @@ class BatchLaunchTests(unittest.TestCase):
             manager.kill()
         self.assertEqual(output, '["has space"] ["x&y"] ["a|b>c"] ["(p)"]')
         self.assertEqual(exit_code, 7)
+
+    def test_batch_files_receive_variable_names_literally(self) -> None:
+        import os
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp) / "dir with % sign"
+            folder.mkdir()
+            marker = folder / "second_command_ran.txt"
+            # Stored before delayed expansion is enabled, written after, so
+            # the batch file's own parsing cannot alter the values it got.
+            script = folder / "receive.bat"
+            script.write_text(
+                '@echo off\r\nset "A1=%~1"\r\nset "A2=%~2"\r\nset "A3=%~3"\r\n'
+                "setlocal EnableDelayedExpansion\r\n"
+                '> "%~dp0out.txt" echo(^[!A1!^] ^[!A2!^] ^[!A3!^]\r\n',
+                encoding="ascii",
+            )
+            hostile = f'nightly&echo ran>"{marker}"'
+            with mock.patch.dict(os.environ, {"BUILD_TAG": hostile}):
+                manager = ProcessManager(str(script), args=["%BUILD_TAG%", "100%", "!USERNAME!"])
+                manager.start()
+            deadline = time.monotonic() + 10
+            while manager.is_running and time.monotonic() < deadline:
+                time.sleep(0.05)
+            manager.kill()
+            output = (folder / "out.txt").read_text(encoding="ascii").strip()
+            self.assertEqual(output, "[%BUILD_TAG%] [100%] [!USERNAME!]")
+            self.assertFalse(marker.exists(), "an expanded & ran a second command")
 
     def test_python_and_executable_targets_use_argument_lists(self) -> None:
         manager = ProcessManager("C:/apps/tool.py", args=["a b"])
