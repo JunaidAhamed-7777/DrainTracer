@@ -15,6 +15,7 @@ from .events import (
     LeakResource,
     LeakSeverity,
     MetricsSnapshot,
+    MetricsStream,
     severity_rank,
 )
 from .handle_types import describe_type_growth
@@ -87,6 +88,10 @@ class MonitorSession:
         self.console = console or Console()
         self.detector = LeakDetector(
             self.manager,
+            # Sampling continues while the main thread is stalled, for
+            # example on a console paused by a text selection. Keep as many
+            # snapshots as the session would, so none are dropped meanwhile.
+            stream=MetricsStream(max_queue_size=self.SNAPSHOT_LIMIT),
             sample_interval_ms=self.settings.sample_interval_ms,
             window_seconds=self.settings.windows,
             thresholds=self.settings.thresholds,

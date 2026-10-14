@@ -116,6 +116,21 @@ class WarmupEventTests(unittest.TestCase):
         self.assertIsNone(self._session(0.0).build_report()["warmup"])
 
 
+class StreamTests(unittest.TestCase):
+    def test_a_stalled_main_thread_loses_no_samples(self) -> None:
+        from helpers import make_alert, make_snapshot
+
+        from src.events import LeakSeverity
+
+        session = _Session("C:/targets/worker.exe", console=make_console())
+        stream = session.detector.stream
+        stream.publish(make_snapshot(alerts=(make_alert(severity=LeakSeverity.HIGH),)))
+        for _ in range(600):  # five minutes of samples at 500 ms
+            stream.publish(make_snapshot())
+        self.assertEqual(session.poll(), 601)
+        self.assertEqual(session.worst_severity, LeakSeverity.HIGH)
+
+
 class StartupHintTests(unittest.TestCase):
     def test_hints_for_common_failures(self) -> None:
         from src.process_runner import (
