@@ -213,6 +213,8 @@ def load_report(path: str | Path) -> LoadedReport:
         data = json.loads(text)
     except json.JSONDecodeError as exc:
         raise DiffError(f"{report_path}: not valid JSON ({exc.msg} at line {exc.lineno})") from None
+    except RecursionError:
+        raise DiffError(f"{report_path}: JSON nested too deeply to be a report") from None
     if not isinstance(data, dict) or not isinstance(data.get("snapshots"), list):
         raise DiffError(f"{report_path}: not a DrainTracer report (no snapshots list)")
     if not data["snapshots"]:

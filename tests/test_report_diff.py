@@ -150,6 +150,7 @@ class LoadTests(unittest.TestCase):
                 "list.json": ("[1, 2]", "not a DrainTracer report"),
                 "empty.json": ('{"snapshots": []}', "has no snapshots"),
                 "binary.json": (b"\xff\xfe\x00", "not a UTF-8 JSON report"),
+                "deep.json": ("[" * 100_000 + "]" * 100_000, "nested too deeply"),
             }
             for name, (content, message) in cases.items():
                 with self.subTest(name=name):
