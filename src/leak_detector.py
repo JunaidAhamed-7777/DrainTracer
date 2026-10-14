@@ -29,6 +29,7 @@ from .handle_types import (
     total_counts,
 )
 from .process_runner import ProcessManager
+from .process_table import ProcessEntry, ProcessTable
 from .stats import least_squares_slope
 
 logger = logging.getLogger(__name__)
@@ -125,6 +126,7 @@ class LeakDetector:
         self.sample_interval_ms = sample_interval_ms
         self.handle_types_interval = handle_types_interval
         self.classifier = classifier or HandleClassifier()
+        self._process_table = ProcessTable()
         self.window_seconds = windows
         self.max_window_seconds = windows[-1]
         # Resources without an override keep the defaults.
@@ -424,9 +426,14 @@ class LeakDetector:
         return growth or None
 
     def _sample_processes(self) -> list[ProcessMetrics]:
-        metrics: list[ProcessMetrics] = []
-        for proc in self.process_manager.iter_psutil_processes():
-            metrics.append(self._sample_process(proc))
+        processes = self.process_manager.iter_psutil_processes()
+        # One system snapshot answers thread counts and suspension for the
+        # whole tree; psutil would enumerate every process once per call.
+        table = self._process_table.snapshot([proc.pid for proc in processes]) if processes else None
+        metrics = [
+            self._sample_process(proc, table.get(proc.pid) if table else None)
+            for proc in processes
+        ]
         # Forget rate baselines of processes that left the tree, so a long
         # session with many short-lived children does not accumulate them.
         sampled = {process.pid for process in metrics}
@@ -435,20 +442,25 @@ class LeakDetector:
                 del baselines[pid]
         return metrics
 
-    def _sample_process(self, proc: psutil.Process) -> ProcessMetrics:
+    def _sample_process(
+        self, proc: psutil.Process, entry: ProcessEntry | None = None
+    ) -> ProcessMetrics:
         access_denied = False
         pid = proc.pid
 
         try:
             with proc.oneshot():
                 name = proc.name()
-                status = proc.status()
+                if entry is not None:
+                    status = psutil.STATUS_STOPPED if entry.suspended else psutil.STATUS_RUNNING
+                else:
+                    status = proc.status()
                 mem = proc.memory_info()
                 rss = int(mem.rss)
                 vms = int(mem.vms)
                 private_bytes = int(getattr(mem, "private", mem.rss))
                 handles = self._safe_num_handles(proc)
-                threads = proc.num_threads()
+                threads = entry.threads if entry is not None else proc.num_threads()
                 cpu_percent = self._sample_cpu_percent(proc)
                 io_read_bps, io_write_bps = self._sample_io_rates(proc)
         except psutil.AccessDenied:
