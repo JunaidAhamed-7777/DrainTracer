@@ -230,6 +230,16 @@ class EndToEndTests(unittest.TestCase):
         self.assertFalse(runner.manager.has_tracked_processes)
         self.assertIn("INTERRUPTED", _output(runner))
 
+    def test_an_unexpected_error_still_stops_the_target_and_exports(self) -> None:
+        runner = self._runner("import time\ntime.sleep(60)\n")
+        with mock.patch.object(HeadlessRunner, "_monitor", side_effect=RuntimeError("progress bug")), \
+                self.assertLogs("src.headless", "ERROR"):
+            self.assertEqual(runner.run(), EXIT_ERROR)
+        self.assertFalse(runner.manager.has_tracked_processes)
+        self.assertIn("monitoring failed: progress bug", _output(runner))
+        messages = [event["message"] for event in self._report()["event_log"]]
+        self.assertIn("Monitoring failed: progress bug", messages)
+
     def test_missing_target_is_an_error(self) -> None:
         runner = HeadlessRunner(
             str(self.root / "missing.exe"), console=make_console(), report_dir=self.root

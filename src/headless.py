@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import os
 import time
@@ -21,6 +22,8 @@ from .report_diff import format_amount, format_drift
 from .session import MonitorSession
 from .theme import PALETTE
 from .units import format_duration
+
+logger = logging.getLogger(__name__)
 
 EXIT_PASS = 0
 EXIT_LEAK = 1
@@ -76,6 +79,7 @@ class HeadlessRunner(MonitorSession):
         self.fail_on = fail_on
         self._github_actions = os.environ.get("GITHUB_ACTIONS") == "true"
         self._export_error: str | None = None
+        self._run_error: str | None = None
         self._interrupted = False
 
     @property
@@ -104,13 +108,24 @@ class HeadlessRunner(MonitorSession):
         except KeyboardInterrupt:
             self._interrupted = True
             self._append_event("Interrupted; stopping early", "warn")
+        except Exception as exc:
+            self._fail("Monitoring", exc)
         finally:
             self.shutdown()
-        self.poll()
+        try:
+            self.poll()
+        except Exception as exc:
+            self._fail("Processing the last samples", exc)
 
         self._export()
         self._print_summary()
         return self.exit_status()
+
+    def _fail(self, action: str, exc: Exception) -> None:
+        """Record an unexpected error; the run still stops its target and exports."""
+        logger.exception("%s failed", action)
+        self._run_error = f"{action.lower()} failed: {exc}"
+        self._append_event(f"{action} failed: {exc}", "error")
 
     def _monitor(self) -> None:
         """Poll until the monitored tree exits or the time limit passes."""
@@ -159,14 +174,16 @@ class HeadlessRunner(MonitorSession):
             return EXIT_LEAK
         if self._interrupted:
             return EXIT_INTERRUPTED
-        if self._export_error is not None:
+        if self._export_error is not None or self._run_error is not None:
             return EXIT_ERROR
         return EXIT_PASS
 
     def _export(self) -> None:
         try:
             self.export_log()
-        except OSError as exc:
+        except Exception as exc:
+            if not isinstance(exc, OSError):
+                logger.exception("Report export failed")
             self._export_error = str(exc)
             self._print_line("error", f"Report export failed: {exc}")
 
@@ -260,6 +277,8 @@ class HeadlessRunner(MonitorSession):
             if worst == LeakSeverity.NONE
             else f"worst leak signal {worst.value.upper()}"
         )
+        if status == EXIT_ERROR:
+            reason = self._run_error or f"the report could not be written: {self._export_error}"
         if status == EXIT_PASS and not self.conclusive:
             # Still exit 0: a short smoke run is not a failure, but say so.
             verdict, color = "INCONCLUSIVE", PALETTE.warn
@@ -347,7 +366,7 @@ class HeadlessRunner(MonitorSession):
         """Surface the verdict as a GitHub Actions annotation on CI runs."""
         if not self._github_actions:
             return
-        if status == EXIT_LEAK:
+        if status in (EXIT_LEAK, EXIT_ERROR):
             command = "error"
         elif (
             self.worst_severity != LeakSeverity.NONE

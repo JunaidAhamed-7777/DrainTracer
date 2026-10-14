@@ -82,7 +82,7 @@ tree exits, exports a report to `--report-dir`, and sets the exit code:
 | --- | --- |
 | `0` | No leak signal reached the `--fail-on` severity |
 | `1` | A leak signal reached `--fail-on` (default `high`: HIGH or CRITICAL) |
-| `2` | Usage error, monitoring could not start, or the report could not be written |
+| `2` | Usage error, monitoring could not start or failed unexpectedly, or the report could not be written |
 | `130` | Interrupted with Ctrl+C before a failing signal |
 
 ```powershell

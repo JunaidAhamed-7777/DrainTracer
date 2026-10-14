@@ -336,9 +336,11 @@ running or releases an attached one, and a report is exported.
 
 The exit code is `1` when the strongest signal seen during the run reached
 `--fail-on` (default `high`), otherwise `130` after Ctrl+C, `2` when the
-report could not be written, and `0` for a clean run. Startup failures and
-usage errors also return `2`. Because the verdict uses the strongest signal
-seen at any point, a signal that later clears still fails the run.
+report could not be written or monitoring failed unexpectedly, and `0` for
+a clean run. Startup failures and usage errors also return `2`. Because the
+verdict uses the strongest signal seen at any point, a signal that later
+clears still fails the run. An unexpected error still stops or releases the
+target and exports what was collected before the run exits.
 
 ## 7. Leak report structure
 
