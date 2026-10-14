@@ -48,6 +48,17 @@ def describe_pid(pid: int) -> str:
     return f"PID {pid}"
 
 
+# Characters that end or split an argument on a cmd.exe command line.
+_CMD_SPECIAL = frozenset(" \t&|<>^(),;=\"")
+
+
+def _quote_for_cmd(argument: str) -> str:
+    """Quote one argument so cmd.exe passes it to a batch file unchanged."""
+    if argument and not any(character in _CMD_SPECIAL for character in argument):
+        return argument
+    return '"' + argument.replace('"', '""') + '"'
+
+
 class ProcessManagerError(Exception):
     """Base error for process manager failures."""
 
@@ -376,15 +387,21 @@ class ProcessManager:
                 processes.append(proc)
         return processes
 
-    def _build_command(self) -> list[str]:
+    def _build_command(self) -> list[str] | str:
         path = Path(self.target_path)
         suffix = path.suffix.lower()
 
         if suffix in {".py"}:
             return [sys.executable, str(path), *self.args]
-        if suffix in {".bat", ".cmd"}:
-            if sys.platform == "win32":
-                return ["cmd.exe", "/c", str(path), *self.args]
+        if suffix in {".bat", ".cmd"} and sys.platform == "win32":
+            # cmd.exe parses its own command line, so Python's list quoting
+            # is not enough: an argument such as "a b" or "x&y" would be
+            # split or run as a second command. /s keeps everything between
+            # the outer quotes intact, each part is quoted for cmd, and /d
+            # skips AutoRun commands.
+            comspec = os.environ.get("COMSPEC") or "cmd.exe"
+            inner = " ".join(_quote_for_cmd(part) for part in (str(path), *self.args))
+            return f'"{comspec}" /d /s /c "{inner}"'
         return [str(path), *self.args]
 
     def _start_poll_thread(self) -> None:
