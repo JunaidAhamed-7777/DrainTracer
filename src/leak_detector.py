@@ -234,6 +234,8 @@ class LeakDetector:
         """
         interval = self.sample_interval_ms / 1000.0
         next_tick = time.monotonic() + interval
+        # A persistent failure repeats every sample; log its traceback once.
+        last_error: str | None = None
         while not self._stop_event.wait(max(0.0, next_tick - time.monotonic())):
             try:
                 if self._pause_event.is_set():
@@ -243,8 +245,13 @@ class LeakDetector:
                 else:
                     snapshot = self._collect_snapshot()
             except Exception as exc:
-                logger.exception("Resource sampling failed")
-                snapshot = self._build_error_snapshot(str(exc) or type(exc).__name__)
+                error = str(exc) or type(exc).__name__
+                if error != last_error:
+                    logger.exception("Resource sampling failed")
+                last_error = error
+                snapshot = self._build_error_snapshot(error)
+            else:
+                last_error = None
             try:
                 self.stream.publish(snapshot)
             except Exception:

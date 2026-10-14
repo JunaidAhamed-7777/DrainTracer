@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import logging
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -306,8 +308,37 @@ def _make_output_safe() -> None:
             pass
 
 
+def _configure_logging() -> logging.Handler | None:
+    """Keep diagnostics off the terminal; ``DRAINTRACER_LOG`` sends them to a file.
+
+    Without a handler, Python prints warnings and tracebacks from the
+    sampling threads straight to stderr, which tears through the live
+    dashboard and interleaves with headless output. Sampling and display
+    failures still reach the event log. Logging that is already configured
+    (DrainTracer embedded in another program) is left alone.
+    """
+    root = logging.getLogger()
+    if root.handlers:
+        return None
+    handler: logging.Handler = logging.NullHandler()
+    path = os.environ.get("DRAINTRACER_LOG")
+    if path:
+        try:
+            handler = logging.FileHandler(path, encoding="utf-8", errors="replace")
+        except OSError as exc:
+            print(f"DRAINTRACER_LOG: cannot write {path}: {exc.strerror or exc}", file=sys.stderr)
+        else:
+            handler.setFormatter(
+                logging.Formatter("%(asctime)s %(levelname)s %(threadName)s %(name)s: %(message)s")
+            )
+            root.setLevel(logging.DEBUG)
+    root.addHandler(handler)
+    return handler
+
+
 def main(argv: list[str] | None = None) -> int:
     _make_output_safe()
+    _configure_logging()
     console = Console()
     try:
         return _main(console, argv)

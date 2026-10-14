@@ -246,7 +246,9 @@ class SessionLifecycleTests(unittest.TestCase):
         timer = threading.Timer(1.2, setattr, args=(app, "_quit_requested", True))
         timer.start()
         self.addCleanup(timer.cancel)
-        self.assertEqual(app.run(), 0)
+        with self.assertLogs("src.dashboard", "ERROR") as logs:
+            self.assertEqual(app.run(), 0)
+        self.assertEqual(len(logs.records), 1)  # the traceback, once
         failures = [m for _s, m, _l in app._events if "failed: layout bug" in m]
         self.assertEqual(failures, ["Drawing the dashboard failed: layout bug"])
         self.assertGreater(len(calls), 2)  # kept trying to draw

@@ -354,12 +354,13 @@ class SamplingLoopTests(unittest.TestCase):
         detector = _detector(sample_interval_ms=20, classifier=mock.Mock(available=False))
         with mock.patch.object(detector, "_collect_snapshot", side_effect=RuntimeError("boom")), \
                 mock.patch.object(type(detector.process_manager), "is_running",
-                                  new_callable=mock.PropertyMock, side_effect=OSError("gone")):
+                                  new_callable=mock.PropertyMock, side_effect=OSError("gone")),                 self.assertLogs("src.leak_detector", "ERROR") as logs:
             detector.start()
             time.sleep(0.2)
             detector.stop()
         snapshots = detector.stream.drain()
         self.assertGreater(len(snapshots), 2)
+        self.assertEqual(len(logs.records), 1)  # one traceback, not one per sample
         self.assertTrue(all(s.metadata.get("sampling_error") == "boom" for s in snapshots))
         self.assertFalse(snapshots[-1].process_alive)
 

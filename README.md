@@ -403,6 +403,21 @@ lengths, or a run that never filled a detection window.
   `MIXED`, so CI can compare a branch's report with the main branch's.
 - Exit code `2` means a report could not be read.
 
+## Diagnostic log
+
+Errors DrainTracer recovers from, such as a failed sample or a display
+error, appear in the event log and the session carries on. To also record
+their tracebacks and debug details, for example when reporting a bug, set
+`DRAINTRACER_LOG` to a file path:
+
+```powershell
+$env:DRAINTRACER_LOG = "drain.log"
+python src/main.py --target .\build\server.exe
+```
+
+Without it these diagnostics are discarded, so they never draw over the
+dashboard or interleave with headless output.
+
 ## Tests
 
 ```powershell

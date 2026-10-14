@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import contextlib
 import io
+import logging
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from helpers import make_console
@@ -187,6 +190,55 @@ class DispatchTests(unittest.TestCase):
         with mock.patch.object(cli, "_main", side_effect=KeyboardInterrupt), \
                 mock.patch.object(cli, "Console", return_value=make_console()):
             self.assertEqual(cli.main([]), 130)
+
+
+
+class LoggingTests(unittest.TestCase):
+    def setUp(self) -> None:
+        root = logging.getLogger()
+        saved = (root.handlers[:], root.level)
+        root.handlers.clear()
+
+        def restore() -> None:
+            for handler in root.handlers:
+                handler.close()
+            root.handlers[:] = saved[0]
+            root.setLevel(saved[1])
+
+        self.addCleanup(restore)
+
+    def test_diagnostics_stay_off_the_terminal(self) -> None:
+        stderr = io.StringIO()
+        with mock.patch.dict(cli.os.environ, {"DRAINTRACER_LOG": ""}),                 contextlib.redirect_stderr(stderr):
+            handler = cli._configure_logging()
+            logging.getLogger("src.leak_detector").error("Resource sampling failed")
+        self.assertIsInstance(handler, logging.NullHandler)
+        self.assertEqual(stderr.getvalue(), "")
+        # Logging configured by an embedding program is left alone.
+        self.assertIsNone(cli._configure_logging())
+        self.assertEqual(logging.getLogger().handlers, [handler])
+
+    def test_drain_log_records_tracebacks_in_a_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            log = Path(temp) / "drain.log"
+            with mock.patch.dict(cli.os.environ, {"DRAINTRACER_LOG": str(log)}):
+                handler = cli._configure_logging()
+            try:
+                raise ValueError("layout bug")
+            except ValueError:
+                logging.getLogger("src.dashboard").exception("Drawing the dashboard failed")
+            handler.close()
+            text = log.read_text(encoding="utf-8")
+
+            logging.getLogger().handlers.clear()
+            stderr = io.StringIO()
+            missing = Path(temp) / "missing" / "drain.log"
+            with mock.patch.dict(cli.os.environ, {"DRAINTRACER_LOG": str(missing)}),                     contextlib.redirect_stderr(stderr):
+                fallback = cli._configure_logging()
+        self.assertIn("ERROR MainThread src.dashboard: Drawing the dashboard failed", text)
+        self.assertIn("ValueError: layout bug", text)
+        self.assertIsInstance(fallback, logging.NullHandler)
+        self.assertIn("DRAINTRACER_LOG: cannot write", stderr.getvalue())
 
 
 if __name__ == "__main__":
