@@ -91,7 +91,11 @@ def run_diff(argv: list[str], console: Console) -> int:
     except DiffError as exc:
         console.print(Text.assemble(("Diff error: ", "bold red"), str(exc)))
         return EXIT_ERROR
-    comparison = compare_reports(before, after)
+    try:
+        comparison = compare_reports(before, after)
+    except Exception as exc:  # a report that parses but defeats the analysis
+        console.print(Text.assemble(("Diff error: ", "bold red"), f"could not compare: {exc}"))
+        return EXIT_ERROR
     if args.json:
         console.print(
             json.dumps(comparison.to_dict(), indent=2, allow_nan=False),

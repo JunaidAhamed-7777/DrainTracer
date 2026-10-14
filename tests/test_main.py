@@ -162,6 +162,20 @@ class DispatchTests(unittest.TestCase):
             stream.flush()
         self.assertEqual(stream.buffer.getvalue(), b"launching ????_??.py")
 
+    def test_unexpected_errors_are_reported_with_the_mode_exit_code(self) -> None:
+        console = make_console()
+        app = mock.Mock()
+        app.run.side_effect = RuntimeError("render bug")
+        self.assertEqual(cli._run_dashboard(app, console), 1)
+        output = console.file.getvalue()
+        self.assertIn("render bug", output)
+        self.assertIn("stopped after an unexpected error", output)
+
+        with mock.patch.object(cli, "HeadlessRunner") as runner:
+            runner.return_value.run.side_effect = RuntimeError("export bug")
+            code = cli._main(make_console(), ["--headless", "--target", "a.exe", "--no-config"])
+        self.assertEqual(code, 2)
+
     def test_ctrl_c_exits_130(self) -> None:
         with mock.patch.object(cli, "_main", side_effect=KeyboardInterrupt), \
                 mock.patch.object(cli, "Console", return_value=make_console()):

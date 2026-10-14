@@ -31,7 +31,7 @@ from src.dashboard import DashboardApp
 from src.diff_command import run_diff
 from src.events import LeakSeverity
 from src.file_picker import select_target_file
-from src.headless import HeadlessRunner
+from src.headless import EXIT_ERROR, HeadlessRunner
 from src.process_runner import ProcessManagerError
 from src.report import DEFAULT_REPORT_DIR
 from src.theme import PALETTE, blend
@@ -274,6 +274,20 @@ def _run_dashboard(app: DashboardApp, console: Console) -> int:
     except ProcessManagerError as exc:
         console.print(Text.assemble(("Process error: ", "bold red"), str(exc)))
         return 1
+    except Exception:
+        return _report_crash(console, 1)
+
+
+def _report_crash(console: Console, code: int) -> int:
+    """Show an unexpected error; the session has already cleaned up its target."""
+    console.print_exception(show_locals=False)
+    console.print(
+        Text.assemble(
+            ("DrainTracer stopped after an unexpected error. ", "bold red"),
+            "Its target was cleaned up as on a normal exit. Please report the traceback above.",
+        )
+    )
+    return code
 
 
 def _make_output_safe() -> None:
@@ -405,7 +419,10 @@ def _run_headless(
         fail_on=settings.fail_on,
         settings=settings,
     )
-    return runner.run()
+    try:
+        return runner.run()
+    except Exception:
+        return _report_crash(console, EXIT_ERROR)
 
 
 if __name__ == "__main__":
