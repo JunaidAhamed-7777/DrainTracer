@@ -185,6 +185,9 @@ class ProcessManager:
             popen_kwargs: dict = {
                 "cwd": self.cwd,
                 "env": self.env,
+                # The dashboard owns keyboard input; a target reading the
+                # shared console could swallow its keys or block on them.
+                "stdin": subprocess.DEVNULL,
                 "stdout": subprocess.DEVNULL,
                 "stderr": subprocess.DEVNULL,
             }

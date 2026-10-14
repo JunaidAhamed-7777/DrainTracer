@@ -32,6 +32,27 @@ class QuoteTests(unittest.TestCase):
                 self.assertEqual(_quote_for_cmd(argument), quoted)
 
 
+class StdinTests(unittest.TestCase):
+    def test_targets_read_end_of_file_instead_of_the_console(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            out = Path(temp) / "stdin.txt"
+            script = Path(temp) / "reader.py"
+            script.write_text(
+                "import sys\n"
+                f"open({str(out)!r}, 'w').write(repr(sys.stdin.read()))\n",
+                encoding="utf-8",
+            )
+            manager = ProcessManager(str(script))
+            manager.start()
+            deadline = time.monotonic() + 10
+            while manager.is_running and time.monotonic() < deadline:
+                time.sleep(0.05)
+            still_running = manager.is_running
+            manager.kill()
+            self.assertFalse(still_running, "the target blocked reading stdin")
+            self.assertEqual(out.read_text(encoding="utf-8"), "''")
+
+
 @unittest.skipUnless(sys.platform == "win32", "batch files run through cmd.exe on Windows")
 class BatchLaunchTests(unittest.TestCase):
     def test_batch_files_receive_hostile_arguments_intact(self) -> None:
