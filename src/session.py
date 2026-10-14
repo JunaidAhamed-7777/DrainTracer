@@ -100,7 +100,9 @@ class MonitorSession:
             key: deque(maxlen=self.HISTORY_LIMIT) for key in HISTORY_KEYS
         }
         self._peaks: dict[str, float] = {key: 0.0 for key in HISTORY_KEYS}
-        self._snapshot_history: deque[dict[str, Any]] = deque(maxlen=self.SNAPSHOT_LIMIT)
+        # Frozen snapshots are about a third the size of their dict form, so
+        # conversion waits until a report is exported.
+        self._snapshot_history: deque[MetricsSnapshot] = deque(maxlen=self.SNAPSHOT_LIMIT)
         self._events: deque[tuple[float, str, str]] = deque(maxlen=self.EVENT_LIMIT)
         self._resource_severity: dict[LeakResource, LeakSeverity] = {}
         self._worst_by_resource: dict[LeakResource, LeakSeverity] = {}
@@ -334,7 +336,7 @@ class MonitorSession:
     # ------------------------------------------------------------------
 
     def _accept_snapshot(self, snapshot: MetricsSnapshot) -> None:
-        self._snapshot_history.append(snapshot_to_dict(snapshot))
+        self._snapshot_history.append(snapshot)
         failure = snapshot.metadata.get("sampling_error")
         if failure:
             # A failed sample carries no measurements: keep showing the last
@@ -491,7 +493,7 @@ class MonitorSession:
             "settings": self._settings_record(),
             "warmup": self._warmup_record(),
             "detection_ran": self.detector.detection_started,
-            "snapshots": list(self._snapshot_history),
+            "snapshots": [snapshot_to_dict(snapshot) for snapshot in self._snapshot_history],
         }
 
     def _warmup_record(self) -> dict[str, Any] | None:
