@@ -357,7 +357,8 @@ class HeadlessRunner(MonitorSession):
             lines.append("")
             lines.append(f"Report: `{self._last_report}` (HTML alongside)")
         try:
-            with open(destination, "a", encoding="utf-8") as handle:
+            # Windows names may hold unpaired surrogates that UTF-8 cannot.
+            with open(destination, "a", encoding="utf-8", errors="replace") as handle:
                 handle.write("\n".join(lines) + "\n\n")
         except OSError as exc:
             self._print_line("warn", f"Could not write the GitHub step summary: {exc}")

@@ -122,6 +122,19 @@ class StepSummaryTests(unittest.TestCase):
         self.assertIn("Worst leak signal HIGH.", markdown)
         self.assertIn("leak_report_x.json` (HTML alongside)", markdown)
 
+    def test_names_utf8_cannot_hold_still_reach_the_step_summary(self) -> None:
+        import os
+
+        with tempfile.TemporaryDirectory() as temp:
+            summary_file = Path(temp) / "summary.md"
+            runner = HeadlessRunner("C:/targets/bad\udc80name.exe", console=make_console())
+            runner._github_actions = True
+            runner._accept_snapshot(make_snapshot())
+            with mock.patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": str(summary_file)}):
+                runner._print_summary()
+            markdown = summary_file.read_text(encoding="utf-8")
+        self.assertIn("**bad?name.exe**", markdown)
+
     def test_no_step_summary_outside_github_actions(self) -> None:
         import os
 
