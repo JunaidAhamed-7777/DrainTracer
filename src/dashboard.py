@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import os
 import select
@@ -35,6 +36,8 @@ from .theme import PALETTE
 from .units import format_duration
 from .widgets import Sized, Sparkline
 
+
+logger = logging.getLogger(__name__)
 
 # Process table orders cycled with S.
 SORT_MODES = ("tree", "memory", "handles", "cpu")
@@ -75,6 +78,7 @@ class DashboardApp(MonitorSession):
         self._spark_rows = 2
         self._health_spacious = True
         self._quit_requested = False
+        self._loop_errors: set[str] = set()
         self._show_help = False
         self._sort_mode = SORT_MODES[0]
         self._kill_armed_until = 0.0
@@ -129,10 +133,10 @@ class DashboardApp(MonitorSession):
                 last_render = time.monotonic()
                 last_size = self.console.size
                 while not self._quit_requested:
-                    changed = self.poll() > 0
+                    changed = self._guarded("Processing samples", self.poll) or False
                     key = self._read_key()
                     if key:
-                        self._handle_key(key)
+                        self._guarded(f"Key {key!r}", self._handle_key, key)
                         changed = True
                     if self.timed_out and not self._quit_requested:
                         self._quit_requested = True
@@ -143,7 +147,7 @@ class DashboardApp(MonitorSession):
                     now = time.monotonic()
                     size = self.console.size
                     if changed or size != last_size or now - last_render >= self.CLOCK_SECONDS:
-                        live.update(self._render(), refresh=True)
+                        self._guarded("Drawing the dashboard", self._refresh, live)
                         last_render, last_size = now, size
                     time.sleep(self.FRAME_SECONDS)
         except KeyboardInterrupt:
@@ -153,6 +157,26 @@ class DashboardApp(MonitorSession):
 
         self.console.print(self.render_summary())
         return 0
+
+    def _refresh(self, live: Live) -> None:
+        live.update(self._render(), refresh=True)
+
+    def _guarded(self, action: str, function, *args):
+        """Run one step of the live loop; log a failure instead of ending the session.
+
+        A display or key bug must not stop a long session and take the
+        target down with it. Each distinct failure is logged once; Ctrl+C
+        still propagates.
+        """
+        try:
+            return function(*args)
+        except Exception as exc:
+            message = f"{action} failed: {exc}"
+            if message not in self._loop_errors:
+                self._loop_errors.add(message)
+                logger.exception("%s failed", action)
+                self._append_event(message, "error")
+            return None
 
     def _handle_key(self, key: str | None) -> None:
         if not key:

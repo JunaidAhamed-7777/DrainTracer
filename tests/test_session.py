@@ -225,6 +225,33 @@ class SessionLifecycleTests(unittest.TestCase):
         self.assertLessEqual(len(renders), 9)
         self.assertFalse(app.manager.has_tracked_processes)
 
+    def test_a_display_bug_does_not_end_the_session(self) -> None:
+        import threading
+
+        from src.dashboard import DashboardApp
+
+        app = DashboardApp(
+            str(self._script("import time\ntime.sleep(60)\n")), console=make_console()
+        )
+        original = app._render
+        calls: list[int] = []
+
+        def flaky_render():
+            calls.append(1)
+            if len(calls) > 1:
+                raise ValueError("layout bug")
+            return original()
+
+        app._render = flaky_render  # type: ignore[method-assign]
+        timer = threading.Timer(1.2, setattr, args=(app, "_quit_requested", True))
+        timer.start()
+        self.addCleanup(timer.cancel)
+        self.assertEqual(app.run(), 0)
+        failures = [m for _s, m, _l in app._events if "failed: layout bug" in m]
+        self.assertEqual(failures, ["Drawing the dashboard failed: layout bug"])
+        self.assertGreater(len(calls), 2)  # kept trying to draw
+        self.assertFalse(app.manager.has_tracked_processes)
+
     def test_failed_start_leaves_nothing_running(self) -> None:
         session = _Session(str(Path(self.temp.name) / "missing.py"), console=make_console())
         with self.assertRaises(Exception):
