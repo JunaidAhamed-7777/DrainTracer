@@ -346,6 +346,42 @@ class WarmupTests(unittest.TestCase):
                 _detector(warmup_seconds=value)
 
 
+class SamplingLoopTests(unittest.TestCase):
+    def test_the_loop_survives_failures_and_reports_them(self) -> None:
+        import time
+        from unittest import mock
+
+        detector = _detector(sample_interval_ms=20, classifier=mock.Mock(available=False))
+        with mock.patch.object(detector, "_collect_snapshot", side_effect=RuntimeError("boom")), \
+                mock.patch.object(type(detector.process_manager), "is_running",
+                                  new_callable=mock.PropertyMock, side_effect=OSError("gone")):
+            detector.start()
+            time.sleep(0.2)
+            detector.stop()
+        snapshots = detector.stream.drain()
+        self.assertGreater(len(snapshots), 2)
+        self.assertTrue(all(s.metadata.get("sampling_error") == "boom" for s in snapshots))
+        self.assertFalse(snapshots[-1].process_alive)
+
+    def test_cheap_samples_keep_the_configured_cadence(self) -> None:
+        import time
+        from unittest import mock
+
+        detector = _detector(sample_interval_ms=50, classifier=mock.Mock(available=False))
+
+        def slowish():
+            time.sleep(0.03)  # 30 ms of work per 50 ms tick
+            return detector._build_paused_snapshot()
+
+        with mock.patch.object(detector, "_collect_snapshot", side_effect=slowish):
+            detector.start()
+            time.sleep(1.0)
+            detector.stop()
+        count = len(detector.stream.drain())
+        # Waiting a full interval after each sample would give about 12.
+        self.assertGreaterEqual(count, 16)
+
+
 class SeverityScoreTests(unittest.TestCase):
     def test_score_tiers(self) -> None:
         score = LeakDetector._score_severity

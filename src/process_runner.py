@@ -409,13 +409,17 @@ class ProcessManager:
 
     def _poll_loop(self) -> None:
         while not self._poll_stop.wait(self.poll_interval):
-            with self._lock:
-                self._refresh_tracked_pids()
-                if self._process is not None and self._process.poll() is not None:
-                    if not self._any_tracked_alive():
+            try:
+                with self._lock:
+                    self._refresh_tracked_pids()
+                    if self._process is not None and self._process.poll() is not None:
+                        if not self._any_tracked_alive():
+                            break
+                    if self._attached and not self._tracked_pids:
                         break
-                if self._attached and not self._tracked_pids:
-                    break
+            except Exception:
+                # Keep tracking: one failed refresh must not end discovery.
+                logger.exception("Process tree refresh failed")
 
     def _refresh_tracked_pids(self) -> None:
         if self._root_pid is None:

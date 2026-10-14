@@ -85,6 +85,28 @@ class AttachTests(unittest.TestCase):
         self.assertTrue(_wait_for(lambda: not any(psutil.pid_exists(p) for p in tracked)))
 
 
+class PollLoopTests(unittest.TestCase):
+    def test_a_failed_refresh_does_not_stop_tracking(self) -> None:
+        from unittest import mock
+
+        manager = ProcessManager(None, poll_interval=0.02)
+        manager._root_pid = os.getpid()
+        manager._attached = True
+        manager._tracked_pids = {os.getpid()}
+        calls = []
+
+        def flaky() -> None:
+            calls.append(1)
+            if len(calls) == 1:
+                raise RuntimeError("transient")
+
+        with mock.patch.object(manager, "_refresh_tracked_pids", side_effect=flaky):
+            manager._start_poll_thread()
+            self.assertTrue(_wait_for(lambda: len(calls) >= 3, timeout=5.0))
+            self.assertTrue(manager._poll_thread.is_alive())
+            manager._stop_poll_thread()
+
+
 class AttachValidationTests(unittest.TestCase):
     def test_missing_pid_is_rejected(self) -> None:
         unused = max(psutil.pids()) + 4096

@@ -223,8 +223,16 @@ class LeakDetector:
         return self._collect_snapshot()
 
     def _sample_loop(self) -> None:
+        """Sample on a steady cadence until stopped.
+
+        Ticks are scheduled from the start of each sample, so the period
+        matches the configured interval when sampling is cheap. When a
+        sample runs long (a large tree), the next one still waits at least
+        half an interval instead of sampling back to back.
+        """
         interval = self.sample_interval_ms / 1000.0
-        while not self._stop_event.wait(interval):
+        next_tick = time.monotonic() + interval
+        while not self._stop_event.wait(max(0.0, next_tick - time.monotonic())):
             try:
                 if self._pause_event.is_set():
                     # Paused time does not count toward the warm-up.
@@ -234,14 +242,22 @@ class LeakDetector:
                     snapshot = self._collect_snapshot()
             except Exception as exc:
                 logger.exception("Resource sampling failed")
-                snapshot = self._build_error_snapshot(str(exc))
-            self.stream.publish(snapshot)
+                snapshot = self._build_error_snapshot(str(exc) or type(exc).__name__)
+            try:
+                self.stream.publish(snapshot)
+            except Exception:
+                logger.exception("Publishing a snapshot failed")
+            next_tick = max(next_tick + interval, time.monotonic() + interval / 2)
 
     def _build_error_snapshot(self, error: str) -> MetricsSnapshot:
+        try:
+            alive = self.process_manager.is_running
+        except Exception:
+            alive = False
         return MetricsSnapshot(
             timestamp=time.time(),
             root_pid=self.process_manager.root_pid,
-            process_alive=self.process_manager.is_running,
+            process_alive=alive,
             monitoring_paused=False,
             processes=(),
             totals={
