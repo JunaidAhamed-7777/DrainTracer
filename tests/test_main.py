@@ -153,6 +153,15 @@ class DispatchTests(unittest.TestCase):
         self.assertEqual(cli._run_dashboard(app, console), 1)
         self.assertIn("cannot run C:\\x\\app[red].exe", console.file.getvalue())
 
+    def test_output_survives_unencodable_names(self) -> None:
+        stream = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+        with mock.patch.object(cli.sys, "stdout", stream), \
+                mock.patch.object(cli.sys, "stderr", None):
+            cli._make_output_safe()
+            stream.write("launching тест_日本.py")
+            stream.flush()
+        self.assertEqual(stream.buffer.getvalue(), b"launching ????_??.py")
+
     def test_ctrl_c_exits_130(self) -> None:
         with mock.patch.object(cli, "_main", side_effect=KeyboardInterrupt), \
                 mock.patch.object(cli, "Console", return_value=make_console()):

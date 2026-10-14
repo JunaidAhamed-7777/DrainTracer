@@ -276,7 +276,24 @@ def _run_dashboard(app: DashboardApp, console: Console) -> int:
         return 1
 
 
+def _make_output_safe() -> None:
+    """Replace characters the output encoding cannot show instead of crashing.
+
+    Piped output on Windows (CI logs, redirection) uses the ANSI code page,
+    which cannot encode every process name or path.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(errors="replace")
+        except (OSError, ValueError):
+            pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    _make_output_safe()
     console = Console()
     try:
         return _main(console, argv)
