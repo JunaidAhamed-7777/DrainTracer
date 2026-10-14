@@ -520,14 +520,19 @@ class ProcessManager:
             self._identities.pop(pid, None)
             return None
 
-        try:
-            if not proc.is_running() or proc.status() == psutil.STATUS_ZOMBIE:
+        # Windows has no zombies, and psutil already rejects exited processes
+        # when opening them; status() would cost a system-wide process
+        # enumeration per call, so the check is POSIX-only. Reused PIDs are
+        # caught by the creation-time comparison below on every platform.
+        if sys.platform != "win32":
+            try:
+                if not proc.is_running() or proc.status() == psutil.STATUS_ZOMBIE:
+                    return None
+            except psutil.AccessDenied:
+                pass
+            except (psutil.NoSuchProcess, psutil.ZombieProcess):
+                self._identities.pop(pid, None)
                 return None
-        except psutil.AccessDenied:
-            pass
-        except (psutil.NoSuchProcess, psutil.ZombieProcess):
-            self._identities.pop(pid, None)
-            return None
 
         expected = self._identities.get(pid)
         try:
