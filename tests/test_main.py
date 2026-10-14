@@ -176,6 +176,13 @@ class DispatchTests(unittest.TestCase):
             code = cli._main(make_console(), ["--headless", "--target", "a.exe", "--no-config"])
         self.assertEqual(code, 2)
 
+    def test_dashboard_warns_when_output_is_not_a_terminal(self) -> None:
+        console = make_console()
+        with mock.patch.object(cli, "_run_dashboard", return_value=0) as run:
+            self.assertEqual(cli._main(console, ["--target", "a.exe", "--no-config"]), 0)
+        run.assert_called_once()
+        self.assertIn("Use --headless for logs and CI", console.file.getvalue())
+
     def test_ctrl_c_exits_130(self) -> None:
         with mock.patch.object(cli, "_main", side_effect=KeyboardInterrupt), \
                 mock.patch.object(cli, "Console", return_value=make_console()):

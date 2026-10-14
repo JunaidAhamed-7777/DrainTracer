@@ -349,6 +349,14 @@ def _main(console: Console, argv: list[str] | None) -> int:
 
     console.clear()
     _display_title(console)
+    if not console.is_terminal:
+        console.print(
+            Text(
+                "Output is not a terminal, so the live dashboard will only show its final "
+                "frame. Use --headless for logs and CI.",
+                style=PALETTE.warn,
+            )
+        )
     if settings.source is not None:
         console.print(Text(f"Using {settings.describe()}", style=PALETTE.muted))
     for warning in settings.warnings():
