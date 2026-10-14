@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 from collections import deque
+from dataclasses import dataclass
 from pathlib import Path
 
 import psutil
@@ -46,6 +47,47 @@ def describe_pid(pid: int) -> str:
         if value:
             return value
     return f"PID {pid}"
+
+
+# Creation times tell a process apart from a later one that reuses its PID.
+# Windows reports them exactly, so a process started even a few
+# milliseconds later is a different one; elsewhere they are derived from
+# boot time and clock ticks and may differ slightly between readings.
+_SAME_START = 0.01 if sys.platform == "win32" else 1.0
+
+
+@dataclass(frozen=True)
+class _Departed:
+    """A tree member that exited; the orphans it left are found through its PID."""
+
+    created: float | None
+    gone_at: float
+    depth: int
+
+
+def _reused_since(pid: int, original: float | None) -> float | None:
+    """Creation time of another process now using ``pid``, or ``None``."""
+    try:
+        created = psutil.Process(pid).create_time()
+    except (psutil.Error, OSError):
+        return None
+    if original is not None and abs(created - original) <= _SAME_START:
+        return None
+    return created
+
+
+def _orphan_of(gone: _Departed, holder: float | None, created: float | None) -> bool:
+    """Whether a process naming ``gone``'s PID as its parent really is its child.
+
+    A child is born while its parent lives. One created after the parent was
+    seen gone, or after another process took over the PID, belongs to that
+    other process.
+    """
+    if created is None:
+        return False  # cannot be checked against a PID that may be reused
+    if created > gone.gone_at:
+        return False
+    return holder is None or created < holder
 
 
 def _monitor_chain() -> dict[int, float | None]:
@@ -99,6 +141,9 @@ class ProcessManager:
     are refreshed on demand and can be polled via a background thread.
     """
 
+    # How long an exited member's PID is still searched for orphans.
+    DEPARTED_SECONDS = 10.0
+
     def __init__(
         self,
         target_path: str | None,
@@ -129,6 +174,11 @@ class ProcessManager:
         self._exit_code: int | None = None
         # DrainTracer and the processes it runs inside, never to be tracked.
         self._monitor: dict[int, float | None] = {}
+        # The root's creation time outlives the root, so a process that
+        # later reuses its PID is never taken for it.
+        self._root_created: float | None = None
+        # Members that exited lately, still walked for the orphans they left.
+        self._departed: dict[int, _Departed] = {}
 
     @property
     def root_pid(self) -> int | None:
@@ -244,6 +294,8 @@ class ProcessManager:
             self._depths = {self._root_pid: 0}
             self._parents = {self._root_pid: None}
             self._remember_identity(self._root_pid)
+            self._root_created = self._identities.get(self._root_pid)
+            self._departed.clear()
             self._paused = False
             self._attached = False
             self._last_error = None
@@ -283,6 +335,8 @@ class ProcessManager:
             self._depths = {pid: 0}
             self._parents = {pid: None}
             self._remember_identity(pid)
+            self._root_created = self._identities.get(pid)
+            self._departed.clear()
             self._monitor = _monitor_chain()
             self._paused = False
             self._attached = True
@@ -303,6 +357,7 @@ class ProcessManager:
             self._identities.clear()
             self._depths.clear()
             self._parents.clear()
+            self._departed.clear()
             self._root_pid = None
             self._paused = False
 
@@ -381,6 +436,7 @@ class ProcessManager:
                 self._identities.clear()
                 self._depths.clear()
                 self._parents.clear()
+                self._departed.clear()
                 self._root_pid = None
 
     def kill(self) -> None:
@@ -418,6 +474,7 @@ class ProcessManager:
                 self._identities.clear()
                 self._depths.clear()
                 self._parents.clear()
+                self._departed.clear()
             self._paused = False
 
     def refresh_process_tree(self) -> set[int]:
@@ -490,47 +547,63 @@ class ProcessManager:
         if self._root_pid is None:
             return
 
-        discovered: set[int] = set(self._tracked_pids)
-        root = self._open_tracked(self._root_pid)
-        if root is not None:
-            discovered.update(self._collect_descendants(root))
+        now = time.time()
+        alive: set[int] = set()
+        for pid in self._tracked_pids:
+            created = self._identities.get(pid)
+            if created is None and pid == self._root_pid:
+                created = self._root_created
+            if self._pid_is_alive(pid):
+                alive.add(pid)
+            elif pid not in self._departed:
+                self._departed[pid] = _Departed(created, now, self._depths.get(pid, 0))
+        self._departed = {
+            pid: gone
+            for pid, gone in self._departed.items()
+            if now - gone.gone_at <= self.DEPARTED_SECONDS
+        }
 
-        alive = {pid for pid in discovered if self._pid_is_alive(pid)}
-        self._tracked_pids = alive
+        members = self._walk_tree(alive)
+        self._tracked_pids = members
         self._identities = {
-            pid: created for pid, created in self._identities.items() if pid in alive
+            pid: created for pid, created in self._identities.items() if pid in members
         }
-        self._depths = {pid: depth for pid, depth in self._depths.items() if pid in alive}
+        self._depths = {pid: depth for pid, depth in self._depths.items() if pid in members}
         self._parents = {
-            pid: parent for pid, parent in self._parents.items() if pid in alive
+            pid: parent for pid, parent in self._parents.items() if pid in members
         }
 
-    def _collect_descendants(self, root: psutil.Process) -> set[int]:
-        """Walk the tree from one parent-PID snapshot.
+    def _walk_tree(self, alive: set[int]) -> set[int]:
+        """Every live member of the tree, found from one parent-PID snapshot.
 
-        Walking ``parent()`` per child costs a full process enumeration on
-        Windows each time; one map serves the whole refresh and also records
-        each child's parent for the dashboard tree view.
+        The walk starts at each live member and at each member that exited
+        in the last few seconds: Windows does not re-parent orphans, so a
+        process that outlives its parent can only be found through the
+        parent's old PID. Walking ``parent()`` per child would cost a full
+        process enumeration each time; one map serves the whole refresh
+        and also records each child's parent for the dashboard tree view.
         """
-        pids: set[int] = {root.pid}
-        self._depths[root.pid] = 0
-        self._parents[root.pid] = None
-        self._remember_process(root)
-        try:
-            root_created = root.create_time()
-        except (psutil.Error, OSError):
-            root_created = None
-
         children_of: dict[int, list[int]] = {}
         for pid, ppid in _parent_pid_map().items():
             if pid != ppid:
                 children_of.setdefault(ppid, []).append(pid)
 
-        queue: deque[tuple[int, int, float | None]] = deque([(root.pid, 0, root_created)])
+        members = set(alive)
+        # Departed parents first, while their PIDs still mean them.
+        queue: deque[int] = deque([*self._departed, *sorted(alive)])
         while queue:
-            parent_pid, depth, parent_created = queue.popleft()
+            parent_pid = queue.popleft()
+            gone = self._departed.get(parent_pid)
+            if gone is not None:
+                parent_created, depth = gone.created, gone.depth
+                holder: float | None = None
+                if children_of.get(parent_pid):
+                    holder = _reused_since(parent_pid, gone.created)
+            else:
+                parent_created = self._identities.get(parent_pid)
+                depth = self._depths.get(parent_pid, 0)
             for child_pid in children_of.get(parent_pid, ()):
-                if child_pid in pids:
+                if child_pid in members:
                     continue
                 try:
                     child = psutil.Process(child_pid)
@@ -552,12 +625,23 @@ class ProcessManager:
                     and created < parent_created
                 ):
                     continue
-                pids.add(child_pid)
-                self._remember_process(child)
+                if gone is not None and not _orphan_of(gone, holder, created):
+                    continue
+                previous = self._departed.get(child_pid)
+                if previous is not None and (
+                    created is None
+                    or previous.created is None
+                    or abs(created - previous.created) <= _SAME_START
+                ):
+                    continue  # the exited member itself, still listed
+                self._departed.pop(child_pid, None)  # a new process on an old PID
+                members.add(child_pid)
+                if created is not None:
+                    self._identities[child_pid] = created
                 self._depths[child_pid] = depth + 1
                 self._parents[child_pid] = parent_pid
-                queue.append((child_pid, depth + 1, created))
-        return pids
+                queue.append(child_pid)
+        return members
 
     def _refuse_to_end_monitor(self) -> bool:
         """Leave a tree that contains DrainTracer running; see contains_monitor."""
@@ -571,7 +655,7 @@ class ProcessManager:
         if pid not in self._monitor:
             return False
         expected = self._monitor[pid]
-        return expected is None or created is None or abs(created - expected) <= 1.0
+        return expected is None or created is None or abs(created - expected) <= _SAME_START
 
     def _termination_order(self, pids: set[int]) -> list[int]:
         """Kill descendants before their parents while parent links still exist."""
@@ -616,6 +700,8 @@ class ProcessManager:
                 return None
 
         expected = self._identities.get(pid)
+        if expected is None and pid == self._root_pid:
+            expected = self._root_created
         try:
             created = proc.create_time()
         except psutil.AccessDenied:
@@ -627,7 +713,7 @@ class ProcessManager:
         if expected is None:
             self._identities[pid] = created
             return proc
-        if abs(created - expected) > 1.0:
+        if abs(created - expected) > _SAME_START:
             self._identities.pop(pid, None)
             self._depths.pop(pid, None)
             self._parents.pop(pid, None)

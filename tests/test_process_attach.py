@@ -109,6 +109,36 @@ class AttachTests(unittest.TestCase):
         self.assertTrue(child.is_running())
 
 
+class PidReuseTests(unittest.TestCase):
+    def test_a_process_reusing_an_exited_roots_pid_is_left_alone(self) -> None:
+        from unittest import mock
+
+        root = subprocess.Popen([_PYTHON, "-c", "import time; time.sleep(1)"])
+        manager = ProcessManager(None, poll_interval=60)
+        manager.attach(root.pid)
+        self.addCleanup(manager.detach)
+        root.wait(timeout=10)
+        self.assertFalse(manager.is_running)
+        self.assertEqual(manager.refresh_process_tree(), set())
+
+        # Windows hands the old root PID to a process started later: the decoy.
+        decoy = subprocess.Popen([_PYTHON, "-c", "import time; time.sleep(60)"])
+        self.addCleanup(decoy.wait, 10)
+        self.addCleanup(decoy.kill)
+        real = psutil.Process
+
+        class Reused(real):
+            def __init__(self, pid=None):
+                super().__init__(decoy.pid if pid == root.pid else pid)
+
+        with mock.patch("src.process_runner.psutil.Process", Reused):
+            self.assertFalse(manager.is_running)
+            self.assertEqual(manager.refresh_process_tree(), set())
+            manager.kill()
+        self.assertIn("was reused", manager.last_error)
+        self.assertIsNone(decoy.poll(), "the unrelated process was killed")
+
+
 class PollLoopTests(unittest.TestCase):
     def test_a_failed_refresh_does_not_stop_tracking(self) -> None:
         from unittest import mock
@@ -124,7 +154,8 @@ class PollLoopTests(unittest.TestCase):
             if len(calls) == 1:
                 raise RuntimeError("transient")
 
-        with mock.patch.object(manager, "_refresh_tracked_pids", side_effect=flaky):
+        with mock.patch.object(manager, "_refresh_tracked_pids", side_effect=flaky), \
+                self.assertLogs("src.process_runner", "ERROR"):
             manager._start_poll_thread()
             self.assertTrue(_wait_for(lambda: len(calls) >= 3, timeout=5.0))
             self.assertTrue(manager._poll_thread.is_alive())

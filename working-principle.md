@@ -284,10 +284,14 @@ without it is `INCONCLUSIVE`, and its HTML report says so.
 
 DrainTracer records each tracked process's creation time. Before it samples,
 suspends, or kills a PID, it opens that PID again and rejects it when the
-creation time differs by more than one second. Windows reuses PID values, so
-this check avoids operating on a different process that inherited a stale
-number. (Opening an exited PID already fails on Windows, so the extra
-`is_running()` and zombie checks run only on POSIX systems.)
+creation time differs. Windows reuses PID values, so this check avoids
+operating on a different process that inherited a stale number. Windows
+reports creation times exactly, so a 10 ms tolerance tells apart even
+processes started moments apart (other systems allow one second). The
+root's creation time is kept after the root exits, so a process that later
+takes over an attached root's PID is never mistaken for it. (Opening an
+exited PID already fails on Windows, so the extra `is_running()` and zombie
+checks run only on POSIX systems.)
 
 DrainTracer never tracks itself. When an attached root is one of its own
 ancestors (the terminal, an IDE, or `explorer.exe`), the walk skips
@@ -307,16 +311,29 @@ cleanup switches to an immediate kill (or, for an attached tree, resume and
 detach) before the interrupt propagates.
 
 Each refresh takes one `{pid: parent_pid}` snapshot of the system and walks
-it breadth-first from the root, recording every descendant's depth and
-parent. A child whose creation time is earlier than its parent's is skipped
-as a reused PID. (Calling `parent()` per child would enumerate every system
-process on each call.)
+it breadth-first from every tracked process still running, recording each
+new descendant's depth and parent. A child whose creation time is earlier
+than its parent's is skipped as a reused PID. (Calling `parent()` per child
+would enumerate every system process on each call.)
+
+Windows does not re-parent orphans: a process whose parent exits keeps the
+parent's PID as its parent ID. A batch file that hands off with `start`, or
+a launcher that starts the real program and exits, therefore leaves
+processes that a walk from the living tree cannot reach. For ten seconds
+after a tracked process exits, the walk also starts from its PID and adopts
+the processes it left behind. A process counts as its child only if it was
+created after the parent and before DrainTracer saw the parent gone (and
+before any other process took over the PID), so the children of a later
+process that reuses the PID are never adopted. A process that starts a
+child and exits between two refreshes (500 ms apart) without being seen is
+the one case this cannot follow.
 
 Descendants are terminated before their parents. The tree is resolved first,
 then walked from the deepest recorded process upward, so parent links are
-still available while cleanup is in progress. Previously discovered children
-remain tracked after the root exits until they themselves exit or their
-recorded identity no longer matches.
+still available while cleanup is in progress. Discovered processes remain
+tracked after the root exits until they themselves exit or their recorded
+identity no longer matches, and the processes they start later are tracked
+too.
 
 ## Headless runs
 
