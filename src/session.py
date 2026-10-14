@@ -106,6 +106,7 @@ class MonitorSession:
         self._worst_by_resource: dict[LeakResource, LeakSeverity] = {}
         self._last_alert_by_resource: dict[LeakResource, LeakAlert] = {}
         self._handle_types: dict[str, int] | None = None
+        self._last_sampling_error: str | None = None
         self._worst_severity = LeakSeverity.NONE
         self._sample_count = 0
         self._started_at: float | None = None
@@ -312,6 +313,17 @@ class MonitorSession:
     # ------------------------------------------------------------------
 
     def _accept_snapshot(self, snapshot: MetricsSnapshot) -> None:
+        self._snapshot_history.append(snapshot_to_dict(snapshot))
+        failure = snapshot.metadata.get("sampling_error")
+        if failure:
+            # A failed sample carries no measurements: keep showing the last
+            # good one, and do not let its empty alert list clear signals.
+            if failure != self._last_sampling_error:
+                self._append_event(f"Sampling error: {failure}", "error")
+            self._last_sampling_error = failure
+            return
+        self._last_sampling_error = None
+
         previous = self.snapshot
         self.snapshot = snapshot
 
@@ -323,7 +335,6 @@ class MonitorSession:
                 self._peaks[key] = max(self._peaks[key], value)
             if snapshot.handle_types is not None:
                 self._handle_types = dict(snapshot.handle_types)
-        self._snapshot_history.append(snapshot_to_dict(snapshot))
 
         if severity_rank(snapshot.severity) > severity_rank(self._worst_severity):
             self._worst_severity = snapshot.severity
@@ -337,12 +348,6 @@ class MonitorSession:
             code = self.manager.exit_code
             suffix = f" with code {code}" if code is not None else ""
             self._append_event(f"Target process exited{suffix}", "warn")
-
-        sampling_error = snapshot.metadata.get("sampling_error")
-        if sampling_error and (
-            previous is None or previous.metadata.get("sampling_error") != sampling_error
-        ):
-            self._append_event(f"Sampling error: {sampling_error}", "error")
 
         if (
             previous is not None

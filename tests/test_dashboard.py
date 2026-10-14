@@ -70,6 +70,19 @@ class SignalTransitionTests(unittest.TestCase):
         self.assertIn("cleared", messages[2])
         self.assertEqual(app._worst_severity, LeakSeverity.HIGH)
 
+    def test_a_failed_sample_neither_clears_signals_nor_adds_history(self) -> None:
+        app = _app()
+        alert = make_alert(LeakResource.MEMORY, LeakSeverity.HIGH)
+        app._accept_snapshot(make_snapshot(alerts=(alert,)))
+        app._accept_snapshot(make_snapshot(metadata={"sampling_error": "access denied"}))
+        app._accept_snapshot(make_snapshot(alerts=(alert,)))
+        messages = self._messages(app)
+        self.assertEqual(len([m for m in messages if "leak signal" in m]), 1)
+        self.assertFalse(any("cleared" in message for message in messages))
+        self.assertEqual(messages.count("Sampling error: access denied"), 1)
+        self.assertEqual(app._sample_count, 2)
+        self.assertEqual(len(app._history["rss_bytes"]), 2)
+
     def test_paused_snapshots_do_not_add_history(self) -> None:
         app = _app()
         app._accept_snapshot(make_snapshot())
