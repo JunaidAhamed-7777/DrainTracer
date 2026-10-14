@@ -209,7 +209,7 @@ class DashboardApp(MonitorSession):
         elif normalized == "e":
             try:
                 path = self.export_log()
-            except OSError as exc:
+            except Exception as exc:  # a failed export must never end the session
                 self._append_event(f"Export failed: {exc}", "error")
             else:
                 formats = "JSON + HTML" if self._last_html_report else "JSON"

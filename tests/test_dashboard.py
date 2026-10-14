@@ -514,6 +514,17 @@ class ExportTests(unittest.TestCase):
             self.assertTrue(messages[-1].endswith("(JSON)"))
 
 
+class ExportFailureTests(unittest.TestCase):
+    def test_any_export_failure_is_logged_not_raised(self) -> None:
+        from unittest import mock
+
+        app = _app()
+        app._accept_snapshot(make_snapshot())
+        with mock.patch.object(app, "export_log", side_effect=RuntimeError("bug")):
+            app._handle_key("e")
+        self.assertEqual(app._events[-1][1], "Export failed: bug")
+
+
 class OpenReportTests(unittest.TestCase):
     def test_open_without_a_report_explains_how_to_export(self) -> None:
         app = _app()
