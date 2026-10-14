@@ -17,7 +17,8 @@ proof that a particular allocation or handle is permanently unreleased.
    and other files. The picker returns an absolute path.
 3. `ProcessManager` launches the target and tracks descendants recursively.
    Python files use the current Python interpreter; batch files use
-   `cmd.exe /c`.
+   `cmd.exe /d /s /c` with each argument quoted for cmd.exe. Targets get an
+   empty standard input so the dashboard keeps the keyboard.
 4. `LeakDetector` samples the tracked process tree every 500 ms and publishes
    `MetricsSnapshot` objects through `MetricsStream`.
 5. The Rich dashboard consumes snapshots on the main thread and renders

@@ -124,16 +124,19 @@ file streams from leaked connections.
 
 ## 4. Thread count
 
-For every accessible process, DrainTracer calls:
-
-```python
-process.num_threads()
-```
+Each sample takes one system process snapshot,
+`NtQuerySystemInformation(SystemProcessInformation)`, and reads every
+tracked process's thread count from it. The same snapshot gives each
+process's run state: a process whose threads are all suspended reports
+`stopped`. This is the data psutil's `num_threads()` and `status()` read
+too, but psutil enumerates every process on the system once per call, so
+asking per process cost two full enumerations per tracked process per
+sample. If the snapshot is unavailable, DrainTracer falls back to psutil.
 
 The reported tree total is:
 
 ```text
-total_threads = sum(process.num_threads() for every tracked process)
+total_threads = sum(threads of every tracked process)
 ```
 
 Thread count is sampled as an instantaneous count, not a rate. Sustained
@@ -283,7 +286,18 @@ DrainTracer records each tracked process's creation time. Before it samples,
 suspends, or kills a PID, it opens that PID again and rejects it when the
 creation time differs by more than one second. Windows reuses PID values, so
 this check avoids operating on a different process that inherited a stale
-number.
+number. (Opening an exited PID already fails on Windows, so the extra
+`is_running()` and zombie checks run only on POSIX systems.)
+
+Launched targets get an empty standard input, so they cannot read or block
+on the keys meant for the dashboard. Batch files run through
+`cmd.exe /d /s /c` with every argument quoted for cmd.exe, so spaces and
+characters such as `&`, `|`, `<`, `>`, `^`, and parentheses reach the
+script intact instead of splitting the command line.
+
+If Ctrl+C arrives while a launched tree is being terminated gracefully,
+cleanup switches to an immediate kill (or, for an attached tree, resume and
+detach) before the interrupt propagates.
 
 Each refresh takes one `{pid: parent_pid}` snapshot of the system and walks
 it breadth-first from the root, recording every descendant's depth and
