@@ -418,13 +418,15 @@ def _main(console: Console, argv: list[str] | None) -> int:
                 expand=False,
             )
         )
+        hint = ("\nPass the program with --target PATH instead.", "dim")
         try:
             target_path = select_target_file()
         except FileNotFoundError as exc:
-            console.print(Text.assemble(("File picker unavailable: ", "bold red"), str(exc)))
+            console.print(Text.assemble(("File picker unavailable: ", "bold red"), str(exc), hint))
             return 1
         except OSError as exc:
-            console.print(Text.assemble(("File picker failed: ", "bold red"), str(exc)))
+            reason = f"{exc}: {exc.__cause__}" if exc.__cause__ else str(exc)
+            console.print(Text.assemble(("File picker failed: ", "bold red"), reason, hint))
             return 1
 
     if not target_path:

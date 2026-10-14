@@ -186,6 +186,21 @@ class DispatchTests(unittest.TestCase):
         run.assert_called_once()
         self.assertIn("Use --headless for logs and CI", console.file.getvalue())
 
+    def test_picker_failures_suggest_target_and_cancel_exits_cleanly(self) -> None:
+        failure = OSError("All Windows file picker implementations failed")
+        failure.__cause__ = RuntimeError("no display")
+        console = make_console()
+        with mock.patch.object(cli, "select_target_file", side_effect=failure):
+            self.assertEqual(cli._main(console, ["--no-config"]), 1)
+        output = console.file.getvalue()
+        self.assertIn("implementations failed: no display", output)
+        self.assertIn("--target PATH", output)
+
+        console = make_console()
+        with mock.patch.object(cli, "select_target_file", return_value=None):
+            self.assertEqual(cli._main(console, ["--no-config"]), 0)
+        self.assertIn("Selection canceled", console.file.getvalue())
+
     def test_ctrl_c_exits_130(self) -> None:
         with mock.patch.object(cli, "_main", side_effect=KeyboardInterrupt), \
                 mock.patch.object(cli, "Console", return_value=make_console()):
