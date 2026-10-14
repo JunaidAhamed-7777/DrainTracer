@@ -185,6 +185,14 @@ class WriteTests(unittest.TestCase):
             self.assertEqual(path.name, "leak_report_11111111-2222-4333-8444-555555555555.html")
             self.assertNotIn(b"\r\n", path.read_bytes())
 
+    def test_unpaired_surrogates_in_names_do_not_lose_the_report(self) -> None:
+        snapshot = snapshot_to_dict(
+            make_snapshot(processes=(make_process(100, name="bad\udc80name.exe"),), timestamp=1000.0)
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            path = write_html_report(_report(snapshots=[snapshot]), temp)
+            self.assertIn("bad?name.exe", path.read_text(encoding="utf-8"))
+
     def test_requires_a_report_id(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             with self.assertRaises(ValueError):

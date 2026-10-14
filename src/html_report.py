@@ -90,7 +90,8 @@ def write_html_report(report: Mapping[str, Any], directory: str | Path) -> Path:
     if not report_id:
         raise ValueError("report has no report_id")
     path = Path(directory) / report_filename(str(report_id), ".html")
-    return write_text_atomic(path, render_html_report(report), newline="\n")
+    # Windows names may hold unpaired surrogates that UTF-8 cannot encode.
+    return write_text_atomic(path, render_html_report(report), newline="\n", errors="replace")
 
 
 # ----------------------------------------------------------------------

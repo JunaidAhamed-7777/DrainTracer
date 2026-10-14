@@ -56,16 +56,20 @@ def snapshot_to_dict(snapshot: MetricsSnapshot) -> dict[str, Any]:
     return data
 
 
-def write_text_atomic(path: Path, content: str, newline: str | None = None) -> Path:
+def write_text_atomic(
+    path: Path, content: str, newline: str | None = None, errors: str = "strict"
+) -> Path:
     """Write via a temporary sibling so readers never see a partial file.
 
     ``newline`` is passed to ``open``; ``"\\n"`` writes the text exactly
     as given instead of translating line endings for the platform.
+    ``errors`` decides what happens to text UTF-8 cannot hold, such as the
+    unpaired surrogates Windows allows in file and process names.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.tmp")
     try:
-        with open(temporary, "w", encoding="utf-8", newline=newline) as handle:
+        with open(temporary, "w", encoding="utf-8", newline=newline, errors=errors) as handle:
             handle.write(content)
         os.replace(temporary, path)
     except BaseException:
