@@ -194,6 +194,15 @@ class ValidationTests(ConfigTestCase):
 
     def test_unreadable_explicit_path(self) -> None:
         self.assertConfigError("cannot read the file", config_path=self.root / "missing.toml")
+        self.assertConfigError("this is a directory", config_path=self.root)
+
+    def test_files_that_are_not_utf8(self) -> None:
+        (self.root / ".drainrc").write_bytes(b'\xff\xfe timeout = "5s"\n')
+        self.assertConfigError("the file is not UTF-8 text")
+        (self.root / ".drainrc").unlink()
+        # A shared config.toml that is not even text is simply not ours.
+        (self.root / "config.toml").write_bytes(b"\xff\xfe\x00junk")
+        self.assertIsNone(find_config(self.root))
 
 
 class WarmupSettingsTests(ConfigTestCase):

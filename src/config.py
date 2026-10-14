@@ -130,8 +130,10 @@ def resolve_settings(
     elif discover:
         try:
             path = find_config(start if start is not None else Path.cwd())
-        except OSError:
-            path = None  # an unreadable working directory just means no config
+        except (OSError, RuntimeError):
+            # An unreadable working directory (or, before Python 3.13, a
+            # symlink loop) just means there is no settings file to use.
+            path = None
 
     if path is not None:
         try:
@@ -172,11 +174,15 @@ def load_config_file(path: Path) -> Mapping[str, Any]:
         raise ConfigError(
             "reading config files needs Python 3.11+ or the tomli package (pip install tomli)"
         )
+    if _is_dir(path):
+        raise ConfigError("this is a directory; pass the settings file itself")
     try:
         with open(path, "rb") as handle:
             document = _toml.load(handle)
     except OSError as exc:
         raise ConfigError(f"cannot read the file: {exc.strerror or exc}") from None
+    except UnicodeDecodeError:
+        raise ConfigError("not valid TOML: the file is not UTF-8 text") from None
     except _toml.TOMLDecodeError as exc:
         raise ConfigError(f"not valid TOML: {exc}") from None
     section = document.get("draintracer")
@@ -350,13 +356,20 @@ def _is_file(path: Path) -> bool:
         return False
 
 
+def _is_dir(path: Path) -> bool:
+    try:
+        return path.is_dir()
+    except OSError:
+        return False
+
+
 def _has_draintracer_table(path: Path) -> bool:
     if _toml is None:
         return False
     try:
         with open(path, "rb") as handle:
             return isinstance(_toml.load(handle).get("draintracer"), dict)
-    except (OSError, _toml.TOMLDecodeError):
+    except (OSError, UnicodeDecodeError, _toml.TOMLDecodeError):
         # A shared config.toml that is not ours (or not TOML) is ignored.
         return False
 
