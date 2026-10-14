@@ -199,6 +199,10 @@ class DashboardApp(MonitorSession):
                         f"Resume failed: {self.manager.last_error or 'unknown error'}",
                         "error",
                     )
+            elif self.manager.contains_monitor:
+                self._append_event(
+                    "Pause is unavailable: DrainTracer runs inside this process tree", "warn"
+                )
             else:
                 if self.manager.pause():
                     self.detector.pause()
@@ -209,6 +213,11 @@ class DashboardApp(MonitorSession):
                         "error",
                     )
         elif normalized == "k":
+            if self.manager.contains_monitor:
+                self._append_event(
+                    "Kill is unavailable: DrainTracer runs inside this process tree", "warn"
+                )
+                return
             # Attached processes were not started by DrainTracer (a service, a
             # server); require a second press before ending them.
             now = time.monotonic()
@@ -457,11 +466,13 @@ class DashboardApp(MonitorSession):
         palette = self.palette
         roomy = self.console.size.width >= 120
         keys = Text(no_wrap=True, overflow="ellipsis")
-        controls = [
-            ("SPACE", "pause/resume" if roomy else "pause", palette.accent),
-            ("K", "kill tree" if roomy else "kill", palette.danger),
-            ("E", "export report" if roomy else "export", palette.warn),
-        ]
+        controls = []
+        if not self.manager.contains_monitor:
+            controls += [
+                ("SPACE", "pause/resume" if roomy else "pause", palette.accent),
+                ("K", "kill tree" if roomy else "kill", palette.danger),
+            ]
+        controls.append(("E", "export report" if roomy else "export", palette.warn))
         if self._last_html_report is not None:
             controls.append(("O", "open report" if roomy else "open", palette.teal))
         controls.append(("S", "sort", palette.cyan))

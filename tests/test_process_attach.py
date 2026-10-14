@@ -84,6 +84,30 @@ class AttachTests(unittest.TestCase):
         self.assertFalse(manager.has_tracked_processes)
         self.assertTrue(_wait_for(lambda: not any(psutil.pid_exists(p) for p in tracked)))
 
+    def test_a_tree_that_contains_draintracer_is_never_paused_or_killed(self) -> None:
+        from unittest import mock
+
+        # Pretend DrainTracer runs as the target's child, as it would under
+        # an attached terminal; only processes this test started are at risk.
+        child = psutil.Process(self.target.pid).children()[0]
+        chain = {child.pid: child.create_time(),
+                 self.target.pid: psutil.Process(self.target.pid).create_time()}
+        manager = ProcessManager(None)
+        with mock.patch("src.process_runner._monitor_chain", return_value=chain):
+            manager.attach(self.target.pid)
+        self.addCleanup(manager.detach)
+        self.assertTrue(manager.contains_monitor)
+        self.assertEqual(manager.refresh_process_tree(), {self.target.pid})
+
+        self.assertFalse(manager.pause())
+        self.assertIn("could freeze DrainTracer's own terminal", manager.last_error)
+        self.assertNotEqual(psutil.Process(self.target.pid).status(), psutil.STATUS_STOPPED)
+        manager.kill()
+        manager.terminate()
+        self.assertIn("left running", manager.last_error)
+        self.assertIsNone(self.target.poll())
+        self.assertTrue(child.is_running())
+
 
 class PollLoopTests(unittest.TestCase):
     def test_a_failed_refresh_does_not_stop_tracking(self) -> None:
@@ -116,6 +140,21 @@ class AttachValidationTests(unittest.TestCase):
     def test_self_attach_is_rejected(self) -> None:
         with self.assertRaises(ProcessManagerError):
             ProcessManager(None).attach(os.getpid())
+
+    def test_attaching_to_an_ancestor_leaves_draintracer_out(self) -> None:
+        # Read-only: the test runner's parent is tracked but never touched.
+        parent = psutil.Process().parent()
+        if parent is None:
+            self.skipTest("the test runner has no parent process")
+        manager = ProcessManager(None)
+        manager.attach(parent.pid)
+        try:
+            self.assertTrue(manager.contains_monitor)
+            tracked = manager.refresh_process_tree()
+            self.assertIn(parent.pid, tracked)
+            self.assertNotIn(os.getpid(), tracked)
+        finally:
+            manager.detach()
 
     def test_attach_only_manager_cannot_launch(self) -> None:
         with self.assertRaises(ProcessManagerError):

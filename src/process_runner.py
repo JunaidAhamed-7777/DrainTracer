@@ -48,6 +48,26 @@ def describe_pid(pid: int) -> str:
     return f"PID {pid}"
 
 
+def _monitor_chain() -> dict[int, float | None]:
+    """DrainTracer's own process and its ancestors, with their creation times.
+
+    ``parents()`` checks each link's creation time, so a stale parent PID
+    reused by an unrelated process does not join the chain.
+    """
+    chain: dict[int, float | None] = {}
+    try:
+        own = psutil.Process(os.getpid())
+        members = [own, *own.parents()]
+    except (psutil.Error, OSError):
+        return {os.getpid(): None}
+    for member in members:
+        try:
+            chain[member.pid] = member.create_time()
+        except (psutil.Error, OSError):
+            chain[member.pid] = None
+    return chain
+
+
 # Characters that end or split an argument on a cmd.exe command line.
 _CMD_SPECIAL = frozenset(" \t&|<>^(),;=\"")
 
@@ -107,10 +127,23 @@ class ProcessManager:
         self._attached = False
         self._last_error: str | None = None
         self._exit_code: int | None = None
+        # DrainTracer and the processes it runs inside, never to be tracked.
+        self._monitor: dict[int, float | None] = {}
 
     @property
     def root_pid(self) -> int | None:
         return self._root_pid
+
+    @property
+    def contains_monitor(self) -> bool:
+        """Whether the attached root is an ancestor of DrainTracer itself.
+
+        Attaching to the terminal, an IDE, or explorer.exe makes DrainTracer
+        a descendant of its own target. That branch is left out: pausing it
+        would freeze the monitor and its terminal, and killing it would end
+        them.
+        """
+        return self._attached and self._root_pid in self._monitor
 
     @property
     def is_attached(self) -> bool:
@@ -250,6 +283,7 @@ class ProcessManager:
             self._depths = {pid: 0}
             self._parents = {pid: None}
             self._remember_identity(pid)
+            self._monitor = _monitor_chain()
             self._paused = False
             self._attached = True
             self._last_error = None
@@ -279,6 +313,13 @@ class ProcessManager:
                 return False
             if self._paused:
                 return True
+            if self.contains_monitor:
+                # The root may be the terminal DrainTracer draws in.
+                self._last_error = (
+                    "DrainTracer runs inside this process tree, and suspending it "
+                    "could freeze DrainTracer's own terminal"
+                )
+                return False
             self._refresh_tracked_pids()
             suspended: list[int] = []
             for pid in self._tracked_pids:
@@ -309,6 +350,8 @@ class ProcessManager:
     def terminate(self, timeout: float = 3.0) -> None:
         """Gracefully terminate the process tree."""
         with self._lock:
+            if self._refuse_to_end_monitor():
+                return
             self._stop_poll_thread()
             if self._process is None and not self._tracked_pids:
                 return
@@ -343,6 +386,8 @@ class ProcessManager:
     def kill(self) -> None:
         """Force-kill the process tree."""
         with self._lock:
+            if self._refuse_to_end_monitor():
+                return
             self._stop_poll_thread()
             if self._process is None and not self._tracked_pids:
                 return
@@ -498,6 +543,8 @@ class ProcessManager:
                 except (psutil.AccessDenied, OSError):
                     # Still a descendant; it just cannot be age-checked.
                     created = None
+                if self._is_monitor(child_pid, created):
+                    continue  # DrainTracer's own branch; see contains_monitor.
                 # A child older than its parent means the PID was reused.
                 if (
                     parent_created is not None
@@ -511,6 +558,20 @@ class ProcessManager:
                 self._parents[child_pid] = parent_pid
                 queue.append((child_pid, depth + 1, created))
         return pids
+
+    def _refuse_to_end_monitor(self) -> bool:
+        """Leave a tree that contains DrainTracer running; see contains_monitor."""
+        if not self.contains_monitor:
+            return False
+        self._last_error = "DrainTracer runs inside this process tree, so it was left running"
+        return True
+
+    def _is_monitor(self, pid: int, created: float | None) -> bool:
+        """Whether ``pid`` is DrainTracer itself or a process it runs inside."""
+        if pid not in self._monitor:
+            return False
+        expected = self._monitor[pid]
+        return expected is None or created is None or abs(created - expected) <= 1.0
 
     def _termination_order(self, pids: set[int]) -> list[int]:
         """Kill descendants before their parents while parent links still exist."""

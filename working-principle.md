@@ -289,6 +289,13 @@ this check avoids operating on a different process that inherited a stale
 number. (Opening an exited PID already fails on Windows, so the extra
 `is_running()` and zombie checks run only on POSIX systems.)
 
+DrainTracer never tracks itself. When an attached root is one of its own
+ancestors (the terminal, an IDE, or `explorer.exe`), the walk skips
+DrainTracer's process and each ancestor below the root, identified by PID
+and creation time, together with everything they started. Suspending that
+branch would freeze the terminal the dashboard draws in, so pause and kill
+are refused for such a tree and only detaching remains.
+
 Launched targets get an empty standard input, so they cannot read or block
 on the keys meant for the dashboard. Batch files run through
 `cmd.exe /d /s /c` with every argument quoted for cmd.exe, so spaces and

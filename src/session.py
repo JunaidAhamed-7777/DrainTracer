@@ -241,15 +241,24 @@ class MonitorSession:
                 self._deadline = time.monotonic() + self.timeout
             self._accept_snapshot(self.detector.sample_once())
             self.detector.start()
+            self._log_start()
         except BaseException:
             self._abort_start()
             raise
+
+    def _log_start(self) -> None:
         verb = "Attached to running" if self.attached else "Launched"
         self._append_event(
             f"{verb} {Path(self.target_path).name} "
             f"{self.glyphs.sep} PID {self.manager.root_pid}",
             "ok",
         )
+        if self.manager.contains_monitor:
+            self._append_event(
+                "DrainTracer runs inside this process tree, so its own branch is "
+                "left out and pause and kill are disabled",
+                "warn",
+            )
         self._warn_if_inaccessible()
         if self.detector.warmup_seconds:
             self._append_event(

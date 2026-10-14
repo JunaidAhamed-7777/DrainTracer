@@ -64,6 +64,10 @@ sessions are handled conservatively:
 - `K` needs a second press within 3 seconds before it kills an attached tree.
 - Processes owned by other users or protected by Windows may show
   `access denied`; run the terminal elevated to read them.
+- Attaching to a process DrainTracer itself runs under, such as its
+  terminal, an IDE, or `explorer.exe`, leaves DrainTracer and the terminal
+  it runs in out of the tree and disables `Space` and `K`, so the dashboard
+  can never freeze or end its own terminal.
 
 `--pid` cannot be combined with `--target` or with arguments after `--`.
 

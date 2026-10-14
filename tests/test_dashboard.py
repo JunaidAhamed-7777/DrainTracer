@@ -449,6 +449,27 @@ class AttachModeTests(unittest.TestCase):
         app._handle_key("k")
         self.assertEqual(calls, ["kill"])
 
+    def test_pause_and_kill_are_unavailable_when_the_tree_contains_draintracer(self) -> None:
+        from unittest import mock
+
+        app, calls = self._attached_app()
+        pauses: list[str] = []
+        app.manager.pause = lambda: pauses.append("pause") or True  # type: ignore[method-assign]
+        with mock.patch.object(type(app.manager), "contains_monitor",
+                               new_callable=mock.PropertyMock, return_value=True):
+            for key in ("k", "k", " "):
+                app._handle_key(key)
+            with app.console.capture() as capture:
+                app.console.print(app._render_footer())
+        self.assertEqual((calls, pauses), ([], []))
+        self.assertEqual(
+            [message for _s, message, _l in app._events],
+            ["Kill is unavailable: DrainTracer runs inside this process tree"] * 2
+            + ["Pause is unavailable: DrainTracer runs inside this process tree"],
+        )
+        self.assertNotIn("pause", capture.get())
+        self.assertNotIn("kill", capture.get())
+
     def test_attached_labels(self) -> None:
         app, _calls = self._attached_app()
         app._accept_snapshot(make_snapshot(root_pid=4242, processes=(make_process(4242),)))
