@@ -190,6 +190,31 @@ class SessionLifecycleTests(unittest.TestCase):
         self.assertTrue(_wait_for(saw_exit_event), "exit was never logged with its code")
         self.assertEqual(session.manager.exit_code, 7)
 
+    def test_a_root_that_exits_by_itself_keeps_its_exit_code(self) -> None:
+        # The root starts a helper, waits for it to be discovered, and fails.
+        session = _Session(
+            str(self._script(
+                "import subprocess, sys, time\n"
+                "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+                "time.sleep(1.5)\n"
+                "raise SystemExit(3)\n"
+            )),
+            console=make_console(),
+        )
+        session.start()
+        self.addCleanup(session.manager.kill)
+        self.assertTrue(_wait_for(lambda: not session.manager.is_running), "root never exited")
+        self.assertTrue(session.manager.has_tracked_processes, "the helper was not tracked")
+        session.shutdown()
+        self.assertFalse(session.manager.has_tracked_processes)
+        self.assertFalse(session.stopped_target)
+        self.assertEqual(
+            session.outcome_text(),
+            "launched, exited with code 3; DrainTracer stopped the processes it left running",
+        )
+        self.assertEqual(session.build_report()["target_exit_code"], 3)
+        self.assertTrue(any("the target left running" in m for _s, m, _l in session._events))
+
     def test_time_limit_counts_down_from_start(self) -> None:
         session = _Session(
             str(self._script("import time\ntime.sleep(30)\n")),

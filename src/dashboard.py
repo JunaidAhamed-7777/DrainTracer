@@ -245,6 +245,9 @@ class DashboardApp(MonitorSession):
                     "Kill is unavailable: DrainTracer runs inside this process tree", "warn"
                 )
                 return
+            if not (self.manager.is_running or self.manager.has_tracked_processes):
+                self._append_event("Nothing to kill: the target tree has already exited", "info")
+                return
             # Attached processes were not started by DrainTracer (a service, a
             # server); require a second press before ending them.
             now = time.monotonic()
@@ -257,7 +260,7 @@ class DashboardApp(MonitorSession):
                 )
                 return
             self._kill_armed_until = 0.0
-            self._stopped_target = True
+            self._mark_stopping()
             self.manager.kill()
             if self.manager.has_tracked_processes:
                 self._append_event(

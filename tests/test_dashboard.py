@@ -423,6 +423,7 @@ class TimeLimitTests(unittest.TestCase):
 class AttachModeTests(unittest.TestCase):
     def _attached_app(self) -> tuple[DashboardApp, list[str]]:
         app = DashboardApp(None, console=make_console(), attach_pid=4242)
+        app.manager._tracked_pids = {4242}  # something left to kill
         calls: list[str] = []
         app.manager.kill = lambda: calls.append("kill")  # type: ignore[method-assign]
         return app, calls
@@ -444,10 +445,20 @@ class AttachModeTests(unittest.TestCase):
 
     def test_launched_targets_kill_immediately(self) -> None:
         app = _app()
+        app.manager._tracked_pids = {100}
         calls: list[str] = []
         app.manager.kill = lambda: calls.append("kill")  # type: ignore[method-assign]
         app._handle_key("k")
         self.assertEqual(calls, ["kill"])
+
+    def test_kill_after_the_tree_exited_says_so(self) -> None:
+        app = _app()
+        calls: list[str] = []
+        app.manager.kill = lambda: calls.append("kill")  # type: ignore[method-assign]
+        app._handle_key("k")
+        self.assertEqual(calls, [])
+        self.assertEqual(app._events[-1][1], "Nothing to kill: the target tree has already exited")
+        self.assertFalse(app.stopped_target)
 
     def test_pause_and_kill_are_unavailable_when_the_tree_contains_draintracer(self) -> None:
         from unittest import mock

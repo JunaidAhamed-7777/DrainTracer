@@ -122,6 +122,7 @@ class MonitorSession:
         self._ended_at: float | None = None
         self._root_pid: int | None = None
         self._stopped_target = False
+        self._stopped_leftovers = False
         self._last_report: Path | None = None
         self._last_report_id: str | None = None
         self._last_html_report: Path | None = None
@@ -189,9 +190,10 @@ class MonitorSession:
         if self.stopped_target:
             return "launched, stopped by DrainTracer"
         code = self.manager.exit_code
-        if code is not None:
-            return f"launched, exited with code {code}"
-        return "launched"
+        outcome = f"launched, exited with code {code}" if code is not None else "launched"
+        if self._stopped_leftovers:
+            outcome += "; DrainTracer stopped the processes it left running"
+        return outcome
 
     def signals_text(self) -> str:
         """Strongest signal per resource, naming the handle types that grew."""
@@ -315,11 +317,27 @@ class MonitorSession:
                 self._left_running = self.manager.is_running
                 self.manager.detach()
             elif self.manager.is_running or self.manager.has_tracked_processes:
-                self._stopped_target = True
+                self._mark_stopping()
                 self.manager.terminate()
         except BaseException:
             self._force_cleanup()
             raise
+
+    def _mark_stopping(self) -> None:
+        """Before ending a tree, note whether that stops the root or only its leftovers.
+
+        A root that already exited keeps its own exit code in the summary
+        and report even when processes it started are still running.
+        """
+        if self.manager.is_running:
+            self._stopped_target = True
+        elif self.manager.has_tracked_processes and not self._stopped_leftovers:
+            self._stopped_leftovers = True
+            count = len(self.manager.tracked_pids)
+            self._append_event(
+                f"Stopping {count} process{'es' if count != 1 else ''} the target left running",
+                "warn",
+            )
 
     def _force_cleanup(self) -> None:
         """Finish cleanup without waiting; used when shutdown is interrupted or fails."""
@@ -332,7 +350,7 @@ class MonitorSession:
                     self._left_running = self._left_running or self.manager.is_running
                     self.manager.detach()
                 elif self.manager.is_running or self.manager.has_tracked_processes:
-                    self._stopped_target = True
+                    self._mark_stopping()
                     self.manager.kill()
         except KeyboardInterrupt:
             pass  # A third Ctrl+C: stop trying rather than loop.

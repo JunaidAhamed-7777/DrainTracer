@@ -387,7 +387,8 @@ the failure is logged.
 - `target_path` — absolute selected target path.
 - `root_pid` — root PID; kept after cleanup releases the process.
 - `mode` — `launch` or `attach`.
-- `target_exit_code` — exit code of a launched root that exited on its own;
+- `target_exit_code` — exit code of a launched root that exited on its own,
+  kept when DrainTracer only stopped processes the root left running;
   `null` while it runs, when DrainTracer had to stop it, and for attached
   processes.
 - `events` — the most recent dashboard messages, each prefixed with its
