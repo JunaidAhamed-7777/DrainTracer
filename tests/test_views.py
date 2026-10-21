@@ -298,6 +298,85 @@ class ProcessesViewTests(ViewRenderingMixin, unittest.TestCase):
         self.assertIn("of 31", output)
 
 
+class EvidenceViewTests(ViewRenderingMixin, unittest.TestCase):
+    VIEW_KEY = "3"
+
+    def _app(self, width: int = 140, height: int = 60, samples: int = 25) -> DashboardApp:
+        app = _app(width, height)
+        growing_session(app, samples)
+        app._handle_key("3")
+        return app
+
+    def _text(self, app: DashboardApp) -> str:
+        app._handle_key("end")
+        tail = render_text(app)
+        app._handle_key("home")
+        return " ".join((render_text(app) + tail).split())
+
+    def test_opens_on_the_active_signal_with_every_window(self) -> None:
+        app = self._app()
+        self.assertEqual(app.evidence_resource.value, "memory")
+        output = self._text(app)
+        self.assertIn("SIGNAL EVIDENCE", output)
+        self.assertIn("private bytes, summed over the processes measured", output)
+        self.assertIn("signal (heuristic) from the 10s window", output)
+        self.assertIn("qualified: HIGH (reported)", output)
+        self.assertIn("filling: 12s/25.5s", output)  # the 30s window is still filling
+        # PID 1 exits inside the window, so the total dips once: 95% and 10%.
+        self.assertIn("Why: the 10s window qualified with slope +7.3 MB/s", output)
+        self.assertIn("95% of steps not falling (needs 65%)", output)
+        self.assertIn("10% below the running peak", output)
+        self.assertIn("Contributors: worker.exe PID 2 +80.0 MB", output)
+        self.assertIn("not a probability", output)
+        self.assertNotIn("probability of", output)
+
+    def test_values_match_the_detector_evaluations(self) -> None:
+        app = self._app()
+        evidence = app.snapshot.evidence_for(app.evidence_resource)
+        window = evidence.windows[0]
+        output = self._text(app)
+        self.assertIn(f"{window.score:.2f}", output)
+        self.assertIn(f"{window.monotonic_ratio:.0%}", output)
+
+    def test_steady_resources_explain_which_check_failed(self) -> None:
+        app = self._app()
+        app._handle_key("right")
+        self.assertEqual(app.evidence_resource.value, "handles")
+        output = self._text(app)
+        self.assertIn("STEADY", output)
+        self.assertIn("no upward trend", output)
+        self.assertIn("Why not: the longest judged window (10s) did not qualify", output)
+        app._handle_key("left")
+        app._handle_key("left")
+        self.assertEqual(app.evidence_resource.value, "threads")
+        # A manual choice sticks when the view is reopened.
+        app._handle_key("1")
+        app._handle_key("3")
+        self.assertEqual(app.evidence_resource.value, "threads")
+
+    def test_collecting_and_unavailable_evidence(self) -> None:
+        short = self._app(samples=3)
+        output = self._text(short)
+        self.assertIn("COLLECT", output)
+        self.assertIn("filling: 3/4 points", output)
+        self.assertIn("No window holds enough samples yet", output)
+        blocked = _app(120, 40)
+        sample_trees(blocked, [[make_denied(100)]] * 5)
+        blocked._handle_key("3")
+        output = self._text(blocked)
+        self.assertIn("Unavailable: no live process could be read", output)
+
+    def test_narrow_tables_keep_the_decisive_columns(self) -> None:
+        app = self._app(80, 24)
+        output = self._text(app)
+        for column in ("WINDOW", "DELTA", "SLOPE", "MONO", "DROPS", "RESULT"):
+            self.assertIn(column, output)
+        self.assertNotIn("BASELINE", output)
+        wide = self._text(self._app(140, 60))
+        self.assertIn("BASELINE", wide)
+        self.assertIn("SCORE", wide)
+
+
 class MonitorViewTests(ViewRenderingMixin, unittest.TestCase):
     VIEW_KEY = "5"
 

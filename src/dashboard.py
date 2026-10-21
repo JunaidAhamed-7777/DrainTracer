@@ -45,6 +45,7 @@ from .report import DEFAULT_REPORT_DIR
 from .session import MonitorSession
 from .theme import PALETTE
 from .units import format_duration
+from .view_evidence import EvidenceViewMixin
 from .view_monitor import MonitorViewMixin
 from .view_processes import ProcessesViewMixin
 from .widgets import LegacySafe, Lines, Sized, Sparkline
@@ -59,6 +60,7 @@ SORT_MODES = ("tree", "memory", "handles", "cpu")
 VIEWS = {
     "1": ("overview", "OVERVIEW", "OVR"),
     "2": ("processes", "PROCESSES", "PROC"),
+    "3": ("evidence", "EVIDENCE", "EVID"),
     "5": ("monitor", "MONITOR", "MON"),
 }
 VIEW_NAMES = tuple(name for name, _label, _short in VIEWS.values())
@@ -66,7 +68,7 @@ VIEW_NAMES = tuple(name for name, _label, _short in VIEWS.values())
 HELP_SCROLL = {UP: -1, DOWN: 1, PAGE_UP: -10, PAGE_DOWN: 10, HOME: -10**6, END: 10**6}
 
 
-class DashboardApp(ProcessesViewMixin, MonitorViewMixin, MonitorSession):
+class DashboardApp(ProcessesViewMixin, EvidenceViewMixin, MonitorViewMixin, MonitorSession):
     """Render a monitor session live in the terminal and handle its controls.
 
     The overview shows everything at a glance; numbered views focus on one
@@ -115,6 +117,7 @@ class DashboardApp(ProcessesViewMixin, MonitorViewMixin, MonitorSession):
         self._keys = KeyReader()
         self._view = "overview"
         self._init_processes_view()
+        self._init_evidence_view()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -340,6 +343,9 @@ class DashboardApp(ProcessesViewMixin, MonitorViewMixin, MonitorSession):
         """Switch the focused view; monitoring and the target are unaffected."""
         if view in VIEW_NAMES:
             self._view = view
+            opened = getattr(self, f"_show_{view}", None)
+            if opened is not None:
+                opened()
 
     @property
     def view(self) -> str:
@@ -358,6 +364,7 @@ class DashboardApp(ProcessesViewMixin, MonitorViewMixin, MonitorSession):
     VIEW_HELP = {
         "overview": "resource cards, process tree, leak health and events",
         "processes": "select, search and rank processes by growth; exited ones stay listed",
+        "evidence": "why a signal was or was not raised: each window's checks and values",
         "monitor": "sampling cadence and cost, coverage, freshness, monitor footprint",
     }
 
