@@ -39,3 +39,26 @@ def choose_startup_action(console: Console) -> Literal["open", "hook"] | None:
         if choice in ("1", "2"):
             return "open" if choice == "1" else "hook"
         console.print(Text("Enter 1, 2, or Q.", style=PALETTE.warn))
+
+
+def prompt_process_id(console: Console) -> int | None:
+    """Read an attach PID; the process manager validates the live target."""
+    console.print(Text("Find the PID in Task Manager > Details.", style=PALETTE.muted))
+    console.print(
+        Text("Quitting detaches and leaves the program running.", style=PALETTE.muted)
+    )
+    while True:
+        try:
+            value = console.input(Text("Process ID (Q to cancel): ", style="bold")).strip()
+        except EOFError:
+            return None
+        if value.lower() == "q":
+            return None
+        try:
+            pid = int(value)
+        except ValueError:
+            pass
+        else:
+            if pid > 0:
+                return pid
+        console.print(Text("Enter a positive process ID, or Q to cancel.", style=PALETTE.warn))

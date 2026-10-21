@@ -5,6 +5,11 @@ feature milestones remain in [future-plan.md](future-plan.md), and the complete
 commit history records earlier changes. Versions follow the repository rule:
 each focused change advances the runtime version by exactly `0.1`.
 
+## v2.8 — 2026-10-21
+
+- Added the running-program PID prompt with Task Manager guidance,
+  positive-ID validation, cancellation, and detach behavior explained.
+
 ## v2.7 — 2026-10-21
 
 - Added the startup choice component for opening a program or hooking to
