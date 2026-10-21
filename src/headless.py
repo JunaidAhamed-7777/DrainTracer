@@ -15,6 +15,7 @@ from rich.text import Text
 
 from .config import FAIL_ON_CHOICES, MonitorSettings
 from .analysis import RESOURCES, summarize
+from .budgets import BudgetCheck, check_budgets
 from .dashboard import DashboardApp
 from .events import EvidenceState, LeakSeverity, severity_rank
 from .report import DEFAULT_REPORT_DIR
@@ -31,6 +32,8 @@ EXIT_ERROR = 2
 # Only with the optional policies; without them these runs exit 0.
 EXIT_INCONCLUSIVE = 3
 EXIT_TARGET_ERROR = 4
+# Only when a budget is set: a peak exceeded it, with or without a leak signal.
+EXIT_BUDGET = 5
 EXIT_INTERRUPTED = 130
 
 
@@ -91,11 +94,29 @@ class HeadlessRunner(MonitorSession):
         self._export_error: str | None = None
         self._run_error: str | None = None
         self._interrupted = False
+        self.budgets = dict(self.settings.budgets)
+        # Budgets already reported as exceeded, so the log says it once.
+        self._budget_breaches: set[str] = set()
 
     @property
     def breached(self) -> bool:
         """Whether any leak signal reached the failure threshold."""
         return severity_rank(self.worst_severity) >= severity_rank(self.fail_on)
+
+    def budget_checks(self) -> tuple[BudgetCheck, ...]:
+        """Each budget against the run's peak so far, warm-up included."""
+        return check_budgets(self.budgets, self._peaks) if self.budgets else ()
+
+    @property
+    def over_budget(self) -> tuple[BudgetCheck, ...]:
+        return tuple(check for check in self.budget_checks() if check.exceeded)
+
+    def _accept_snapshot(self, snapshot) -> None:
+        super()._accept_snapshot(snapshot)
+        for check in self.over_budget:
+            if check.metric not in self._budget_breaches:
+                self._budget_breaches.add(check.metric)
+                self._append_event(f"Budget exceeded: {check.describe()}", "alert")
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -180,6 +201,7 @@ class HeadlessRunner(MonitorSession):
             "breached": self.breached,
             "fail_on_inconclusive": self.fail_on_inconclusive,
             "fail_on_target_error": self.fail_on_target_error,
+            "budgets": [check.to_dict() for check in self.budget_checks()],
         }
         if self._run_error is not None:
             report["outcome"]["monitor_errors"].append(self._run_error)
@@ -189,8 +211,8 @@ class HeadlessRunner(MonitorSession):
         """Map the session outcome to the process exit code.
 
         A leak signal wins, then an interruption, then a monitor or export
-        error; the optional policies only apply to runs that are otherwise
-        a pass.
+        error, then an exceeded budget; the optional policies only apply to
+        runs that are otherwise a pass.
         """
         if self.breached:
             return EXIT_LEAK
@@ -198,6 +220,8 @@ class HeadlessRunner(MonitorSession):
             return EXIT_INTERRUPTED
         if self._export_error is not None or self._run_error is not None:
             return EXIT_ERROR
+        if self.over_budget:
+            return EXIT_BUDGET
         if self.fail_on_target_error and self.target_failed:
             return EXIT_TARGET_ERROR
         if self.fail_on_inconclusive and not self.conclusive:
@@ -211,6 +235,8 @@ class HeadlessRunner(MonitorSession):
             text += ", inconclusive runs"
         if self.fail_on_target_error:
             text += ", target errors"
+        if self.budgets:
+            text += ", budgets"
         return text
 
     def _export(self) -> None:
@@ -347,6 +373,7 @@ class HeadlessRunner(MonitorSession):
             EXIT_ERROR: ("ERROR", PALETTE.danger),
             EXIT_INCONCLUSIVE: ("INCONCLUSIVE", PALETTE.danger),
             EXIT_TARGET_ERROR: ("TARGET ERROR", PALETTE.danger),
+            EXIT_BUDGET: ("OVER BUDGET", PALETTE.danger),
             EXIT_INTERRUPTED: ("INTERRUPTED", PALETTE.warn),
         }[status]
         worst = self.worst_severity
@@ -361,6 +388,8 @@ class HeadlessRunner(MonitorSession):
             reason = f"the target exited with code {self.manager.exit_code}"
         elif status == EXIT_INCONCLUSIVE:
             reason = self.inconclusive_reason()
+        elif status == EXIT_BUDGET:
+            reason = "; ".join(check.describe() for check in self.over_budget)
         if status == EXIT_PASS and not self.conclusive:
             # Still exit 0: a short smoke run is not a failure, but say so.
             verdict, color = "INCONCLUSIVE", PALETTE.warn
@@ -387,6 +416,9 @@ class HeadlessRunner(MonitorSession):
                       f"{int(self._peaks['threads']):,} threads"),
             ("signals", self.signals_text()),
         ]
+        checks = self.budget_checks()
+        if checks:
+            rows.append(("budgets", f" {sep} ".join(check.describe() for check in checks)))
         warmup = self.warmup_text()
         if warmup:
             rows.append(("warm-up", warmup))
@@ -465,7 +497,7 @@ class HeadlessRunner(MonitorSession):
         """Surface the verdict as a GitHub Actions annotation on CI runs."""
         if not self._github_actions:
             return
-        if status in (EXIT_LEAK, EXIT_ERROR, EXIT_INCONCLUSIVE, EXIT_TARGET_ERROR):
+        if status in (EXIT_LEAK, EXIT_ERROR, EXIT_INCONCLUSIVE, EXIT_TARGET_ERROR, EXIT_BUDGET):
             command = "error"
         elif (
             self.worst_severity != LeakSeverity.NONE
@@ -504,6 +536,7 @@ def _escape_property(value: str) -> str:
 
 
 __all__ = [
+    "EXIT_BUDGET",
     "EXIT_ERROR",
     "EXIT_INCONCLUSIVE",
     "EXIT_INTERRUPTED",

@@ -97,8 +97,44 @@ class ExitStatusTests(unittest.TestCase):
         self.assertEqual(
             runner.build_report()["headless"],
             {"fail_on": "medium", "breached": True, "fail_on_inconclusive": False,
-             "fail_on_target_error": False},
+             "fail_on_target_error": False, "budgets": []},
         )
+
+    def test_stable_but_excessive_usage_fails_a_budget_without_a_leak(self) -> None:
+        from dataclasses import replace
+
+        from helpers import make_process
+
+        from src.config import MonitorSettings
+        from src.headless import EXIT_BUDGET
+
+        mib = 1024 * 1024
+        settings = replace(MonitorSettings(), budgets={"private_bytes": 500.0 * mib,
+                                                       "handles": 2000.0})
+        runner = HeadlessRunner("C:/targets/worker.exe", console=make_console(),
+                                settings=settings)
+        runner._accept_snapshot(make_snapshot(processes=(make_process(100, private=400 * mib),)))
+        self.assertEqual(runner.exit_status(), EXIT_PASS)
+        for index in range(3):  # flat, so no leak signal; just too much
+            runner._accept_snapshot(make_snapshot(
+                processes=(make_process(100, private=612 * mib),), timestamp=101.0 + index))
+        self.assertEqual(runner.exit_status(), EXIT_BUDGET)
+        output = _output(runner)
+        self.assertEqual(output.count("Budget exceeded"), 1)
+        runner._print_summary()
+        output = _output(runner).replace("·", "|")
+        self.assertIn("private bytes peak 612.0 MB over the 500.0 MB budget", output)
+        self.assertIn("handles peak 50 within the 2,000 budget", output)
+        result = next(line for line in output.splitlines() if line.startswith("RESULT"))
+        self.assertIn("OVER BUDGET", result)
+        self.assertIn("budgets", result)
+        budgets = runner.build_report()["headless"]["budgets"]
+        self.assertEqual([item["exceeded"] for item in budgets], [True, False])
+        # A leak signal still wins over a budget.
+        runner._accept_snapshot(make_snapshot(
+            processes=(make_process(100, private=612 * mib),),
+            alerts=(make_alert(severity=LeakSeverity.HIGH),)))
+        self.assertEqual(runner.exit_status(), EXIT_LEAK)
 
     def test_none_is_not_a_failure_threshold(self) -> None:
         with self.assertRaises(ValueError):

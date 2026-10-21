@@ -378,6 +378,17 @@ class ExperimentFlagTests(unittest.TestCase):
             ("import-1k", "1.4.2", 1000.0, "nightly"),
         )
 
+    def test_budget_flags_reach_the_settings_and_need_headless(self) -> None:
+        with mock.patch.object(cli, "HeadlessRunner") as runner:
+            runner.return_value.run.return_value = 0
+            cli._main(make_console(), ["--headless", "--target", "a.exe", "--no-config",
+                                       "--budget-private", "500MB", "--budget-threads", "40"])
+        budgets = dict(runner.call_args.kwargs["settings"].budgets)
+        self.assertEqual(budgets, {"private_bytes": 500 * 1024 * 1024, "threads": 40.0})
+        message = _parse_error(["--budget-handles", "2000", "--target", "x.exe"])
+        self.assertIn("--budget-handles only applies with --headless", message)
+        self.assertIn("greater than zero", _parse_error(["--budget-handles", "0"]))
+
     def test_operations_must_be_positive(self) -> None:
         self.assertIn("greater than zero", _parse_error(["--operations", "0", "--target", "x"]))
         self.assertIn("non-negative", _parse_error(["--operations", "-4", "--target", "x"]))

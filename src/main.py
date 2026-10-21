@@ -292,6 +292,7 @@ try:
     from rich.panel import Panel
     from rich.text import Text
 
+    from .budgets import BUDGET_OPTIONS, parse_budget
     from .config import (
         FAIL_ON_CHOICES,
         MAX_SAMPLE_INTERVAL,
@@ -305,7 +306,7 @@ try:
     )
     from .dashboard import DashboardApp
     from .diff_command import run_diff
-    from .events import LeakSeverity
+    from .events import METRIC_LABELS, LeakSeverity
     from .file_picker import select_target_file
     from .headless import EXIT_ERROR, HeadlessRunner
     from .process_picker import select_running_process
@@ -410,6 +411,16 @@ def _operations(value: str) -> float:
     return count
 
 
+def _budget(metric: str):
+    def parse(value: str) -> float:
+        try:
+            return parse_budget(metric, value)
+        except ValueError as exc:
+            raise argparse.ArgumentTypeError(str(exc)) from exc
+
+    return parse
+
+
 def _window(value: str) -> float:
     seconds = _duration_arg(value)
     if not 0 < seconds <= MAX_WINDOW:
@@ -426,6 +437,7 @@ examples:
   draintracer --warmup 15s --target server.exe        ignore startup growth
   draintracer --headless --target app.exe --timeout 2m --fail-on medium
   draintracer --headless --target app.exe --workload-id import-1k --operations 1000
+  draintracer --headless --target app.exe --budget-private 500MB --budget-handles 2000
   draintracer diff before.json after.json            compare two reports
 """
 
@@ -585,6 +597,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Exit 4 when a launched target exits by itself with a non-zero code.",
     )
+    for metric, option in BUDGET_OPTIONS.items():
+        what = "a size such as 500MB" if metric == "private_bytes" else "a count"
+        headless.add_argument(
+            f"--{option.replace('_', '-')}",
+            type=_budget(metric),
+            metavar="SIZE" if metric == "private_bytes" else "N",
+            dest=option,
+            help=(
+                f"Exit 5 when peak {METRIC_LABELS[metric]} exceed {what}, even "
+                "without a leak signal."
+            ),
+        )
     parser.add_argument(
         "target_args",
         nargs=argparse.REMAINDER,
@@ -614,6 +638,13 @@ def _resolve_settings(args: argparse.Namespace) -> MonitorSettings:
     for key in ("workload_id", "build", "operations", "note"):
         if getattr(args, key) is not None:
             overrides[key] = getattr(args, key)
+    budgets = {
+        metric: getattr(args, option)
+        for metric, option in BUDGET_OPTIONS.items()
+        if getattr(args, option) is not None
+    }
+    if budgets:
+        overrides["budgets"] = budgets
     return resolve_settings(
         config_path=args.config,
         profile=args.profile,
@@ -710,6 +741,9 @@ def _main(console: Console, argv: list[str] | None) -> int:
     ):
         if value and not args.headless:
             parser.error(f"{flag} only applies with --headless")
+    for option in BUDGET_OPTIONS.values():
+        if getattr(args, option) is not None and not args.headless:
+            parser.error(f"--{option.replace('_', '-')} only applies with --headless")
     if args.headless and args.target is None and args.pid is None:
         parser.error("--headless needs --target or --pid; startup selection is interactive")
     if args.profile is not None and args.no_config:
