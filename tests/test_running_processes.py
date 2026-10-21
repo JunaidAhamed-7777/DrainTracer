@@ -17,6 +17,26 @@ def _process(pid: int, name: str | None, created: float | None = 10.0):
 
 
 class InventoryTests(unittest.TestCase):
+    def test_refresh_clears_cached_processes_when_supported(self) -> None:
+        calls = []
+
+        def scan(*_args, **_kwargs):
+            calls.append("scan")
+            return [_process(42, "new.exe", 20.0)]
+
+        scan.cache_clear = lambda: calls.append("clear")
+        with mock.patch.object(inventory.psutil, "process_iter", new=scan):
+            result = inventory.list_running_processes()
+        self.assertEqual(calls, ["clear", "scan"])
+        self.assertEqual(result, [inventory.RunningProcess(42, "new.exe", 20.0)])
+
+    def test_older_process_iter_without_cache_clear_still_works(self) -> None:
+        def scan(*_args, **_kwargs):
+            return [_process(42, "app.exe")]
+
+        with mock.patch.object(inventory.psutil, "process_iter", new=scan):
+            self.assertEqual(inventory.list_running_processes()[0].pid, 42)
+
     def test_names_sort_case_insensitively_then_by_pid_and_exclude_idle_and_self(self) -> None:
         processes = [_process(5, "z.exe"), _process(4, "App.exe"), _process(3, "app.exe"),
                      _process(0, "Idle"), _process(99, "DrainTracer")]

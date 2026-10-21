@@ -5,6 +5,11 @@ feature milestones remain in [future-plan.md](future-plan.md), and the complete
 commit history records earlier changes. Versions follow the repository rule:
 each focused change advances the runtime version by exactly `0.1`.
 
+## v3.4 — 2026-10-21
+
+- Reset supported psutil inventory caches before refreshing so a reused
+  PID cannot keep displaying the previous program's name and identity.
+
 ## v3.3 — 2026-10-21
 
 - Replaced Hook's manual PID prompt with the searchable program list and

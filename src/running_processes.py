@@ -19,6 +19,11 @@ class RunningProcess:
 
 def list_running_processes() -> list[RunningProcess]:
     """List visible processes; let enumeration failures reach the caller."""
+    # psutil 6+ caches identities without checking every PID for reuse.
+    # Older supported releases handle reuse internally and have no reset API.
+    clear_cache = getattr(psutil.process_iter, "cache_clear", None)
+    if callable(clear_cache):
+        clear_cache()
     own_pid = os.getpid()
     processes = []
     for process in psutil.process_iter(["pid", "name", "create_time"], ad_value=None):
