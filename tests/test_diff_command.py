@@ -15,6 +15,7 @@ from src.diff_command import (
     EXIT_ERROR,
     EXIT_NOT_COMPARABLE,
     EXIT_OK,
+    EXIT_OVER_BUDGET,
     EXIT_REGRESSION,
     run_diff,
 )
@@ -117,6 +118,29 @@ class DiffCommandTests(unittest.TestCase):
         self.assertEqual(code, EXIT_NOT_COMPARABLE)
         self.assertIn("INSUFFICIENT COVERAGE", output)
         output.encode("cp1252")
+
+    def test_budgets_peaks_and_per_operation_growth_wide_and_narrow(self) -> None:
+        before = self._write("ops_a.json", _run(4.0, severity=LeakSeverity.HIGH,
+                                                experiment=_experiment(operations=1000)))
+        after = self._write("ops_b.json", _run(0.5, experiment=_experiment(operations=1000)))
+        for width in (80, 140):
+            with self.subTest(width=width):
+                code, output = self._run(before, after, "--budget-private", "100MB",
+                                         "--budget-handles", "5000", width=width)
+                self.assertEqual(code, EXIT_OVER_BUDGET)
+                self.assertIn("B private bytes peak 110.0 MB over the 100.0 MB budget", output)
+                self.assertIn("B handles peak 200 within the 5,000 budget", output)
+                self.assertIn("180.0 MB → 110.0 MB", output)
+                self.assertIn("+81.9 KB → +10.2 KB", output)
+                self.assertTrue(all(len(line) <= width for line in output.splitlines()))
+        self.assertIn("PEAK A → B", self._run(before, after, width=140)[1])
+        code, output = self._run(before, after, "--budget-threads", "2", "--json")
+        self.assertEqual(code, EXIT_OVER_BUDGET)
+        data = json.loads(output)
+        self.assertTrue(data["over_budget"])
+        self.assertEqual(data["budgets"][0]["metric"], "threads")
+        # Without budgets the same pair passes.
+        self.assertEqual(self._run(before, after)[0], EXIT_OK)
 
     def test_bad_inputs_exit_2(self) -> None:
         code, output = self._run(str(self.leaky), str(self.root / "missing.json"))

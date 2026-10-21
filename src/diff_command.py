@@ -12,6 +12,8 @@ from rich.table import Table
 from rich.text import Text
 
 from .analysis import severity_rank
+from .budgets import BUDGET_OPTIONS, parse_budget
+from .events import METRIC_LABELS
 from .report_diff import (
     COMPARABLE,
     IMPROVED,
@@ -36,6 +38,8 @@ EXIT_REGRESSION = 1
 EXIT_ERROR = 2
 # Only with --strict: the runs were not equivalent or not fully measured.
 EXIT_NOT_COMPARABLE = 3
+# Only with a budget flag: the later run's peak exceeded a budget.
+EXIT_OVER_BUDGET = 4
 
 _VERDICT_STYLE = {
     IMPROVED: ("IMPROVED", PALETTE.ok),
@@ -94,7 +98,29 @@ def build_diff_parser() -> argparse.ArgumentParser:
             "(an unjudged run or partial coverage), and exit 3."
         ),
     )
+    for metric, option in BUDGET_OPTIONS.items():
+        what = "a size such as 500MB" if metric == "private_bytes" else "a count"
+        parser.add_argument(
+            f"--{option.replace('_', '-')}",
+            type=_budget(metric),
+            metavar="SIZE" if metric == "private_bytes" else "N",
+            dest=option,
+            help=(
+                f"Exit 4 when AFTER's peak {METRIC_LABELS[metric]} exceed {what}, "
+                "with or without a leak signal."
+            ),
+        )
     return parser
+
+
+def _budget(metric: str):
+    def parse(value: str) -> float:
+        try:
+            return parse_budget(metric, value)
+        except ValueError as exc:
+            raise argparse.ArgumentTypeError(str(exc)) from exc
+
+    return parse
 
 
 def run_diff(argv: list[str], console: Console) -> int:
@@ -107,7 +133,12 @@ def run_diff(argv: list[str], console: Console) -> int:
         console.print(Text.assemble(("Diff error: ", "bold red"), str(exc)))
         return EXIT_ERROR
     try:
-        comparison = compare_reports(before, after, strict=args.strict)
+        budgets = {
+            metric: getattr(args, option)
+            for metric, option in BUDGET_OPTIONS.items()
+            if getattr(args, option) is not None
+        }
+        comparison = compare_reports(before, after, strict=args.strict, budgets=budgets)
     except Exception as exc:  # a report that parses but defeats the analysis
         console.print(Text.assemble(("Diff error: ", "bold red"), f"could not compare: {exc}"))
         return EXIT_ERROR
@@ -122,13 +153,15 @@ def run_diff(argv: list[str], console: Console) -> int:
         console.print(render_comparison(comparison, select_glyphs(console), console.width))
     if comparison.blocked:
         return EXIT_NOT_COMPARABLE
+    if comparison.over_budget:
+        return EXIT_OVER_BUDGET
     if args.fail_on_regression and comparison.verdict in {REGRESSED, MIXED}:
         return EXIT_REGRESSION
     return EXIT_OK
 
 
 # Below this many columns the per-resource table no longer fits.
-WIDE_COLUMNS = 110
+WIDE_COLUMNS = 125
 
 
 def render_comparison(
@@ -163,6 +196,20 @@ def render_comparison(
         parts.append(
             Text.assemble(("handle types  ", f"bold {PALETTE.muted}"), f" {sep} ".join(entries))
         )
+    normalized = [item for item in comparison.resources if item.normalized]
+    if normalized and width >= WIDE_COLUMNS:
+        entries = [f"{item.resource} {_per_operation_text(item, glyphs)}" for item in normalized]
+        parts.append(
+            Text.assemble(("per operation  ", f"bold {PALETTE.muted}"), f" {sep} ".join(entries))
+        )
+    for check in comparison.budgets:
+        mark, style = (glyphs.warn, PALETTE.danger) if check.exceeded else (glyphs.ok, PALETTE.ok)
+        if not check.measured:
+            mark, style = glyphs.warn, PALETTE.warn
+        parts.append(Text.assemble(
+            ("budget ", f"bold {PALETTE.muted}"), (f"{mark} ", f"bold {style}"),
+            (f"B {check.describe()}", style),
+        ))
     if comparison.caveats:
         for caveat in comparison.caveats:
             style = PALETTE.danger if comparison.strict and caveat.blocks else PALETTE.warn
@@ -214,6 +261,7 @@ def _resource_table(comparison: ReportComparison, glyphs: Glyphs) -> Table:
     table.add_column("DRIFT B", justify="right", no_wrap=True)
     table.add_column("CHANGE", no_wrap=True)
     table.add_column(f"GROWTH A {glyphs.arrow} B", justify="right", no_wrap=True)
+    table.add_column(f"PEAK A {glyphs.arrow} B", justify="right", no_wrap=True)
     for item in comparison.resources:
         table.add_row(
             Text(item.resource, style="bold"),
@@ -222,6 +270,7 @@ def _resource_table(comparison: ReportComparison, glyphs: Glyphs) -> Table:
             format_drift(item.resource, item.after.drift_per_second),
             _change_text(item, glyphs),
             _growth_text(item, glyphs),
+            _peak_text(item, glyphs),
         )
     return table
 
@@ -240,6 +289,11 @@ def _resource_blocks(comparison: ReportComparison, glyphs: Glyphs) -> list[Rende
         drift.append_text(_change_text(item, glyphs))
         grid.add_row("", drift)
         grid.add_row("", Text(f"growth {_growth_text(item, glyphs)}", style=PALETTE.muted))
+        if item.normalized:
+            grid.add_row(
+                "", Text(f"per op {_per_operation_text(item, glyphs)}", style=PALETTE.muted)
+            )
+        grid.add_row("", Text(f"peak   {_peak_text(item, glyphs)}", style=PALETTE.muted))
         blocks.append(grid)
     return blocks
 
@@ -258,6 +312,29 @@ def _growth_text(item, glyphs: Glyphs) -> str:
     return (
         f"{format_amount(item.resource, item.before.growth, signed=True)} {glyphs.arrow} "
         f"{format_amount(item.resource, item.after.growth, signed=True)}"
+    )
+
+
+def _peak_text(item, glyphs: Glyphs) -> str:
+    """Whole-run peaks of the signal metric, ``n/a`` when a run never measured it."""
+
+    def peak(value: float | None) -> str:
+        return "n/a" if value is None else format_amount(item.resource, value)
+
+    return f"{peak(item.peak_before)} {glyphs.arrow} {peak(item.peak_after)}"
+
+
+def _per_operation_text(item, glyphs: Glyphs) -> str:
+    def amount(value: float | None) -> str:
+        if value is None:
+            return "n/a"
+        if item.resource == "memory":
+            return format_amount(item.resource, value, signed=True)
+        return f"{'-' if value < 0 else '+'}{abs(value):,.3g}"
+
+    return (
+        f"{amount(item.growth_per_operation_before)} {glyphs.arrow} "
+        f"{amount(item.growth_per_operation_after)}"
     )
 
 
@@ -331,6 +408,7 @@ __all__ = [
     "EXIT_ERROR",
     "EXIT_NOT_COMPARABLE",
     "EXIT_OK",
+    "EXIT_OVER_BUDGET",
     "EXIT_REGRESSION",
     "build_diff_parser",
     "render_comparison",
