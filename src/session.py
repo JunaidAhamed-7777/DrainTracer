@@ -842,6 +842,32 @@ class MonitorSession:
             parts.append(f"every {snapshot.sample_interval_ms} ms")
         return sep.join(parts)
 
+    def monitor_cost_text(self) -> str | None:
+        """Session-wide cadence and observer cost, or ``None`` before any was measured.
+
+        For example ``cadence 502 ms mean (500 requested) · collection 12 ms
+        mean, 30 ms max · monitor CPU 1.2% mean``.
+        """
+        monitor = self._facts.to_dict()["monitor"]
+        sep = f" {self.glyphs.sep} "
+        parts = []
+        interval = monitor["interval_ms"]["mean"]
+        if interval is not None:
+            parts.append(
+                f"cadence {interval:.0f} ms mean ({monitor['requested_interval_ms']} requested)"
+            )
+        collection = monitor["collection_ms"]
+        if collection["mean"] is not None:
+            parts.append(
+                f"collection {collection['mean']:.0f} ms mean, {collection['max']:.0f} ms max"
+            )
+        cpu = monitor["monitor_cpu_percent"]["mean"]
+        if cpu is not None:
+            parts.append(f"monitor CPU {cpu:.1f}% mean")
+        if monitor["dropped_snapshots"]:
+            parts.append(f"{monitor['dropped_snapshots']:,} dropped")
+        return sep.join(parts) or None
+
     def chart_thinning_text(self) -> str | None:
         """``chart thinned 1:N, summary facts exact`` once history was thinned, else ``None``."""
         stride = self._snapshot_history.stride

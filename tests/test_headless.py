@@ -56,6 +56,26 @@ class ExitStatusTests(unittest.TestCase):
         self.assertIn("private 25.0 MB | rss 300.0 MB", output)
         self.assertIn("private 25.0 MB | RSS (working set) 300.0 MB", output)
 
+    def test_summary_reports_the_monitor_cost(self) -> None:
+        from dataclasses import replace
+
+        from src.events import MonitorDiagnostics
+
+        runner = self._runner()
+        self.assertIsNone(runner.monitor_cost_text())
+        for index, cost in enumerate((10.0, 30.0)):
+            runner._accept_snapshot(replace(
+                make_snapshot(timestamp=100.0 + index * 0.5),
+                diagnostics=MonitorDiagnostics(500, collection_ms=cost, monitor_cpu_percent=1.25),
+            ))
+        runner._print_summary()
+        output = _output(runner).replace("·", "|")
+        self.assertIn(
+            "monitor   cadence 500 ms mean (500 requested) | collection 20 ms mean, 30 ms max "
+            "| monitor CPU 1.2% mean",
+            output,
+        )
+
     def test_clean_run_passes(self) -> None:
         runner = self._runner()
         runner._accept_snapshot(make_snapshot())

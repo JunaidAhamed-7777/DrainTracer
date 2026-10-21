@@ -1264,6 +1264,9 @@ class DashboardApp(MonitorSession):
         warmup = self.warmup_text()
         if warmup:
             grid.add_row("Warm-up", warmup)
+        monitor = self.monitor_cost_text()
+        if monitor:
+            grid.add_row("Monitor", monitor)
         if self.settings.source is not None:
             grid.add_row("Settings", Text(self.settings.describe()))
         grid.add_row(

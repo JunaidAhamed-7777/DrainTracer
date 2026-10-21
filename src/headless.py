@@ -390,6 +390,9 @@ class HeadlessRunner(MonitorSession):
         warmup = self.warmup_text()
         if warmup:
             rows.append(("warm-up", warmup))
+        monitor = self.monitor_cost_text()
+        if monitor:
+            rows.append(("monitor", monitor))
         if errors:
             rows.append(("errors", f" {sep} ".join(errors)))
         if self._last_report is not None:
