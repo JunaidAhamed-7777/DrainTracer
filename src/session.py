@@ -23,6 +23,8 @@ from .events import (
     MonitorDiagnostics,
     ProcessCounts,
     ProcessSummary,
+    TimelineKind,
+    TimelineMark,
     severity_rank,
 )
 from .experiment import experiment_record
@@ -80,6 +82,11 @@ class MonitorSession:
     HISTORY_LIMIT = 240
     EVENT_LIMIT = 200
     SNAPSHOT_LIMIT = 7200
+    # Chart annotations, lifecycle events kept for the process inspector,
+    # and user markers exported with reports.
+    TIMELINE_LIMIT = 500
+    LIFECYCLE_LIMIT = 256
+    MARKER_LIMIT = 500
 
     def __init__(
         self,
@@ -164,6 +171,10 @@ class MonitorSession:
         self._unreadable_pids: dict[int, str] = {}
         self._current_unreadable: set[int] = set()
         self._monitor_errors: list[str] = []
+        self._timeline: deque[TimelineMark] = deque(maxlen=self.TIMELINE_LIMIT)
+        self._lifecycle_history: deque[LifecycleEvent] = deque(maxlen=self.LIFECYCLE_LIMIT)
+        self._markers: list[TimelineMark] = []
+        self._marker_count = 0
 
     @property
     def attached(self) -> bool:
@@ -500,6 +511,13 @@ class MonitorSession:
 
         previous = self.snapshot
         self.snapshot = snapshot
+        if previous is not None and snapshot.monitoring_paused != previous.monitoring_paused:
+            paused = snapshot.monitoring_paused
+            self._mark(
+                snapshot.timestamp,
+                TimelineKind.PAUSED if paused else TimelineKind.RESUMED,
+                "paused" if paused else "resumed",
+            )
 
         if not snapshot.monitoring_paused:
             self._sample_count += 1
@@ -552,10 +570,15 @@ class MonitorSession:
         The root's exit is left to the target-exit message.
         """
         groups: dict[LifecycleKind, list[LifecycleEvent]] = {}
+        marks: dict[LifecycleKind, list[LifecycleEvent]] = {}
         for event in snapshot.lifecycle:
+            self._lifecycle_history.append(event)
+            marks.setdefault(event.kind, []).append(event)
             if event.kind == LifecycleKind.EXITED and event.pid == snapshot.root_pid:
                 continue
             groups.setdefault(event.kind, []).append(event)
+        for kind, events in marks.items():
+            self._mark_lifecycle(snapshot.timestamp, kind, events)
         for kind, events in groups.items():
             level = "warn" if kind == LifecycleKind.RESTARTED else "info"
             if len(events) <= LIFECYCLE_DETAIL_LIMIT:
@@ -577,6 +600,97 @@ class MonitorSession:
         if event.kind == LifecycleKind.RESTARTED:
             return f"Process restarted: {who} replaces PID {event.replaces_pid}"
         return f"Process {event.kind.value}: {who}"
+
+    _LIFECYCLE_MARKS = {
+        LifecycleKind.STARTED: TimelineKind.STARTED,
+        LifecycleKind.EXITED: TimelineKind.EXITED,
+        LifecycleKind.RESTARTED: TimelineKind.RESTARTED,
+    }
+
+    def _mark_lifecycle(
+        self, stamp: float, kind: LifecycleKind, events: list[LifecycleEvent]
+    ) -> None:
+        """One mark per process, or one for a burst, so churn cannot flood the timeline."""
+        mark = self._LIFECYCLE_MARKS[kind]
+        if len(events) > LIFECYCLE_DETAIL_LIMIT:
+            self._mark(stamp, mark, f"{len(events)} processes {kind.value}")
+            return
+        for event in events:
+            self._mark(stamp, mark, f"{event.name} PID {event.pid} {kind.value}", pid=event.pid)
+
+    def _mark(self, stamp: float, kind: TimelineKind, label: str, **details: Any) -> TimelineMark:
+        mark = TimelineMark(timestamp=stamp, kind=kind, label=label, **details)
+        self._timeline.append(mark)
+        return mark
+
+    @property
+    def timeline(self) -> tuple[TimelineMark, ...]:
+        """Recent chart annotations, oldest first (bounded)."""
+        return tuple(self._timeline)
+
+    @property
+    def markers(self) -> tuple[TimelineMark, ...]:
+        """User markers added with ``add_marker``, oldest first."""
+        return tuple(self._markers)
+
+    def add_marker(self, label: str | None = None) -> TimelineMark | None:
+        """Mark the current moment (``marker N``) in the event log, timeline and report.
+
+        A marker records when something happened, such as starting a
+        workload; it establishes timing only, not cause. Returns ``None``
+        once ``MARKER_LIMIT`` markers exist.
+        """
+        if len(self._markers) >= self.MARKER_LIMIT:
+            self._append_event(f"Marker limit of {self.MARKER_LIMIT} reached", "warn")
+            return None
+        self._marker_count += 1
+        index = self._marker_count
+        stamp = time.time()
+        text = label or f"marker {index}"
+        mark = self._mark(stamp, TimelineKind.MARKER, text, index=index)
+        self._markers.append(mark)
+        offset = (
+            f" at +{self._format_duration(max(0.0, stamp - self._started_at))}"
+            if self._started_at is not None
+            else ""
+        )
+        self._append_event(f"Marker {index}: {text}{offset}", "info")
+        return mark
+
+    def lifecycle_for(self, pid: int, create_time: float | None = None) -> tuple[LifecycleEvent, ...]:
+        """Recent starts, exits and restarts involving one process, oldest first.
+
+        A restart that replaced ``pid`` counts too. With ``create_time``,
+        events of an earlier process that reused the PID are left out.
+        """
+        matches = []
+        for event in self._lifecycle_history:
+            if event.replaces_pid == pid:
+                matches.append(event)
+                continue
+            if event.pid != pid:
+                continue
+            if (
+                create_time is not None
+                and event.create_time is not None
+                and abs(event.create_time - create_time) > 1e-3
+            ):
+                continue
+            matches.append(event)
+        return tuple(matches)
+
+    def _markers_record(self) -> list[dict[str, Any]]:
+        start = self._started_at
+        return [
+            {
+                "index": mark.index,
+                "label": mark.label,
+                "timestamp": mark.timestamp,
+                "time": iso_timestamp(mark.timestamp),
+                "elapsed_seconds": round(mark.timestamp - start, 3) if start else None,
+            }
+            for mark in self._markers
+        ]
 
     def attribution_text(self, alert: LeakAlert) -> str | None:
         """Where an alert's growth came from, or ``None`` without attribution.
@@ -627,11 +741,15 @@ class MonitorSession:
                     "and detection restarts its windows",
                     "warn",
                 )
+                self._mark(snapshot.timestamp, TimelineKind.ACCESS_LOST,
+                           f"PID {pid} unreadable", pid=pid)
             for pid in sorted(self._current_unreadable - unreadable):
                 if pid in names:
                     self._append_event(
                         f"PID {pid} is readable again; detection restarts its windows", "info"
                     )
+                    self._mark(snapshot.timestamp, TimelineKind.ACCESS_REGAINED,
+                               f"PID {pid} readable", pid=pid)
         self._current_unreadable = unreadable
 
     def _coverage_record(self) -> dict[str, Any]:
@@ -680,6 +798,7 @@ class MonitorSession:
     def _log_warmup_complete(self, snapshot: MetricsSnapshot) -> None:
         baseline = self.detector.warmup_baseline or snapshot.totals
         sep = self.glyphs.sep
+        self._mark(snapshot.timestamp, TimelineKind.WARMUP_END, "warm-up complete")
         self._append_event(
             "Warm-up complete; leak detection started from a baseline of "
             f"{self._format_bytes(baseline.get('private_bytes', 0.0))} private {sep} "
@@ -703,6 +822,17 @@ class MonitorSession:
                 continue
             self._resource_severity[resource] = current
             name = resource.value.capitalize()
+            if alert is None:
+                self._mark(snapshot.timestamp, TimelineKind.CLEARED, f"{resource.value} cleared",
+                           resource=resource, severity=current)
+            else:
+                self._mark(
+                    snapshot.timestamp,
+                    TimelineKind.SIGNAL,
+                    f"{resource.value} {current.value.upper()}",
+                    resource=resource,
+                    severity=current,
+                )
             if alert is None:
                 self._append_event(f"{name} signal cleared", "ok")
             elif before == LeakSeverity.NONE:
@@ -799,6 +929,8 @@ class MonitorSession:
             "outcome": self._outcome_record(),
             "processes": self._processes_record(),
             "session_facts": self._facts_record(),
+            # User markers: when the user said something happened (timing only).
+            "markers": self._markers_record(),
             # Samples taken, and how many the snapshot list skips between
             # entries once a long session has been thinned (1: none).
             "sample_count": self._sample_count,

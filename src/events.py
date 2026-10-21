@@ -316,6 +316,41 @@ class LifecycleEvent:
     replaces_pid: int | None = None
 
 
+class TimelineKind(str, Enum):
+    """Something that happened during a session worth marking on a chart."""
+
+    WARMUP_END = "warmup_end"
+    STARTED = "started"
+    EXITED = "exited"
+    RESTARTED = "restarted"
+    PAUSED = "paused"
+    RESUMED = "resumed"
+    SIGNAL = "signal"
+    CLEARED = "cleared"
+    ACCESS_LOST = "access_lost"
+    ACCESS_REGAINED = "access_regained"
+    MARKER = "marker"
+
+
+@dataclass(frozen=True)
+class TimelineMark:
+    """One annotation on the session timeline.
+
+    ``resource`` and ``severity`` are set for signal changes, ``pid`` for
+    process and access changes, and ``index`` for user markers. A marker
+    records when the user said something happened; it shows timing, not
+    that the event caused any growth.
+    """
+
+    timestamp: float
+    kind: TimelineKind
+    label: str
+    resource: LeakResource | None = None
+    severity: LeakSeverity | None = None
+    pid: int | None = None
+    index: int | None = None
+
+
 @dataclass(frozen=True)
 class ProcessCounts:
     """Live processes now, and lifecycle totals since monitoring began.
