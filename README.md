@@ -28,6 +28,11 @@
   <a href="docs/branding.md">Brand kit</a>
 </p>
 
+<p align="center">
+  <a href="docs/assets/draintracer-demo.mp4"><strong>▶ Watch the 30-second demo</strong></a><br>
+  <sub>A real dashboard session and its HTML report · silent MP4 · 6.7 MB</sub>
+</p>
+
 DrainTracer is a Python CLI/TUI that watches an executable or script and its
 recursive child processes. It shows resource usage in a live terminal dashboard
 and flags sustained growth in **private memory, handles, and threads**.
