@@ -354,9 +354,10 @@ class HelpAndSortTests(unittest.TestCase):
         self.assertIn("HELP", output)
         self.assertIn("READING A SIGNAL", output)
         self.assertIn("built-in defaults", output)
-        self.assertIn("MEMORY COUNTERS", output)
         app._handle_key("end")  # the help scrolls once it is taller than the terminal
-        self.assertIn("RSS (working set)", self._render(app))
+        output = self._render(app)
+        self.assertIn("MEMORY COUNTERS", output)
+        self.assertIn("RSS (working set)", output)
         app._handle_key("\x1b")
         self.assertNotIn("READING A SIGNAL", self._render(app))
         app._handle_key("H")
