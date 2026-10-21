@@ -795,5 +795,58 @@ class ProcessAttributionDisplayTests(unittest.TestCase):
         self.assertIn("PROCESSES 1 ", self._render(quiet))
 
 
+class MonitorFreshnessDisplayTests(unittest.TestCase):
+    def _render(self, app: DashboardApp, renderable) -> str:
+        with app.console.capture() as capture:
+            app.console.print(renderable)
+        return capture.get()
+
+    def test_health_footnote_shows_sample_age_cost_and_cadence(self) -> None:
+        from unittest import mock
+
+        app = _app()
+        _sampled(app, [[make_process(100)]] * 6)
+        last = app.snapshot.timestamp
+        with mock.patch("src.session.time.time", return_value=last + 0.4):
+            text = app.freshness_text()
+            footnote = self._render(app, app._render_health_panel())
+        self.assertRegex(text, r"^sample 0\.4s ago · \d+ ms · cadence 500 ms$")
+        self.assertIn("sample 0.4s ago", footnote)
+        self.assertIn("cadence 500 ms", footnote)
+
+    def test_failures_show_in_the_freshness_and_age_keeps_growing(self) -> None:
+        from dataclasses import replace
+
+        from src.events import MonitorDiagnostics
+
+        app = _app(encoding="cp437")
+        _sampled(app, [[make_process(100)]] * 3)
+        failed = replace(
+            make_snapshot(metadata={"sampling_error": "boom"}, timestamp=2000.0),
+            diagnostics=MonitorDiagnostics(500, failed_samples=2, dropped_snapshots=1),
+        )
+        app._accept_snapshot(failed)
+        text = app.freshness_text(now=app.snapshot.timestamp + 5.0)
+        self.assertTrue(text.startswith("sample 5.0s ago"))  # the last good sample
+        self.assertIn("2 failed", text)
+        self.assertIn("1 dropped", text)
+        text.encode("cp437")  # legacy-console safe separators
+
+    def test_no_freshness_before_the_first_sample(self) -> None:
+        self.assertIsNone(_app().freshness_text())
+
+    def test_summary_marks_a_thinned_chart(self) -> None:
+        class SmallHistoryApp(DashboardApp):
+            SNAPSHOT_LIMIT = 8
+
+        app = SmallHistoryApp("C:/targets/worker.exe", console=make_console(160, 40))
+        self.assertIsNone(app.chart_thinning_text())
+        _sampled(app, [[make_process(100)]] * 20)
+        self.assertGreater(app.chart_stride, 1)
+        summary = self._render(app, app.render_summary())
+        self.assertIn(f"report chart thinned 1:{app.chart_stride}", summary)
+        self.assertIn("peaks, signals and counts stay exact", summary)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -20,6 +20,7 @@ from .events import (
     LeakSeverity,
     MetricsSnapshot,
     MetricsStream,
+    MonitorDiagnostics,
     ProcessCounts,
     ProcessSummary,
     severity_rank,
@@ -132,6 +133,9 @@ class MonitorSession:
         # Exact peaks, episodes and counts from every snapshot, which the
         # thinned history above cannot promise.
         self._facts = SessionFacts()
+        # Diagnostics from the newest snapshot of any kind: a failed sample
+        # keeps the last good snapshot on screen but still reports its count.
+        self._diagnostics: MonitorDiagnostics | None = None
         self._events: deque[tuple[float, str, str]] = deque(maxlen=self.EVENT_LIMIT)
         self._resource_severity: dict[LeakResource, LeakSeverity] = {}
         self._worst_by_resource: dict[LeakResource, LeakSeverity] = {}
@@ -473,6 +477,8 @@ class MonitorSession:
 
     def _accept_snapshot(self, snapshot: MetricsSnapshot) -> None:
         self._facts.observe(snapshot)
+        if snapshot.diagnostics is not None:
+            self._diagnostics = snapshot.diagnostics
         # Per-process summaries describe the latest state only; keeping them
         # on every stored snapshot would multiply memory by the tree size.
         self._snapshot_history.append(
@@ -802,6 +808,46 @@ class MonitorSession:
     def facts(self) -> SessionFacts:
         """Exact session-wide summaries, independent of the thinned chart history."""
         return self._facts
+
+    @property
+    def diagnostics(self) -> MonitorDiagnostics | None:
+        """The detector's latest account of its own sampling, if any."""
+        return self._diagnostics
+
+    def freshness_text(self, now: float | None = None) -> str | None:
+        """How fresh and how costly sampling is, e.g. ``sample 0.4s ago, 12 ms, cadence 502 ms``.
+
+        The age is of the last good sample, so it grows while samples fail
+        or the monitor stalls. ``None`` before the first sample.
+        """
+        snapshot = self.snapshot
+        if snapshot is None:
+            return None
+        sep = f" {self.glyphs.sep} "
+        age = max(0.0, (time.time() if now is None else now) - snapshot.timestamp)
+        parts = [f"sample {age:.1f}s ago"]
+        diagnostics = self._diagnostics
+        if diagnostics is not None:
+            if diagnostics.collection_ms is not None:
+                parts.append(f"{diagnostics.collection_ms:.0f} ms")
+            if diagnostics.actual_interval_ms is not None:
+                parts.append(f"cadence {diagnostics.actual_interval_ms:.0f} ms")
+            else:
+                parts.append(f"every {diagnostics.requested_interval_ms} ms")
+            if diagnostics.failed_samples:
+                parts.append(f"{diagnostics.failed_samples:,} failed")
+            if diagnostics.dropped_snapshots:
+                parts.append(f"{diagnostics.dropped_snapshots:,} dropped")
+        else:
+            parts.append(f"every {snapshot.sample_interval_ms} ms")
+        return sep.join(parts)
+
+    def chart_thinning_text(self) -> str | None:
+        """``chart thinned 1:N, summary facts exact`` once history was thinned, else ``None``."""
+        stride = self._snapshot_history.stride
+        if stride <= 1:
+            return None
+        return f"report chart thinned 1:{stride}; peaks, signals and counts stay exact"
 
     @property
     def chart_stride(self) -> int:

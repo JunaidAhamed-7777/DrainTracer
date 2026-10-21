@@ -423,6 +423,10 @@ class DashboardApp(MonitorSession):
         windows = " / ".join(format_duration(window) for window in detector.window_seconds)
         session.add_row("Windows", windows)
         session.add_row("Sampling", f"every {detector.sample_interval_ms} ms")
+        freshness = self.freshness_text()
+        if freshness:
+            # The same line as under LEAK HEALTH: turns amber when samples go stale.
+            session.add_row("Monitor", freshness)
         session.add_row(
             "Warm-up",
             format_duration(detector.warmup_seconds) if detector.warmup_seconds else "none",
@@ -1012,9 +1016,28 @@ class DashboardApp(MonitorSession):
             f"{profile}windows {windows} {glyphs.sep} every {self.detector.sample_interval_ms} ms",
             style=palette.muted,
         )
+        freshness = self._freshness_line()
         if self._health_spacious:
-            return Group(top, Text(""), rows, Text(""), footnote)
+            return Group(top, Text(""), rows, freshness or Text(""), footnote)
+        if freshness is not None:
+            footnote.append(f" {glyphs.sep} ", style=palette.muted)
+            footnote.append_text(freshness)
         return Group(top, rows, footnote)
+
+    def _freshness_line(self) -> Text | None:
+        """Sample age, cost and cadence; warn-coloured when samples are stale.
+
+        Stale means the last good sample is older than three requested
+        intervals, which happens when sampling fails or the monitor stalls.
+        """
+        text = self.freshness_text()
+        if text is None or self.snapshot is None:
+            return None
+        palette = self.palette
+        age = time.time() - self.snapshot.timestamp
+        stale = not self.snapshot.monitoring_paused and age > 3 * self.detector.sample_interval_ms / 1000
+        return Text(text, style=f"bold {palette.warn}" if stale else palette.muted,
+                    no_wrap=True, overflow="ellipsis")
 
     def _evidence_banner(self, snapshot: MetricsSnapshot | None) -> Text:
         """The banner when no signal is active: say how much has been judged.
@@ -1233,10 +1256,11 @@ class DashboardApp(MonitorSession):
                 f"{glyphs.sep} {self.outcome_text()}"
             ),
         )
-        grid.add_row(
-            "Duration",
-            f"{self._format_duration(self._uptime())} {glyphs.sep} {self._sample_count:,} samples",
-        )
+        duration = f"{self._format_duration(self._uptime())} {glyphs.sep} {self._sample_count:,} samples"
+        thinning = self.chart_thinning_text()
+        if thinning:
+            duration += f" {glyphs.sep} {thinning}"
+        grid.add_row("Duration", duration)
         warmup = self.warmup_text()
         if warmup:
             grid.add_row("Warm-up", warmup)
