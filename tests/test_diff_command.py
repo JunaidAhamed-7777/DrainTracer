@@ -8,10 +8,16 @@ import unittest
 from pathlib import Path
 
 from helpers import make_console
-from test_report_diff import _run
+from test_report_diff import _experiment, _run
 
 from src import main as cli
-from src.diff_command import EXIT_ERROR, EXIT_OK, EXIT_REGRESSION, run_diff
+from src.diff_command import (
+    EXIT_ERROR,
+    EXIT_NOT_COMPARABLE,
+    EXIT_OK,
+    EXIT_REGRESSION,
+    run_diff,
+)
 from src.events import LeakSeverity
 
 
@@ -63,6 +69,54 @@ class DiffCommandTests(unittest.TestCase):
         self.assertIn("REGRESSED", output)
         improved = self._run(str(self.leaky), str(self.fixed), "--fail-on-regression")[0]
         self.assertEqual(improved, EXIT_OK)
+
+    def _write(self, name: str, report: dict) -> str:
+        path = self.root / name
+        path.write_text(json.dumps(report), encoding="utf-8")
+        return str(path)
+
+    def _lighter_pair(self) -> tuple[str, str]:
+        leaky = self._write("heavy.json", _run(
+            4.0, severity=LeakSeverity.HIGH, samples=41,
+            experiment=_experiment(workload_id="import", build="1.0", operations=1000)))
+        light = self._write("light.json", _run(
+            0.0, samples=11,
+            experiment=_experiment(workload_id="import", build="1.1", operations=100)))
+        return leaky, light
+
+    def test_a_lighter_run_shows_a_qualified_verdict_wide_and_narrow(self) -> None:
+        leaky, light = self._lighter_pair()
+        for width in (80, 140):
+            with self.subTest(width=width):
+                code, output = self._run(leaky, light, width=width)
+                self.assertEqual(code, EXIT_OK)
+                self.assertIn("VERDICT  IMPROVED (QUALIFIED)", output)
+                self.assertIn("workload import · build 1.1 · 100 ops", output)
+                self.assertIn("--strict would report 'not comparable'", output)
+                self.assertTrue(all(len(line) <= width for line in output.splitlines()))
+
+    def test_strict_mode_refuses_non_equivalent_runs_with_exit_3(self) -> None:
+        leaky, light = self._lighter_pair()
+        code, output = self._run(leaky, light, "--strict", "--fail-on-regression", width=80)
+        self.assertEqual(code, EXIT_NOT_COMPARABLE)
+        self.assertIn("VERDICT  NOT COMPARABLE", output)
+        self.assertNotIn("IMPROVED", output)
+        code, output = self._run(leaky, light, "--strict", "--json")
+        self.assertEqual(code, EXIT_NOT_COMPARABLE)
+        data = json.loads(output)
+        self.assertEqual((data["verdict"], data["measured_verdict"]), ("not comparable", "improved"))
+        # Equivalent runs keep their verdict and exit code under --strict.
+        code, output = self._run(str(self.leaky), str(self.fixed), "--strict", width=80)
+        self.assertEqual(code, EXIT_OK)
+        self.assertIn("VERDICT  IMPROVED  ", output)
+
+    def test_strict_mode_reports_insufficient_coverage(self) -> None:
+        unjudged = self._write("unjudged.json", _run(0.0, detection_ran=False))
+        code, output = self._run(str(self.leaky), unjudged, "--strict", width=80,
+                                 encoding="cp1252")
+        self.assertEqual(code, EXIT_NOT_COMPARABLE)
+        self.assertIn("INSUFFICIENT COVERAGE", output)
+        output.encode("cp1252")
 
     def test_bad_inputs_exit_2(self) -> None:
         code, output = self._run(str(self.leaky), str(self.root / "missing.json"))

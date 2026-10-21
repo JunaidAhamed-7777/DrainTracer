@@ -13,8 +13,11 @@ from rich.text import Text
 
 from .analysis import severity_rank
 from .report_diff import (
+    COMPARABLE,
     IMPROVED,
+    INSUFFICIENT_COVERAGE,
     MIXED,
+    NOT_COMPARABLE,
     REGRESSED,
     UNCHANGED,
     DiffError,
@@ -31,12 +34,16 @@ from .units import format_duration
 EXIT_OK = 0
 EXIT_REGRESSION = 1
 EXIT_ERROR = 2
+# Only with --strict: the runs were not equivalent or not fully measured.
+EXIT_NOT_COMPARABLE = 3
 
 _VERDICT_STYLE = {
     IMPROVED: ("IMPROVED", PALETTE.ok),
     REGRESSED: ("REGRESSED", PALETTE.danger),
     MIXED: ("MIXED", PALETTE.alert),
     UNCHANGED: ("UNCHANGED", PALETTE.accent),
+    NOT_COMPARABLE: ("NOT COMPARABLE", PALETTE.danger),
+    INSUFFICIENT_COVERAGE: ("INSUFFICIENT COVERAGE", PALETTE.warn),
 }
 _SIGNAL_STYLE = {
     "resolved": PALETTE.ok,
@@ -77,6 +84,16 @@ def build_diff_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Exit 1 when the verdict is regressed or mixed, for CI checks.",
     )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help=(
+            "Refuse a verdict for runs that are not equivalent experiments: report "
+            "'not comparable' (different targets, workloads, arguments, settings, "
+            "operation counts, or lengths over 2x apart) or 'insufficient coverage' "
+            "(an unjudged run or partial coverage), and exit 3."
+        ),
+    )
     return parser
 
 
@@ -90,7 +107,7 @@ def run_diff(argv: list[str], console: Console) -> int:
         console.print(Text.assemble(("Diff error: ", "bold red"), str(exc)))
         return EXIT_ERROR
     try:
-        comparison = compare_reports(before, after)
+        comparison = compare_reports(before, after, strict=args.strict)
     except Exception as exc:  # a report that parses but defeats the analysis
         console.print(Text.assemble(("Diff error: ", "bold red"), f"could not compare: {exc}"))
         return EXIT_ERROR
@@ -103,6 +120,8 @@ def run_diff(argv: list[str], console: Console) -> int:
         )
     else:
         console.print(render_comparison(comparison, select_glyphs(console), console.width))
+    if comparison.blocked:
+        return EXIT_NOT_COMPARABLE
     if args.fail_on_regression and comparison.verdict in {REGRESSED, MIXED}:
         return EXIT_REGRESSION
     return EXIT_OK
@@ -127,9 +146,7 @@ def render_comparison(
     for label, report in (("A", comparison.before), ("B", comparison.after)):
         sources.add_row(
             label,
-            Text.assemble(
-                (_describe(report, sep), "bold"), "\n", (report.path.name, PALETTE.muted)
-            ),
+            _source_text(report, sep),
         )
 
     parts: list[RenderableType] = [sources, Text("")]
@@ -146,12 +163,19 @@ def render_comparison(
         parts.append(
             Text.assemble(("handle types  ", f"bold {PALETTE.muted}"), f" {sep} ".join(entries))
         )
-    for warning in comparison.warnings:
-        parts.append(
-            Text.assemble((f"{glyphs.warn} ", f"bold {PALETTE.warn}"), (warning, PALETTE.warn))
-        )
+    if comparison.caveats:
+        for caveat in comparison.caveats:
+            style = PALETTE.danger if comparison.strict and caveat.blocks else PALETTE.warn
+            parts.append(
+                Text.assemble((f"{glyphs.warn} ", f"bold {style}"), (caveat.message, style))
+            )
+    else:
+        for warning in comparison.warnings:
+            parts.append(
+                Text.assemble((f"{glyphs.warn} ", f"bold {PALETTE.warn}"), (warning, PALETTE.warn))
+            )
 
-    label, color = _VERDICT_STYLE[comparison.verdict]
+    label, color = _verdict_style(comparison)
     parts.append(Text(""))
     parts.append(
         Text.assemble(
@@ -160,6 +184,12 @@ def render_comparison(
             f"  {comparison.headline()}",
         )
     )
+    if comparison.qualified and comparison.comparability != COMPARABLE:
+        parts.append(Text(
+            "Not an equivalent comparison; --strict would report "
+            f"'{comparison.comparability}'.",
+            style=PALETTE.muted,
+        ))
     return Panel(
         Group(*parts),
         title=Text(f" {glyphs.brand} DRAINTRACER REPORT DIFF ", style=f"bold {PALETTE.accent}"),
@@ -231,6 +261,42 @@ def _growth_text(item, glyphs: Glyphs) -> str:
     )
 
 
+def _verdict_style(comparison: ReportComparison) -> tuple[str, str]:
+    """The verdict badge; a qualified result never shows as a clean pass."""
+    label, color = _VERDICT_STYLE[comparison.verdict]
+    if comparison.qualified:
+        label = f"{label} (QUALIFIED)"
+        if comparison.verdict != REGRESSED:
+            color = PALETTE.warn
+    return label, color
+
+
+def _source_text(report: LoadedReport, sep: str) -> Text:
+    """Target, version and length, the experiment labels, then the file name."""
+    text = Text(_describe(report, sep), style="bold")
+    labels = _experiment_labels(report, sep)
+    if labels:
+        text.append("\n")
+        text.append(labels, style=PALETTE.accent)
+    text.append("\n")
+    text.append(report.path.name, style=PALETTE.muted)
+    return text
+
+
+def _experiment_labels(report: LoadedReport, sep: str) -> str:
+    experiment = report.experiment
+    if experiment is None:
+        return ""
+    parts = []
+    if experiment.workload_id:
+        parts.append(f"workload {experiment.workload_id}")
+    if experiment.build:
+        parts.append(f"build {experiment.build}")
+    if experiment.operations is not None:
+        parts.append(f"{experiment.operations:,g} ops")
+    return f" {sep} ".join(parts)
+
+
 def _describe(report: LoadedReport, sep: str) -> str:
     parts = [report.name]
     version = report.data.get("version")
@@ -263,6 +329,7 @@ def _signed_count(value: int | None) -> str:
 
 __all__ = [
     "EXIT_ERROR",
+    "EXIT_NOT_COMPARABLE",
     "EXIT_OK",
     "EXIT_REGRESSION",
     "build_diff_parser",
