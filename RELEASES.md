@@ -7,7 +7,7 @@ belongs to series `v5.0.0`.
 
 ## v5.1.1 — 2026-10-22
 
-- Prepared the first PyPI distribution with a dedicated package description
+- Published the first PyPI distribution with a dedicated package description
   whose documentation links and images work outside GitHub.
 - Added a tested GitHub Actions publishing workflow using PyPI Trusted
   Publishing, with release tags checked against the runtime version.

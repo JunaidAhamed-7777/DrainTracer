@@ -78,11 +78,11 @@ so metadata preparation works outside a Git checkout.
 
 Building and local installation do not publish a release. Publication uses
 [.github/workflows/publish-pypi.yml](../.github/workflows/publish-pypi.yml)
-and PyPI Trusted Publishing. The first publication is pending until its
-publisher setup and workflow run succeed.
+and PyPI Trusted Publishing. The
+[DrainTracer project](https://pypi.org/project/draintracer/) is published on
+PyPI, and its trusted publisher is configured.
 
-Before the first upload, configure a pending publisher in the owner's
-PyPI account with these exact values:
+The publisher uses these exact values:
 
 - **PyPI project name:** `draintracer`
 - **GitHub owner:** `JunaidAhamed-7777`
@@ -90,10 +90,10 @@ PyPI account with these exact values:
 - **Workflow filename:** `publish-pypi.yml`
 - **Environment name:** `pypi`
 
-Create the matching `pypi` environment in the GitHub repository. See
+The matching `pypi` environment exists in the GitHub repository. Manage
+the trusted publisher in the PyPI project's publishing settings. See
 [PyPI's publisher setup instructions](https://docs.pypi.org/trusted-publishers/adding-a-publisher/)
-for the account-side configuration. A missing project page alone does not
-guarantee that PyPI will accept the project name.
+when replacing a publisher or configuring a new project.
 
 Prepare the runtime version and release notes together, complete the
 repository checks, and validate both built artifacts with
@@ -108,8 +108,8 @@ After a successful upload, verify the
 [PyPI project page](https://pypi.org/project/draintracer/) and install the
 published version in a fresh environment from PyPI. Run
 `python -m draintracer --version` and a bounded monitoring/export check
-outside the checkout. Only then remove the README's pending-publication
-wording and present the PyPI install as available.
+outside the checkout. Keep the README's installation guidance aligned
+with the published release.
 
 ## Find the right module
 
