@@ -76,6 +76,28 @@ class RenderTests(unittest.TestCase):
         self.assertIn("<th class=\"num\">Private</th><th class=\"num\">RSS (working set)</th>", document)
         self.assertIn('label: "RSS (working set)"', document)
 
+    def test_experiment_provenance_renders_redacted(self) -> None:
+        from src.experiment import ExperimentInfo, experiment_record
+
+        experiment = experiment_record(
+            ExperimentInfo(workload_id="import-1k", build="1.4.2", operations=1000,
+                           note=f"password=hunter2 {HOSTILE}"),
+            args=["--token", "s3cr3t"], mode="launch", duration_seconds=4.0,
+            sample_interval_ms=500, windows_seconds=[10.0], warmup_seconds=0.0,
+            timeout_seconds=None, budgets={"private_bytes": 5 * 1024 * 1024},
+            environment={"os": "Windows", "os_release": "11", "cpu_count": 8,
+                         "total_memory_bytes": 16 * 1024 ** 3},
+        )
+        document = render_html_report(_report(experiment=experiment))
+        self.assertIn("<dt>Workload</dt><dd>import-1k</dd>", document)
+        self.assertIn("<dt>Operations</dt><dd>1,000</dd>", document)
+        self.assertIn("2 (redacted, fingerprint", document)
+        self.assertIn("Windows 11 · 8 CPUs · 16.0 GB RAM", document)
+        self.assertIn("private bytes peak 10.0 MB over the 5.0 MB budget", document)
+        for secret in ("hunter2", "s3cr3t", "<img"):
+            self.assertNotIn(secret, document)
+        self.assertNotIn("<dt>Workload</dt>", render_html_report(_report()))
+
     def test_hostile_text_is_escaped_everywhere(self) -> None:
         snapshot = snapshot_to_dict(
             make_snapshot(processes=(make_process(100, name=HOSTILE),), timestamp=1000.0)

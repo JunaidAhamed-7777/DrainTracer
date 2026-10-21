@@ -27,6 +27,8 @@ from .analysis import (
     load_samples,
     summarize,
 )
+from .budgets import BUDGET_METRICS, check_budgets
+from .experiment import load_experiment
 from .handle_types import describe_type_growth
 from .report import report_filename, write_text_atomic
 from .resources import resource_path
@@ -145,6 +147,7 @@ def _masthead(
     exit_code = report.get("target_exit_code")
     if isinstance(exit_code, int) and not isinstance(exit_code, bool):
         facts.append(("Exit code", str(exit_code)))
+    facts.extend(_experiment_facts(report, summary))
     items = "".join(f"<div><dt>{_e(label)}</dt><dd>{_e(value)}</dd></div>" for label, value in facts)
     return (
         '<header class="masthead">'
@@ -155,6 +158,56 @@ def _masthead(
         f'<dl class="facts">{items}</dl>'
         "</header>"
     )
+
+
+def _experiment_facts(report: Mapping[str, Any], summary: ReportSummary) -> list[tuple[str, str]]:
+    """Workload labels, redacted arguments, environment and budgets; none for older reports."""
+    experiment = load_experiment(report)
+    if experiment is None:
+        return []
+    facts: list[tuple[str, str]] = []
+    for label, value in (
+        ("Workload", experiment.workload_id),
+        ("Build", experiment.build),
+        ("Operations", None if experiment.operations is None else f"{experiment.operations:,g}"),
+        ("Note", experiment.note),
+    ):
+        if value:
+            facts.append((label, value))
+    if experiment.argument_count:
+        facts.append(("Arguments", f"{experiment.argument_count} (redacted, "
+                                   f"fingerprint {experiment.argument_fingerprint})"))
+    environment = experiment.environment or {}
+    machine = [
+        " ".join(str(part) for part in (environment.get("os"), environment.get("os_release"))
+                 if part)
+    ]
+    if isinstance(environment.get("cpu_count"), int):
+        machine.append(f"{environment['cpu_count']} CPUs")
+    memory = finite(environment.get("total_memory_bytes"))
+    if memory:
+        machine.append(f"{format_bytes(memory)} RAM")
+    machine = [part for part in machine if part]
+    if machine:
+        facts.append(("Machine", " · ".join(machine)))
+    budgets = _recorded_budgets(report)
+    if budgets:
+        checks = check_budgets(budgets, summary.peaks)
+        facts.append(("Budgets", "; ".join(check.describe() for check in checks)))
+    return facts
+
+
+def _recorded_budgets(report: Mapping[str, Any]) -> dict[str, float]:
+    section = report.get("experiment")
+    raw = section.get("budgets") if isinstance(section, Mapping) else None
+    if not isinstance(raw, Mapping):
+        return {}
+    budgets = {}
+    for metric in BUDGET_METRICS:
+        value = finite(raw.get(metric))
+        if value is not None and value > 0:
+            budgets[metric] = value
+    return budgets
 
 
 def _verdict(report: Mapping[str, Any], summary: ReportSummary) -> str:
