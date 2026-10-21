@@ -57,6 +57,9 @@ The report includes:
 - Markers where signals appeared or escalated, warm-up and pause bands,
   and the time the root exited.
 - Continuous signal episodes, events, and the final available process list.
+- A Monitor diagnostics panel: requested and achieved cadence, collection
+  time, the monitor's own CPU and memory, handle-classification passes and
+  age, failed and dropped samples, and how long detection evaluated windows.
 
 Growth is the last measured value minus the first. Drift is a regression
 slope over measured samples. With a warm-up, growth, drift, and resource
@@ -98,15 +101,30 @@ ISO 8601 timestamps include their UTC offset; sample timestamps are Unix
 timestamps. See the [full schema and field descriptions](../working-principle.md#7-leak-report-structure)
 for exact record contents.
 
+Snapshots carry `diagnostics`: requested and achieved (`actual_interval_ms`)
+cadence, `collection_ms`, handle-classification age and cost, failed and
+dropped sample counts, and the monitor's own CPU and memory.
+
 Reports retain bounded history: up to 7,200 snapshots and the most recent
 200 event messages. Once full, snapshot resolution is progressively thinned
 across the whole session rather than losing the beginning. Important state
 changes are preserved up to a bounded allowance; `snapshot_stride` records
-the thinning. Long reports are therefore not guaranteed to contain every
-sample or every event. HTML and comparison summaries are calculated from
-retained snapshots, so thinning can change their peaks and drift estimates
-relative to the complete live history. The headless failure decision uses
-the strongest signal observed during the session.
+the thinning, and the HTML report says "chart thinned 1:N". Long reports are
+therefore not guaranteed to contain every sample or every event.
+
+The top-level `session_facts` section is computed from every sample, not
+the retained ones: `samples` (taken, collected, measured, paused, failed),
+`peaks` (value and timestamp per total), `signals` (worst severity and when
+it was first reached, episode and escalation counts, and time signalled per
+resource), `evaluation` (time after warm-up and time with a judged window),
+`monitor` (cadence, collection time, monitor CPU and memory,
+classification cost, failed and dropped samples), `coverage`, and `chart`
+(stride, stored, and seen snapshots). HTML and comparison summaries use
+these exact facts for peaks, worst severities, episode counts, and sample
+counts; growth and drift still come from retained snapshots. Older reports
+without `session_facts` fall back to retained snapshots, and comparisons
+warn when such a report was thinned. The headless failure decision uses the
+strongest signal observed during the session.
 
 The target's console output is not included. Target paths, process names,
 PIDs, timestamps, settings paths, and event messages may reveal information

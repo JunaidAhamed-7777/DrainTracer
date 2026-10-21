@@ -55,6 +55,10 @@ memory-growth workload. Values and process IDs vary by run.*
   most over the alert window ("mostly worker.exe PID 1234"), say when growth
   came from newly started workers instead, and the header counts processes
   started and exited. Starts, exits, and restarts appear in the event log.
+- **Trust the recording.** Leak health shows how fresh the last sample is,
+  what it cost to collect, and the cadence achieved ("sample 0.4s ago · 12 ms ·
+  cadence 502 ms"), amber when samples go stale; reports add the monitor's own
+  CPU and memory.
 - **Separate startup from steady state.** Use a warm-up and project profiles
   for cache loading, JIT compilation, or heavier workloads.
 - **Investigate handle growth.** See file, socket, registry, event, and other
@@ -275,9 +279,10 @@ draintracer diff .\before.json .\after.json
 draintracer diff .\before.json .\after.json --fail-on-regression
 ```
 
-Use comparable workloads, durations, warm-ups, and settings. Long sessions use
-bounded, thinned history; exported summaries can differ from complete live
-history. Reports include local paths and process details, so review them before
+Use comparable workloads, durations, warm-ups, and settings. Long sessions
+thin the stored chart history; reports then say "chart thinned 1:N", while
+peaks with their times, worst severities, signal episode counts, evaluated
+time, and sample counts stay exact in `session_facts`. Reports include local paths and process details, so review them before
 sharing. The [report guide](docs/reports.md) covers the schema, retention,
 interpretation, and comparison exit codes.
 

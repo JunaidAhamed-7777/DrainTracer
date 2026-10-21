@@ -518,7 +518,20 @@ asset fails HTML export without discarding the completed JSON report.
 - `sample_count` — samples taken during the session.
 - `snapshot_stride` — `1` when `snapshots` holds every sample; `N` when a
   long session was thinned to every Nth sample plus every state change.
-- `snapshots` — chronological exported telemetry snapshots.
+- `session_facts` — exact, bounded summaries of every sample regardless of
+  thinning: `samples` counts by kind, `first_sample_at`/`last_sample_at`,
+  `peaks` (`value` and `timestamp` per total), `signals` per resource
+  (`worst`, `worst_at`, `episodes`, `escalations`, `signal_seconds`,
+  `active`), `evaluation` (`after_warmup_seconds`, `evaluated_seconds`,
+  `first_evaluated_at`), `monitor` (cadence, `collection_ms`, monitor CPU
+  and memory, handle classification cost and age, failed and dropped
+  samples; statistics as `count`/`mean`/`max`), `coverage`, and `chart`
+  (`stride`, `stored`, `seen`). Older reports lack it.
+- `snapshots` — chronological exported telemetry snapshots. Each may carry
+  `diagnostics`: `requested_interval_ms`, `actual_interval_ms` (mean over
+  recent samples), `collection_ms`, `handle_types_age_seconds`,
+  `handle_types_cost_ms`, `failed_samples`, `dropped_snapshots`, and
+  `monitor_cpu_percent`, `monitor_rss_bytes`, `monitor_private_bytes`.
 
 A session keeps up to 7,200 snapshots in memory for export (one hour at
 the default interval) and the most recent 200 event messages. A longer
@@ -530,8 +543,9 @@ or clears, the warm-up ends, monitoring pauses or resumes, the root exits,
 or sampling fails are exempt from thinning up to a limit of 1,800 state
 changes. Later changes can be thinned too, keeping memory bounded even
 when signals flap on nearly every sample. HTML and comparison summaries
-are calculated from retained snapshots, so thinning can change reported
-peaks and drift estimates relative to the complete live history. The
+take peaks, worst severities, episode counts, and sample counts from
+`session_facts` when present, so thinning changes only the chart and the
+growth and drift estimates; older reports fall back to retained snapshots. The
 headless failure decision still uses the strongest signal observed during
 the session.
 

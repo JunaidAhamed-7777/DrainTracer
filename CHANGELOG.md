@@ -27,6 +27,14 @@ current release and [AGENTS.md](AGENTS.md) for the release policy.
   alerts rank contributors over their window, separating growth from newly
   started workers. Process starts, exits, and restarts are logged, the header
   shows start/exit counts, and reports keep live and exited process summaries.
+- Kept exact session facts when chart history is thinned: reports add
+  `session_facts` (peaks with timestamps, worst severity and when it was
+  reached, signal episode counts, evaluated time, sample counts, coverage)
+  that analysis, HTML, and diffs prefer, and mark "chart thinned 1:N".
+- Measured the monitor itself: snapshots carry cadence, collection time,
+  handle-classification age and cost, failed and dropped samples, and
+  DrainTracer's own CPU and memory. Leak health shows sample freshness,
+  summaries report the monitor cost, and HTML reports add a diagnostics panel.
 
 ## v5.1.1 — 2026-10-22
 
