@@ -64,6 +64,7 @@ def render_html_report(report: Mapping[str, Any]) -> str:
             _episodes_panel(summary, start),
             _events_panel(report, start),
             _processes_panel(report),
+            _growth_panel(report, start),
             '</main>',
             _footer(report, version),
         )
@@ -365,6 +366,80 @@ def _processes_panel(report: Mapping[str, Any]) -> str:
     return (
         '<section class="panel" aria-label="Processes">'
         f'<div class="panel-head"><h2>Processes</h2><p class="hint">{_e(caption)}</p></div>'
+        f"{body}</section>"
+    )
+
+
+GROWTH_ROWS = 10
+
+
+def _growth_panel(report: Mapping[str, Any], start: float | None) -> str:
+    """Processes ranked by private-byte growth, exited ones included.
+
+    Reports from before per-process summaries have no ``processes``
+    section, so the panel is left out for them.
+    """
+    section = report.get("processes")
+    if not isinstance(section, Mapping):
+        return ""
+    summaries = [
+        item
+        for key in ("live", "exited")
+        for item in (section.get(key) or ())
+        if isinstance(item, Mapping)
+    ]
+
+    def growth(item: Mapping[str, Any], metric: str) -> float | None:
+        values = item.get("growth")
+        return finite(values.get(metric)) if isinstance(values, Mapping) else None
+
+    summaries.sort(key=lambda item: -(growth(item, "private_bytes") or 0.0))
+    rows = []
+    for item in summaries[:GROWTH_ROWS]:
+        private = growth(item, "private_bytes")
+        peak = item.get("peak")
+        peak_private = finite(peak.get("private_bytes")) if isinstance(peak, Mapping) else None
+        exited = finite(item.get("exited_at"))
+        cells = [
+            (str(item.get("pid", "")), "num"),
+            (str(item.get("name") or "unknown"), ""),
+            (_offset(finite(item.get("first_seen")), start), "num"),
+            (_offset(exited, start) if exited is not None else "running", "num"),
+            (_signed("memory", private) if private is not None else "n/a", "num"),
+            (format_bytes(peak_private) if peak_private is not None else "n/a", "num"),
+        ]
+        for metric in ("handles", "threads"):
+            value = growth(item, metric)
+            cells.append((_signed(metric, value) if value is not None else "n/a", "num"))
+        rows.append(
+            "<tr>"
+            + "".join(
+                f'<td class="{css}">{_e(text)}</td>' if css else f"<td>{_e(text)}</td>"
+                for text, css in cells
+            )
+            + "</tr>"
+        )
+    if rows:
+        body = _table(
+            (
+                ("PID", "num"), "Name", ("Seen from", "num"), ("Exited", "num"),
+                ("Private growth", "num"), ("Peak private", "num"),
+                ("Handle growth", "num"), ("Thread growth", "num"),
+            ),
+            rows,
+        )
+    else:
+        body = '<p class="empty">No per-process history was recorded.</p>'
+    counts = section.get("counts")
+    caption = "Growth from first to last sample of each process; exited processes included."
+    if isinstance(counts, Mapping):
+        caption = (
+            f"{_int(counts.get('started'))} started, {_int(counts.get('exited'))} exited, "
+            f"{_int(counts.get('restarted'))} restarted. " + caption
+        )
+    return (
+        '<section class="panel" aria-label="Growing processes">'
+        f'<div class="panel-head"><h2>Growing processes</h2><p class="hint">{_e(caption)}</p></div>'
         f"{body}</section>"
     )
 

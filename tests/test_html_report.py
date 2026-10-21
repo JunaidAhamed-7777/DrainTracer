@@ -160,6 +160,27 @@ class RenderTests(unittest.TestCase):
         self.assertIn("Monitoring ended before the 10s window filled.", render_html_report(short))
         self.assertNotIn("INCONCLUSIVE", render_html_report(_report()))  # field absent
 
+    def test_growing_processes_are_ranked_with_exited_ones(self) -> None:
+        def summary(pid, name, growth, exited_at=None):
+            return {
+                "pid": pid, "name": name, "first_seen": 1000.0, "exited_at": exited_at,
+                "peak": {"private_bytes": 50 * 1024 * 1024},
+                "growth": {"private_bytes": growth, "handles": 3, "threads": 0},
+            }
+
+        processes = {
+            "counts": {"live": 2, "started": 3, "exited": 1, "restarted": 1},
+            "live": [summary(1, "steady.exe", 0), summary(2, "helper.exe", 1024 * 1024)],
+            "exited": [summary(3, "leaky.exe", 40 * 1024 * 1024, exited_at=1003.0)],
+        }
+        document = render_html_report(_report(processes=processes))
+        self.assertIn("Growing processes", document)
+        self.assertIn("3 started, 1 exited, 1 restarted.", document)
+        self.assertLess(document.index("leaky.exe"), document.index("helper.exe"))
+        self.assertIn("+40.0 MB", document)
+        self.assertIn('<td class="num">+00:00:03</td>', document)
+        self.assertNotIn("Growing processes", render_html_report(_report()))
+
     def test_legacy_and_empty_reports_render(self) -> None:
         legacy = render_html_report(
             {"events": ["10:00:00 Launched old.exe"], "snapshots": [], "target_path": "old.exe"}
