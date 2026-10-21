@@ -219,6 +219,16 @@ class KeyboardSelectionTests(unittest.TestCase):
             self.choose(KeyboardInterrupt())
         self.display.return_value.__exit__.assert_called_once()
 
+    def test_tiny_keyboard_frames_keep_errors_long_input_and_prompt_within_height(self) -> None:
+        self.console = make_console(width=24, height=10)
+        self.assertIsNone(self.choose(PickerKey("text", "999"), PickerKey("enter"),
+                                      PickerKey("text", "pasted search " * 50), PickerKey("escape")))
+        frames = self.display.return_value.__enter__.return_value.update.call_args_list
+        for call in frames:
+            with self.subTest(frame=call):
+                lines = self.console.render_lines(call.args[0], self.console.options, pad=False)
+                self.assertLessEqual(len(lines), self.console.height)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -5,6 +5,11 @@ feature milestones remain in [future-plan.md](future-plan.md), and the complete
 commit history records earlier changes. Versions follow the repository rule:
 each focused change advances the runtime version by exactly `0.1`.
 
+## v3.9 — 2026-10-21
+
+- Kept keyboard-picker input and notices on single lines so long pasted
+  text or an invalid PID cannot hide the prompt in small terminals.
+
 ## v3.8 — 2026-10-21
 
 - Enabled Up/Down navigation and Enter selection in the interactive program

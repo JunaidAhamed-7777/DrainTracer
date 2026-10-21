@@ -134,7 +134,7 @@ def _select_process(
         if _compact(console):
             help_text = "Name or PID; /search TEXT\n/next /prev /refresh\n/clear | Q cancel"
             if keyboard:
-                help_text = "Up/Down; Enter selects\nPID/name; /search TEXT\n/next /prev /refresh\n/clear | Esc/Q cancel"
+                help_text = "Up/Down/Enter; PID/name\n/search /clear /refresh\n/next /prev | Esc/Q"
         else:
             help_text = "Type a name to search, or enter a listed PID to hook."
             if keyboard:
@@ -144,12 +144,13 @@ def _select_process(
                 help_text += " | Esc: cancel"
         parts = [view]
         if notice:
-            parts.append(Text(notice, style=PALETTE.warn))
+            parts.append(Text(notice, style=PALETTE.warn,
+                              no_wrap=keyboard is not None, overflow="ellipsis"))
         frame = Group(*parts, Text(help_text, style=PALETTE.muted))
         try:
             if keyboard:
                 assert live is not None
-                prompt = Text("Program or search: ", style="bold")
+                prompt = Text("Program or search: ", style="bold", no_wrap=True, overflow="ellipsis")
                 prompt.append(_label(buffer))
                 live.update(Group(frame, prompt), refresh=True)
                 key = keyboard.read()
