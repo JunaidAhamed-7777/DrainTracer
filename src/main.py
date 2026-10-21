@@ -6,6 +6,7 @@ import argparse
 import json
 import logging
 import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -63,6 +64,134 @@ def _installation_status(root: Path) -> tuple[tuple[str, ...], str | None]:
     except (OSError, ValueError) as exc:
         return (), f"Cannot inspect required installation files: {exc}"
     return tuple(sorted(missing)), None
+
+
+def _run_installation_git(root: Path, args: list[str]) -> str:
+    """Run bounded, noninteractive Git without a shell or application imports."""
+    environment = os.environ.copy()
+    environment.update(GIT_TERMINAL_PROMPT="0", GCM_INTERACTIVE="Never")
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), *args],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            shell=False,
+            env=environment,
+            timeout=60,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError("Git is not installed or is not on PATH.") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("Git timed out after 60 seconds; check network access.") from exc
+    except OSError as exc:
+        raise RuntimeError(f"Cannot run Git: {exc}") from exc
+    if result.returncode:
+        detail = result.stderr.strip() or result.stdout.strip() or f"exit {result.returncode}"
+        raise RuntimeError(f"git {' '.join(args)} failed: {detail}")
+    return result.stdout.strip()
+
+
+def _repair_installation(root: Path) -> bool:
+    """Pull normally, then restore only absent required files tracked by Git."""
+    root = root.resolve()
+    try:
+        checkout = Path(_run_installation_git(root, ["rev-parse", "--show-toplevel"]))
+        if checkout.resolve() != root:
+            raise RuntimeError("The installation is not the root of its own Git checkout.")
+        print("Running git pull --ff-only origin main...")
+        output = _run_installation_git(root, ["pull", "--ff-only", "origin", "main"])
+        if output:
+            print(output)
+        # If the snapshot was missing, restore it first and then read its
+        # inventory. Never infer the expected tree from the incomplete folder.
+        for attempt in range(3):
+            missing, error = _installation_status(root)
+            if error:
+                raise RuntimeError(error)
+            if not missing:
+                return True
+            if attempt == 2:
+                raise RuntimeError("Required files are still missing after recovery.")
+            for relative in missing:
+                path = root / relative
+                if not path.resolve().is_relative_to(root):
+                    raise RuntimeError(f"Refusing to restore outside the installation: {relative}")
+                if path.exists() or path.is_symlink():
+                    raise RuntimeError(f"An existing path blocks the required file: {relative}")
+                # An index deletion is a staged user change, not a repair target.
+                _run_installation_git(root, ["ls-files", "--error-unmatch", "--", relative])
+            _run_installation_git(
+                root, ["restore", "--source=HEAD", "--worktree", "--", *missing]
+            )
+        return False
+    except (RuntimeError, OSError, ValueError) as exc:
+        print(f"Recovery failed: {exc}")
+        print("Restore the listed files in this checkout and run DrainTracer again.")
+        return False
+
+
+def _check_installation(root: Path, argv: list[str]) -> int | None:
+    """Return None to continue startup, or an exit code after recovery/cancel."""
+    attempted = os.environ.pop("_DRAINTRACER_REPAIR_ATTEMPTED", None) == "1"
+    missing, error = _installation_status(root)
+    if not missing and error is None:
+        return None
+    print("DrainTracer installation check failed.")
+    print(f"Installation folder: {root}")
+    if error:
+        print(error)
+        print("Review runtime-manifest.json or restore it from Git, then start again.")
+        return 2
+    print("Missing required files:")
+    for relative in missing:
+        print(f"  - {relative}")
+    if attempted:
+        print("Recovery was already attempted. Restore the missing files before starting again.")
+        return 2
+    arguments = argv[:argv.index("--")] if "--" in argv else argv
+    try:
+        interactive = sys.stdin is not None and sys.stdin.isatty()
+    except (OSError, ValueError):
+        interactive = False
+    if "--headless" in arguments or not interactive:
+        print("Automatic recovery needs an interactive terminal; no files were changed.")
+        print("Run DrainTracer interactively, or pull and restore the missing files manually.")
+        return 2
+    while True:
+        try:
+            response = input(
+                "Press Enter to git pull and restore missing required files (Q to quit): "
+            ).strip().lower()
+        except EOFError:
+            print("Recovery canceled.")
+            return 2
+        except KeyboardInterrupt:
+            print("\nRecovery canceled.")
+            return 130
+        if response == "q":
+            print("Recovery canceled.")
+            return 2
+        if not response:
+            break
+        print("Press Enter to recover, or Q to quit.")
+    try:
+        if not _repair_installation(root):
+            return 2
+        print("Required files are available. Restarting DrainTracer...")
+        os.environ["_DRAINTRACER_REPAIR_ATTEMPTED"] = "1"
+        os.execv(sys.executable, [sys.executable, str(root / "src/main.py"), *argv])
+    except KeyboardInterrupt:
+        os.environ.pop("_DRAINTRACER_REPAIR_ATTEMPTED", None)
+        print("\nRecovery interrupted.")
+        return 130
+    except OSError as exc:
+        os.environ.pop("_DRAINTRACER_REPAIR_ATTEMPTED", None)
+        print(f"Cannot restart DrainTracer: {exc}")
+        return 2
+    return 0
 
 
 from rich import box
