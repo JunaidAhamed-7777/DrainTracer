@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "draintracer"
 dynamic = ["version", "dependencies"]
 description = "Resource growth monitoring for Windows process trees"
-readme = "README.md"
+readme = "docs/pypi.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]

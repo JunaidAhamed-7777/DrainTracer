@@ -62,17 +62,25 @@ memory-growth workload. Values and process IDs vary by run.*
 
 ## Get started
 
-You need **Windows 10/11** and **Python 3.10+**. Install from GitHub in
-PowerShell; Git is not required:
+You need **Windows 10/11** and **Python 3.10+**. Use PowerShell for the
+commands below.
+
+### Install from PyPI (after the first release is published)
 
 ```powershell
-python -m pip install https://github.com/JunaidAhamed-7777/DrainTracer/archive/refs/heads/main.zip
+python -m pip install draintracer
 draintracer --help
 draintracer
 ```
 
-This installs the current `main` branch. DrainTracer is not yet published
-on PyPI. You can also install a built wheel or source archive with
+The first PyPI publication is being prepared. Until it succeeds, install
+the current `main` branch from GitHub without needing Git:
+
+```powershell
+python -m pip install https://github.com/JunaidAhamed-7777/DrainTracer/archive/refs/heads/main.zip
+```
+
+You can also install a built wheel or source archive with
 `python -m pip install PATH_TO_FILE`.
 
 If the command is not on `PATH`, use `python -m draintracer --help` or

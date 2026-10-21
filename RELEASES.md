@@ -1,9 +1,18 @@
-# Current version: v5.1.0
+# Current version: v5.1.1
 
 Published releases are listed newest first. The exact version here matches
 `DashboardApp.VERSION` in [src/dashboard.py](src/dashboard.py). The README
 shows the release series as `vMAJOR.MINOR.0`; for example, `v5.0.1` still
 belongs to series `v5.0.0`.
+
+## v5.1.1 — 2026-10-22
+
+- Prepared the first PyPI distribution with a dedicated package description
+  whose documentation links and images work outside GitHub.
+- Added a tested GitHub Actions publishing workflow using PyPI Trusted
+  Publishing, with release tags checked against the runtime version.
+- Added fresh-environment wheel verification for the installed command,
+  bundled assets, and JSON/HTML exports before publishing.
 
 ## v5.1.0 — 2026-10-22
 

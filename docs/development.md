@@ -47,7 +47,7 @@ created under `dist`:
 
 ```powershell
 python -m venv C:\temp\draintracer-wheel-test
-C:\temp\draintracer-wheel-test\Scripts\python.exe -m pip install .\dist\draintracer-5.1.0-py3-none-any.whl
+C:\temp\draintracer-wheel-test\Scripts\python.exe -m pip install .\dist\draintracer-5.1.1-py3-none-any.whl
 Set-Location C:\temp
 .\draintracer-wheel-test\Scripts\draintracer.exe --help
 .\draintracer-wheel-test\Scripts\python.exe -m draintracer --help
@@ -69,9 +69,47 @@ Python script targets use the monitor's interpreter. Install DrainTracer in
 the target's environment, or select that environment's `python.exe` with
 `--target` and put the script path and arguments after `--`.
 
-Building and local installation do not publish a release. PyPI publication
-is a separate future step; do not advertise `pip install draintracer` until
-a release is actually available there.
+The PyPI description comes from [docs/pypi.md](pypi.md). Keep its commands
+and feature claims aligned with the README, and use public absolute URLs
+for images and documentation links. It is included in the source archive
+so metadata preparation works outside a Git checkout.
+
+## Publish to PyPI
+
+Building and local installation do not publish a release. Publication uses
+[.github/workflows/publish-pypi.yml](../.github/workflows/publish-pypi.yml)
+and PyPI Trusted Publishing. The first publication is pending until its
+publisher setup and workflow run succeed.
+
+Before the first upload, configure a pending publisher in the owner's
+PyPI account with these exact values:
+
+- **PyPI project name:** `draintracer`
+- **GitHub owner:** `JunaidAhamed-7777`
+- **GitHub repository:** `DrainTracer`
+- **Workflow filename:** `publish-pypi.yml`
+- **Environment name:** `pypi`
+
+Create the matching `pypi` environment in the GitHub repository. See
+[PyPI's publisher setup instructions](https://docs.pypi.org/trusted-publishers/adding-a-publisher/)
+for the account-side configuration. A missing project page alone does not
+guarantee that PyPI will accept the project name.
+
+Prepare the runtime version and release notes together, complete the
+repository checks, and validate both built artifacts with
+`python -m twine check --strict`. The release tag must match
+`DashboardApp.VERSION` exactly, including its leading `v`. Pushing that
+tag starts the publishing workflow. Its manual `workflow_dispatch` entry
+accepts a `release_tag` input to retry the same release from its tag.
+Published distribution filenames cannot be overwritten with changed
+contents; prepare a new release version for changed published artifacts.
+
+After a successful upload, verify the
+[PyPI project page](https://pypi.org/project/draintracer/) and install the
+published version in a fresh environment from PyPI. Run
+`python -m draintracer --version` and a bounded monitoring/export check
+outside the checkout. Only then remove the README's pending-publication
+wording and present the PyPI install as available.
 
 ## Find the right module
 

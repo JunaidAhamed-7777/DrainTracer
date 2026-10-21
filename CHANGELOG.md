@@ -8,6 +8,12 @@ follow Semantic Versioning once per published release, with major bumps
 reserved for the repository owner. See [RELEASES.md](RELEASES.md) for the
 current release and [AGENTS.md](AGENTS.md) for the release policy.
 
+## v5.1.1 — 2026-10-22
+
+- Fixed the PyPI package description's image and documentation links.
+- Added a validated Trusted Publishing workflow and installed-wheel smoke
+  checks for the first PyPI upload. See [RELEASES.md](RELEASES.md).
+
 ## v5.1.0 — 2026-10-22
 
 - Added pip installation, the `draintracer` command, and wheel/source builds

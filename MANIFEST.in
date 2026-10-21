@@ -6,3 +6,4 @@ include leak_reports/frames/report.js
 recursive-include src *.py
 recursive-include tests *.py
 include examples/drainrc.toml
+include docs/pypi.md
