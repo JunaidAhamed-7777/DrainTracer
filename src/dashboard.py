@@ -48,6 +48,7 @@ from .units import format_duration
 from .view_evidence import EvidenceViewMixin
 from .view_monitor import MonitorViewMixin
 from .view_processes import ProcessesViewMixin
+from .view_timeline import TimelineViewMixin
 from .widgets import LegacySafe, Lines, Sized, Sparkline
 
 
@@ -61,6 +62,7 @@ VIEWS = {
     "1": ("overview", "OVERVIEW", "OVR"),
     "2": ("processes", "PROCESSES", "PROC"),
     "3": ("evidence", "EVIDENCE", "EVID"),
+    "4": ("timeline", "TIMELINE", "TIME"),
     "5": ("monitor", "MONITOR", "MON"),
 }
 VIEW_NAMES = tuple(name for name, _label, _short in VIEWS.values())
@@ -68,7 +70,9 @@ VIEW_NAMES = tuple(name for name, _label, _short in VIEWS.values())
 HELP_SCROLL = {UP: -1, DOWN: 1, PAGE_UP: -10, PAGE_DOWN: 10, HOME: -10**6, END: 10**6}
 
 
-class DashboardApp(ProcessesViewMixin, EvidenceViewMixin, MonitorViewMixin, MonitorSession):
+class DashboardApp(
+    ProcessesViewMixin, EvidenceViewMixin, TimelineViewMixin, MonitorViewMixin, MonitorSession
+):
     """Render a monitor session live in the terminal and handle its controls.
 
     The overview shows everything at a glance; numbered views focus on one
@@ -118,6 +122,7 @@ class DashboardApp(ProcessesViewMixin, EvidenceViewMixin, MonitorViewMixin, Moni
         self._view = "overview"
         self._init_processes_view()
         self._init_evidence_view()
+        self._init_timeline_view()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -368,6 +373,7 @@ class DashboardApp(ProcessesViewMixin, EvidenceViewMixin, MonitorViewMixin, Moni
         "overview": "resource cards, process tree, leak health and events",
         "processes": "select, search and rank processes by growth; exited ones stay listed",
         "evidence": "why a signal was or was not raised: each window's checks and values",
+        "timeline": "one chart at a time with process, pause, signal and marker annotations",
         "monitor": "sampling cadence and cost, coverage, freshness, monitor footprint",
     }
 
@@ -476,6 +482,10 @@ class DashboardApp(ProcessesViewMixin, EvidenceViewMixin, MonitorViewMixin, Moni
                             style=palette.muted)
         status, status_color = self._status(self.snapshot)
         right = Text(no_wrap=True)
+        if self.timeline_frozen:
+            # The view is frozen, not monitoring: say so wherever the user is.
+            right.append(" TIMELINE FROZEN ", style=f"bold {palette.ink} on {palette.warn}")
+            right.append(" ")
         right.append(f" {glyphs.dot} {status} ", style=f"bold {palette.ink} on {status_color}")
         snapshot = self.snapshot
         if snapshot is not None and snapshot.severity != LeakSeverity.NONE:
@@ -652,6 +662,9 @@ class DashboardApp(ProcessesViewMixin, EvidenceViewMixin, MonitorViewMixin, Moni
             ("  resource leak monitor" if roomy else "", palette.muted),
         )
         right = Text.assemble(
+            (" TIMELINE FROZEN " if self.timeline_frozen else "",
+             f"bold {palette.ink} on {palette.warn}"),
+            (" " if self.timeline_frozen else "", ""),
             (f" {glyphs.dot} {status} ", f"bold {palette.ink} on {status_color}"),
             (f"  {time.strftime('%H:%M:%S')} ", palette.muted),
         )

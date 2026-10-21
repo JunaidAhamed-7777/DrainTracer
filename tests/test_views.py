@@ -387,6 +387,129 @@ class EvidenceViewTests(ViewRenderingMixin, unittest.TestCase):
         self.assertIn("SCORE", wide)
 
 
+class TimelineHelperTests(unittest.TestCase):
+    def test_columns_keep_the_highest_sample_and_show_pauses_as_gaps(self) -> None:
+        from src.view_timeline import bucket_columns
+
+        points = [(float(t), float(t)) for t in range(10)] + [(30.0, 5.0), (31.0, 6.0)]
+        columns, per_column = bucket_columns(points, 0.0, 31.0, 31, gap_seconds=1.5)
+        self.assertEqual(columns[0], 0.0)
+        self.assertEqual(columns[9], 9.0)
+        self.assertIsNone(columns[15])  # the 20 s pause is a gap, not a flat line
+        self.assertEqual(columns[-1], 6.0)
+        self.assertLess(per_column, 1.2)
+        dense, per_column = bucket_columns([(t / 4, float(t)) for t in range(40)], 0.0, 9.75, 10, 1.0)
+        self.assertEqual(dense[0], 3.0)  # max of the four samples in the first column
+        self.assertAlmostEqual(per_column, 4.0)
+
+    def test_short_gaps_repeat_the_previous_value(self) -> None:
+        from src.view_timeline import bucket_columns
+
+        columns, _ = bucket_columns([(0.0, 1.0), (1.0, 2.0)], 0.0, 1.0, 8, gap_seconds=1.5)
+        self.assertTrue(all(value is not None for value in columns))
+
+    def test_mark_row_places_symbols_and_merges_collisions(self) -> None:
+        from src.events import TimelineKind, TimelineMark
+        from src.view_timeline import mark_row
+
+        marks = [
+            TimelineMark(0.0, TimelineKind.STARTED, "a"),
+            TimelineMark(5.0, TimelineKind.MARKER, "marker 3", index=3),
+            TimelineMark(5.1, TimelineKind.EXITED, "b"),
+            TimelineMark(99.0, TimelineKind.PAUSED, "outside"),
+        ]
+        row = mark_row(marks, 0.0, 10.0, 10, window_start=9.0)
+        self.assertEqual(row, "+    *   [")
+
+
+class TimelineViewTests(ViewRenderingMixin, unittest.TestCase):
+    VIEW_KEY = "4"
+
+    def _app(self, width: int = 120, height: int = 40) -> DashboardApp:
+        app = _app(width, height)
+        growing_session(app)
+        app._handle_key("4")
+        return app
+
+    def test_charts_private_bytes_with_annotations_and_decimation(self) -> None:
+        app = self._app()
+        output = render_text(app)
+        self.assertIn("TIMELINE  PRIVATE BYTES", output)
+        self.assertIn("25 samples over 12s", output)
+        self.assertIn("one sample per column at most", output)
+        self.assertIn("10s window start, baseline", output)
+        self.assertIn("x exit", output)
+        self.assertIn("! signal", output)
+        self.assertIn("worker.exe PID 1 exited", output)
+        self.assertIn("markers show timing, not cause", output)
+
+    def test_left_right_cycle_the_chart(self) -> None:
+        app = self._app()
+        app._handle_key("right")
+        self.assertEqual(app.timeline_metric, "handles")
+        self.assertIn("TIMELINE  HANDLES", render_text(app))
+        app._handle_key("left")
+        app._handle_key("left")
+        self.assertEqual(app.timeline_metric, "cpu_percent")
+
+    def test_markers_appear_on_the_chart(self) -> None:
+        app = self._app()
+        app._handle_key("m")
+        marker = app.markers[-1]
+        # Place the marker inside the charted range, as a live session would.
+        app._timeline[-1] = replace(marker, timestamp=1005.0)
+        output = render_text(app)
+        self.assertIn("1 marker", output)
+        self.assertIn("marker 1", output)
+
+    def test_freeze_holds_the_view_while_sampling_continues(self) -> None:
+        app = self._app()
+        app._handle_key("f")
+        self.assertTrue(app.timeline_frozen)
+        before = render_text(app)
+        self.assertIn("FROZEN at", before)
+        self.assertIn("0 new samples", before)
+        growing_session_more(app)
+        output = render_text(app)
+        self.assertIn("5 new samples", output)
+        self.assertIn("25 samples over 12s", output)  # the frozen range, not the new one
+        self.assertIn("TIMELINE FROZEN", output.splitlines()[3])  # the status line
+        self.assertFalse(app.detector.is_paused)
+        app._handle_key("1")
+        self.assertIn("TIMELINE FROZEN", render_text(app).splitlines()[0])
+        app._handle_key("4")
+        app._handle_key("F")
+        self.assertFalse(app.timeline_frozen)
+        self.assertIn("30 samples", render_text(app))
+
+    def test_paused_samples_leave_a_gap_and_a_mark(self) -> None:
+        from helpers import make_snapshot
+
+        app = _app(120, 40)
+        for index in range(10):
+            app._accept_snapshot(make_snapshot(timestamp=1000.0 + index * 0.5))
+        app._accept_snapshot(make_snapshot(timestamp=1005.0, paused=True))
+        for index in range(10):
+            app._accept_snapshot(make_snapshot(timestamp=1030.0 + index * 0.5))
+        app._handle_key("4")
+        output = render_text(app)
+        self.assertIn("P pause", output)
+        self.assertIn("> resume", output)
+
+    def test_before_enough_samples(self) -> None:
+        app = _app(80, 24)
+        app._handle_key("4")
+        output = render_text(app)
+        self.assertIn("Collecting samples for the timeline", output)
+        self.assert_fills(output, 80, 24)
+
+
+def growing_session_more(app: DashboardApp, samples: int = 5) -> None:
+    root = replace(make_process(100, ppid=1, name="parent.exe"), create_time=1.0)
+    trees = [[root, _worker(2, 200 + index)] for index in range(samples)]
+    sample_trees(app, trees, start=100)
+
+
 class MonitorViewTests(ViewRenderingMixin, unittest.TestCase):
     VIEW_KEY = "5"
 
