@@ -60,6 +60,8 @@ current release and [AGENTS.md](AGENTS.md) for the release policy.
   tree has exited, so an ended run no longer looks like an access problem.
 - Logged a budget that the first sample already exceeds after the headless
   launch line instead of before it.
+- Redacted secret options such as `--password value` pasted into experiment
+  labels, not only `password=value` assignments.
 
 ## v5.1.1 — 2026-10-22
 

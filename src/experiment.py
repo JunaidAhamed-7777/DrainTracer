@@ -45,6 +45,12 @@ _SECRET_ASSIGNMENT = re.compile(
     r"(?i)\b((?:[\w.-]*[_.-])?(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|"
     r"auth|credential)s?)(\s*[:=]\s*)(\"[^\"]*\"|'[^']*'|[^\s,;&]+)"
 )
+# Command-line style secrets pasted into a note: ``--password hunter2``.
+# A following option (``--token --verbose``) is not taken as the value.
+_SECRET_FLAG = re.compile(
+    r"(?i)(?<![\w-])(--?(?:[\w-]*[_-])?(?:password|passwd|pwd|secret|token|api[_-]?key|"
+    r"access[_-]?key|credential)s?)(\s+)(?!-)(\"[^\"]*\"|'[^']*'|[^\s,;&]+)"
+)
 _BEARER = re.compile(r"(?i)\b(bearer|basic)(\s+)[A-Za-z0-9._~+/=-]{8,}")
 _URL_CREDENTIALS = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)[^/\s:@]+:[^/\s@]+@")
 
@@ -74,6 +80,7 @@ def redact_text(value: str) -> str:
     text = _SECRET_ASSIGNMENT.sub(
         lambda match: f"{match.group(1)}{match.group(2)}{REDACTED}", text
     )
+    text = _SECRET_FLAG.sub(lambda match: f"{match.group(1)}{match.group(2)}{REDACTED}", text)
     text = _BEARER.sub(lambda match: f"{match.group(1)}{match.group(2)}{REDACTED}", text)
     return text
 

@@ -44,6 +44,16 @@ class RedactionTests(unittest.TestCase):
         )
         self.assertEqual(redact_text("build 1.4.2 nightly"), "build 1.4.2 nightly")
 
+    def test_secret_options_pasted_from_a_command_line_are_redacted(self) -> None:
+        self.assertEqual(redact_text("ran with --password hunter2 -v"),
+                         f"ran with --password {REDACTED} -v")
+        self.assertEqual(redact_text("--api-key 'a b' --db-token xyz"),
+                         f"--api-key {REDACTED} --db-token {REDACTED}")
+        self.assertEqual(redact_text("-pwd s3cr3t"), f"-pwd {REDACTED}")
+        # A following option is not a value, and plain words are left alone.
+        self.assertEqual(redact_text("--token --verbose"), "--token --verbose")
+        self.assertEqual(redact_text("token bucket sizing"), "token bucket sizing")
+
     def test_labels_are_trimmed_and_blank_ones_dropped(self) -> None:
         self.assertIsNone(clean_label("   "))
         self.assertIsNone(clean_label(None))
