@@ -25,6 +25,10 @@ There is currently no package build step or installed console entry point.
 
 - [main.py](../src/main.py): argument parsing, settings resolution,
   startup artwork from `TITLE.txt`, and launch/attach dispatch.
+- [runtime-manifest.json](../runtime-manifest.json): committed inventory of
+  required runtime modules and assets. Update it when adding, moving, or
+  removing runtime files; do not include generated reports or caches. The
+  installation tests verify its coverage of the source modules.
 - [startup.py](../src/startup.py): keyboard startup choices.
 - [process_picker.py](../src/process_picker.py) and
   [running_processes.py](../src/running_processes.py): searchable, paged

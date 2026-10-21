@@ -3,11 +3,67 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import sys
 from pathlib import Path
 from typing import Any
+
+_INSTALLATION_MANIFEST = "runtime-manifest.json"
+_INSTALLATION_CORE = frozenset({
+    _INSTALLATION_MANIFEST,
+    "src/main.py",
+    "src/__init__.py",
+    "requirements.txt",
+    "TITLE.txt",
+    "leak_reports/frames/report.css",
+    "leak_reports/frames/report.js",
+})
+
+
+def _installation_status(root: Path) -> tuple[tuple[str, ...], str | None]:
+    """Read the committed snapshot without importing application dependencies.
+
+    The snapshot is never regenerated from the running installation: doing so
+    could silently accept an incomplete checkout as the expected structure.
+    """
+    root = root.resolve()
+    manifest = root / _INSTALLATION_MANIFEST
+    try:
+        if not manifest.resolve().is_relative_to(root):
+            return (), "The runtime snapshot resolves outside the installation."
+        if not manifest.is_file():
+            return (_INSTALLATION_MANIFEST,), None
+        snapshot = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, ValueError) as exc:
+        return (), f"Cannot read the runtime snapshot: {exc}"
+    if (not isinstance(snapshot, dict)
+            or type(snapshot.get("schema")) is not int or snapshot["schema"] != 1):
+        return (), "The runtime snapshot has an unsupported schema."
+    required = snapshot.get("required_files")
+    if not isinstance(required, list) or not required:
+        return (), "The runtime snapshot needs a nonempty required_files list."
+    for relative in required:
+        if (not isinstance(relative, str) or not relative
+                or any(character in relative for character in "\\:\x00")
+                or any(ord(character) < 32 for character in relative)
+                or any(part in ("", ".", "..") for part in relative.split("/"))):
+            return (), "The runtime snapshot contains an unsafe file path."
+    if len(set(required)) != len(required) or not _INSTALLATION_CORE.issubset(required):
+        return (), "The runtime snapshot is duplicated or omits core files."
+    missing = []
+    try:
+        for relative in required:
+            path = root / relative
+            if not path.resolve().is_relative_to(root):
+                return (), f"Required file resolves outside the installation: {relative}"
+            if not path.is_file():
+                missing.append(relative)
+    except (OSError, ValueError) as exc:
+        return (), f"Cannot inspect required installation files: {exc}"
+    return tuple(sorted(missing)), None
+
 
 from rich import box
 from rich.console import Console
