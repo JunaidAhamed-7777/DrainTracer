@@ -5,8 +5,6 @@ from __future__ import annotations
 import logging
 import math
 import os
-import select
-import sys
 import time
 import webbrowser
 from pathlib import Path
@@ -32,6 +30,7 @@ from .events import (
 )
 from .config import MonitorSettings
 from .handle_types import describe_type_growth
+from .keys import ESCAPE, KeyReader, normalize_key
 from .report import DEFAULT_REPORT_DIR
 from .session import MonitorSession
 from .theme import PALETTE
@@ -85,6 +84,7 @@ class DashboardApp(MonitorSession):
         self._sort_mode = SORT_MODES[0]
         self._kill_armed_until = 0.0
         self._cpu_cores = psutil.cpu_count(logical=True) or 1
+        self._keys = KeyReader()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -210,11 +210,12 @@ class DashboardApp(MonitorSession):
     def _handle_key(self, key: str | None) -> None:
         if not key:
             return
+        key = normalize_key(key)
         normalized = key.lower()
 
-        if key in {"?", "\x1b"} or normalized == "h":
+        if key in {"?", ESCAPE} or normalized == "h":
             # Esc only closes; ? and H toggle.
-            self._show_help = False if key == "\x1b" else not self._show_help
+            self._show_help = False if key == ESCAPE else not self._show_help
         elif normalized == "s":
             position = SORT_MODES.index(self._sort_mode)
             self._sort_mode = SORT_MODES[(position + 1) % len(SORT_MODES)]
@@ -1359,23 +1360,9 @@ class DashboardApp(MonitorSession):
             LeakSeverity.CRITICAL: palette.critical,
         }[severity]
 
-    @staticmethod
-    def _read_key() -> str | None:
-        if os.name == "nt":
-            import msvcrt
-
-            if msvcrt.kbhit():
-                key = msvcrt.getwch()
-                if key in ("\x00", "\xe0") and msvcrt.kbhit():
-                    msvcrt.getwch()
-                    return None
-                return key
-            return None
-
-        if not sys.stdin.isatty():
-            return None
-        ready, _, _ = select.select([sys.stdin], [], [], 0)
-        return sys.stdin.read(1) if ready else None
+    def _read_key(self) -> str | None:
+        """The next key as a character or a name such as ``up`` (see ``keys``)."""
+        return self._keys.read()
 
 
 __all__ = ["DashboardApp"]
