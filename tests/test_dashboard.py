@@ -377,13 +377,31 @@ class HelpAndSortTests(unittest.TestCase):
         app._handle_key("s")
         self.assertEqual(app._sort_mode, "memory")
         self.assertEqual(order(), [200, 300, 100])
-        self.assertIn("by memory", self._render(app))
+        self.assertIn("by private bytes", self._render(app))
         app._handle_key("S")
         self.assertEqual(order(), [100, 300, 200])
         app._handle_key("s")
         self.assertEqual(order()[0], 200)  # cpu
         app._handle_key("s")
         self.assertEqual(app._sort_mode, "tree")
+
+    def test_narrow_process_tables_keep_private_before_rss(self) -> None:
+        mib = 1024 * 1024
+        app = _app()
+        app._accept_snapshot(
+            make_snapshot(processes=(make_process(100, ppid=1, rss=300 * mib, private=25 * mib),))
+        )
+        for width in (36, 60, 80):
+            with self.subTest(width=width):
+                with app.console.capture() as capture:
+                    app.console.print(app._process_table(width, 10), width=width)
+                output = capture.get()
+                self.assertIn("PRIVATE", output)
+                self.assertIn("25.0 MB", output)
+                if width < 72:
+                    self.assertNotIn("RSS", output)
+                else:
+                    self.assertLess(output.index("PRIVATE"), output.index("RSS"))
 
 
 class EventLogTests(unittest.TestCase):

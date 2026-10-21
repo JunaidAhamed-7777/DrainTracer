@@ -388,7 +388,11 @@ class DashboardApp(MonitorSession):
             ("K", kill),
             ("E", "Export the JSON and HTML report"),
             ("O", "Open the latest HTML report in the browser"),
-            ("S", f"Sort processes by tree, memory, handles, or CPU (now: {self._sort_mode})"),
+            (
+                "S",
+                "Sort processes by tree, memory (private bytes), handles, or CPU "
+                f"(now: {self._sort_label()})",
+            ),
             ("? / H", "Show or hide this help; Esc closes it"),
             ("Q", quit_text),
         ):
@@ -757,7 +761,7 @@ class DashboardApp(MonitorSession):
         if self._sort_mode == "tree":
             title = f" PROCESS TREE  {count} "
         else:
-            title = f" PROCESSES  {count}  {self.glyphs.sep} by {self._sort_mode} "
+            title = f" PROCESSES  {count}  {self.glyphs.sep} by {self._sort_label()} "
         return Panel(
             Sized(self._process_table),
             title=Text(title, style=f"bold {self.palette.accent_alt}"),
@@ -773,13 +777,14 @@ class DashboardApp(MonitorSession):
         if snapshot is None or not snapshot.processes:
             return Text("No live processes in the monitored tree", style=palette.muted)
 
-        # Drop lower-priority columns before names collapse.
+        # Drop lower-priority columns before names collapse. Private bytes
+        # drive the memory signal and the memory sort, so RSS goes first.
         if width >= 72:
-            columns = ("cpu", "rss", "private", "handles", "threads", "status")
+            columns = ("cpu", "private", "rss", "handles", "threads", "status")
         elif width >= 50:
-            columns = ("cpu", "rss", "handles", "threads")
+            columns = ("cpu", "private", "handles", "threads")
         else:
-            columns = ("rss",)
+            columns = ("private",)
         headers = {
             "cpu": "CPU",
             "rss": "RSS",
@@ -837,6 +842,10 @@ class DashboardApp(MonitorSession):
             more = Text(f"{glyphs.ellipsis} {hidden} more", style=palette.muted)
             table.add_row("", more, *([""] * (len(table.columns) - 2)))
         return table
+
+    def _sort_label(self) -> str:
+        """Name the sort key; memory sorting ranks private bytes, not RSS."""
+        return "private bytes" if self._sort_mode == "memory" else self._sort_mode
 
     def _ordered_processes(self, snapshot: MetricsSnapshot) -> list[tuple[ProcessMetrics, str]]:
         """Processes in tree order, or flat by the chosen metric, largest first."""
