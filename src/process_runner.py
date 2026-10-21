@@ -261,6 +261,18 @@ class ProcessManager:
         with self._lock:
             return self._parents.get(pid)
 
+    def created_at(self, pid: int) -> float | None:
+        """Return the creation time recorded for a tracked PID, if known.
+
+        Together with the PID it identifies one process: a later process
+        that reuses the PID has a different creation time.
+        """
+        with self._lock:
+            created = self._identities.get(pid)
+            if created is None and pid == self._root_pid:
+                created = self._root_created
+            return created
+
     @property
     def has_tracked_processes(self) -> bool:
         """Whether any root or descendant PID still needs cleanup."""

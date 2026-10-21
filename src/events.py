@@ -176,6 +176,8 @@ class ProcessMetrics:
     to counts on samples where handle types were classified, else ``None``.
     ``unmeasured`` names the counters (``METRIC_KEYS``) that could not be
     read; their fields hold 0 for compatibility but are unknown, not zero.
+    ``create_time`` is the process creation time when known: with ``pid``
+    it is the process ``identity``, so a reused PID is a different process.
     """
 
     pid: int
@@ -193,6 +195,12 @@ class ProcessMetrics:
     ppid: int | None = None
     handle_types: dict[str, int] | None = None
     unmeasured: tuple[str, ...] = ()
+    create_time: float | None = None
+
+    @property
+    def identity(self) -> tuple[int, float | None]:
+        """``(pid, create_time)``: unique per process, unlike the PID alone."""
+        return (self.pid, self.create_time)
 
     def measured(self, metric: str) -> bool:
         """Whether ``metric`` was read for this process (a zero is then real)."""

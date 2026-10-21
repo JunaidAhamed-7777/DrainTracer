@@ -662,6 +662,7 @@ class LeakDetector:
                 io_write_bytes_per_sec=0.0,
                 access_denied=False,
                 unmeasured=_ALL_METRICS,
+                create_time=self.process_manager.created_at(pid),
             )
         except (psutil.Error, OSError) as exc:
             return ProcessMetrics(
@@ -679,6 +680,7 @@ class LeakDetector:
                 access_denied=isinstance(exc, psutil.AccessDenied),
                 ppid=self.process_manager.parent_of(pid),
                 unmeasured=_ALL_METRICS,
+                create_time=self.process_manager.created_at(pid),
             )
         else:
             handles = 0 if read_handles is None else read_handles
@@ -706,6 +708,7 @@ class LeakDetector:
             access_denied=access_denied,
             ppid=self.process_manager.parent_of(pid),
             unmeasured=tuple(unmeasured),
+            create_time=self.process_manager.created_at(pid),
         )
 
     @staticmethod

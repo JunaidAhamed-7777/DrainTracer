@@ -412,6 +412,27 @@ class MeasurementValidityTests(unittest.TestCase):
         self.assertTrue(metrics.measured("private_bytes"))
         self.assertTrue(metrics.measured("io_read_bytes_per_sec"))
 
+    def test_samples_carry_the_process_identity(self) -> None:
+        from unittest import mock
+
+        detector = self._detector()
+        detector.process_manager._identities[7] = 1234.5
+        proc = mock.MagicMock(pid=7)
+        proc.name.return_value = "app.exe"
+        proc.status.return_value = "running"
+        proc.memory_info.return_value = mock.Mock(rss=10, vms=20, private=8)
+        proc.num_handles.return_value = 5
+        proc.num_threads.return_value = 3
+        proc.cpu_times.side_effect = OSError("no")
+        proc.io_counters.side_effect = OSError("no")
+        metrics = detector._sample_process(proc)
+        self.assertEqual(metrics.create_time, 1234.5)
+        self.assertEqual(metrics.identity, (7, 1234.5))
+
+        proc.memory_info.side_effect = psutil_access_denied()
+        self.assertEqual(detector._sample_process(proc).identity, (7, 1234.5))
+        self.assertIsNone(detector.process_manager.created_at(8))
+
     def test_partial_coverage_is_reported(self) -> None:
         from helpers import make_process
 
