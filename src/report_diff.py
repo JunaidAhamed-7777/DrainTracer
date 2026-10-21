@@ -178,6 +178,8 @@ class ReportComparison:
                 "worst": report.summary.worst,
                 "detection_ran": report.detection_ran,
                 "partial_coverage": list(report.partial_resources),
+                "exact_facts": report.summary.exact,
+                "chart_stride": report.summary.chart_stride,
             }
 
         return {
@@ -198,6 +200,8 @@ class ReportComparison:
                     "growth_after": item.after.growth,
                     "peak_before": item.before.peak,
                     "peak_after": item.after.peak,
+                    "episodes_before": item.before.episodes,
+                    "episodes_after": item.after.episodes,
                 }
                 for item in self.resources
             },
@@ -330,6 +334,11 @@ def _comparability_warnings(before: LoadedReport, after: LoadedReport) -> list[s
                 f"report {label} could not read every process ({', '.join(partial)} totals "
                 f"partial in {samples:,} of {measured:,} samples), so its totals are lower "
                 "bounds and may miss growth in the unreadable processes"
+            )
+        if report.summary.chart_thinned and not report.summary.exact:
+            warnings.append(
+                f"report {label} keeps 1 in {report.summary.chart_stride} samples and predates "
+                "exact session facts, so its peaks and episode counts may miss short events"
             )
     differences = _settings_differences(before.data, after.data)
     if differences:

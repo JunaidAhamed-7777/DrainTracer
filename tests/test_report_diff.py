@@ -138,6 +138,24 @@ class ComparisonTests(unittest.TestCase):
         self.assertEqual(data["verdict"], "improved")
         self.assertEqual(data["resources"]["memory"]["signal"], "resolved")
         self.assertEqual(data["before"]["target"], "server.exe")
+        self.assertFalse(data["before"]["exact_facts"])
+        self.assertEqual(data["before"]["chart_stride"], 1)
+        self.assertEqual(data["resources"]["memory"]["episodes_before"], 1)
+
+    def test_exact_facts_feed_the_comparison_and_thinned_old_reports_warn(self) -> None:
+        before = _run(snapshot_stride=4)
+        after = _run(snapshot_stride=4)
+        after["session_facts"] = {
+            "signals": {"memory": {"worst": "high", "worst_at": 1001.0, "episodes": 3}},
+            "chart": {"stride": 4},
+        }
+        result = self._compare(before, after)
+        warnings = " | ".join(result.warnings)
+        self.assertIn("report A keeps 1 in 4 samples and predates exact session facts", warnings)
+        self.assertNotIn("report B keeps", warnings)
+        memory = result.resources[0]
+        self.assertEqual((memory.after.worst, memory.after.episodes), ("high", 3))
+        self.assertEqual(memory.signal, "new")
 
 
 class LoadTests(unittest.TestCase):
