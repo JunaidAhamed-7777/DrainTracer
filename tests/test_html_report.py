@@ -190,6 +190,35 @@ class RenderTests(unittest.TestCase):
         empty = render_html_report({})
         self.assertIn("No events were recorded.", empty)
         self.assertIn("No process measurements were recorded.", empty)
+        self.assertNotIn("Monitor diagnostics", legacy)
+
+
+class SessionFactsRenderingTests(unittest.TestCase):
+    def test_thinned_reports_say_so_and_show_exact_facts(self) -> None:
+        import json as _json
+
+        from test_session_facts import thinned_session_report
+
+        report, _spike_at, _total = thinned_session_report()
+        stride = report["snapshot_stride"]
+        document = render_html_report(report)
+        text = html.unescape(document)
+        self.assertIn(f"chart thinned 1:{stride} (peaks, signals and counts are exact)", text)
+        self.assertIn("peak private 600.0 MB at +00:01:17", text)  # the spike, 77.5 s in
+        self.assertIn("30 signal episodes, 00:00:30 signalled", text)
+        self.assertIn("episodes counted during the session are listed", text)
+        self.assertIn("Monitor diagnostics", text)
+        self.assertIn("500 ms requested · 500 ms actual mean", text)
+        self.assertIn("8.5 ms mean · 13.0 ms max", text)
+        self.assertIn("Detection evaluated", text)
+        _json.loads(_data_block(document))
+
+    def test_thinned_reports_without_facts_are_marked_approximate(self) -> None:
+        report = _report(snapshot_stride=8)
+        text = html.unescape(render_html_report(report))
+        self.assertIn("chart thinned 1:8 (peaks and signal episodes come from the kept samples only)",
+                      text)
+        self.assertNotIn("Monitor diagnostics", text)
 
 
 @unittest.skipUnless(shutil.which("node"), "Node.js is not installed")

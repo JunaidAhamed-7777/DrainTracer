@@ -65,6 +65,7 @@ def render_html_report(report: Mapping[str, Any]) -> str:
             _events_panel(report, start),
             _processes_panel(report),
             _growth_panel(report, start),
+            _monitor_panel(summary),
             '</main>',
             _footer(report, version),
         )
@@ -109,7 +110,15 @@ def _masthead(
 ) -> str:
     mode = "Attached to a running process" if report.get("mode") == "attach" else "Launched by DrainTracer"
     interval = _first_interval(report)
-    stride = _positive_int(report.get("snapshot_stride")) or 1
+    stride = summary.chart_stride
+    thinned = ""
+    if stride > 1:
+        # Say plainly what the thinning costs: the chart, or also the totals.
+        thinned = f"; chart thinned 1:{stride} (" + (
+            "peaks, signals and counts are exact)"
+            if summary.exact
+            else "peaks and signal episodes come from the kept samples only)"
+        )
     facts: list[tuple[str, str]] = [
         ("Report ID", str(report.get("report_id") or "—")),
         ("Created", _local_time(report.get("created_at"))),
@@ -122,10 +131,13 @@ def _masthead(
             "Samples",
             f"{_sample_count(report, summary):,}"
             + (f" every {interval:g} ms" if interval else "")
-            + (f"; this report keeps 1 in {stride}" if stride > 1 else ""),
+            + thinned,
         ),
         ("Processes", f"up to {summary.max_processes}"),
     ]
+    facts_data = summary.facts
+    if facts_data is not None and facts_data.evaluated_seconds is not None:
+        facts.append(("Evaluated", format_clock(facts_data.evaluated_seconds)))
     warmup = report.get("warmup")
     if isinstance(warmup, Mapping) and finite(warmup.get("seconds")):
         seconds = format_duration(finite(warmup.get("seconds")) or 0.0)
@@ -198,6 +210,8 @@ def _cards(summary: ReportSummary, sample_count: int) -> str:
             )
             drift = "drift " + _rate(resource, stats.drift_per_second or 0.0)
         episodes = f"{stats.episodes} signal episode{'s' if stats.episodes != 1 else ''}"
+        if stats.signal_seconds:
+            episodes += f", {format_clock(stats.signal_seconds)} signalled"
         types = _handle_type_line(summary) if resource == "handles" else ""
         cards.append(
             f'<article class="card"><h3>{_e(_RESOURCE_TITLES[resource])}'
@@ -209,12 +223,24 @@ def _cards(summary: ReportSummary, sample_count: int) -> str:
             + "</article>"
         )
     peaks = summary.peaks
+    times = summary.peak_times or {}
+
+    def when(key: str) -> str:
+        """`` at +m:ss`` for exact peaks; the kept snapshots cannot say when."""
+        stamp = times.get(key)
+        return f" at {_offset(stamp, summary.started)}" if stamp is not None else ""
+
+    memory = (
+        f"peak private {format_bytes(peaks.get('private_bytes', 0.0))}{when('private_bytes')}"
+        f" · RSS (working set) {format_bytes(peaks.get('rss_bytes', 0.0))}"
+    )
+    cpu = f"peak CPU {peaks.get('cpu_percent', 0.0):.1f}%{when('cpu_percent')}"
     cards.append(
         '<article class="card"><h3>Session</h3>'
         f'<div class="big">{_e(format_clock(summary.duration))}</div>'
         f'<div class="sub">{_e(f"{sample_count:,} samples · up to {summary.max_processes} processes")}</div>'
-        f'<div class="sub">{_e("peak private " + format_bytes(peaks.get("private_bytes", 0.0)) + " · RSS (working set) " + format_bytes(peaks.get("rss_bytes", 0.0)))}</div>'
-        f'<div class="sub">{_e("peak CPU " + format(peaks.get("cpu_percent", 0.0), ".1f") + "%")}</div>'
+        f'<div class="sub">{_e(memory)}</div>'
+        f'<div class="sub">{_e(cpu)}</div>'
         "</article>"
     )
     return f'<section class="cards">{"".join(cards)}</section>'
@@ -235,6 +261,14 @@ def _charts_panel() -> str:
 
 
 def _episodes_panel(summary: ReportSummary, start: float | None) -> str:
+    recorded = sum(item.episodes for item in summary.resources.values())
+    hint = "One row per continuous signal; click a row to zoom the charts."
+    if recorded > len(summary.episodes):
+        # Thinning kept fewer episodes than the session counted; say so.
+        hint += (
+            f" The chart keeps 1 in {summary.chart_stride} samples, so {len(summary.episodes)} "
+            f"of the {recorded} episodes counted during the session are listed."
+        )
     if not summary.episodes:
         body = '<p class="empty">No leak signals were raised during this session.</p>'
     else:
@@ -261,7 +295,96 @@ def _episodes_panel(summary: ReportSummary, start: float | None) -> str:
     return (
         '<section class="panel" aria-label="Leak signals">'
         '<div class="panel-head"><h2>Leak signals</h2>'
-        '<p class="hint">One row per continuous signal; click a row to zoom the charts.</p></div>'
+        f'<p class="hint">{_e(hint)}</p></div>'
+        f"{body}</section>"
+    )
+
+
+def _monitor_panel(summary: ReportSummary) -> str:
+    """The monitor's own cadence, cost and footprint; omitted for older reports."""
+    facts = summary.facts
+    monitor = facts.monitor if facts is not None else None
+    if not monitor:
+        return ""
+
+    def stat(name: str) -> tuple[float | None, float | None, int]:
+        item = monitor.get(name)
+        if not isinstance(item, Mapping):
+            return None, None, 0
+        return finite(item.get("mean")), finite(item.get("max")), int(finite(item.get("count")) or 0)
+
+    def milliseconds(mean: float | None, peak: float | None) -> str:
+        if mean is None:
+            return "—"
+        return f"{mean:,.1f} ms mean · {peak or 0.0:,.1f} ms max"
+
+    requested = finite(monitor.get("requested_interval_ms"))
+    interval_mean, interval_max, _ = stat("interval_ms")
+    collect_mean, collect_max, _ = stat("collection_ms")
+    cpu_mean, cpu_max, _ = stat("monitor_cpu_percent")
+    classify_mean, classify_max, passes = stat("handle_classification_ms")
+    rss = finite(monitor.get("monitor_rss_peak_bytes"))
+    private = finite(monitor.get("monitor_private_peak_bytes"))
+    age = finite(monitor.get("handle_types_max_age_seconds"))
+    rows = [
+        (
+            "Cadence",
+            (f"{requested:g} ms requested · " if requested else "")
+            + (
+                f"{interval_mean:,.0f} ms actual mean · {interval_max or 0.0:,.0f} ms longest gap"
+                if interval_mean is not None
+                else "not enough consecutive samples"
+            ),
+        ),
+        ("Collection time", milliseconds(collect_mean, collect_max)),
+        (
+            "Monitor CPU",
+            f"{cpu_mean:.1f}% mean · {cpu_max or 0.0:.1f}% max of one core"
+            if cpu_mean is not None
+            else "—",
+        ),
+        (
+            "Monitor memory",
+            " · ".join(
+                part
+                for part in (
+                    f"peak private {format_bytes(private)}" if private is not None else "",
+                    f"peak RSS (working set) {format_bytes(rss)}" if rss is not None else "",
+                )
+                if part
+            )
+            or "—",
+        ),
+        (
+            "Handle classification",
+            f"{passes:,} passes · {milliseconds(classify_mean, classify_max)}"
+            + (f" · up to {age:.1f}s old" if age is not None else "")
+            if passes
+            else "not run",
+        ),
+        (
+            "Failed or dropped",
+            f"{int(finite(monitor.get('failed_samples')) or 0):,} failed samples · "
+            f"{int(finite(monitor.get('dropped_snapshots')) or 0):,} dropped before display",
+        ),
+    ]
+    if facts is not None and facts.evaluated_seconds is not None:
+        rows.append(
+            (
+                "Detection evaluated",
+                f"{format_clock(facts.evaluated_seconds)} of "
+                f"{format_clock(facts.after_warmup_seconds or 0.0)} after warm-up",
+            )
+        )
+    body = _table(
+        ("Measure", "Value"),
+        [f"<tr><td>{_e(label)}</td><td>{_e(value)}</td></tr>" for label, value in rows],
+    )
+    return (
+        '<section class="panel" aria-label="Monitor diagnostics">'
+        '<div class="panel-head"><h2>Monitor diagnostics</h2>'
+        '<p class="hint">How steadily and cheaply DrainTracer sampled; '
+        "use it to judge how far to trust this recording.</p></div>"
         f"{body}</section>"
     )
 

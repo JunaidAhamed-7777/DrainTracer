@@ -145,13 +145,18 @@ class SessionFactsTests(unittest.TestCase):
         self.assertEqual(facts["coverage"]["samples"], 0)  # these snapshots record no coverage
 
 
+def thinned_session_report() -> tuple[dict, float, int]:
+    """A reopened (JSON round-tripped) report of the long session: report, spike time, samples."""
+    session = _SmallHistorySession("C:/targets/worker.exe", console=make_console())
+    snapshots, spike_at = long_session_snapshots()
+    for snapshot in snapshots:
+        session._accept_snapshot(snapshot)
+    return json.loads(json.dumps(session.build_report(), default=str)), spike_at, len(snapshots)
+
+
 class ReloadedFactsTests(unittest.TestCase):
     def _report(self) -> tuple[dict, float, int]:
-        session = _SmallHistorySession("C:/targets/worker.exe", console=make_console())
-        snapshots, spike_at = long_session_snapshots()
-        for snapshot in snapshots:
-            session._accept_snapshot(snapshot)
-        return json.loads(json.dumps(session.build_report(), default=str)), spike_at, len(snapshots)
+        return thinned_session_report()
 
     def test_analysis_of_a_reopened_report_keeps_the_exact_facts(self) -> None:
         from src.analysis import alert_episodes, load_samples, summarize
