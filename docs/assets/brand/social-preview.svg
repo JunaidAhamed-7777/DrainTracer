@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
   <title id="title">DrainTracer social preview</title>
-  <desc id="desc">DrainTracer. See what keeps growing. Open source Windows process resource monitor for memory, handles, and threads. A leaky pipe and tracing reticle illustrate resource leak detection.</desc>
+  <desc id="desc">DrainTracer. See what keeps growing. Open source Windows process resource monitor for memory, handles, and threads. A straight industrial pipe leaks blue liquid through a visible central crack into a tracing reticle.</desc>
   <defs>
     <pattern id="grid" width="64" height="64" patternUnits="userSpaceOnUse">
       <path d="M64 0H0v64" fill="none" stroke="#22313B" stroke-width="1"/>
@@ -10,9 +10,9 @@
   <rect width="1280" height="640" fill="url(#grid)" opacity=".6"/>
   <path d="M64 128h1152M64 552h1152" stroke="#35464F" stroke-width="1"/>
   <g fill="none" stroke="#73DACA" opacity=".12">
-    <circle cx="1110" cy="402" r="174"/>
-    <circle cx="1110" cy="402" r="210"/>
-    <path d="M1110 152v440M860 402h356"/>
+    <circle cx="1038" cy="386" r="174"/>
+    <circle cx="1038" cy="386" r="210"/>
+    <path d="M1038 136v440M788 386h428"/>
   </g>
   <g font-family="Segoe UI, Arial, sans-serif">
     <text x="64" y="88" font-size="17" letter-spacing="4" fill="#BACBD0">OPEN SOURCE / WINDOWS</text>
@@ -23,15 +23,19 @@
     <text x="64" y="598" font-size="17" letter-spacing="2" fill="#BACBD0">DRAINTRACER</text>
   </g>
   <g transform="translate(846 122) scale(1.5)">
-    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M32 60h102a44 44 0 0 1 44 44v12" stroke="#73DACA" stroke-width="26"/>
-      <path d="M50 43v34" stroke="#73DACA" stroke-width="8"/>
-      <path d="M160 116h36" stroke="#73DACA" stroke-width="12"/>
-      <path d="M190.42 138.64a48 48 0 0 1 33.94 33.94M224.36 197.42a48 48 0 0 1-33.94 33.94M165.58 231.36a48 48 0 0 1-33.94-33.94M131.64 172.58a48 48 0 0 1 33.94-33.94" stroke="#73DACA" stroke-width="5"/>
-      <path d="M178 129v12m0 88v12M122 185h12m88 0h12" stroke="#E0AF68" stroke-width="5"/>
+    <path d="M124 85l8 7-3 10c-1 6 4 10 1 16-5-3-7-6-6-12Z" fill="#53B7FF"/>
+    <path d="M24 54h208v40h-96l-8-8 7-9-12-10 3 13-9 9 6 5H24Z" fill="#73DACA"/>
+    <path d="M24 54v40m208-40v40" fill="none" stroke="#73DACA" stroke-width="6"/>
+    <g fill="#3D9D97" stroke="#73DACA" stroke-width="4" stroke-linejoin="round">
+      <rect x="42" y="46" width="16" height="56" rx="2"/>
+      <rect x="198" y="46" width="16" height="56" rx="2"/>
     </g>
-    <path d="M178 156c-6 13-19 25-19 36a19 19 0 0 0 38 0c0-11-13-23-19-36Z" fill="#E0AF68"/>
+    <g fill="none" stroke="#73DACA" stroke-width="5" stroke-linecap="round">
+      <path d="M140.42 129.64a48 48 0 0 1 33.94 33.94M174.36 188.42a48 48 0 0 1-33.94 33.94M115.58 222.36a48 48 0 0 1-33.94-33.94M81.64 163.58a48 48 0 0 1 33.94-33.94"/>
+      <path d="M128 120v12m0 88v12M72 176h12m88 0h12" stroke="#53B7FF"/>
+    </g>
+    <path d="M128 146c-7 14-20 26-20 38a20 20 0 0 0 40 0c0-12-13-24-20-38Z" fill="#53B7FF"/>
   </g>
-  <path d="M1102 590h24l16-16h20l18-20h22" fill="none" stroke="#E0AF68" stroke-width="2"/>
-  <circle cx="1202" cy="554" r="4" fill="#E0AF68"/>
+  <path d="M1102 590h24l16-16h20l18-20h22" fill="none" stroke="#53B7FF" stroke-width="2"/>
+  <circle cx="1202" cy="554" r="4" fill="#53B7FF"/>
 </svg>

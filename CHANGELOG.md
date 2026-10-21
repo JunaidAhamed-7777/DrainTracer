@@ -5,6 +5,12 @@ feature milestones remain in [future-plan.md](future-plan.md), and the complete
 commit history records earlier changes. Versions follow the repository rule:
 each focused change advances the runtime version by exactly `0.1`.
 
+## v2.4 — 2026-10-21
+
+- Revised every compact logo, avatar, wordmark, and social card to show a
+  straight industrial pipe leaking blue liquid through a visible crack.
+- Updated light/dark SVG and PNG variants and the brand palette guidance.
+
 ## v2.3 — 2026-10-21
 
 - Rebuilt the README with the new identity, a real dashboard capture, a source

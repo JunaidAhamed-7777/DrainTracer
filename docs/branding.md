@@ -6,9 +6,10 @@
 
 **See what keeps growing.**
 
-The identity pairs a continuous pipe with an escaping droplet inside a tracing
-reticle. The pipe represents the monitored process tree; the droplet represents
-resource growth; the reticle represents investigation. The symbol describes
+The identity pairs a straight horizontal pipe with a visible crack and blue
+liquid escaping into a tracing reticle. The pipe represents the monitored
+process tree; the leak represents resource growth; the reticle represents
+investigation. The symbol describes
 observing a leak signal, without suggesting that DrainTracer can locate an
 individual allocation.
 
@@ -39,13 +40,13 @@ Use the compact mark wherever a detailed illustration would lose definition.
 
 - **Ink — `#101820`:** primary dark background.
 - **Trace teal — `#73DACA`:** pipe, tracing arcs, and the Tracer accent on ink.
-- **Signal amber — `#E0AF68`:** escaping droplet and targeting ticks.
+- **Water blue — `#53B7FF`:** leaking liquid, droplet, and targeting ticks.
 - **Warm white — `#EAF2F4`:** primary type on ink.
 - **Paper — `#F5F8F8`:** light background.
 - **Deep teal — `#196F69`:** pipe and wordmark accent on paper.
-- **Deep amber — `#936011`:** droplet and ticks on paper.
+- **Deep blue — `#0069B8`:** leaking liquid, droplet, and ticks on paper.
 
-The light assets deliberately deepen teal and amber for readable contrast.
+The light assets deliberately deepen teal and blue for readable contrast.
 Use both shape and color to convey meaning: the droplet and reticle should stay
 recognizable in a single-color reproduction.
 
@@ -56,7 +57,8 @@ The SVG wordmarks use `Segoe UI, Arial, sans-serif`; no fonts are bundled.
 They retain editable text, so a different system font can slightly change the
 letterforms. Use the supplied PNG when exact rendering matters.
 
-Keep the mark's proportions and the relationship between pipe, droplet, and
+Keep the pipe straight, with its jagged crack visibly feeding the blue leak
+from its underside. Preserve the relationship between pipe, droplet, and
 reticle. Leave at least 24 units of clear space around the 256-unit mark when
 placing it beside other content. Use the transparent mark at 32 pixels or
 larger and an avatar tile at 48 pixels or larger. At smaller sizes, use the
