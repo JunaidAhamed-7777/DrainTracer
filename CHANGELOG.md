@@ -58,6 +58,8 @@ current release and [AGENTS.md](AGENTS.md) for the release policy.
   legacy code pages get safe replacements for characters they cannot show.
 - Said "no live process" instead of "no readable process" once the monitored
   tree has exited, so an ended run no longer looks like an access problem.
+- Logged a budget that the first sample already exceeds after the headless
+  launch line instead of before it.
 
 ## v5.1.1 — 2026-10-22
 

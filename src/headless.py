@@ -97,6 +97,9 @@ class HeadlessRunner(MonitorSession):
         self.budgets = dict(self.settings.budgets)
         # Budgets already reported as exceeded, so the log says it once.
         self._budget_breaches: set[str] = set()
+        # The first sample is taken before the launch is logged; its breaches
+        # wait so the log does not report a budget before the target started.
+        self._start_logged = False
 
     @property
     def breached(self) -> bool:
@@ -113,6 +116,15 @@ class HeadlessRunner(MonitorSession):
 
     def _accept_snapshot(self, snapshot) -> None:
         super()._accept_snapshot(snapshot)
+        if self._start_logged:
+            self._log_budget_breaches()
+
+    def _log_start(self) -> None:
+        super()._log_start()
+        self._start_logged = True
+        self._log_budget_breaches()
+
+    def _log_budget_breaches(self) -> None:
         for check in self.over_budget:
             if check.metric not in self._budget_breaches:
                 self._budget_breaches.add(check.metric)

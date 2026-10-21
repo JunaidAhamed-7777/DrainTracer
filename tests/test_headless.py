@@ -100,6 +100,24 @@ class ExitStatusTests(unittest.TestCase):
              "fail_on_target_error": False, "budgets": []},
         )
 
+    def test_a_budget_exceeded_by_the_first_sample_is_logged_after_the_launch(self) -> None:
+        from dataclasses import replace
+
+        from helpers import make_process
+
+        from src.config import MonitorSettings
+
+        settings = replace(MonitorSettings(), budgets={"threads": 3.0})
+        runner = HeadlessRunner("C:/targets/worker.exe", console=make_console(),
+                                settings=settings)
+        # ``start`` samples once before it logs the launch.
+        runner._accept_snapshot(make_snapshot(processes=(make_process(100),)))
+        self.assertNotIn("Budget exceeded", _output(runner))
+        runner._log_start()
+        output = _output(runner)
+        self.assertLess(output.index("Launched"), output.index("Budget exceeded"))
+        self.assertEqual(output.count("Budget exceeded"), 1)
+
     def test_stable_but_excessive_usage_fails_a_budget_without_a_leak(self) -> None:
         from dataclasses import replace
 
@@ -114,6 +132,7 @@ class ExitStatusTests(unittest.TestCase):
         runner = HeadlessRunner("C:/targets/worker.exe", console=make_console(),
                                 settings=settings)
         runner._accept_snapshot(make_snapshot(processes=(make_process(100, private=400 * mib),)))
+        runner._log_start()
         self.assertEqual(runner.exit_status(), EXIT_PASS)
         for index in range(3):  # flat, so no leak signal; just too much
             runner._accept_snapshot(make_snapshot(
