@@ -14,6 +14,17 @@ from src.running_processes import RunningProcess
 
 
 class ProcessPresentationTests(unittest.TestCase):
+    def test_live_query_handles_name_pid_and_explicit_search_edits(self) -> None:
+        for value, expected in ((" Ed ", "Ed"), ("42", "42"), ("", ""),
+                                ("/search 42", "42"), ("/SEARCH editor", "editor")):
+            with self.subTest(value=value):
+                self.assertEqual(picker._live_query(value, "old"), expected)
+
+    def test_partial_commands_keep_the_active_filter(self) -> None:
+        for value in ("/", "/r", "/refresh", "/next", "/prev", "/clear", "/search"):
+            with self.subTest(value=value):
+                self.assertEqual(picker._live_query(value, "editor"), "editor")
+
     def test_name_and_pid_search_preserve_distinct_processes(self) -> None:
         rows = [RunningProcess(42, "Editor.exe", 1.0), RunningProcess(142, "editor.exe", 2.0),
                 RunningProcess(43, "worker.exe", 3.0)]

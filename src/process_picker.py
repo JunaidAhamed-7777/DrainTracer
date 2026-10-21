@@ -29,6 +29,14 @@ def filter_processes(processes: Sequence[RunningProcess], query: str) -> list[Ru
     return [row for row in processes if query in row.name.casefold() or query in str(row.pid)]
 
 
+def _live_query(value: str, current: str) -> str:
+    """Preview search edits while leaving incomplete commands out of the filter."""
+    if value.startswith("/"):
+        command, separator, text = value.partition(" ")
+        return text.strip() if command.casefold() == "/search" and separator else current
+    return value.strip()
+
+
 def _label(value: str) -> str:
     """Keep process names and searches literal and free of terminal controls."""
     return "".join(character if character.isprintable() else " " for character in value)

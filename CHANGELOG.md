@@ -5,6 +5,11 @@ feature milestones remain in [future-plan.md](future-plan.md), and the complete
 commit history records earlier changes. Versions follow the repository rule:
 each focused change advances the runtime version by exactly `0.1`.
 
+## v4.0 — 2026-10-21
+
+- Added live-query parsing for names, PIDs, and explicit searches while
+  keeping incomplete picker commands separate from the active filter.
+
 ## v3.9 — 2026-10-21
 
 - Kept keyboard-picker input and notices on single lines so long pasted
