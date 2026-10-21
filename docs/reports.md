@@ -126,6 +126,12 @@ without `session_facts` fall back to retained snapshots, and comparisons
 warn when such a report was thinned. The headless failure decision uses the
 strongest signal observed during the session.
 
+The top-level `markers` list holds the markers added with `M` during a
+dashboard session: `index`, `label` (`marker N`), `timestamp`, `time`, and
+`elapsed_seconds` since monitoring started. Markers record when the user
+noted something; they do not establish cause. Reports without the field
+have no markers.
+
 The `experiment` section records the optional labels (`workload_id`,
 `build`, `operations`, `note`), the mode, `arguments` (`count` and a
 16-character SHA-256 `fingerprint` only), duration, sampling settings,

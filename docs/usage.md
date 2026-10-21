@@ -143,13 +143,48 @@ identify which processes and transitions explain a change.
 - `E`: export a new JSON report and HTML companion.
 - `O`: open the latest exported HTML report in the default browser.
 - `S`: cycle the process table through tree, memory, handles, and CPU order.
-- `?` or `H`: show help and the active monitoring settings; `Esc` closes it.
+- `M`: add a numbered marker such as "opened document" timing to the event
+  log, timeline, and report.
+- `?` or `H`: show help and the active monitoring settings; the arrow and
+  paging keys scroll it, and `Esc` closes it.
 - `Q`: end the session and clean up or detach according to its launch mode.
+
+Number keys switch between focused views, and `Esc` returns to the
+overview (it closes help, or clears a process filter, first). Switching
+views never pauses sampling or changes the target.
+
+- `1` Overview: the cards, process tree, leak health, and event log.
+- `2` Processes: every live process as a tree, or ranked by growth of
+  private bytes, handles, or threads (`S`) over a detection window or each
+  process's lifetime (`Left`/`Right`). Recently exited processes stay listed.
+  `Up`/`Down` select, `/` filters by name or PID, `Tab` moves focus to the
+  detail, and `Enter` shows the detail alone. The detail lists identity and
+  lifetime, parent, status, private bytes, RSS, signed growth and slope,
+  handles, threads, CPU, I/O, recent lifecycle events, and tree totals. The
+  selection follows the process identity (PID and creation time). `K` still
+  terminates the whole tree.
+- `3` Evidence: for each resource (`Left`/`Right`), the metric, valid sample
+  coverage, readable processes, and every window's points, span, baseline,
+  current value, delta, slope, monotonic and drop ratios, heuristic score,
+  and the check that decided it. These values are the detector's own; the
+  view does not recompute them. Severity is a heuristic tier, not a
+  probability.
+- `4` Timeline: one chart at a time (`Left`/`Right`: private bytes, handles,
+  threads, RSS, CPU) over the last 240 samples. Columns show the highest
+  sample in their time bucket, pauses leave gaps, and the caption states
+  samples per column. Annotations mark warm-up end, process starts, exits
+  and restarts, pauses, unreadable processes, signal changes, the active
+  window start, and markers. `F` freezes this view only; sampling, detection,
+  and the target continue, and `TIMELINE FROZEN` stays visible.
+- `5` Monitor: requested and actual cadence, collection time, sample counts,
+  dropped snapshots, unreadable processes, evidence and handle-type
+  freshness, and DrainTracer's own CPU and memory. Host CPU and memory are
+  not collected yet.
 
 Pausing keeps the last totals and alert visible without adding trend
 samples. CPU is summed across the tree relative to one core, so it can
-exceed 100%. The memory card's headline is RSS; the memory leak heuristic
-uses private bytes. A warning identifies sustained resource growth that
+exceed 100%. The memory card's headline and chart are private bytes, the
+counter the memory leak heuristic uses; RSS is shown as context. A warning identifies sustained resource growth that
 needs investigation; it does not identify an allocation or prove a leak.
 
 The leak health panel shows the current evidence, separate from the

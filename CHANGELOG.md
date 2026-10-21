@@ -45,6 +45,17 @@ current release and [AGENTS.md](AGENTS.md) for the release policy.
   growth per operation, and optional budgets (`--budget-private`,
   `--budget-handles`, `--budget-threads`) fail diffs with exit `4` and
   headless runs with exit `5`, even without a leak signal.
+- Added focused dashboard views on number keys, with `Esc` back to the
+  overview: `2` a process inspector (searchable tree or growth ranking over a
+  window or lifetime, exited processes, and a selected-process detail that
+  follows PID and creation time), `3` signal evidence (each window's points,
+  slope, monotonic and drop ratios, heuristic score, and verdict, emitted by
+  the detector), `4` a timeline (one chart, time-bucketed with stated
+  decimation, annotated with lifecycle, pause, access, signal, and marker
+  events, and a view-only `F` freeze), and `5` monitor diagnostics. `M` adds
+  numbered markers that reports export as `markers`. Arrow, Home/End, and
+  paging keys are decoded on Windows and POSIX terminals, help scrolls, and
+  legacy code pages get safe replacements for characters they cannot show.
 
 ## v5.1.1 — 2026-10-22
 

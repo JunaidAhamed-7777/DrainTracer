@@ -195,9 +195,27 @@ Use the target's own file logging when needed. See the
 - `S` — cycle process order: tree, memory (private bytes), handles, CPU.
 - `E` — export JSON and HTML reports.
 - `O` — open the latest HTML export.
-- `?` / `H` — show help and active settings; `Esc` closes it.
-- `K` — terminate the monitored tree; confirm with a second press when attached.
+- `M` — add a numbered marker (`marker N`) to the event log, timeline, and report.
+- `?` / `H` — show help and active settings; arrows scroll it, `Esc` closes it.
+- `K` — terminate the monitored tree (never only a selected process); confirm
+  with a second press when attached.
 - `Q` — quit, cleaning up a launched tree or detaching from an attached tree.
+
+Number keys open focused views; `Esc` returns to the overview. Views change
+only what is shown: sampling and the target continue unaffected.
+
+| Key | View | Its own keys |
+| --- | --- | --- |
+| `1` | Overview: cards, process tree, leak health, events | `S` sort |
+| `2` | Processes: tree or growth ranking, exited processes, selected-process detail | `↑`/`↓` select, `/` search, `S` order, `←`/`→` interval, `Tab` focus, `Enter` detail |
+| `3` | Evidence: each window's points, slope, monotonic and drop ratios, score, and verdict | `←`/`→` resource, `↑`/`↓` scroll |
+| `4` | Timeline: one chart with process, pause, signal, and marker annotations | `←`/`→` chart, `F` freeze view, `↑`/`↓` annotations |
+| `5` | Monitor: cadence, collection cost, coverage, freshness, monitor footprint | — |
+
+`F` freezes only the timeline view; `Space` still pauses the target.
+Markers record timing, not cause, and severity is a heuristic tier, not a
+probability. At 80x24 a view keeps one status line; taller terminals add the
+header and event log.
 
 Leak health shows the current evidence apart from the session's worst signal:
 `COLLECTING EVIDENCE` until the shortest window fills, `NO SUSTAINED GROWTH`
