@@ -226,7 +226,8 @@ class SessionLifecycleTests(unittest.TestCase):
         self.addCleanup(session.shutdown)
         remaining = session.time_remaining
         self.assertIsNotNone(remaining)
-        self.assertLessEqual(remaining, 0.3)
+        # Subtracting monotonic timestamps can round just above the timeout.
+        self.assertLessEqual(remaining, 0.3 + 1e-9)
         self.assertTrue(_wait_for(lambda: session.timed_out, timeout=5.0))
         self.assertEqual(session.time_remaining, 0.0)
 
@@ -295,11 +296,14 @@ class SessionLifecycleTests(unittest.TestCase):
 
         def broken_render():
             calls.append(1)
+            if len(calls) >= 3:
+                app._quit_requested = True
             raise ValueError("layout bug")
 
         # Broken from the very first frame.
         app._render = broken_render  # type: ignore[method-assign]
-        timer = threading.Timer(1.2, setattr, args=(app, "_quit_requested", True))
+        # Bound a failed retry loop without making redraw count depend on startup speed.
+        timer = threading.Timer(5.0, setattr, args=(app, "_quit_requested", True))
         timer.start()
         self.addCleanup(timer.cancel)
         with self.assertLogs("src.dashboard", "ERROR") as logs:
