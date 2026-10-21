@@ -1,12 +1,40 @@
 # DrainTracer Working Principles
 
-DrainTracer launches a target process, tracks its recursive child-process tree,
-samples resource counters every 500 ms, and publishes immutable snapshots to
-the terminal dashboard and export layer.
+DrainTracer launches a target process or attaches to a running PID, tracks
+its recursive child-process tree, samples resource counters every 500 ms by
+default, and publishes immutable snapshots to the terminal dashboard or
+headless runner and export layer.
+
+[README](README.md) · [Usage](docs/usage.md) · [Configuration](docs/configuration.md) · [Reports](docs/reports.md) · [Development](docs/development.md)
 
 The detector produces heuristic warnings. An active leak signal means that
 the observed resource behavior matches sustained growth criteria; it is not
 proof of a specific unreleased allocation, handle, or thread.
+
+## Runtime architecture
+
+`main.py` resolves command-line flags and configuration, then constructs a
+`DashboardApp` or `HeadlessRunner`. Both extend `MonitorSession`, which
+owns process lifecycle, collected history, events, and report coordination.
+
+The process manager polls the descendant tree and checks PID creation
+times. Separately, the detector's background thread samples that tree,
+updates rolling detection windows, and publishes frozen `MetricsSnapshot`
+objects through `MetricsStream`. The main thread drains that bounded queue
+to update session state and render the dashboard or print headless output.
+Sampling does not wait for UI drawing. When a queue is full, its oldest
+queued item is discarded to allow newer telemetry through.
+
+`analysis.py` supplies common report summaries to the HTML exporter and
+report comparison. `report.py` serializes snapshots and writes JSON;
+`html_report.py` renders the same report data as an offline page. The
+[development guide](docs/development.md) maps the remaining modules.
+
+The monitor reads resource counters and process relationships rather than
+instrumenting allocations or inspecting an application's source. A signal
+therefore applies to resource growth in the observed tree; it cannot name
+the responsible allocation site or distinguish every legitimate cache
+from a leak without workload context.
 
 ## 1. CPU utilization
 
@@ -222,8 +250,9 @@ score =
   + duration_bonus
 ```
 
-The duration bonus is `0.25` for a 30-second window and `0.5` for a
-60-second window. Ten-second windows receive no duration bonus.
+The duration bonus is `0.25` for windows at least 30 seconds long and `0.5`
+for windows at least 60 seconds long. Shorter windows receive no duration
+bonus, including the default ten-second window.
 
 Severity thresholds are:
 
@@ -301,7 +330,9 @@ branch would freeze the terminal the dashboard draws in, so pause and kill
 are refused for such a tree and only detaching remains.
 
 Launched targets get an empty standard input, so they cannot read or block
-on the keys meant for the dashboard. Batch files run through
+on the keys meant for the dashboard. Their standard output and error are
+also discarded rather than captured in the event log or reports; targets
+that need diagnostic output should use their own file logging. Batch files run through
 `cmd.exe /d /e:on /v:off /s /c` with every argument quoted for cmd.exe, so
 spaces and characters such as `&`, `|`, `<`, `>`, `^`, `!`, and parentheses
 reach the script intact instead of splitting the command line. cmd.exe
@@ -419,7 +450,7 @@ the failure is logged.
   `timestamp` (Unix), `level` (`ok`, `info`, `warn`, `alert`, or `error`),
   and `message`.
 - `settings` — the configuration the detector ran with: `profile`,
-  `config_path`, `sample_interval_ms`, `windows_seconds`, `thresholds`
+  `config_path`, `sample_interval_ms`, `windows_seconds`, `warmup_seconds`, `thresholds`
   (per resource, `critical_delta` and `critical_slope`), and
   `timeout_seconds`. Reports from runs with different settings are not
   directly comparable.
@@ -439,13 +470,16 @@ A session keeps up to 7,200 snapshots in memory for export (one hour at
 the default interval) and the most recent 200 event messages. A longer
 session is thinned instead of cut: when the history fills, every other
 snapshot is dropped and only every second new sample is kept, then every
-fourth, and so on. Reports therefore always span the whole session, from
-its first sample to its last, and their verdict, growth, and drift agree
-with the session's. Snapshots where a signal is raised, escalates, eases,
+fourth, and so on. Reports therefore span the whole session, from its first
+sample to its last. Snapshots where a signal is raised, escalates, eases,
 or clears, the warm-up ends, monitoring pauses or resumes, the root exits,
-or sampling fails are kept regardless, so thinning never hides a signal.
-(If signals flap on nearly every sample, only the first 1,800 such changes
-are exempt, which keeps memory bounded.)
+or sampling fails are exempt from thinning up to a limit of 1,800 state
+changes. Later changes can be thinned too, keeping memory bounded even
+when signals flap on nearly every sample. HTML and comparison summaries
+are calculated from retained snapshots, so thinning can change reported
+peaks and drift estimates relative to the complete live history. The
+headless failure decision still uses the strongest signal observed during
+the session.
 
 ### Snapshot fields
 
@@ -536,10 +570,10 @@ file, so both always describe the same samples.
 - **Verdict and cards.** The strongest severity seen per resource, plus
   growth (last measured value minus first), peak, and drift. Drift is the
   least-squares slope over every measured sample of the run, shown per
-  second or, for slow growth, per minute. With a warm-up, growth and drift
-  start after it, matching what the detector judged; peaks cover the whole
-  run. A report whose detection never ran is `INCONCLUSIVE` rather than
-  clean.
+  second or, for slow growth, per minute. With a warm-up, growth, drift,
+  and resource card peaks start after it, matching what the detector
+  judged; overall RSS/CPU peaks and chart traces include startup. A report
+  whose detection never ran is `INCONCLUSIVE` rather than clean.
 - **Charts.** Private bytes and RSS, handles, handle types, threads, and CPU
   over time. Handle types are plotted on their own time base because they
   are classified every two seconds rather than every sample.

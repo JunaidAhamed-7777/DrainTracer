@@ -1,5 +1,13 @@
 # Plans for the future
 
+This file preserves the original roadmap and the versions in which those
+features landed. Completed work is available today; the discussion topics
+at the end are proposals, with no promised release dates. See the
+[README](README.md) for the current feature overview and
+[CONTRIBUTING.md](CONTRIBUTING.md) to propose or help with a change.
+
+## Delivered milestones
+
 1. **Dedicated Report Directory & Unique IDs** — done in v0.8
    - Save reports to a dedicated `leak_reports/` folder.
    - Assign a unique UUID to each report (displayed in the TUI on generation) and format filenames as `leak_report_<UUID>.json`.
@@ -11,11 +19,11 @@
 
 3. **CI/CD & Headless Test Mode (`--headless` / `--timeout`)** — done in v1.0
    - Add a non-interactive CLI flag that runs target processes for a set duration (e.g., `--timeout 60s`) without launching the Rich TUI.
-   - Return exit code `1` if any `HIGH` or `CRITICAL` leak threshold is breached during execution.
+   - Return exit code `1` if any `HIGH` or `CRITICAL` leak threshold is breached during execution by default; `--fail-on` selects the lowest failing severity.
    - *Real-world use case:* Running automated leak regression tests in GitHub Actions pipelines before merging Pull Requests.
 
 4. **Interactive HTML & Visual Chart Reports** — done in v1.1
-   - Generate self-contained HTML reports alongside JSON exports (`leak_report_<UUID>.html`) featuring interactive line graphs (using Chart.js or Plotly).
+   - Generate self-contained HTML reports alongside JSON exports (`leak_report_<UUID>.html`) featuring interactive line graphs with an embedded chart implementation and no external dependencies or network requests.
    - Visualize memory, handle, and thread trends over time with highlighted red markers where alerts were triggered.
 
 5. **Granular Handle Classification** — done in v1.2
@@ -24,12 +32,34 @@
 
 6. **Custom Configuration Profiles (`.drainrc` / `config.toml`)** — done in v1.3
    - Allow users to define custom leak thresholds and window durations per project.
-   - *Real-world use case:* Game engines or heavy data-processing pipelines legitimate require higher baseline memory slope tolerances than lightweight utility scripts.
+   - *Real-world use case:* Game engines or heavy data-processing pipelines legitimately require higher baseline memory slope tolerances than lightweight utility scripts.
 
 7. **Warm-Up / Calibration Phase** — done in v1.4
    - Add an initial startup grace period (e.g., `--warmup 10s`) during which resource sampling occurs but leak detection heuristics are deferred.
    - *Real-world use case:* Preventing false-positive alerts triggered by standard application initialization, cache warming, or JIT compilation spikes.
 
-8. **Report Comparison & Diffing Tool (`draintracer diff`)** — done in v1.5
+8. **Report Comparison & Diffing Tool (`python src/main.py diff`)** — done in v1.5
    - Add a CLI command to compare two JSON leak reports: `python src/main.py diff reportA.json reportB.json`.
    - Highlight whether a patch reduced memory drift rates or resolved handle leaks between software versions.
+
+Later hardening improves process identity checks, orphan discovery,
+bounded report history, error handling, and literal argument forwarding to
+Windows batch targets. The current behavior is documented in
+[working-principle.md](working-principle.md).
+
+## Topics for discussion
+
+- **Distribution:** evaluate packaging and a documented installed command
+  while preserving the straightforward source-checkout workflow.
+- **Release verification:** agree on a repeatable Windows release checklist,
+  supported Python versions, and how runtime validation should accompany
+  published releases.
+- **Detector calibration:** collect reproducible, bounded examples of slow
+  leaks and legitimate growth to assess defaults and profile guidance.
+- **Deeper attribution:** explore which additional diagnostics would help
+  connect aggregate tree growth to a specific process or allocation source
+  without making routine sampling block or require intrusive instrumentation.
+
+Open an issue with the workload, expected behavior, and proposed scope
+before starting a substantial feature. These topics are starting points
+for discussion rather than claims that the functionality already exists.
