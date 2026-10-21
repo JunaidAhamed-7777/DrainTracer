@@ -744,5 +744,56 @@ class EvidenceDisplayTests(unittest.TestCase):
                 self.assertIn("COLLECT", output)
 
 
+class ProcessAttributionDisplayTests(unittest.TestCase):
+    MB = 1024 * 1024
+
+    def _worker(self, pid: int, private_mb: float = 10):
+        from dataclasses import replace
+
+        return replace(
+            make_process(pid, ppid=100, private=int(private_mb * self.MB)), create_time=float(pid)
+        )
+
+    def _render(self, app: DashboardApp) -> str:
+        with app.console.capture() as capture:
+            app.console.print(app._render())
+        return capture.get()
+
+    def test_health_detail_names_the_top_contributor(self) -> None:
+        app = _app(width=160)
+        root = make_process(100, name="parent.exe")
+        trees = [[root, self._worker(1), self._worker(2, 30 + index * 4)] for index in range(21)]
+        _sampled(app, trees)
+        (alert,) = app.snapshot.alerts
+        self.assertEqual(
+            app._health_detail(alert), "+80.0 MB private in 10s, mostly worker.exe PID 2 · 8.0 MB/s"
+        )
+
+    def test_new_workers_are_named_as_capacity(self) -> None:
+        app = _app()
+        root = make_process(100, name="parent.exe")
+        trees = [
+            [root, *[self._worker(10 + n, 20) for n in range(index // 5 + 1)]]
+            for index in range(21)
+        ]
+        _sampled(app, trees)
+        self.assertEqual(len(app.snapshot.alerts), 3)  # handles and threads arrive too
+        for alert in app.snapshot.alerts:
+            self.assertIn("mostly new worker processes", app._health_detail(alert))
+
+    def test_header_shows_starts_and_exits_next_to_the_count(self) -> None:
+        root = make_process(100, name="parent.exe")
+        trees = [[root, self._worker(1)], [root, self._worker(1), self._worker(2)], [root]]
+        wide = _app(width=140)
+        _sampled(wide, trees)
+        self.assertIn("PROCESSES 1 (+1/-2 started/exited)", self._render(wide))
+        narrow = _app(width=80, height=24)
+        _sampled(narrow, trees)
+        self.assertIn("PROCS 1 +1/-2", self._render(narrow))
+        quiet = _app()
+        _sampled(quiet, [[root]] * 2)
+        self.assertIn("PROCESSES 1 ", self._render(quiet))
+
+
 if __name__ == "__main__":
     unittest.main()

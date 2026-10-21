@@ -480,6 +480,12 @@ class DashboardApp(MonitorSession):
         snapshot = self.snapshot
         pid = snapshot.root_pid if snapshot and snapshot.root_pid else "-"
         process_count = len(snapshot.processes) if snapshot else 0
+        processes = str(process_count)
+        counts = snapshot.process_counts if snapshot else None
+        if counts is not None and (counts.started or counts.exited):
+            # Churn next to the count: a steady count can hide restarts.
+            churn = f"+{counts.started}/-{counts.exited}"
+            processes += f" ({churn} started/exited)" if roomy else f" {churn}"
         interval = snapshot.sample_interval_ms if snapshot else self.detector.sample_interval_ms
         target = Path(self.target_path).name
         root_name = self._process_name(snapshot)
@@ -488,7 +494,7 @@ class DashboardApp(MonitorSession):
         pairs = [
             ("TARGET", target),
             ("PID", f"{pid} (attached)" if self.attached else str(pid)),
-            ("PROCESSES" if roomy else "PROCS", str(process_count)),
+            ("PROCESSES" if roomy else "PROCS", processes),
             ("UPTIME", self._format_duration(self._uptime())),
         ]
         remaining = self.time_remaining
@@ -1130,6 +1136,8 @@ class DashboardApp(MonitorSession):
 
         The panel is narrow, so the type that grew comes right after the
         amount, ahead of the rate: ``+358 in 10s · file +340 · 39.8/s``.
+        The process the detector ranked first joins the amount:
+        ``+40.0 MB private in 10s, mostly worker.exe PID 1234 · 4.0 MB/s``.
         """
         delta = alert.current_value - alert.baseline_value
         if alert.resource == LeakResource.MEMORY:
@@ -1140,6 +1148,10 @@ class DashboardApp(MonitorSession):
             amount = f"{delta:,.0f}"
             rate = f"{alert.slope_per_second:,.1f}/s"
         parts = [f"+{amount} in {alert.window_seconds:.0f}s"]
+        attribution = self.attribution_text(alert)
+        if attribution:
+            # Who grew matters more than how fast, so it rides on the amount.
+            parts[0] += f", {attribution}"
         growth = describe_type_growth(alert.growth_by_type or {}, limit=1)
         if growth:
             parts.append(growth.removeprefix("by type: "))
