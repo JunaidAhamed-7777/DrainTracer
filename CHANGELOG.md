@@ -64,6 +64,8 @@ current release and [AGENTS.md](AGENTS.md) for the release policy.
   labels, not only `password=value` assignments.
 - Kept the Windows dashboard responsive when a key such as `à` arrives as a
   lone extended-key prefix; it no longer waits for another key press.
+- Ended process-inspector growth at the displayed sample, so growth and the
+  values beside it describe the same moment.
 
 ## v5.1.1 — 2026-10-22
 

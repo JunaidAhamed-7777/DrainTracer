@@ -220,6 +220,20 @@ class ProcessesViewTests(ViewRenderingMixin, unittest.TestCase):
         self.assertEqual(app.view, "processes")
         self.assertEqual(app._sort_mode, "tree")  # S here does not touch the overview sort
 
+    def test_growth_ends_at_the_displayed_sample(self) -> None:
+        from unittest import mock
+
+        app = self._app()
+        displayed = app._inspector_rows()[1].growth["private_bytes"].delta
+        # The detector samples again, but the UI has not accepted that snapshot yet.
+        root = replace(make_process(100, ppid=1, name="parent.exe"), create_time=1.0)
+        with mock.patch.object(app.detector, "_sample_processes",
+                               return_value=[root, _worker(2, 900)]), \
+                mock.patch("src.leak_detector.time.time", return_value=1000.0 + 25 * 0.5):
+            app.detector._collect_snapshot()
+        app._proc_cache = None
+        self.assertEqual(app._inspector_rows()[1].growth["private_bytes"].delta, displayed)
+
     def test_selection_follows_identity_across_refreshes_and_exits(self) -> None:
         app = _app(120, 40)
         root = replace(make_process(100, ppid=1, name="parent.exe"), create_time=1.0)

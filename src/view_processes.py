@@ -193,8 +193,12 @@ class ProcessesViewMixin:
                 summaries = (*snapshot.process_summaries, *snapshot.exited_processes)
                 rows = [growth for item in summaries if (growth := _lifetime(item, metric))]
             else:
+                # End at the displayed sample: the detector thread may already
+                # hold newer points than the snapshot the table shows.
                 rows = list(
-                    self.detector.process_history.growth(metric, since=snapshot.timestamp - interval)
+                    self.detector.process_history.growth(
+                        metric, since=snapshot.timestamp - interval, until=snapshot.timestamp
+                    )
                 )
             tables[metric] = {row.identity: row for row in rows}
         self._proc_cache = (key, tables)
