@@ -14,6 +14,7 @@ from helpers import make_alert, make_snapshot
 from src.report import (
     iso_timestamp,
     new_report_id,
+    report_directory,
     report_filename,
     snapshot_to_dict,
     write_json_report,
@@ -36,6 +37,40 @@ class ReportIdentityTests(unittest.TestCase):
         parsed = datetime.fromisoformat(stamp)
         self.assertIsNotNone(parsed.tzinfo)
         self.assertAlmostEqual(parsed.timestamp(), 1_700_000_000.25, places=3)
+
+
+class ReportDirectoryTests(unittest.TestCase):
+    def test_groups_by_filename_and_recorded_offset_date(self) -> None:
+        report = {
+            "target_path": "C:\\targets\\worker.exe",
+            "created_at": "2026-10-21T00:15:00.000+14:00",
+        }
+        self.assertEqual(report_directory(report, "reports"),
+                         Path("reports") / "worker.exe_2026-10-21")
+
+    def test_handles_posix_paths_unicode_and_custom_roots(self) -> None:
+        report = {"target_path": "/work/日本 worker.py", "created_at": "2026-10-21T12:00:00+00:00"}
+        self.assertEqual(report_directory(report, Path("custom") / "out"),
+                         Path("custom") / "out" / "日本 worker.py_2026-10-21")
+
+    def test_sanitizes_windows_invalid_names_and_bounds_component_length(self) -> None:
+        for filename in ('bad<>:"|?*\x01\udc80.exe. ', "x" * 300 + ".exe", "CON"):
+            with self.subTest(filename=filename):
+                report = {"target_path": filename, "created_at": "2026-10-21T12:00:00+05:30"}
+                path = report_directory(report, "reports")
+                self.assertEqual(path.parent, Path("reports"))
+                self.assertLessEqual(len(path.name), 111)
+                self.assertTrue(path.name.endswith("_2026-10-21"))
+                self.assertFalse(any(character in '<>:"/\\|?*' for character in path.name))
+                self.assertTrue(path.name.isprintable())
+
+    def test_rejects_missing_or_invalid_metadata_instead_of_making_placeholders(self) -> None:
+        base = {"target_path": "worker.exe", "created_at": "2026-10-21T12:00:00+05:30"}
+        for override in ({"target_path": ""}, {"target_path": ".."}, {"target_path": None},
+                         {"created_at": None}, {"created_at": "not a date"},
+                         {"created_at": "2026-10-21T12:00:00"}):
+            with self.subTest(override=override), self.assertRaises(ValueError):
+                report_directory(base | override, "reports")
 
 
 class ReportStorageTests(unittest.TestCase):

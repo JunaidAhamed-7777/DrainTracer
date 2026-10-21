@@ -6,9 +6,10 @@ import json
 import math
 import os
 import uuid
+from collections.abc import Mapping
 from dataclasses import asdict
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from .events import MetricsSnapshot
@@ -34,6 +35,28 @@ def iso_timestamp(epoch: float | None = None) -> str:
 
 def report_filename(report_id: str, suffix: str = ".json") -> str:
     return f"leak_report_{report_id}{suffix}"
+
+
+def report_directory(report: Mapping[str, Any], root: str | Path) -> Path:
+    """Group exports by the actual target filename and recorded local date."""
+    target = report.get("target_path")
+    created = report.get("created_at")
+    if not isinstance(target, str) or not target.strip():
+        raise ValueError("report has no target_path for its output directory")
+    try:
+        moment = datetime.fromisoformat(created) if isinstance(created, str) else None
+    except ValueError as exc:
+        raise ValueError("report created_at is not a valid ISO 8601 timestamp") from exc
+    if moment is None or moment.tzinfo is None:
+        raise ValueError("report created_at must include a UTC offset")
+    filename = PureWindowsPath(target).name
+    safe = "".join(
+        character if character.isprintable() and character not in '<>:"/\\|?*' else "_"
+        for character in filename
+    ).strip(" .")[:100].rstrip(" .")
+    if not safe:
+        raise ValueError("report target_path has no usable filename")
+    return Path(root) / f"{safe}_{moment.date().isoformat()}"
 
 
 def snapshot_to_dict(snapshot: MetricsSnapshot) -> dict[str, Any]:
@@ -115,6 +138,7 @@ __all__ = [
     "REPORT_SCHEMA",
     "iso_timestamp",
     "new_report_id",
+    "report_directory",
     "report_filename",
     "snapshot_to_dict",
     "write_json_report",

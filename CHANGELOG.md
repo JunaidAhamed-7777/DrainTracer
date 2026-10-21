@@ -5,6 +5,11 @@ feature milestones remain in [future-plan.md](future-plan.md), and the complete
 commit history records earlier changes. Versions follow the repository rule:
 each focused change advances the runtime version by exactly `0.1`.
 
+## v4.3 — 2026-10-21
+
+- Added Windows-safe report grouping from the real target filename and
+  recorded creation date, with validation instead of placeholder names.
+
 ## v4.2 — 2026-10-21
 
 - Extracted reusable HTML report styles and chart code into tracked
