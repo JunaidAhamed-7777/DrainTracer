@@ -1,10 +1,18 @@
 # Plans for the future
 
-This file preserves the original roadmap and the versions in which those
-features landed. Completed work is available today; the discussion topics
-at the end are proposals, with no promised release dates. See the
-[README](README.md) for the current feature overview and
-[CONTRIBUTING.md](CONTRIBUTING.md) to propose or help with a change.
+This file is DrainTracer's single roadmap. It preserves the original
+milestones and the versions in which they landed, records what has shipped
+since, and lists the remaining proposed work, with no promised release
+dates. See the [README](README.md) for the current feature overview,
+[RELEASES.md](RELEASES.md) and [CHANGELOG.md](CHANGELOG.md) for shipped
+changes, and [CONTRIBUTING.md](CONTRIBUTING.md) to propose or help with a
+change.
+
+**Reconciled 2026-10-22** against release v5.1.1 and the work on `main`
+listed under "Unreleased" in the changelog. The prioritized assessment in
+[Immediate additions.md](Immediate%20additions.md) is folded in here: its
+implemented items are marked delivered below, and its remaining items are
+tracked in this file rather than in a separate list.
 
 ## Delivered milestones
 
@@ -42,6 +50,44 @@ at the end are proposals, with no promised release dates. See the
    - Add a CLI command to compare two JSON leak reports: `python src/main.py diff reportA.json reportB.json`.
    - Highlight whether a patch reduced memory drift rates or resolved handle leaks between software versions.
 
+9. **Release-based Semantic Versioning** — done in v5.0.0
+   - One version per published release, owner-only major bumps, and a
+     mandatory runtime-snapshot comparison before and after every change.
+
+10. **Installable package and `draintracer` command** — done in v5.1.0
+    - pip installation, wheel and source builds with bundled assets, the
+      `draintracer` command, `python -m draintracer`, and `--version`, while
+      keeping `python src/main.py`.
+
+11. **PyPI distribution and release workflow** — done in v5.1.1
+    - A Windows GitHub Actions workflow that checks the runtime snapshot,
+      compiles, runs the unit suite, builds and verifies the wheel in a clean
+      environment, and publishes with Trusted Publishing.
+
+12. **Trustworthy, attributable, verifiable evidence** — on `main`,
+    unreleased (see the changelog's "Unreleased" section)
+    - *Validity and evidence states:* unreadable counters are unknown, not
+      zero; per-metric coverage; per-resource collecting / no sustained
+      growth / growth / unavailable / stale states; separate target,
+      measurement, and monitor-error outcomes; optional
+      `--fail-on-inconclusive` and `--fail-on-target-error` policies.
+    - *Private bytes first:* the memory card, compact strip, narrow tables,
+      alerts, reports, and help name private bytes as the alerted metric,
+      with RSS (working set) as context.
+    - *Process attribution:* PID-plus-creation-time identity, bounded
+      per-process histories, ranked contributors per alert, growth from new
+      workers separated from growth inside existing processes, and logged
+      starts, exits, and restarts with exited-process summaries.
+    - *Exact facts and monitor diagnostics:* `session_facts` independent of
+      chart thinning, marked decimation, cadence, collection cost, dropped
+      samples, and the monitor's own CPU and memory.
+    - *Defensible comparisons:* redacted experiment provenance, classified
+      caveats with qualified verdicts, `diff --strict`, whole-run peaks,
+      growth per operation, and absolute resource budgets.
+    - *Focused views:* process inspector, signal evidence, timeline with
+      markers and a view-only freeze, and monitor diagnostics, with decoded
+      arrow and paging keys.
+
 Later hardening improves process identity checks, orphan discovery,
 bounded report history, error handling, and literal argument forwarding to
 Windows batch targets. The current behavior is documented in
@@ -49,16 +95,17 @@ Windows batch targets. The current behavior is documented in
 
 ## Topics for discussion
 
-- **Distribution:** evaluate packaging and a documented installed command
-  while preserving the straightforward source-checkout workflow.
-- **Release verification:** agree on a repeatable Windows release checklist,
-  supported Python versions, and how runtime validation should accompany
-  published releases.
+- **Distribution:** delivered in v5.1.0 and v5.1.1 (see milestones 10 and
+  11); remaining distribution work is tracked under D1–D3 below.
+- **Release verification:** partly delivered by the v5.1.1 workflow. Still
+  open: a pull-request check, a supported Python/Windows matrix, and
+  real-process runs alongside releases (T1).
 - **Detector calibration:** collect reproducible, bounded examples of slow
   leaks and legitimate growth to assess defaults and profile guidance.
-- **Deeper attribution:** explore which additional diagnostics would help
-  connect aggregate tree growth to a specific process or allocation source
-  without making routine sampling block or require intrusive instrumentation.
+- **Deeper attribution:** process-level attribution is delivered (milestone
+  12). Still open: diagnostics that connect a growing process to an
+  allocation source without making routine sampling block or require
+  intrusive instrumentation (O3).
 
 Open an issue with the workload, expected behavior, and proposed scope
 before starting a substantial feature. These topics are starting points
@@ -67,10 +114,13 @@ for discussion rather than claims that the functionality already exists.
 ## Proposed delivery plan: a dependable developer service
 
 Planning update: **2026-10-21**. The checklist below extends the discussion
-topics into work that can be scoped, implemented, and verified. Every item
-is proposed and unchecked; phase names indicate dependency order, not
-promised dates or release versions. Keep the delivered milestones above
-as history.
+topics into work that can be scoped, implemented, and verified. Phase names
+indicate dependency order, not promised dates or release versions. Keep the
+delivered milestones above as history.
+
+Status as of 2026-10-22: a checked item met its completion criteria; an
+unchecked item with a **Status** note has delivered parts and names what
+remains; every other item is still proposed.
 
 The goal is a tool developers can install quickly, use during an
 investigation, run repeatedly in CI, and eventually access through an
@@ -84,9 +134,11 @@ DrainTracer already supports source-based Windows use, launch and PID
 attachment, recursive process tracking, warm-up, profiles, headless checks,
 GitHub Actions annotations and summaries, offline HTML/JSON exports, and
 report comparison. The proposed work strengthens these features rather
-than presenting them as new. There is currently no installed command,
-package build configuration, repository CI workflow, public SDK, or hosted
-service.
+than presenting them as new. Since this plan was written, v5.1.x added an
+installed command, package builds, PyPI publishing, and a Windows release
+workflow, and `main` added the evidence, attribution, and comparison work
+in milestone 12. There is still no pull-request CI check, public SDK, or
+hosted service.
 
 Keep Windows as the supported monitoring platform until another platform
 has its own tested process and metric semantics. Keep the offline CLI
@@ -111,6 +163,11 @@ distinction between launched and attached targets throughout this plan.
   **Done when:** a deliberate detector, report, or cleanup regression blocks
   release, and a clean Windows machine can reproduce the checks from the
   documented source commit.
+  **Status:** partly delivered in v5.1.1. The publishing workflow runs the
+  snapshot check, compilation, the unit suite, and clean-environment wheel
+  verification on Windows with Python 3.10 before any upload. Remaining:
+  pull-request triggers, a Python/Windows matrix, bounded real-process cases
+  (`torture/verify_suite.py`), and failure artifacts with an expiry.
 
 - [ ] **T2. Make automated outcomes explicit.** Define a structured session
   result that separates signal severity, per-resource detection coverage,
@@ -122,6 +179,13 @@ distinction between launched and attached targets throughout this plan.
   target exit `23`, interruption, and a signal followed by an export error,
   without automation parsing terminal messages or treating missing data as
   a measured zero.
+  **Status:** largely delivered on `main`. Reports carry separate `target`,
+  `measurement`, and `monitor_errors` outcomes and per-metric coverage;
+  unreadable counters are unknown rather than zero; `--fail-on-inconclusive`
+  (exit `3`), `--fail-on-target-error` (exit `4`), and budgets (exit `5`)
+  are opt-in with documented precedence. Remaining: an explicit cleanup
+  outcome field, a policy for partial coverage, and policy handling for a
+  failed start (still exit `2`).
 
 - [ ] **T3. Calibrate detection against repeatable workloads.** Extend the
   existing bounded fixtures with slow growth, stable caches, repeated
@@ -132,6 +196,13 @@ distinction between launched and attached targets throughout this plan.
   workloads rather than automatically learning away a leak.
   **Done when:** each proposed threshold change has growth and non-growth
   evidence, a documented minimum useful run length, and known limitations.
+  **Scope from the product assessment:** the validation set should cover a
+  steady workload, cache growth followed by a plateau, startup spikes,
+  worker churn, slow sustained leaks, handle and thread growth, access loss,
+  and large process trees, and record detection delay, missed known cases,
+  and misleading warnings. Release notes should then describe tested
+  scenarios and measured limitations without claiming universal accuracy
+  or a confidence percentage.
 
 - [ ] **T4. Preserve authoritative evidence across long runs.** Keep compact
   run summaries, strongest observed signals, and coverage accounting
@@ -143,6 +214,12 @@ distinction between launched and attached targets throughout this plan.
   **Done when:** a long-run test stays within recorded memory/disk limits,
   preserves its strongest signal after thinning, and produces consistent,
   clearly qualified summaries after partial recovery.
+  **Status:** largely delivered on `main`. `session_facts` keeps exact peaks
+  with timestamps, worst severity, episodes, evaluated time, sample counts,
+  and coverage independently of thinning; reports state the chart stride
+  and dropped snapshots, and analysis, HTML, and diffs prefer the exact
+  facts. Remaining: bounded checkpoints for interrupted sessions and
+  explicit event-log truncation counts.
 
 - [ ] **T5. Measure overhead and stress lifecycle safety.** Benchmark
   sampling time, CPU, memory, handle classification, queue lag, and export
@@ -155,6 +232,11 @@ distinction between launched and attached targets throughout this plan.
   **Done when:** repeatable stress and soak runs meet the agreed budgets,
   cleanup failures are visible, and attached targets are never controlled
   using a stale PID identity or left paused by ordinary shutdown.
+  **Status:** instrumentation delivered on `main`: every snapshot reports
+  requested and achieved cadence, collection time, handle-classification
+  cost and age, failed and dropped samples, and the monitor's own CPU and
+  memory, shown in the monitor view and reports. Remaining: the benchmarks
+  across tree sizes, budgets set from them, and the stress and soak runs.
 
 **Phase gate:** T1–T5 establish the evidence needed to recommend DrainTracer
 as a regression gate. Installation and documentation work can proceed in
@@ -162,7 +244,8 @@ parallel; claims about reliable checks must wait for measured results.
 
 ### Phase 2 — Make installation and everyday use accessible (P1)
 
-- [ ] **D1. Ship an installable package and console command.** Add package
+- [x] **D1. Ship an installable package and console command.** Delivered
+  in v5.1.0 and v5.1.1 (see [RELEASES.md](RELEASES.md)). Add package
   metadata, a wheel/source build, and a proposed `draintracer` entry point
   while preserving source execution. Bundle `TITLE.txt` and required report
   resources correctly, and separate the monitor's Python environment from
@@ -202,6 +285,10 @@ parallel; claims about reliable checks must wait for measured results.
   **Done when:** keyboard and screen-reader users can start, inspect,
   interpret, export, and quit a session in plain output and at small terminal
   sizes, with no hidden change to target ownership.
+  **Status:** the view-only freeze shipped on `main` as `F` in the timeline
+  view, leaving `Space` (pause target and sampling) unchanged; evidence
+  states are spelled out in text rather than color alone. Remaining: color
+  controls, a static/plain mode, quiet output, and screen-reader checks.
 
 - [ ] **D5. Make exported evidence accessible without chart interaction.**
   Add equivalent textual summaries and data tables/downloads for HTML
@@ -238,6 +325,11 @@ Usability and accessibility failures feed back into D1–D5 before promotion.
   **Done when:** the same recipe runs locally and in CI with recorded
   provenance, readiness failures are distinct from leak signals, and timeouts
   clean up only the processes that session owns.
+  **Status:** provenance delivered on `main`: reports record workload ID,
+  build, operation count, note, sampling settings, machine details, and a
+  redacted argument count and fingerprint. Remaining: interpreter, working
+  directory, and environment selection, readiness checks, exercise steps,
+  and log capture.
 
 - [ ] **W3. Supply a maintained Windows CI template and reusable action.**
   Build on existing annotations and job summaries with version-pinned setup,
@@ -258,6 +350,12 @@ Usability and accessibility failures feed back into D1–D5 before promotion.
   **Done when:** a known regression fails reproducibly, incompatible or
   insufficient runs cannot silently replace a baseline, and an approved
   update records who changed it and why.
+  **Status:** comparison semantics delivered on `main`: classified caveats,
+  qualified verdicts, `diff --strict` (`NOT COMPARABLE` or
+  `INSUFFICIENT COVERAGE`, exit `3`), whole-run peaks, growth per operation,
+  and absolute budgets (exit `4`). Remaining: repeated runs per side with
+  variability, budgets read from the report as well as flags, baseline
+  approval, and scoped suppressions.
 
 - [ ] **W5. Publish a small supported Python API.** Expose typed session
   options/results, launch/attach, cancellation, snapshots/events, and report
@@ -391,6 +489,13 @@ security review.
   **Done when:** a multi-process fixture identifies the growing child across
   churn/PID reuse, and any deeper tracing is opt-in with measured cost and
   no claim that aggregate counters locate allocations.
+  **Status:** per-process attribution delivered on `main`: PID and
+  creation-time identity, bounded histories, ranked contributors per alert, a
+  new-worker versus existing-process split, lifecycle events, exited-process
+  summaries, and the process inspector view. Remaining: optional tracing
+  adapters, and deciding whether growth that comes mostly from new workers
+  should keep full severity (today it is described as such but still
+  raised and can fail a headless run).
 
 - [ ] **O4. Evaluate broader deployment only against demonstrated demand.**
   Scope unattended Windows service accounts, enterprise/private hosting,
@@ -403,9 +508,10 @@ security review.
 
 ### How to turn this checklist into delivered work
 
-1. Start with **T1, T2, and D1** as focused issues; schedule calibration
-   (T3) alongside them. Then complete evidence/overhead work (T4/T5) and the
-   first-use and accessibility workflow (D2–D5).
+1. D1 has shipped and T2/T4 are largely delivered. Next, finish **T1** and
+   the remaining parts of T2/T4, and schedule calibration (T3) and overhead
+   budgets (T5) together, since both need the validation set. Then complete
+   the first-use and accessibility workflow (D2–D5).
 2. Before implementation, give each selected item a maintainer/owner, scope,
    dependency links, expected user outcome, acceptance checks, and a size
    estimate. Split tasks that cannot be reviewed independently into smaller
