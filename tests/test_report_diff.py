@@ -312,5 +312,42 @@ class EquivalenceTests(unittest.TestCase):
         self.assertEqual((result.verdict, result.qualified), (IMPROVED, False))
         self.assertIsNone(result.to_dict()["before"]["experiment"])
 
+class PeakAndBudgetTests(unittest.TestCase):
+    setUp = ComparisonTests.setUp
+    _load = ComparisonTests._load
+
+    def _compare(self, before: dict, after: dict, **kwargs):
+        return compare_reports(self._load("a.json", before), self._load("b.json", after),
+                               **kwargs)
+
+    def test_stable_but_excessive_usage_is_reported_without_a_leak_signal(self) -> None:
+        heavy = _run()
+        for snapshot in heavy["snapshots"]:
+            snapshot["totals"]["private_bytes"] = 700 * MB  # flat, but large
+        result = self._compare(_run(), heavy, budgets={"private_bytes": 500 * MB,
+                                                       "handles": 2000})
+        memory = result.resources[0]
+        self.assertEqual((memory.signal, memory.trend), ("clear", UNCHANGED))
+        self.assertEqual(memory.peak_after, 700 * MB)
+        self.assertEqual([check.exceeded for check in result.budgets], [True, False])
+        self.assertEqual(result.verdict, UNCHANGED)
+        self.assertIn("B over budget (private bytes)", result.headline())
+        data = result.to_dict()
+        self.assertTrue(data["over_budget"])
+        self.assertEqual(data["resources"]["memory"]["run_peak_after"], 700 * MB)
+        self.assertEqual(data["resources"]["memory"]["metric"], "private_bytes")
+        self.assertEqual(self._compare(_run(), _run()).budgets, ())
+
+    def test_growth_is_normalized_per_operation_when_both_runs_count_them(self) -> None:
+        before = _run(4.0, experiment=_experiment(operations=1000))
+        after = _run(2.0, experiment=_experiment(operations=1050))
+        memory = self._compare(before, after).resources[0]
+        self.assertTrue(memory.normalized)
+        self.assertAlmostEqual(memory.growth_per_operation_before, 80 * MB / 1000)
+        self.assertAlmostEqual(memory.growth_per_operation_after, 40 * MB / 1050)
+        one_sided = self._compare(_run(4.0, experiment=_experiment(operations=1000)), _run(2.0))
+        self.assertIsNone(one_sided.resources[0].growth_per_operation_after)
+        self.assertFalse(one_sided.resources[0].normalized)
+
 if __name__ == "__main__":
     unittest.main()

@@ -31,12 +31,15 @@ from typing import Any
 
 from .analysis import (
     RESOURCES,
+    SIGNAL_TOTALS,
     ReportSummary,
     ResourceSummary,
     finite,
     severity_rank,
     summarize,
 )
+from .budgets import BudgetCheck, check_budgets
+from .events import METRIC_LABELS
 from .experiment import ExperimentData, load_experiment
 from .handle_types import CATEGORIES as HANDLE_CATEGORIES
 from .units import format_bytes, format_duration
@@ -121,6 +124,31 @@ class ResourceComparison:
     after: ResourceSummary
     signal: str
     trend: str
+    # Whole-run peaks of the signal metric (warm-up included, exact when the
+    # report has session facts): a stable but excessive total shows here
+    # even when neither run grows.
+    peak_before: float | None = None
+    peak_after: float | None = None
+    # Operation counts from the experiment labels, when the run recorded one.
+    operations_before: float | None = None
+    operations_after: float | None = None
+
+    @property
+    def metric(self) -> str:
+        return SIGNAL_TOTALS[self.resource]
+
+    @property
+    def normalized(self) -> bool:
+        """Whether both runs recorded an operation count, so growth per operation exists."""
+        return self.operations_before is not None and self.operations_after is not None
+
+    @property
+    def growth_per_operation_before(self) -> float | None:
+        return _per_operation(self.before.growth, self.operations_before)
+
+    @property
+    def growth_per_operation_after(self) -> float | None:
+        return _per_operation(self.after.growth, self.operations_after)
 
     @property
     def drift_change(self) -> float | None:
@@ -172,6 +200,12 @@ class ReportComparison:
     caveats: tuple[Caveat, ...] = field(default_factory=tuple)
     # Strict comparisons refuse a measured verdict when a caveat blocks it.
     strict: bool = False
+    # Absolute budgets checked against the newer run's whole-run peaks.
+    budgets: tuple[BudgetCheck, ...] = field(default_factory=tuple)
+
+    @property
+    def over_budget(self) -> tuple[BudgetCheck, ...]:
+        return tuple(check for check in self.budgets if check.exceeded)
 
     @property
     def comparability(self) -> str:
@@ -236,6 +270,9 @@ class ReportComparison:
             if item.trend in {IMPROVED, REGRESSED}:
                 notes.append(f"{item.resource} drift {item.describe_change()}")
         text = "; ".join(notes) if notes else "no meaningful change in leak signals or drift"
+        if self.over_budget:
+            names = ", ".join(METRIC_LABELS.get(c.metric, c.metric) for c in self.over_budget)
+            text += f"; B over budget ({names})"
         if self.blocked:
             reasons = [caveat.kind for caveat in self.caveats if caveat.blocks == self.verdict]
             return f"{self.verdict} ({', '.join(dict.fromkeys(reasons))}); measured: {text}"
@@ -285,6 +322,11 @@ class ReportComparison:
                     "growth_after": item.after.growth,
                     "peak_before": item.before.peak,
                     "peak_after": item.after.peak,
+                    "metric": item.metric,
+                    "run_peak_before": item.peak_before,
+                    "run_peak_after": item.peak_after,
+                    "growth_per_operation_before": item.growth_per_operation_before,
+                    "growth_per_operation_after": item.growth_per_operation_after,
                     "episodes_before": item.before.episodes,
                     "episodes_after": item.after.episodes,
                 }
@@ -296,6 +338,8 @@ class ReportComparison:
             },
             "warnings": list(self.warnings),
             "caveats": [caveat.to_dict() for caveat in self.caveats],
+            "budgets": [check.to_dict() for check in self.budgets],
+            "over_budget": bool(self.over_budget),
         }
 
 
@@ -341,13 +385,20 @@ def _experiment_side(experiment: ExperimentData | None) -> dict[str, Any] | None
 
 
 def compare_reports(
-    before: LoadedReport, after: LoadedReport, *, strict: bool = False
+    before: LoadedReport,
+    after: LoadedReport,
+    *,
+    strict: bool = False,
+    budgets: Mapping[str, float] | None = None,
 ) -> ReportComparison:
     """Compare an earlier report with a later one.
 
     With ``strict``, a caveat that makes the runs non-equivalent replaces
     the verdict with ``not comparable`` or ``insufficient coverage``.
+    ``budgets`` (``{metric: limit}``) are checked against the later run's
+    whole-run peaks.
     """
+    old_experiment, new_experiment = before.experiment, after.experiment
     caveats = comparability_caveats(before, after)
     resources = tuple(
         ResourceComparison(
@@ -362,6 +413,10 @@ def compare_reports(
                 before.summary.resources[resource].drift_per_second,
                 after.summary.resources[resource].drift_per_second,
             ),
+            peak_before=_run_peak(before.summary, SIGNAL_TOTALS[resource]),
+            peak_after=_run_peak(after.summary, SIGNAL_TOTALS[resource]),
+            operations_before=old_experiment.operations if old_experiment else None,
+            operations_after=new_experiment.operations if new_experiment else None,
         )
         for resource in RESOURCES
     )
@@ -373,7 +428,20 @@ def compare_reports(
         warnings=tuple(caveat.message for caveat in caveats),
         caveats=tuple(caveats),
         strict=strict,
+        budgets=check_budgets(budgets or {}, after.summary.peaks),
     )
+
+
+def _run_peak(summary: ReportSummary, metric: str) -> float | None:
+    """The whole-run peak of a total, or ``None`` when it was never measured."""
+    value = finite(summary.peaks.get(metric))
+    return value if value is not None and value > 0 else None
+
+
+def _per_operation(growth: float | None, operations: float | None) -> float | None:
+    if growth is None or not operations:
+        return None
+    return growth / operations
 
 
 def _signal_change(before: str, after: str) -> str:
