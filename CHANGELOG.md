@@ -5,6 +5,11 @@ feature milestones remain in [future-plan.md](future-plan.md), and the complete
 commit history records earlier changes. Versions follow the repository rule:
 each focused change advances the runtime version by exactly `0.1`.
 
+## v3.0 — 2026-10-21
+
+- Added read-only running-process discovery with sorted names/PIDs and
+  creation-time checks for stale or reused selections.
+
 ## v2.9 — 2026-10-21
 
 - Connected startup to the Open a program / Hook to a running program

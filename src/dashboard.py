@@ -46,7 +46,7 @@ SORT_MODES = ("tree", "memory", "handles", "cpu")
 class DashboardApp(MonitorSession):
     """Render a monitor session live in the terminal and handle its controls."""
 
-    VERSION = "v2.9"
+    VERSION = "v3.0"
     DELTA_WINDOW_SECONDS = 10.0
     FRAME_SECONDS = 0.1
     # Redraw at least this often so the clock and countdowns keep moving.
