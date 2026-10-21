@@ -68,9 +68,16 @@ python -m venv .venv
 .\.venv\Scripts\python.exe src/main.py
 ```
 
-The last command opens the native file picker. Select an executable, Python
-script, or Windows batch file to start monitoring. Calling the virtual
-environment's Python directly avoids PowerShell activation-policy changes.
+The last command offers two startup choices:
+
+- **1 — Open a program:** select an executable, Python script, or Windows
+  batch file in the native file picker.
+- **2 — Hook to a running program:** enter its PID from Task Manager's
+  **Details** tab. Quitting detaches and leaves the program running.
+
+Type `Q` to cancel either startup prompt. Supplying `--target` or `--pid`
+skips the menu. Calling the virtual environment's Python directly avoids
+PowerShell activation-policy changes.
 
 For the examples below, activate that environment or replace `python` with
 `.\.venv\Scripts\python.exe`.

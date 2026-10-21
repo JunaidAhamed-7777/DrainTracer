@@ -36,6 +36,7 @@ from src.file_picker import select_target_file
 from src.headless import EXIT_ERROR, HeadlessRunner
 from src.process_runner import ProcessManagerError
 from src.report import DEFAULT_REPORT_DIR
+from src.startup import choose_startup_action, prompt_process_id
 from src.theme import PALETTE, blend
 from src.units import parse_duration
 
@@ -121,7 +122,7 @@ def _window(value: str) -> float:
 
 _EXAMPLES = """\
 examples:
-  python src/main.py                                   pick a target in a file dialog
+  python src/main.py                                   choose to open or hook to a program
   python src/main.py --target app.exe -- --port 8080   launch with arguments
   python src/main.py --pid 4820                        attach to a running process
   python src/main.py --profile ci --target app.exe     use a .drainrc profile
@@ -142,7 +143,7 @@ def build_parser() -> argparse.ArgumentParser:
     source.add_argument(
         "--target",
         metavar="PATH",
-        help="Target executable/script. If omitted, open the native file picker.",
+        help="Target executable/script. Without --target or --pid, choose how to start.",
     )
     source.add_argument(
         "--pid",
@@ -363,7 +364,7 @@ def _main(console: Console, argv: list[str] | None) -> int:
     if args.fail_on is not None and not args.headless:
         parser.error("--fail-on only applies with --headless")
     if args.headless and args.target is None and args.pid is None:
-        parser.error("--headless needs --target or --pid; the file picker is interactive")
+        parser.error("--headless needs --target or --pid; startup selection is interactive")
     if args.profile is not None and args.no_config:
         parser.error("--profile needs a settings file; drop --no-config")
     if args.window and len(set(args.window)) > MAX_WINDOWS:
@@ -393,18 +394,35 @@ def _main(console: Console, argv: list[str] | None) -> int:
     for warning in settings.warnings():
         console.print(Text.assemble(("Note: ", f"bold {PALETTE.warn}"), warning))
 
-    if args.pid is not None:
+    target_path = args.target
+    attach_pid = args.pid
+    if target_path is None and attach_pid is None:
+        action = choose_startup_action(console)
+        if action is None:
+            console.print("[yellow]Selection canceled. Nothing to monitor.[/yellow]")
+            return 0
+        if action == "hook":
+            if forwarded_args:
+                parser.error(
+                    "arguments after '--' only apply to launched targets, "
+                    "not Hook to a running program"
+                )
+            attach_pid = prompt_process_id(console)
+            if attach_pid is None:
+                console.print("[yellow]Selection canceled. Nothing to monitor.[/yellow]")
+                return 0
+
+    if attach_pid is not None:
         app = DashboardApp(
             None,
             console=console,
             report_dir=settings.report_dir,
-            attach_pid=args.pid,
+            attach_pid=attach_pid,
             timeout=settings.timeout,
             settings=settings,
         )
         return _run_dashboard(app, console)
 
-    target_path = args.target
     if target_path is None:
         console.print(
             Panel(

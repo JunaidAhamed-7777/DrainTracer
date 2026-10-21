@@ -190,14 +190,20 @@ class DispatchTests(unittest.TestCase):
         failure = OSError("All Windows file picker implementations failed")
         failure.__cause__ = RuntimeError("no display")
         console = make_console()
-        with mock.patch.object(cli, "select_target_file", side_effect=failure):
+        with (
+            mock.patch.object(cli, "choose_startup_action", return_value="open"),
+            mock.patch.object(cli, "select_target_file", side_effect=failure),
+        ):
             self.assertEqual(cli._main(console, ["--no-config"]), 1)
         output = console.file.getvalue()
         self.assertIn("implementations failed: no display", output)
         self.assertIn("--target PATH", output)
 
         console = make_console()
-        with mock.patch.object(cli, "select_target_file", return_value=None):
+        with (
+            mock.patch.object(cli, "choose_startup_action", return_value="open"),
+            mock.patch.object(cli, "select_target_file", return_value=None),
+        ):
             self.assertEqual(cli._main(console, ["--no-config"]), 0)
         self.assertIn("Selection canceled", console.file.getvalue())
 
@@ -206,6 +212,66 @@ class DispatchTests(unittest.TestCase):
                 mock.patch.object(cli, "Console", return_value=make_console()):
             self.assertEqual(cli.main([]), 130)
 
+
+
+class StartupDispatchTests(unittest.TestCase):
+    def test_open_uses_the_file_picker_and_preserves_target_arguments(self) -> None:
+        console = make_console()
+        with (
+            mock.patch("builtins.input", return_value="1"),
+            mock.patch.object(cli, "select_target_file", return_value="app.exe") as picker,
+            mock.patch.object(cli, "DashboardApp") as app,
+        ):
+            app.return_value.run.return_value = 0
+            code = cli._main(console, ["--no-config", "--", "--fast", "two words"])
+        self.assertEqual(code, 0)
+        picker.assert_called_once_with()
+        self.assertEqual(app.call_args.args, ("app.exe",))
+        self.assertEqual(app.call_args.kwargs["args"], ["--fast", "two words"])
+        self.assertNotIn("attach_pid", app.call_args.kwargs)
+
+    def test_hook_uses_the_pid_and_preserves_settings_without_a_file_picker(self) -> None:
+        console = make_console()
+        with (
+            mock.patch("builtins.input", side_effect=["2", "4242"]),
+            mock.patch.object(cli, "select_target_file") as picker,
+            mock.patch.object(cli, "DashboardApp") as app,
+        ):
+            app.return_value.run.return_value = 0
+            code = cli._main(console, ["--no-config", "--timeout", "2m", "--report-dir", "out"])
+        self.assertEqual(code, 0)
+        picker.assert_not_called()
+        self.assertEqual(app.call_args.args, (None,))
+        kwargs = app.call_args.kwargs
+        self.assertEqual(kwargs["attach_pid"], 4242)
+        self.assertEqual(kwargs["timeout"], 120.0)
+        self.assertEqual(kwargs["report_dir"], "out")
+        self.assertIs(kwargs["console"], console)
+        self.assertIsNone(kwargs["settings"].source)
+
+    def test_cancellation_or_eof_never_constructs_a_session(self) -> None:
+        for answers in (["q"], ["2", "q"], [EOFError()], ["2", EOFError()]):
+            with (
+                self.subTest(answers=answers),
+                mock.patch("builtins.input", side_effect=answers),
+                mock.patch.object(cli, "select_target_file") as picker,
+                mock.patch.object(cli, "DashboardApp") as app,
+            ):
+                console = make_console()
+                self.assertEqual(cli._main(console, ["--no-config"]), 0)
+                picker.assert_not_called()
+                app.assert_not_called()
+                self.assertIn("Selection canceled", console.file.getvalue())
+
+    def test_hook_rejects_launch_arguments_before_requesting_a_pid(self) -> None:
+        with (
+            mock.patch("builtins.input", return_value="2") as read,
+            mock.patch.object(cli, "DashboardApp") as app,
+        ):
+            error = _parse_error(["--no-config", "--", "--fast"])
+        self.assertIn("only apply to launched targets", error)
+        read.assert_called_once_with()
+        app.assert_not_called()
 
 
 class LoggingTests(unittest.TestCase):

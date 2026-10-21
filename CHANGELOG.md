@@ -5,6 +5,12 @@ feature milestones remain in [future-plan.md](future-plan.md), and the complete
 commit history records earlier changes. Versions follow the repository rule:
 each focused change advances the runtime version by exactly `0.1`.
 
+## v2.9 — 2026-10-21
+
+- Connected startup to the Open a program / Hook to a running program
+  menu, using the existing file picker and safe PID attachment paths.
+- Preserved direct CLI/headless workflows and documented startup choices.
+
 ## v2.8 — 2026-10-21
 
 - Added the running-program PID prompt with Task Manager guidance,

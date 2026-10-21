@@ -8,11 +8,23 @@ DrainTracer currently runs from source; the command is `python src/main.py`.
 
 ## Choose a target
 
-Start without arguments to open the native Windows file picker:
+Start without arguments to choose how to monitor a program:
 
 ```powershell
 python src/main.py
 ```
+
+Enter `1` for **Open a program**, which opens the native Windows file picker,
+or `2` for **Hook to a running program**, which asks for a positive process
+ID. Find that PID in Task Manager's **Details** tab. Type `Q` at either
+terminal prompt to cancel; Ctrl+C exits with code `130`. Closing the file
+picker also cancels without starting a target.
+
+The hook choice uses the same attachment behavior as `--pid`: it leaves the
+program running when you quit. Arguments after `--` apply only to **Open a
+program**; choosing **Hook to a running program** with launch arguments is
+a usage error. Explicit `--target` and `--pid` skip the startup menu;
+headless mode still requires one of those flags.
 
 Or pass a path directly. Quote paths that contain spaces:
 
