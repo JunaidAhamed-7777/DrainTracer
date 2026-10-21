@@ -8,6 +8,12 @@ follow Semantic Versioning once per published release, with major bumps
 reserved for the repository owner. See [RELEASES.md](RELEASES.md) for the
 current release and [AGENTS.md](AGENTS.md) for the release policy.
 
+## v5.0.0 — 2026-10-22
+
+- Adopted release-based Semantic Versioning with owner-only major bumps.
+- Added mandatory snapshot comparisons before and after changes, current
+  release records, and a README release-series label. See [RELEASES.md](RELEASES.md).
+
 ## v4.8 — 2026-10-21
 
 - Check the runtime snapshot before application imports on every CLI
