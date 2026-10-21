@@ -69,6 +69,13 @@ class RenderTests(unittest.TestCase):
         self.assertIn("Exit code", document)
         self.assertIn('data-t="2.000" data-t1="2.000"', document)
 
+    def test_memory_metrics_are_named_private_and_working_set(self) -> None:
+        document = render_html_report(_report())
+        self.assertIn("Memory · private bytes", document)
+        self.assertIn("peak private 10.0 MB · RSS (working set) 10.0 MB", document)
+        self.assertIn("<th class=\"num\">Private</th><th class=\"num\">RSS (working set)</th>", document)
+        self.assertIn('label: "RSS (working set)"', document)
+
     def test_hostile_text_is_escaped_everywhere(self) -> None:
         snapshot = snapshot_to_dict(
             make_snapshot(processes=(make_process(100, name=HOSTILE),), timestamp=1000.0)

@@ -64,8 +64,8 @@
     // minSpan keeps small noise on a large baseline from filling the chart.
     { key: "memory", title: "Memory", unit: "bytes", resource: "memory", line: main,
       minSpan: (top) => Math.max(1048576, top * 0.02), series: [
-      { key: "private", label: "Private bytes", cls: "s-private" },
-      { key: "rss", label: "Working set (RSS)", cls: "s-rss" } ] },
+      { key: "private", label: "Private bytes (signal)", cls: "s-private" },
+      { key: "rss", label: "RSS (working set)", cls: "s-rss" } ] },
     { key: "handles", title: "Handles", unit: "count", resource: "handles", line: main,
       minSpan: (top) => Math.max(10, top * 0.05), series: [
       { key: "handles", label: "Handles", cls: "s-handles" } ] },

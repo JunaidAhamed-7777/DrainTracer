@@ -212,7 +212,8 @@ def _cards(summary: ReportSummary, sample_count: int) -> str:
         '<article class="card"><h3>Session</h3>'
         f'<div class="big">{_e(format_clock(summary.duration))}</div>'
         f'<div class="sub">{_e(f"{sample_count:,} samples · up to {summary.max_processes} processes")}</div>'
-        f'<div class="sub">{_e("peak RSS " + format_bytes(peaks.get("rss_bytes", 0.0)) + " · peak CPU " + format(peaks.get("cpu_percent", 0.0), ".1f") + "%")}</div>'
+        f'<div class="sub">{_e("peak private " + format_bytes(peaks.get("private_bytes", 0.0)) + " · RSS (working set) " + format_bytes(peaks.get("rss_bytes", 0.0)))}</div>'
+        f'<div class="sub">{_e("peak CPU " + format(peaks.get("cpu_percent", 0.0), ".1f") + "%")}</div>'
         "</article>"
     )
     return f'<section class="cards">{"".join(cards)}</section>'
@@ -330,8 +331,8 @@ def _processes_panel(report: Mapping[str, Any]) -> str:
             else:
                 cells += [
                     (f"{finite(process.get('cpu_percent')) or 0.0:.1f}%", "num"),
-                    (format_bytes(finite(process.get("rss_bytes")) or 0.0), "num"),
                     (format_bytes(finite(process.get("private_bytes")) or 0.0), "num"),
+                    (format_bytes(finite(process.get("rss_bytes")) or 0.0), "num"),
                     (f"{_int(process.get('handles')):,}", "num"),
                     (f"{_int(process.get('threads')):,}", "num"),
                     (_type_breakdown(types_by_pid.get(process.get("pid"))) or "—", ""),
@@ -348,7 +349,8 @@ def _processes_panel(report: Mapping[str, Any]) -> str:
         body = _table(
             (
                 ("PID", "num"), ("Parent", "num"), "Name", "Status", ("CPU", "num"),
-                ("RSS", "num"), ("Private", "num"), ("Handles", "num"), ("Threads", "num"),
+                ("Private", "num"), ("RSS (working set)", "num"), ("Handles", "num"),
+                ("Threads", "num"),
                 "Handle types",
             ),
             rows,
