@@ -13,6 +13,7 @@
     "src/dashboard.py",
     "src/diff_command.py",
     "src/events.py",
+    "src/experiment.py",
     "src/file_picker.py",
     "src/handle_types.py",
     "src/headless.py",
