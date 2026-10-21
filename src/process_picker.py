@@ -6,7 +6,7 @@ from collections.abc import Sequence
 
 import psutil
 from rich import box
-from rich.console import Console
+from rich.console import Console, Group
 from rich.table import Table
 from rich.text import Text
 
@@ -16,6 +16,8 @@ from .running_processes import (
     list_running_processes,
 )
 from .theme import PALETTE
+
+PAGE_SIZE = 15
 
 
 def filter_processes(processes: Sequence[RunningProcess], query: str) -> list[RunningProcess]:
@@ -33,36 +35,54 @@ def _compact(console: Console) -> bool:
     return console.width < 50 or console.height < 22
 
 
-def _render_page(
-    console: Console, processes: Sequence[RunningProcess], query: str, page: int
-) -> int:
-    """Render a bounded page and return its clamped index."""
-    page_size = max(1, min(10, console.height - 12))
+def _page_size(console: Console) -> int:
+    return max(1, min(PAGE_SIZE, console.height - 12))
+
+
+def _page_view(
+    console: Console, processes: Sequence[RunningProcess], query: str, page: int,
+    selected: int | None = None,
+) -> tuple[Group, int]:
+    """Build a bounded page, optionally marking one absolute row index."""
+    page_size = _page_size(console)
     pages = max(1, (len(processes) + page_size - 1) // page_size)
     page = min(max(0, page), pages - 1)
     start = page * page_size
-    console.print(Text("RUNNING PROGRAMS", style=f"bold {PALETTE.accent}"))
+    parts = [Text("RUNNING PROGRAMS", style=f"bold {PALETTE.accent}")]
     if query:
-        console.print(Text(f"Search: {_label(query)}", style=PALETTE.muted,
-                           no_wrap=True, overflow="ellipsis"))
+        parts.append(Text(f"Search: {_label(query)}", style=PALETTE.muted,
+                          no_wrap=True, overflow="ellipsis"))
     if not processes:
         message = "No programs match. Change the search or use /clear or /refresh."
         if not query:
             message = "No running programs are available. Use /refresh to try again."
-        console.print(Text(message, style=PALETTE.warn))
-        return page
+        parts.append(Text(message, style=PALETTE.warn))
+        return Group(*parts), page
     table = Table(box=None if _compact(console) else box.SIMPLE, expand=True, padding=(0, 1))
+    if selected is not None:
+        table.add_column("", width=1, no_wrap=True)
     table.add_column("PID", justify="right", no_wrap=True, style=PALETTE.accent)
     table.add_column("Program", ratio=1, no_wrap=True, overflow="ellipsis")
-    for process in processes[start : start + page_size]:
+    for index, process in enumerate(processes[start : start + page_size], start):
         suffix = " (identity unavailable)" if process.create_time is None else ""
-        table.add_row(str(process.pid), Text(_label(process.name) + suffix))
-    console.print(table)
+        cells = [str(process.pid), Text(_label(process.name) + suffix)]
+        active = index == selected
+        if selected is not None:
+            cells.insert(0, ">" if active else "")
+        table.add_row(*cells, style=f"bold {PALETTE.accent} on {PALETTE.surface}" if active else "")
     end = min(start + page_size, len(processes))
     summary = f"Showing {start + 1}-{end} of {len(processes)} | Page {page + 1}/{pages}"
     if _compact(console):
         summary = f"{len(processes)} matches | Page {page + 1}/{pages}"
-    console.print(Text(summary, style=PALETTE.muted))
+    return Group(*parts, table, Text(summary, style=PALETTE.muted)), page
+
+
+def _render_page(
+    console: Console, processes: Sequence[RunningProcess], query: str, page: int,
+    selected: int | None = None,
+) -> int:
+    view, page = _page_view(console, processes, query, page, selected)
+    console.print(view)
     return page
 
 

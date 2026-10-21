@@ -5,6 +5,11 @@ feature milestones remain in [future-plan.md](future-plan.md), and the complete
 commit history records earlier changes. Versions follow the repository rule:
 each focused change advances the runtime version by exactly `0.1`.
 
+## v3.6 — 2026-10-21
+
+- Limited program-list pages to 15 PIDs and added an active-row rendering
+  marker for keyboard navigation, retaining smaller pages in short terminals.
+
 ## v3.5 — 2026-10-21
 
 - Kept process rows visible in small terminals with compact table/help

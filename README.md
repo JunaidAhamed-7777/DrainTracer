@@ -72,8 +72,9 @@ The last command offers two startup choices:
 
 - **1 — Open a program:** select an executable, Python script, or Windows
   batch file in the native file picker.
-- **2 — Hook to a running program:** browse names and PIDs, type a name to
-  search, then enter a listed PID to select it. Use `/next` and `/prev` for
+- **2 — Hook to a running program:** browse up to 15 names and PIDs at a
+  time, type a name to search, then enter a listed PID to select it.
+  Use `/next` and `/prev` for
   pages, `/refresh` to reload, and `/clear` to reset the search. Quitting
   detaches and leaves the program running.
 

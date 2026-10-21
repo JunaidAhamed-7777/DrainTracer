@@ -22,15 +22,25 @@ class ProcessPresentationTests(unittest.TestCase):
         self.assertEqual(filter_processes(rows, "missing"), [])
 
     def test_pages_are_bounded_and_clamped(self) -> None:
-        rows = [RunningProcess(pid, f"app{pid}.exe", 1.0) for pid in range(1, 13)]
+        rows = [RunningProcess(pid, f"app{pid}.exe", 1.0) for pid in range(1, 18)]
         console = make_console()
         self.assertEqual(_render_page(console, rows, "", 1), 1)
         output = console.file.getvalue()
-        self.assertIn("app11.exe", output)
+        self.assertIn("app16.exe", output)
         self.assertNotIn("app1.exe", output)
-        self.assertIn("Showing 11-12 of 12 | Page 2/2", output)
+        self.assertIn("Showing 16-17 of 17 | Page 2/2", output)
         self.assertEqual(_render_page(make_console(), rows, "", 99), 1)
         self.assertEqual(_render_page(make_console(), rows, "", -1), 0)
+
+    def test_page_shows_at_most_15_pids_with_a_visible_active_row(self) -> None:
+        rows = [RunningProcess(pid, f"app{pid}.exe", 1.0) for pid in range(1, 32)]
+        console = make_console()
+        _render_page(console, rows, "", 0, selected=1)
+        output = console.file.getvalue()
+        self.assertEqual(sum(f"app{pid}.exe" in output for pid in range(1, 32)), 15)
+        self.assertIn("app15.exe", output)
+        self.assertNotIn("app16.exe", output)
+        self.assertTrue(any(">" in line and "app2.exe" in line for line in output.splitlines()))
 
     def test_short_terminals_keep_pid_and_name_columns(self) -> None:
         console = make_console(width=32, height=15, encoding="cp1252")
@@ -84,7 +94,7 @@ class ProcessSelectionTests(unittest.TestCase):
 
     def test_paging_and_refresh_keep_search_and_reset_page(self) -> None:
         self.scan.side_effect = [
-            [RunningProcess(pid, "worker.exe", 1.0) for pid in range(1, 13)],
+            [RunningProcess(pid, "worker.exe", 1.0) for pid in range(1, 18)],
             [RunningProcess(42, "worker.exe", 2.0)],
         ]
         self.assertEqual(self.choose("worker", "/next", "/prev", "/next", "/refresh", "42"), 42)
