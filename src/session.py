@@ -45,6 +45,7 @@ from .report import (
     snapshot_to_dict,
     write_json_report,
 )
+from .session_facts import SessionFacts
 from .theme import select_glyphs
 from .units import format_bytes, format_clock, format_duration
 
@@ -128,6 +129,9 @@ class MonitorSession:
         # conversion waits until a report is exported. A long session is
         # thinned rather than cut, so reports always cover all of it.
         self._snapshot_history = SnapshotHistory(self.SNAPSHOT_LIMIT)
+        # Exact peaks, episodes and counts from every snapshot, which the
+        # thinned history above cannot promise.
+        self._facts = SessionFacts()
         self._events: deque[tuple[float, str, str]] = deque(maxlen=self.EVENT_LIMIT)
         self._resource_severity: dict[LeakResource, LeakSeverity] = {}
         self._worst_by_resource: dict[LeakResource, LeakSeverity] = {}
@@ -468,6 +472,7 @@ class MonitorSession:
     # ------------------------------------------------------------------
 
     def _accept_snapshot(self, snapshot: MetricsSnapshot) -> None:
+        self._facts.observe(snapshot)
         # Per-process summaries describe the latest state only; keeping them
         # on every stored snapshot would multiply memory by the tree size.
         self._snapshot_history.append(
@@ -785,12 +790,38 @@ class MonitorSession:
             "coverage": self._coverage_record(),
             "outcome": self._outcome_record(),
             "processes": self._processes_record(),
+            "session_facts": self._facts_record(),
             # Samples taken, and how many the snapshot list skips between
             # entries once a long session has been thinned (1: none).
             "sample_count": self._sample_count,
             "snapshot_stride": self._snapshot_history.stride,
             "snapshots": [snapshot_to_dict(snapshot) for snapshot in self._snapshot_history],
         }
+
+    @property
+    def facts(self) -> SessionFacts:
+        """Exact session-wide summaries, independent of the thinned chart history."""
+        return self._facts
+
+    @property
+    def chart_stride(self) -> int:
+        """How many samples each stored chart point stands for (1: none thinned)."""
+        return self._snapshot_history.stride
+
+    def _facts_record(self) -> dict[str, Any]:
+        """Session facts plus coverage and how much the stored chart was thinned."""
+        record = self._facts.to_dict()
+        record["coverage"] = {
+            "samples": self._coverage_samples,
+            "partial_samples": {m: self._partial_samples[m] for m in SIGNAL_METRICS},
+            "unavailable_samples": {m: self._unavailable_samples[m] for m in SIGNAL_METRICS},
+        }
+        record["chart"] = {
+            "stride": self._snapshot_history.stride,
+            "stored": len(self._snapshot_history),
+            "seen": self._snapshot_history.seen,
+        }
+        return record
 
     def _processes_record(self) -> dict[str, Any]:
         """Process counts and per-identity summaries, live and exited, for reports."""
