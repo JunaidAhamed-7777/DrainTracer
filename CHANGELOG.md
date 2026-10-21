@@ -62,6 +62,8 @@ current release and [AGENTS.md](AGENTS.md) for the release policy.
   launch line instead of before it.
 - Redacted secret options such as `--password value` pasted into experiment
   labels, not only `password=value` assignments.
+- Kept the Windows dashboard responsive when a key such as `à` arrives as a
+  lone extended-key prefix; it no longer waits for another key press.
 
 ## v5.1.1 — 2026-10-22
 

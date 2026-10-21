@@ -83,6 +83,20 @@ class ReaderTests(unittest.TestCase):
             self.assertEqual(reader.read(), "q")
             self.assertEqual(read.call_count, 1)
 
+    def test_windows_reader_never_blocks_on_a_lone_prefix_character(self) -> None:
+        # "à" arrives as "\xe0" with no scan code behind it.
+        console = mock.Mock()
+        console.kbhit.side_effect = [True, False]
+        console.getwch.side_effect = ["\xe0"]
+        with mock.patch.dict("sys.modules", {"msvcrt": console}):
+            self.assertIsNone(KeyReader._read_windows())
+        self.assertEqual(console.getwch.call_count, 1)
+        console = mock.Mock()
+        console.kbhit.side_effect = [True, True]
+        console.getwch.side_effect = ["\xe0", "H"]
+        with mock.patch.dict("sys.modules", {"msvcrt": console}):
+            self.assertEqual(KeyReader._read_windows(), keys.UP)
+
     def test_normalize_names_raw_control_characters(self) -> None:
         self.assertEqual(normalize_key("\x1b"), keys.ESCAPE)
         self.assertEqual(normalize_key("\r"), keys.ENTER)

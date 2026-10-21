@@ -166,7 +166,14 @@ class KeyReader:
 
         if not msvcrt.kbhit():
             return None
-        return decode_windows(msvcrt.getwch(), msvcrt.getwch)
+
+        def scan_code() -> str | None:
+            # An extended key's scan code is already buffered. "\xe0" is also
+            # "à" on some layouts, with nothing after it: a blocking read
+            # would freeze the dashboard until the next key press.
+            return msvcrt.getwch() if msvcrt.kbhit() else None
+
+        return decode_windows(msvcrt.getwch(), scan_code)
 
     @staticmethod
     def _read_posix() -> list[str]:
