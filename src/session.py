@@ -11,6 +11,7 @@ from rich.console import Console
 
 from .config import MonitorSettings
 from .events import (
+    RESOURCE_METRICS,
     LeakAlert,
     LeakResource,
     LeakSeverity,
@@ -33,6 +34,7 @@ from .report import (
     REPORT_SCHEMA,
     iso_timestamp,
     new_report_id,
+    coverage_to_dict,
     report_directory,
     snapshot_to_dict,
     write_json_report,
@@ -41,6 +43,13 @@ from .theme import select_glyphs
 from .units import format_bytes, format_clock, format_duration
 
 HISTORY_KEYS = ("cpu_percent", "rss_bytes", "private_bytes", "handles", "threads")
+SIGNAL_METRICS = tuple(RESOURCE_METRICS.values())
+# Bounds for session-long records that grow with the target's behaviour.
+UNREADABLE_PID_LIMIT = 50
+MONITOR_ERROR_LIMIT = 20
+MEASUREMENT_CONCLUSIVE = "conclusive"
+MEASUREMENT_PARTIAL = "partial"
+MEASUREMENT_INCONCLUSIVE = "inconclusive"
 # Windows errors for files that cannot be started as programs: bad image,
 # bad format, wrong signature, or the wrong machine type.
 _NOT_A_PROGRAM = {129, 191, 193, 216}
@@ -129,6 +138,15 @@ class MonitorSession:
         self._last_html_report: Path | None = None
         self._last_report_data: dict[str, Any] | None = None
         self._left_running = False
+        # Measurement coverage of the signal metrics over the session: samples
+        # with live processes, ones missing any (partial, which includes
+        # unavailable), and ones with nothing readable (unavailable).
+        self._coverage_samples = 0
+        self._partial_samples = {metric: 0 for metric in SIGNAL_METRICS}
+        self._unavailable_samples = {metric: 0 for metric in SIGNAL_METRICS}
+        self._unreadable_pids: dict[int, str] = {}
+        self._current_unreadable: set[int] = set()
+        self._monitor_errors: list[str] = []
 
     @property
     def attached(self) -> bool:
@@ -179,10 +197,64 @@ class MonitorSession:
                 f"the {format_duration(detector.warmup_seconds)} warm-up never finished, "
                 "so leak detection did not run"
             )
+        if self._coverage_samples and all(
+            self._unavailable_samples[metric] == self._coverage_samples for metric in SIGNAL_METRICS
+        ):
+            return (
+                "no process in the tree could be measured (access denied or unavailable), "
+                "so no leak window was judged"
+            )
         return (
             f"monitoring ended before the {format_duration(detector.window_seconds[0])} "
             "window filled, so no leak window was judged"
         )
+
+    @property
+    def partial_coverage(self) -> bool:
+        """Whether a signal metric missed some live processes on any sample."""
+        return any(self._partial_samples.values())
+
+    @property
+    def measurement_outcome(self) -> str:
+        """``conclusive``, ``partial`` (judged, but some processes unreadable), or ``inconclusive``."""
+        if not self.conclusive:
+            return MEASUREMENT_INCONCLUSIVE
+        return MEASUREMENT_PARTIAL if self.partial_coverage else MEASUREMENT_CONCLUSIVE
+
+    def coverage_text(self) -> str | None:
+        """How much of the tree went unmeasured, or ``None`` when coverage was full.
+
+        For example ``1 process unreadable (PID 4242) in 40 of 120 samples``.
+        """
+        if not self.partial_coverage:
+            return None
+        affected = max(self._partial_samples.values())
+        pids = sorted(self._unreadable_pids)
+        count = len(pids)
+        shown = ", ".join(str(pid) for pid in pids[:3]) + (", ..." if count > 3 else "")
+        noun = "process" if count == 1 else "processes"
+        label = f"PID {shown}" if count == 1 else f"PIDs {shown}"
+        return (
+            f"{count} {noun} unreadable ({label}) in {affected:,} of "
+            f"{self._coverage_samples:,} samples"
+        )
+
+    @property
+    def target_failed(self) -> bool:
+        """Whether a launched target exited on its own with a non-zero code."""
+        if self.attached or self._stopped_target:
+            return False
+        code = self.manager.exit_code
+        return code is not None and code != 0
+
+    @property
+    def monitor_errors(self) -> tuple[str, ...]:
+        """Distinct sampling and export problems seen this session, oldest first."""
+        return tuple(self._monitor_errors)
+
+    def _note_monitor_error(self, message: str) -> None:
+        if message not in self._monitor_errors and len(self._monitor_errors) < MONITOR_ERROR_LIMIT:
+            self._monitor_errors.append(message)
 
     def outcome_text(self) -> str:
         """How the session left the target: running, exited, or stopped."""
@@ -372,6 +444,16 @@ class MonitorSession:
             self._append_event(
                 "Access denied: metrics unavailable (try an elevated terminal)", "error"
             )
+            return
+        unreadable = snapshot.unmeasured_pids
+        if unreadable:
+            count = len(unreadable)
+            self._append_event(
+                f"{count} process{'es' if count != 1 else ''} in the tree cannot be read "
+                f"({', '.join(str(pid) for pid in unreadable[:3])}{', ...' if count > 3 else ''}); "
+                "totals leave them out",
+                "warn",
+            )
 
     # ------------------------------------------------------------------
     # Snapshot intake and the event log
@@ -385,6 +467,7 @@ class MonitorSession:
             # good one, and do not let its empty alert list clear signals.
             if failure != self._last_sampling_error:
                 self._append_event(f"Sampling error: {failure}", "error")
+                self._note_monitor_error(f"sampling error: {failure}")
             self._last_sampling_error = failure
             return
         self._last_sampling_error = None
@@ -400,6 +483,7 @@ class MonitorSession:
                 self._peaks[key] = max(self._peaks[key], value)
             if snapshot.handle_types is not None:
                 self._handle_types = dict(snapshot.handle_types)
+            self._track_coverage(snapshot, first=previous is None)
 
         if severity_rank(snapshot.severity) > severity_rank(self._worst_severity):
             self._worst_severity = snapshot.severity
@@ -424,6 +508,89 @@ class MonitorSession:
 
         if not snapshot.monitoring_paused:
             self._log_signal_transitions(snapshot)
+
+    def _track_coverage(self, snapshot: MetricsSnapshot, first: bool) -> None:
+        """Count partial samples and log processes that become (un)readable.
+
+        A snapshot with no live process has nothing to measure, so it is
+        not counted as missing coverage. The first sample is not logged
+        here: the start-up messages already report what could not be read.
+        """
+        coverage = snapshot.coverage
+        if not coverage:
+            return
+        live = [coverage[m] for m in SIGNAL_METRICS if m in coverage and coverage[m].total > 0]
+        if live:
+            self._coverage_samples += 1
+        for item in live:
+            if item.measured < item.total:
+                self._partial_samples[item.metric] += 1
+            if item.measured == 0:
+                self._unavailable_samples[item.metric] += 1
+
+        names = {process.pid: process.name for process in snapshot.processes}
+        unreadable = {
+            pid for m in SIGNAL_METRICS if m in coverage for pid in coverage[m].unmeasured_pids
+        }
+        for pid in sorted(unreadable):
+            if pid not in self._unreadable_pids and len(self._unreadable_pids) < UNREADABLE_PID_LIMIT:
+                self._unreadable_pids[pid] = names.get(pid, "")
+        if not first:
+            for pid in sorted(unreadable - self._current_unreadable):
+                self._append_event(
+                    f"Cannot read PID {pid}; its counters are left out of the totals "
+                    "and detection restarts its windows",
+                    "warn",
+                )
+            for pid in sorted(self._current_unreadable - unreadable):
+                if pid in names:
+                    self._append_event(
+                        f"PID {pid} is readable again; detection restarts its windows", "info"
+                    )
+        self._current_unreadable = unreadable
+
+    def _coverage_record(self) -> dict[str, Any]:
+        """Session-wide coverage of the signal metrics, for reports."""
+        return {
+            "samples": self._coverage_samples,
+            "partial": self.partial_coverage,
+            "metrics": {
+                metric: {
+                    "partial_samples": self._partial_samples[metric],
+                    "unavailable_samples": self._unavailable_samples[metric],
+                }
+                for metric in SIGNAL_METRICS
+            },
+            "unreadable_pids": sorted(self._unreadable_pids),
+            "latest": coverage_to_dict(self.snapshot.coverage) if self.snapshot else None,
+        }
+
+    def _outcome_record(self) -> dict[str, Any]:
+        """Target, measurement, and monitor outcomes, kept apart for scripts."""
+        if self.attached:
+            state = "left_running" if self._left_running else "exited"
+        elif self._stopped_target:
+            state = "stopped"
+        elif self.manager.exit_code is not None:
+            state = "exited"
+        else:
+            state = "running" if self.manager.is_running else "unknown"
+        return {
+            "target": {
+                "state": state,
+                "exit_code": None if self._stopped_target else self.manager.exit_code,
+                "failed": self.target_failed,
+                "description": self.outcome_text(),
+            },
+            "measurement": {
+                "result": self.measurement_outcome,
+                "detection_ran": self.conclusive,
+                "partial_coverage": self.partial_coverage,
+                "reason": None if self.conclusive else self.inconclusive_reason(),
+                "coverage": self.coverage_text(),
+            },
+            "monitor_errors": list(self._monitor_errors),
+        }
 
     def _log_warmup_complete(self, snapshot: MetricsSnapshot) -> None:
         baseline = self.detector.warmup_baseline or snapshot.totals
@@ -504,6 +671,7 @@ class MonitorSession:
             self._last_html_report = write_html_report(report, directory)
         except Exception as exc:  # never lose the JSON report to a rendering bug
             self._append_event(f"HTML report failed: {exc}", "error")
+            self._note_monitor_error(f"HTML report failed: {exc}")
         return path
 
     def build_report(self) -> dict[str, Any]:
@@ -536,6 +704,8 @@ class MonitorSession:
             "settings": self._settings_record(),
             "warmup": self._warmup_record(),
             "detection_ran": self.detector.detection_started,
+            "coverage": self._coverage_record(),
+            "outcome": self._outcome_record(),
             # Samples taken, and how many the snapshot list skips between
             # entries once a long session has been thinned (1: none).
             "sample_count": self._sample_count,

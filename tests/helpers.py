@@ -14,6 +14,7 @@ if str(REPOSITORY_ROOT) not in sys.path:
 from rich.console import Console  # noqa: E402
 
 from src.events import (  # noqa: E402
+    METRIC_KEYS,
     LeakAlert,
     LeakResource,
     LeakSeverity,
@@ -46,6 +47,33 @@ def make_process(
     )
 
 
+def make_denied(pid: int, ppid: int | None = None) -> ProcessMetrics:
+    """A process whose counters could not be read, as the sampler reports it."""
+    return ProcessMetrics(
+        pid=pid,
+        name="access-denied",
+        status="unknown",
+        rss_bytes=0,
+        vms_bytes=0,
+        private_bytes=0,
+        handles=0,
+        threads=0,
+        cpu_percent=0.0,
+        io_read_bytes_per_sec=0.0,
+        io_write_bytes_per_sec=0.0,
+        access_denied=True,
+        ppid=ppid,
+        unmeasured=tuple(METRIC_KEYS),
+    )
+
+
+def coverage_of(processes):
+    """The coverage the detector would record for ``processes``."""
+    from src.leak_detector import LeakDetector
+
+    return LeakDetector._coverage(processes)
+
+
 def make_alert(
     resource: LeakResource = LeakResource.MEMORY,
     severity: LeakSeverity = LeakSeverity.HIGH,
@@ -68,7 +96,9 @@ def make_snapshot(
     timestamp: float | None = None,
     paused: bool = False,
     metadata: dict | None = None,
+    measured_coverage: bool = False,
 ) -> MetricsSnapshot:
+    """A snapshot of ``processes``; ``measured_coverage`` adds their coverage."""
     processes = processes or (make_process(root_pid or 100),)
     totals = {
         "rss_bytes": float(sum(p.rss_bytes for p in processes)),
@@ -94,6 +124,7 @@ def make_snapshot(
         severity=severity,
         sample_interval_ms=500,
         metadata=metadata or {},
+        coverage=coverage_of(processes) if measured_coverage else None,
     )
 
 

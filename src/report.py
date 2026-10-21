@@ -12,10 +12,13 @@ from datetime import datetime, timezone
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
-from .events import MetricsSnapshot
+from .events import MetricCoverage, MetricsSnapshot
 
 DEFAULT_REPORT_DIR = "leak_reports/reports"
-REPORT_SCHEMA = 2
+# 3: snapshots add per-metric ``coverage`` and per-resource ``evidence``,
+# processes list their ``unmeasured`` counters, and reports add ``coverage``
+# and ``outcome``. All are optional for readers; older reports lack them.
+REPORT_SCHEMA = 3
 _WINDOWS_DEVICES = {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"} | {
     f"{prefix}{number}" for prefix in ("COM", "LPT") for number in "123456789¹²³"
 }
@@ -82,7 +85,34 @@ def snapshot_to_dict(snapshot: MetricsSnapshot) -> dict[str, Any]:
         for alert in snapshot.alerts
     ]
     data["severity"] = snapshot.severity.value
+    data["coverage"] = coverage_to_dict(snapshot.coverage)
+    # Keyed by resource and without the coverage it repeats, so the
+    # evidence costs little in long reports.
+    data["evidence"] = {
+        item.resource.value: {
+            "state": item.state.value,
+            "severity": item.severity.value,
+            "valid_samples": item.valid_samples,
+            "elapsed_seconds": round(item.elapsed_seconds, 3),
+            "evaluated_window_seconds": item.evaluated_window_seconds,
+        }
+        for item in snapshot.evidence
+    }
     return data
+
+
+def coverage_to_dict(coverage: Mapping[str, MetricCoverage] | None) -> dict[str, Any] | None:
+    """Per-metric coverage as JSON primitives, or ``None`` when not recorded."""
+    if coverage is None:
+        return None
+    return {
+        metric: {
+            "measured": item.measured,
+            "total": item.total,
+            "unmeasured_pids": list(item.unmeasured_pids),
+        }
+        for metric, item in coverage.items()
+    }
 
 
 def write_text_atomic(
@@ -142,6 +172,7 @@ def _finite_only(value: Any) -> Any:
 __all__ = [
     "DEFAULT_REPORT_DIR",
     "REPORT_SCHEMA",
+    "coverage_to_dict",
     "iso_timestamp",
     "new_report_id",
     "report_directory",

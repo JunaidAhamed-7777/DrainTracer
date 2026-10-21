@@ -136,5 +136,26 @@ class ReportStorageTests(unittest.TestCase):
         self.assertEqual(encoded["alerts"][0]["resource"], "memory")
 
 
+class SnapshotCoverageTests(unittest.TestCase):
+    def test_coverage_and_evidence_are_serialized(self) -> None:
+        from dataclasses import replace
+
+        from helpers import make_denied, make_process
+        from src.events import EvidenceState, LeakResource, ResourceEvidence
+
+        snapshot = replace(
+            make_snapshot(processes=(make_process(1), make_denied(2)), measured_coverage=True),
+            evidence=(ResourceEvidence(LeakResource.MEMORY, EvidenceState.COLLECTING,
+                                       valid_samples=3, elapsed_seconds=1.23456),),
+        )
+        encoded = json.loads(json.dumps(snapshot_to_dict(snapshot)))
+        self.assertEqual(encoded["coverage"]["handles"],
+                         {"measured": 1, "total": 2, "unmeasured_pids": [2]})
+        self.assertEqual(encoded["evidence"]["memory"]["state"], "collecting")
+        self.assertEqual(encoded["evidence"]["memory"]["elapsed_seconds"], 1.235)
+        self.assertIn("handles", encoded["processes"][1]["unmeasured"])
+        self.assertIsNone(snapshot_to_dict(make_snapshot())["coverage"])
+
+
 if __name__ == "__main__":
     unittest.main()

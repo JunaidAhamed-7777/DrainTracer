@@ -351,5 +351,68 @@ class SessionLifecycleTests(unittest.TestCase):
                 _Session("C:/targets/worker.exe", console=make_console(), timeout=timeout)
 
 
+class CoverageTests(unittest.TestCase):
+    def _session(self) -> _Session:
+        return _Session("C:/targets/worker.exe", console=make_console())
+
+    def test_access_loss_and_recovery_are_logged_and_reported(self) -> None:
+        from helpers import make_denied, make_process, make_snapshot
+
+        session = self._session()
+        full = (make_process(100), make_process(200, ppid=100))
+        partial = (make_process(100), make_denied(200, ppid=100))
+        for processes in (full, partial, partial, full):
+            session._accept_snapshot(make_snapshot(processes=processes, measured_coverage=True))
+        messages = [message for _s, message, _l in session._events]
+        self.assertTrue(any(m.startswith("Cannot read PID 200") for m in messages))
+        self.assertTrue(any(m.startswith("PID 200 is readable again") for m in messages))
+        self.assertTrue(session.partial_coverage)
+        self.assertEqual(session.coverage_text(), "1 process unreadable (PID 200) in 2 of 4 samples")
+        record = session.build_report()["coverage"]
+        self.assertEqual(record["samples"], 4)
+        self.assertEqual(record["metrics"]["private_bytes"]["partial_samples"], 2)
+        self.assertEqual(record["unreadable_pids"], [200])
+
+    def test_an_empty_tree_is_not_missing_coverage(self) -> None:
+        from dataclasses import replace
+
+        from helpers import coverage_of, make_snapshot
+
+        session = self._session()
+        session._accept_snapshot(replace(make_snapshot(), processes=(), coverage=coverage_of(())))
+        self.assertFalse(session.partial_coverage)
+        self.assertIsNone(session.coverage_text())
+
+    def test_an_unreadable_tree_is_inconclusive_for_that_reason(self) -> None:
+        from helpers import make_denied, make_snapshot
+
+        session = self._session()
+        session._accept_snapshot(make_snapshot(processes=(make_denied(100),), measured_coverage=True))
+        self.assertIn("no process in the tree could be measured", session.inconclusive_reason())
+
+    def test_outcomes_are_reported_separately(self) -> None:
+        from unittest import mock
+
+        from helpers import make_denied, make_process, make_snapshot
+
+        session = self._session()
+        session._accept_snapshot(make_snapshot(metadata={"sampling_error": "boom"}))
+        session._accept_snapshot(make_snapshot(
+            processes=(make_process(100), make_denied(200)), measured_coverage=True))
+        session.detector._detection_started = True
+        with mock.patch.object(type(session.manager), "exit_code",
+                               new_callable=mock.PropertyMock, return_value=3):
+            outcome = session.build_report()["outcome"]
+            self.assertTrue(session.target_failed)
+        self.assertEqual(outcome["target"]["state"], "exited")
+        self.assertEqual(outcome["target"]["exit_code"], 3)
+        self.assertTrue(outcome["target"]["failed"])
+        self.assertEqual(outcome["measurement"]["result"], "partial")
+        self.assertIsNone(outcome["measurement"]["reason"])
+        self.assertEqual(outcome["monitor_errors"], ["sampling error: boom"])
+        session._stopped_target = True
+        self.assertFalse(session.target_failed)
+
+
 if __name__ == "__main__":
     unittest.main()
