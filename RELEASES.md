@@ -1,9 +1,24 @@
-# Current version: v5.0.0
+# Current version: v5.1.0
 
 Published releases are listed newest first. The exact version here matches
 `DashboardApp.VERSION` in [src/dashboard.py](src/dashboard.py). The README
 shows the release series as `vMAJOR.MINOR.0`; for example, `v5.0.1` still
 belongs to series `v5.0.0`.
+
+## v5.1.0 — 2026-10-22
+
+- Added pip installation from a checkout or source archive, plus wheel and
+  source distribution builds with dependencies declared in package metadata.
+- Added the `draintracer` command, `python -m draintracer`, and `--version`,
+  while preserving the existing `python src/main.py` workflow.
+- Bundled startup artwork, report styles and scripts, and the runtime
+  snapshot. Installed packages validate those files and give pip reinstall
+  guidance without attempting Git recovery.
+- Kept configuration discovery and generated reports relative to the user's
+  working directory. Distribution metadata derives its version from the
+  canonical runtime value.
+- Updated installation and development instructions and added regression
+  coverage for installed startup checks and asset loading.
 
 ## v5.0.0 — 2026-10-22
 

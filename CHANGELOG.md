@@ -8,6 +8,13 @@ follow Semantic Versioning once per published release, with major bumps
 reserved for the repository owner. See [RELEASES.md](RELEASES.md) for the
 current release and [AGENTS.md](AGENTS.md) for the release policy.
 
+## v5.1.0 — 2026-10-22
+
+- Added pip installation, the `draintracer` command, and wheel/source builds
+  with bundled runtime assets and declared dependencies.
+- Preserved source-checkout startup and added pip reinstall guidance for
+  incomplete installed packages. See [RELEASES.md](RELEASES.md) for details.
+
 ## v5.0.0 — 2026-10-22
 
 - Adopted release-based Semantic Versioning with owner-only major bumps.
