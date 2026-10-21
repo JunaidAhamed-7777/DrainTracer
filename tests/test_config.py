@@ -263,5 +263,35 @@ class PolicySettingsTests(ConfigTestCase):
         self.assertConfigError("fail_on_target_error must be true or false")
 
 
+class ExperimentSettingsTests(ConfigTestCase):
+    def test_labels_and_budgets_come_from_files_and_profiles(self) -> None:
+        self.write(".drainrc", """
+            workload_id = "import-1k"
+            operations = 1000
+            budget_private = "500MB"
+            [profiles.ci]
+            build = " 1.4.2 "
+            budget_handles = 2000
+        """)
+        settings = self.resolve(profile="ci", overrides={"budgets": {"threads": 40.0}})
+        self.assertEqual(settings.experiment.workload_id, "import-1k")
+        self.assertEqual(settings.build, "1.4.2")
+        self.assertEqual(settings.operations, 1000)
+        self.assertEqual(
+            dict(settings.budgets),
+            {"private_bytes": 500 * MB, "handles": 2000, "threads": 40.0},
+        )
+        self.assertTrue(self.resolve(discover=False).experiment.empty)
+        self.assertEqual(dict(self.resolve(discover=False).budgets), {})
+
+    def test_bad_labels_and_budgets_are_rejected(self) -> None:
+        self.write(".drainrc", "operations = 0\n")
+        self.assertConfigError("operations must be greater than zero")
+        self.write(".drainrc", 'budget_private = "lots"\n')
+        self.assertConfigError("budget_private")
+        self.write(".drainrc", "workload_id = 3\n")
+        self.assertConfigError("workload_id must be a non-empty string")
+
+
 if __name__ == "__main__":
     unittest.main()

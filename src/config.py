@@ -17,12 +17,14 @@ from __future__ import annotations
 
 import difflib
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
+from .budgets import BUDGET_OPTIONS, parse_budget
 from .events import LeakResource, LeakSeverity
+from .experiment import ExperimentInfo
 from .leak_detector import (
     DEFAULT_SAMPLE_INTERVAL_MS,
     DEFAULT_THRESHOLDS,
@@ -63,9 +65,18 @@ _LAYER_KEYS = (
     "fail_on_target_error",
     "report_dir",
     "thresholds",
+    "workload_id",
+    "build",
+    "operations",
+    "note",
+    "budget_private",
+    "budget_handles",
+    "budget_threads",
 )
 # Optional headless policies; all default to off so exit codes stay unchanged.
 _POLICY_KEYS = ("fail_on_inconclusive", "fail_on_target_error")
+# Experiment labels recorded in reports; free text except the operation count.
+_LABEL_KEYS = ("workload_id", "build", "note")
 _ROOT_KEYS = (*_LAYER_KEYS, "profiles", "default_profile")
 _THRESHOLD_KEYS = ("critical_delta", "critical_slope")
 
@@ -89,8 +100,25 @@ class MonitorSettings:
     fail_on_inconclusive: bool = False
     fail_on_target_error: bool = False
     report_dir: str = DEFAULT_REPORT_DIR
+    # Experiment provenance for reports and comparisons; all optional.
+    workload_id: str | None = None
+    build: str | None = None
+    operations: float | None = None
+    note: str | None = None
+    # Absolute peak ceilings keyed by metric (private_bytes, handles,
+    # threads); headless runs fail when a peak exceeds one.
+    budgets: Mapping[str, float] = field(default_factory=lambda: MappingProxyType({}))
     profile: str | None = None
     source: Path | None = None
+
+    @property
+    def experiment(self) -> ExperimentInfo:
+        return ExperimentInfo(
+            workload_id=self.workload_id,
+            build=self.build,
+            operations=self.operations,
+            note=self.note,
+        )
 
     def describe(self) -> str:
         """Short origin line such as ``profile ci from C:\\proj\\.drainrc``."""
@@ -129,7 +157,9 @@ def resolve_settings(
 
     ``overrides`` uses ``MonitorSettings`` field names (``sample_interval_ms``,
     ``windows``, ``warmup``, ``timeout``, ``fail_on``, ``fail_on_inconclusive``,
-    ``fail_on_target_error``, ``report_dir``). Raises
+    ``fail_on_target_error``, ``report_dir``, the experiment labels
+    ``workload_id``, ``build``, ``operations`` and ``note``, and ``budgets``,
+    a partial ``{metric: limit}`` merged over the file's). Raises
     ``ConfigError`` with the file and setting named on any problem.
     """
     settings = MonitorSettings()
@@ -286,6 +316,30 @@ def _parse_layer(table: Mapping[str, Any], where: str, folder: Path) -> dict[str
         overrides["report_dir"] = str(folder / value)
     if "thresholds" in table:
         overrides["thresholds"] = _parse_thresholds(table["thresholds"], f"{where}thresholds.")
+    for key in _LABEL_KEYS:
+        if key in table:
+            value = table[key]
+            if not isinstance(value, str) or not value.strip():
+                raise ConfigError(f"{where}{key} must be a non-empty string")
+            overrides[key] = value.strip()
+    if "operations" in table:
+        value = table["operations"]
+        try:
+            operations = parse_count(value)
+        except ValueError as exc:
+            raise ConfigError(f"{where}operations: {exc}") from None
+        if not operations > 0:
+            raise ConfigError(f"{where}operations must be greater than zero")
+        overrides["operations"] = operations
+    budgets: dict[str, float] = {}
+    for metric, key in BUDGET_OPTIONS.items():
+        if key in table:
+            try:
+                budgets[metric] = parse_budget(metric, table[key])
+            except ValueError as exc:
+                raise ConfigError(f"{where}{key}: {exc}") from None
+    if budgets:
+        overrides["budgets"] = budgets
     return overrides
 
 
@@ -321,6 +375,9 @@ def _parse_thresholds(table: Any, where: str) -> dict[LeakResource, dict[str, fl
 
 def _apply(settings: MonitorSettings, overrides: Mapping[str, Any]) -> MonitorSettings:
     values = dict(overrides)
+    budgets = values.pop("budgets", None)
+    if budgets:
+        values["budgets"] = MappingProxyType({**settings.budgets, **budgets})
     partial = values.pop("thresholds", None)
     if partial:
         merged = dict(settings.thresholds)
