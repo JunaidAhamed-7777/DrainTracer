@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from contextlib import nullcontext
 
 import psutil
 from rich import box
 from rich.console import Console, Group
+from rich.live import Live
 from rich.table import Table
 from rich.text import Text
 
+from .picker_input import PickerKeyboard, supports_picker_keyboard
 from .running_processes import (
     RunningProcess,
     is_process_current,
@@ -86,9 +89,10 @@ def _render_page(
     return page
 
 
-def _read_processes(console: Console) -> list[RunningProcess] | None:
+def _read_processes(console: Console, *, show_status: bool = True) -> list[RunningProcess] | None:
     try:
-        with console.status("Reading running programs...", spinner="dots"):
+        status = console.status("Reading running programs...", spinner="dots")
+        with status if show_status else nullcontext():
             return list_running_processes()
     except (psutil.Error, OSError) as exc:
         console.print(Text(f"Could not read running programs: {_label(str(exc))}", style=PALETTE.warn))
@@ -99,62 +103,113 @@ def select_running_process(console: Console) -> int | None:
     """Search the inventory and explicitly select a verified PID, or cancel."""
     console.print(Text("Quitting detaches and leaves the program running.", style=PALETTE.muted))
     processes = _read_processes(console)
+    keyboard = PickerKeyboard() if supports_picker_keyboard(console) else None
+    display = Live(console=console, screen=True, auto_refresh=False, transient=True) if keyboard else nullcontext()
+    with display as live:
+        selected = _select_process(console, processes, keyboard, live)
+    if selected is None:
+        return None
+    console.print(Text(f"Hooking to {_label(selected.name)} (PID {selected.pid})."))
+    return selected.pid
+
+
+def _select_process(
+    console: Console, processes: list[RunningProcess] | None,
+    keyboard: PickerKeyboard | None, live: Live | None,
+) -> RunningProcess | None:
     query = ""
     page = 0
+    cursor = 0
+    buffer = ""
+    notice = ""
     while True:
         matches = filter_processes(processes or [], query)
+        cursor = min(cursor, max(0, len(matches) - 1))
+        if keyboard:
+            page = cursor // _page_size(console)
         if processes is None:
-            console.print(Text("Process list unavailable. Use /refresh to retry.", style=PALETTE.warn))
+            view = Text("Process list unavailable. Use /refresh to retry.", style=PALETTE.warn)
         else:
-            page = _render_page(console, matches, query, page)
+            view, page = _page_view(console, matches, query, page, cursor if keyboard else None)
         if _compact(console):
-            console.print(Text("Name or PID; /search TEXT\n/next /prev /refresh\n/clear | Q cancel",
-                               style=PALETTE.muted))
+            help_text = "Name or PID; /search TEXT\n/next /prev /refresh\n/clear | Q cancel"
+            if keyboard:
+                help_text = "Up/Down; Enter selects\nPID/name; /search TEXT\n/next /prev /refresh\n/clear | Esc/Q cancel"
         else:
-            console.print(Text("Type a name to search, or enter a listed PID to hook.", style=PALETTE.muted))
-            console.print(
-                Text("/search TEXT (name or PID) | /next | /prev | /refresh | /clear | Q to cancel",
-                     style=PALETTE.muted)
-            )
+            help_text = "Type a name to search, or enter a listed PID to hook."
+            if keyboard:
+                help_text = "Up/Down: move | Enter: select > row | Type a PID or name; Enter to submit."
+            help_text += "\n/search TEXT (name or PID) | /next | /prev | /refresh | /clear | Q to cancel"
+            if keyboard:
+                help_text += " | Esc: cancel"
+        parts = [view]
+        if notice:
+            parts.append(Text(notice, style=PALETTE.warn))
+        frame = Group(*parts, Text(help_text, style=PALETTE.muted))
         try:
-            value = console.input(Text("Program or search: ", style="bold")).strip()
+            if keyboard:
+                assert live is not None
+                prompt = Text("Program or search: ", style="bold")
+                prompt.append(_label(buffer))
+                live.update(Group(frame, prompt), refresh=True)
+                key = keyboard.read()
+                if key.kind == "escape":
+                    return None
+                if key.kind in ("up", "down"):
+                    cursor = min(max(0, cursor + (1 if key.kind == "down" else -1)),
+                                 max(0, len(matches) - 1))
+                    buffer = ""
+                    continue
+                if key.kind == "backspace":
+                    buffer = buffer[:-1]
+                    continue
+                if key.kind == "text":
+                    buffer += key.text
+                    continue
+                value, buffer = buffer.strip(), ""
+            else:
+                console.print(frame)
+                value = console.input(Text("Program or search: ", style="bold")).strip()
         except EOFError:
             return None
+        notice = ""
         command = value.casefold()
         if command in ("q", "/quit"):
             return None
         if command == "/refresh":
-            processes = _read_processes(console)
-            page = 0
+            processes = _read_processes(console, show_status=live is None)
+            page, cursor = 0, 0
         elif command == "/next":
             page += 1
+            cursor = min(page, max(0, (len(matches) - 1) // _page_size(console))) * _page_size(console)
         elif command == "/prev":
-            page -= 1
+            page = max(0, page - 1)
+            cursor = page * _page_size(console)
         elif command == "/clear":
-            query, page = "", 0
+            query, page, cursor = "", 0, 0
         elif command == "/search" or command.startswith("/search "):
-            query, page = value.partition(" ")[2].strip(), 0
+            query, page, cursor = value.partition(" ")[2].strip(), 0, 0
         elif value.startswith("/"):
-            console.print(Text("Unknown command. Use /search TEXT to search a name.", style=PALETTE.warn))
-        elif value.isdecimal():
+            notice = "Unknown command. Use /search TEXT to search a name."
+        elif value.isdecimal() or (keyboard and not value):
             # Comparing strings also keeps excessively long numeric input bounded.
             selected = next((row for row in matches if str(row.pid) == value.lstrip("0")), None)
+            if keyboard and not value and matches:
+                selected = matches[cursor]
             if selected is None:
-                console.print(Text("That PID is not in these results. Search or /refresh.", style=PALETTE.warn))
+                notice = "That PID is not in these results. Search or /refresh."
+                if keyboard and not value:
+                    notice = "No program to select. Search or /refresh."
             elif selected.create_time is None:
-                console.print(
-                    Text("This program's identity is unavailable. Choose another program, "
-                         "or use --pid explicitly to attempt direct attachment.", style=PALETTE.warn)
+                notice = (
+                    "This program's identity is unavailable. Choose another program, "
+                    "or use --pid explicitly to attempt direct attachment."
                 )
             elif not is_process_current(selected):
-                console.print(
-                    Text("That program exited, changed, or cannot be verified. Refreshing the list.",
-                         style=PALETTE.warn)
-                )
-                processes = _read_processes(console)
-                page = 0
+                notice = "That program exited, changed, or cannot be verified. Refreshing the list."
+                processes = _read_processes(console, show_status=live is None)
+                page, cursor = 0, 0
             else:
-                console.print(Text(f"Hooking to {_label(selected.name)} (PID {selected.pid})."))
-                return selected.pid
+                return selected
         elif value:
-            query, page = value, 0
+            query, page, cursor = value, 0, 0

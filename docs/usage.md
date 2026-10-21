@@ -16,9 +16,18 @@ python src/main.py
 
 Enter `1` for **Open a program**, which opens the native Windows file picker,
 or `2` for **Hook to a running program**, which shows a paged list of
-running program names and PIDs. Type a name to filter it, then enter a
-listed PID to select that process. Names are matched without case sensitivity;
-programs with the same name keep their separate PIDs.
+running program names and PIDs, with at most **15 programs per page**
+(fewer in a short terminal). In an interactive Windows terminal, use
+**Up/Down** to move the `>` highlight, then **Enter** to select that program.
+Moving past a page boundary shows the next or previous page automatically.
+You can also type a listed PID and press Enter to select it directly.
+
+Type a name and press Enter to filter the list. Names are matched without
+case sensitivity; programs with the same name keep their separate PIDs.
+Backspace edits typed input. Arrow navigation clears unfinished input so
+Enter selects the highlighted program. Press Escape to cancel. Redirected
+or non-terminal input retains the typed PID/search workflow; empty lines
+in that mode do not select a program.
 
 - `/search TEXT`: filter names or PIDs, including partial numeric searches
   such as `/search 424`. Bare digits select an exact listed PID.

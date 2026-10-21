@@ -29,6 +29,8 @@ There is currently no package build step or installed console entry point.
 - [process_picker.py](../src/process_picker.py) and
   [running_processes.py](../src/running_processes.py): searchable, paged
   process selection, read-only discovery, and selection identity checks.
+- [picker_input.py](../src/picker_input.py): immediate Windows arrow/text
+  key decoding and interactive-input detection for the process picker.
 - [config.py](../src/config.py) and [units.py](../src/units.py): TOML
   discovery, profile layering, validation, and unit parsing/formatting.
 - [process_runner.py](../src/process_runner.py): launch and attach,

@@ -5,6 +5,13 @@ feature milestones remain in [future-plan.md](future-plan.md), and the complete
 commit history records earlier changes. Versions follow the repository rule:
 each focused change advances the runtime version by exactly `0.1`.
 
+## v3.8 — 2026-10-21
+
+- Enabled Up/Down navigation and Enter selection in the interactive program
+  list, with automatic page changes, visible focus, and typed PID/search input.
+- Added Escape cancellation and preserved the line-input fallback; arrow
+  and PID selection share the same process identity checks.
+
 ## v3.7 — 2026-10-21
 
 - Added immediate Windows picker-key decoding for arrows, Enter, text,

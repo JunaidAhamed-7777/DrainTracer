@@ -8,6 +8,7 @@ from unittest import mock
 from helpers import make_console
 
 from src import process_picker as picker
+from src.picker_input import PickerKey
 from src.process_picker import _render_page, filter_processes
 from src.running_processes import RunningProcess
 
@@ -139,6 +140,84 @@ class ProcessSelectionTests(unittest.TestCase):
         last_screen = self.console.file.getvalue().split("RUNNING PROGRAMS")[-1]
         self.assertTrue(any("42" in line for line in last_screen.splitlines()[-10:]))
         self.assertIn("/next /prev /refresh", last_screen)
+
+
+class KeyboardSelectionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.rows = [RunningProcess(42, "Editor.exe", 1.0), RunningProcess(142, "editor.exe", 2.0)]
+        self.console = make_console()
+        scan = mock.patch.object(picker, "list_running_processes", return_value=self.rows)
+        current = mock.patch.object(picker, "is_process_current", return_value=True)
+        self.scan = scan.start()
+        self.addCleanup(scan.stop)
+        self.current = current.start()
+        self.addCleanup(current.stop)
+
+    def choose(self, *keys):
+        keyboard = mock.Mock()
+        keyboard.read.side_effect = keys
+        with (
+            mock.patch.object(picker, "supports_picker_keyboard", return_value=True),
+            mock.patch.object(picker, "PickerKeyboard", return_value=keyboard),
+            mock.patch.object(picker, "Live") as display,
+        ):
+            self.display = display
+            return picker.select_running_process(self.console)
+
+    def frames(self) -> str:
+        console = make_console()
+        for call in self.display.return_value.__enter__.return_value.update.call_args_list:
+            console.print(call.args[0])
+        return console.file.getvalue()
+
+    def test_arrows_cross_the_15_row_boundary_and_enter_selects(self) -> None:
+        self.scan.return_value = [RunningProcess(pid, f"app{pid}.exe", 1.0) for pid in range(1, 32)]
+        down = [PickerKey("down")] * 15
+        self.assertEqual(self.choose(*down, PickerKey("enter")), 16)
+        self.assertIn("Page 2/3", self.frames())
+        self.assertEqual(self.choose(*down, PickerKey("up"), PickerKey("enter")), 15)
+
+    def test_navigation_clamps_at_both_ends(self) -> None:
+        self.assertEqual(self.choose(PickerKey("up"), PickerKey("enter")), 42)
+        self.assertEqual(self.choose(*[PickerKey("down")] * 4, PickerKey("enter")), 142)
+
+    def test_typed_pid_and_backspace_override_the_highlight(self) -> None:
+        keys = [PickerKey("text", value) for value in "143"]
+        self.assertEqual(self.choose(*keys, PickerKey("backspace"), PickerKey("text", "2"),
+                                     PickerKey("enter")), 142)
+        self.current.assert_called_once_with(self.rows[1])
+
+    def test_arrows_clear_unsubmitted_input_before_enter(self) -> None:
+        self.assertEqual(self.choose(PickerKey("text", "999"), PickerKey("down"),
+                                     PickerKey("enter")), 142)
+
+    def test_empty_search_results_do_not_select_a_process(self) -> None:
+        self.assertIsNone(self.choose(PickerKey("text", "missing"), PickerKey("enter"),
+                                      PickerKey("enter"), PickerKey("escape")))
+        self.current.assert_not_called()
+        self.assertIn("No program to select", self.frames())
+
+    def test_refresh_shrinking_inventory_resets_the_active_row(self) -> None:
+        self.scan.side_effect = [self.rows, [self.rows[0]]]
+        self.assertEqual(self.choose(PickerKey("down"), PickerKey("text", "/refresh"),
+                                     PickerKey("enter"), PickerKey("enter")), 42)
+        self.current.assert_called_once_with(self.rows[0])
+
+    def test_enter_uses_the_same_stale_identity_checks_as_pid_entry(self) -> None:
+        self.current.side_effect = [False, True]
+        self.scan.side_effect = [self.rows, [self.rows[1]]]
+        self.assertEqual(self.choose(PickerKey("enter"), PickerKey("enter")), 142)
+        self.assertEqual(self.current.call_args_list,
+                         [mock.call(self.rows[0]), mock.call(self.rows[1])])
+
+    def test_escape_eof_and_ctrl_c_leave_the_live_display(self) -> None:
+        for key in (PickerKey("escape"), EOFError()):
+            with self.subTest(key=key):
+                self.assertIsNone(self.choose(key))
+                self.display.return_value.__exit__.assert_called_once()
+        with self.assertRaises(KeyboardInterrupt):
+            self.choose(KeyboardInterrupt())
+        self.display.return_value.__exit__.assert_called_once()
 
 
 if __name__ == "__main__":
