@@ -246,5 +246,22 @@ class ExampleFileTests(unittest.TestCase):
         self.assertEqual(heavy.thresholds[LeakResource.MEMORY].critical_delta, 4 * 1024 * MB)
 
 
+class PolicySettingsTests(ConfigTestCase):
+    def test_policies_come_from_files_and_default_off(self) -> None:
+        self.assertFalse(self.resolve(discover=False).fail_on_inconclusive)
+        self.write(".drainrc", """
+            fail_on_inconclusive = true
+            [profiles.ci]
+            fail_on_target_error = true
+        """)
+        settings = self.resolve(profile="ci")
+        self.assertTrue(settings.fail_on_inconclusive)
+        self.assertTrue(settings.fail_on_target_error)
+
+    def test_policies_must_be_booleans(self) -> None:
+        self.write(".drainrc", 'fail_on_target_error = "yes"\n')
+        self.assertConfigError("fail_on_target_error must be true or false")
+
+
 if __name__ == "__main__":
     unittest.main()

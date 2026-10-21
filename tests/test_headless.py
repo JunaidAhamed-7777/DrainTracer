@@ -60,7 +60,11 @@ class ExitStatusTests(unittest.TestCase):
     def test_reports_record_the_threshold_and_outcome(self) -> None:
         runner = self._runner(LeakSeverity.MEDIUM)
         runner._accept_snapshot(make_snapshot(alerts=(make_alert(severity=LeakSeverity.HIGH),)))
-        self.assertEqual(runner.build_report()["headless"], {"fail_on": "medium", "breached": True})
+        self.assertEqual(
+            runner.build_report()["headless"],
+            {"fail_on": "medium", "breached": True, "fail_on_inconclusive": False,
+             "fail_on_target_error": False},
+        )
 
     def test_none_is_not_a_failure_threshold(self) -> None:
         with self.assertRaises(ValueError):
@@ -259,6 +263,84 @@ class EndToEndTests(unittest.TestCase):
         )
         self.assertEqual(runner.run(), EXIT_ERROR)
         self.assertIn("Could not start monitoring", _output(runner))
+
+
+class PolicyTests(unittest.TestCase):
+    def _runner(self, **policies) -> HeadlessRunner:
+        return HeadlessRunner("C:/targets/worker.exe", console=make_console(), **policies)
+
+    def _exit_code(self, runner: HeadlessRunner, code: int | None):
+        return mock.patch.object(type(runner.manager), "exit_code",
+                                 new_callable=mock.PropertyMock, return_value=code)
+
+    def test_policies_are_off_by_default(self) -> None:
+        runner = self._runner()
+        runner._accept_snapshot(make_snapshot())
+        with self._exit_code(runner, 5):
+            self.assertEqual(runner.exit_status(), EXIT_PASS)
+
+    def test_inconclusive_runs_can_fail(self) -> None:
+        from src.headless import EXIT_INCONCLUSIVE
+
+        runner = self._runner(fail_on_inconclusive=True)
+        runner._accept_snapshot(make_snapshot())
+        self.assertEqual(runner.exit_status(), EXIT_INCONCLUSIVE)
+        runner._print_summary()
+        result = next(line for line in _output(runner).splitlines() if line.startswith("RESULT"))
+        self.assertIn("INCONCLUSIVE", result)
+        self.assertIn("inconclusive runs", result)
+        runner.detector._detection_started = True
+        self.assertEqual(runner.exit_status(), EXIT_PASS)
+        runner._accept_snapshot(make_snapshot(alerts=(make_alert(severity=LeakSeverity.HIGH),)))
+        self.assertEqual(runner.exit_status(), EXIT_LEAK)
+
+    def test_target_errors_can_fail(self) -> None:
+        from src.headless import EXIT_TARGET_ERROR
+
+        runner = self._runner(fail_on_target_error=True)
+        runner.detector._detection_started = True
+        runner._accept_snapshot(make_snapshot())
+        with self._exit_code(runner, 0):
+            self.assertEqual(runner.exit_status(), EXIT_PASS)
+        with self._exit_code(runner, 3):
+            self.assertEqual(runner.exit_status(), EXIT_TARGET_ERROR)
+            runner._print_summary()
+            self.assertIn("the target exited with code 3", _output(runner))
+            runner._stopped_target = True  # DrainTracer ended it: not the target's failure
+            self.assertEqual(runner.exit_status(), EXIT_PASS)
+
+    def test_summary_separates_target_measurement_and_errors(self) -> None:
+        from helpers import make_denied, make_process
+
+        runner = self._runner()
+        runner.detector._detection_started = True
+        runner._accept_snapshot(make_snapshot(metadata={"sampling_error": "boom"}))
+        runner._accept_snapshot(make_snapshot(
+            processes=(make_process(100), make_denied(200)), measured_coverage=True))
+        runner._run_error = "monitoring failed: oops"
+        runner._print_summary()
+        output = _output(runner).replace("·", "|")
+        self.assertIn("measured  partial | 1 process unreadable (PID 200)", output)
+        self.assertIn("errors    sampling error: boom | monitoring failed: oops", output)
+        self.assertIn("Partial coverage: 1 process unreadable", output)
+        outcome = runner.build_report()["outcome"]
+        self.assertEqual(outcome["measurement"]["result"], "partial")
+        self.assertEqual(outcome["monitor_errors"], ["sampling error: boom", "monitoring failed: oops"])
+
+    def test_progress_lines_show_the_evidence(self) -> None:
+        from dataclasses import replace
+
+        from src.events import EvidenceState, LeakResource, ResourceEvidence
+
+        runner = self._runner()
+        evidence = tuple(
+            ResourceEvidence(resource, EvidenceState.COLLECTING, valid_samples=9,
+                             needed_samples=4, elapsed_seconds=4.0, needed_seconds=8.5)
+            for resource in LeakResource
+        )
+        runner._accept_snapshot(replace(make_snapshot(), evidence=evidence))
+        runner._print_progress()
+        self.assertIn("signal collecting 4s/8.5s", _output(runner))
 
 
 if __name__ == "__main__":

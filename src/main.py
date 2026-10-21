@@ -529,6 +529,21 @@ def build_parser() -> argparse.ArgumentParser:
             "high (default), or critical."
         ),
     )
+    headless.add_argument(
+        "--fail-on-inconclusive",
+        action="store_true",
+        default=None,
+        help=(
+            "Exit 3 instead of 0 when a headless run ends without judging a leak "
+            "window (too short, warm-up unfinished, or nothing readable)."
+        ),
+    )
+    headless.add_argument(
+        "--fail-on-target-error",
+        action="store_true",
+        default=None,
+        help="Exit 4 when a launched target exits by itself with a non-zero code.",
+    )
     parser.add_argument(
         "target_args",
         nargs=argparse.REMAINDER,
@@ -550,6 +565,9 @@ def _resolve_settings(args: argparse.Namespace) -> MonitorSettings:
         overrides["timeout"] = args.timeout
     if args.fail_on is not None:
         overrides["fail_on"] = LeakSeverity(args.fail_on)
+    for key in ("fail_on_inconclusive", "fail_on_target_error"):
+        if getattr(args, key) is not None:
+            overrides[key] = getattr(args, key)
     if args.report_dir is not None:
         overrides["report_dir"] = args.report_dir
     return resolve_settings(
@@ -642,6 +660,12 @@ def _main(console: Console, argv: list[str] | None) -> int:
         parser.error("arguments after '--' only apply to launched targets, not --pid")
     if args.fail_on is not None and not args.headless:
         parser.error("--fail-on only applies with --headless")
+    for flag, value in (
+        ("--fail-on-inconclusive", args.fail_on_inconclusive),
+        ("--fail-on-target-error", args.fail_on_target_error),
+    ):
+        if value and not args.headless:
+            parser.error(f"{flag} only applies with --headless")
     if args.headless and args.target is None and args.pid is None:
         parser.error("--headless needs --target or --pid; startup selection is interactive")
     if args.profile is not None and args.no_config:
@@ -756,6 +780,8 @@ def _run_headless(
         timeout=settings.timeout,
         fail_on=settings.fail_on,
         settings=settings,
+        fail_on_inconclusive=settings.fail_on_inconclusive,
+        fail_on_target_error=settings.fail_on_target_error,
     )
     try:
         return runner.run()

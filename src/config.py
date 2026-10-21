@@ -59,9 +59,13 @@ _LAYER_KEYS = (
     "warmup",
     "timeout",
     "fail_on",
+    "fail_on_inconclusive",
+    "fail_on_target_error",
     "report_dir",
     "thresholds",
 )
+# Optional headless policies; all default to off so exit codes stay unchanged.
+_POLICY_KEYS = ("fail_on_inconclusive", "fail_on_target_error")
 _ROOT_KEYS = (*_LAYER_KEYS, "profiles", "default_profile")
 _THRESHOLD_KEYS = ("critical_delta", "critical_slope")
 
@@ -80,6 +84,10 @@ class MonitorSettings:
     warmup: float = 0.0
     timeout: float | None = None
     fail_on: LeakSeverity = LeakSeverity.HIGH
+    # Headless only: fail when no leak window was judged, or when a
+    # launched target exits with a non-zero code.
+    fail_on_inconclusive: bool = False
+    fail_on_target_error: bool = False
     report_dir: str = DEFAULT_REPORT_DIR
     profile: str | None = None
     source: Path | None = None
@@ -120,7 +128,8 @@ def resolve_settings(
     """Combine defaults, a config file, a profile, and flag overrides.
 
     ``overrides`` uses ``MonitorSettings`` field names (``sample_interval_ms``,
-    ``windows``, ``warmup``, ``timeout``, ``fail_on``, ``report_dir``). Raises
+    ``windows``, ``warmup``, ``timeout``, ``fail_on``, ``fail_on_inconclusive``,
+    ``fail_on_target_error``, ``report_dir``). Raises
     ``ConfigError`` with the file and setting named on any problem.
     """
     settings = MonitorSettings()
@@ -265,6 +274,11 @@ def _parse_layer(table: Mapping[str, Any], where: str, folder: Path) -> dict[str
                 f"{where}fail_on must be one of {', '.join(FAIL_ON_CHOICES)}, got {value!r}"
             )
         overrides["fail_on"] = LeakSeverity(value.lower())
+    for key in _POLICY_KEYS:
+        if key in table:
+            if not isinstance(table[key], bool):
+                raise ConfigError(f"{where}{key} must be true or false, got {table[key]!r}")
+            overrides[key] = table[key]
     if "report_dir" in table:
         value = table["report_dir"]
         if not isinstance(value, str) or not value.strip():

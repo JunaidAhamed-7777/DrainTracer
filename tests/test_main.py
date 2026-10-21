@@ -346,5 +346,22 @@ class LoggingTests(unittest.TestCase):
         self.assertIn("DRAINTRACER_LOG: cannot write", stderr.getvalue())
 
 
+class PolicyFlagTests(unittest.TestCase):
+    def test_policy_flags_reach_the_runner(self) -> None:
+        with mock.patch.object(cli, "HeadlessRunner") as runner:
+            runner.return_value.run.return_value = 0
+            cli._main(make_console(), ["--headless", "--target", "a.exe", "--no-config",
+                                       "--fail-on-inconclusive", "--fail-on-target-error"])
+        kwargs = runner.call_args.kwargs
+        self.assertTrue(kwargs["fail_on_inconclusive"])
+        self.assertTrue(kwargs["fail_on_target_error"])
+
+    def test_policy_flags_need_headless(self) -> None:
+        for flag in ("--fail-on-inconclusive", "--fail-on-target-error"):
+            with self.subTest(flag=flag):
+                message = _parse_error([flag, "--target", "x.exe"])
+                self.assertIn(f"{flag} only applies with --headless", message)
+
+
 if __name__ == "__main__":
     unittest.main()

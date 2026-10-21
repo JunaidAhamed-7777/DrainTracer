@@ -16,7 +16,7 @@ from rich.text import Text
 from .config import FAIL_ON_CHOICES, MonitorSettings
 from .analysis import RESOURCES, summarize
 from .dashboard import DashboardApp
-from .events import LeakSeverity, severity_rank
+from .events import EvidenceState, LeakSeverity, severity_rank
 from .report import DEFAULT_REPORT_DIR
 from .report_diff import format_amount, format_drift
 from .session import MonitorSession
@@ -28,6 +28,9 @@ logger = logging.getLogger(__name__)
 EXIT_PASS = 0
 EXIT_LEAK = 1
 EXIT_ERROR = 2
+# Only with the optional policies; without them these runs exit 0.
+EXIT_INCONCLUSIVE = 3
+EXIT_TARGET_ERROR = 4
 EXIT_INTERRUPTED = 130
 
 
@@ -47,7 +50,10 @@ class HeadlessRunner(MonitorSession):
     Events and periodic statistics are printed as plain lines suited to CI
     logs. Monitoring ends at the time limit, when the monitored tree exits,
     or on Ctrl+C; a report is then exported and ``run()`` returns
-    ``EXIT_LEAK`` if any leak signal reached ``fail_on``.
+    ``EXIT_LEAK`` if any leak signal reached ``fail_on``. The optional
+    ``fail_on_inconclusive`` and ``fail_on_target_error`` policies turn an
+    unjudged run or a failing target into their own exit codes; both are
+    off by default so existing pipelines keep their results.
     """
 
     VERSION = DashboardApp.VERSION
@@ -64,6 +70,8 @@ class HeadlessRunner(MonitorSession):
         timeout: float | None = None,
         fail_on: LeakSeverity = LeakSeverity.HIGH,
         settings: MonitorSettings | None = None,
+        fail_on_inconclusive: bool = False,
+        fail_on_target_error: bool = False,
     ) -> None:
         if fail_on == LeakSeverity.NONE:
             raise ValueError("fail_on must be a leak severity, not NONE")
@@ -77,6 +85,8 @@ class HeadlessRunner(MonitorSession):
             settings=settings,
         )
         self.fail_on = fail_on
+        self.fail_on_inconclusive = fail_on_inconclusive
+        self.fail_on_target_error = fail_on_target_error
         self._github_actions = os.environ.get("GITHUB_ACTIONS") == "true"
         self._export_error: str | None = None
         self._run_error: str | None = None
@@ -165,18 +175,43 @@ class HeadlessRunner(MonitorSession):
 
     def build_report(self) -> dict[str, Any]:
         report = super().build_report()
-        report["headless"] = {"fail_on": self.fail_on.value, "breached": self.breached}
+        report["headless"] = {
+            "fail_on": self.fail_on.value,
+            "breached": self.breached,
+            "fail_on_inconclusive": self.fail_on_inconclusive,
+            "fail_on_target_error": self.fail_on_target_error,
+        }
+        if self._run_error is not None:
+            report["outcome"]["monitor_errors"].append(self._run_error)
         return report
 
     def exit_status(self) -> int:
-        """Map the session outcome to the process exit code."""
+        """Map the session outcome to the process exit code.
+
+        A leak signal wins, then an interruption, then a monitor or export
+        error; the optional policies only apply to runs that are otherwise
+        a pass.
+        """
         if self.breached:
             return EXIT_LEAK
         if self._interrupted:
             return EXIT_INTERRUPTED
         if self._export_error is not None or self._run_error is not None:
             return EXIT_ERROR
+        if self.fail_on_target_error and self.target_failed:
+            return EXIT_TARGET_ERROR
+        if self.fail_on_inconclusive and not self.conclusive:
+            return EXIT_INCONCLUSIVE
         return EXIT_PASS
+
+    def _policy_text(self) -> str:
+        """``fails on HIGH or above``, plus any optional policy in force."""
+        text = f"fails on {self.fail_on.value.upper()} or above"
+        if self.fail_on_inconclusive:
+            text += ", inconclusive runs"
+        if self.fail_on_target_error:
+            text += ", target errors"
+        return text
 
     def _export(self) -> None:
         try:
@@ -226,7 +261,7 @@ class HeadlessRunner(MonitorSession):
             Text.assemble(
                 (f"{self.TITLE} {self.VERSION} headless", f"bold {PALETTE.accent}"),
                 (f" {sep} {action} {sep} {limit} {sep} {warmup_text}", PALETTE.muted),
-                (f"fails on {self.fail_on.value.upper()} or above", PALETTE.muted),
+                (self._policy_text(), PALETTE.muted),
             ),
             soft_wrap=True,
         )
@@ -251,6 +286,8 @@ class HeadlessRunner(MonitorSession):
         if self.snapshot is not None and self.snapshot.warming_up:
             left = format_duration(max(1.0, math.ceil(self.detector.warmup_remaining)))
             signal = f"WARMING UP ({left} left)"
+        elif self.snapshot is not None and not active:
+            signal = self._evidence_text(self.snapshot) or signal
         self._print_line(
             "stat",
             f"cpu {totals.get('cpu_percent', 0.0):.1f}% {sep} "
@@ -262,6 +299,44 @@ class HeadlessRunner(MonitorSession):
             f"signal {signal}",
         )
 
+    @staticmethod
+    def _evidence_text(snapshot) -> str:
+        """The detector's evidence for a progress line without an active signal."""
+        states = {item.state for item in snapshot.evidence}
+        if not states:
+            return ""
+        if states == {EvidenceState.UNAVAILABLE}:
+            text = "UNAVAILABLE (no readable process)"
+        elif EvidenceState.COLLECTING in states:
+            least = min(
+                (item for item in snapshot.evidence if item.state == EvidenceState.COLLECTING),
+                key=lambda item: item.elapsed_seconds,
+            )
+            text = (
+                f"collecting {format_duration(least.elapsed_seconds)}"
+                f"/{format_duration(least.needed_seconds)}"
+            )
+        elif states == {EvidenceState.NO_GROWTH}:
+            window = min(item.evaluated_window_seconds or 0.0 for item in snapshot.evidence)
+            text = f"no sustained growth ({format_duration(window)} window)"
+        else:
+            return ""
+        unreadable = len(snapshot.unmeasured_pids)
+        if unreadable and states != {EvidenceState.UNAVAILABLE}:
+            text += f", partial: {unreadable} unreadable"
+        return text
+
+    def _measurement_text(self) -> str:
+        """Measurement outcome for the summary: conclusive, partial, or inconclusive."""
+        outcome = self.measurement_outcome
+        text = outcome
+        if not self.conclusive:
+            text += f": {self.inconclusive_reason()}"
+        coverage = self.coverage_text()
+        if coverage:
+            text += f" {self.glyphs.sep} {coverage}"
+        return text
+
     def _print_summary(self) -> None:
         sep = self.glyphs.sep
         status = self.exit_status()
@@ -269,6 +344,8 @@ class HeadlessRunner(MonitorSession):
             EXIT_PASS: ("PASS", PALETTE.ok),
             EXIT_LEAK: ("FAIL", PALETTE.danger),
             EXIT_ERROR: ("ERROR", PALETTE.danger),
+            EXIT_INCONCLUSIVE: ("INCONCLUSIVE", PALETTE.danger),
+            EXIT_TARGET_ERROR: ("TARGET ERROR", PALETTE.danger),
             EXIT_INTERRUPTED: ("INTERRUPTED", PALETTE.warn),
         }[status]
         worst = self.worst_severity
@@ -279,15 +356,28 @@ class HeadlessRunner(MonitorSession):
         )
         if status == EXIT_ERROR:
             reason = self._run_error or f"the report could not be written: {self._export_error}"
+        elif status == EXIT_TARGET_ERROR:
+            reason = f"the target exited with code {self.manager.exit_code}"
+        elif status == EXIT_INCONCLUSIVE:
+            reason = self.inconclusive_reason()
         if status == EXIT_PASS and not self.conclusive:
             # Still exit 0: a short smoke run is not a failure, but say so.
             verdict, color = "INCONCLUSIVE", PALETTE.warn
             reason = self.inconclusive_reason()
             self._print_line("warn", f"Inconclusive: {reason}")
+        coverage = self.coverage_text()
+        if coverage:
+            self._print_line("warn", f"Partial coverage: {coverage}; totals leave them out")
 
+        errors = list(self.monitor_errors)
+        if self._run_error is not None:
+            errors.append(self._run_error)
+        if self._export_error is not None:
+            errors.append(f"report export failed: {self._export_error}")
         rows = [
             ("target", f"{Path(self.target_path).name} {sep} PID {self.root_pid or '-'} "
                        f"({self.outcome_text()})"),
+            ("measured", self._measurement_text()),
             ("duration", f"{self._format_duration(self._uptime())} {sep} "
                          f"{self._sample_count:,} samples"),
             ("peaks", f"RSS {self._format_bytes(self._peaks['rss_bytes'])} {sep} "
@@ -299,6 +389,8 @@ class HeadlessRunner(MonitorSession):
         warmup = self.warmup_text()
         if warmup:
             rows.append(("warm-up", warmup))
+        if errors:
+            rows.append(("errors", f" {sep} ".join(errors)))
         if self._last_report is not None:
             rows.append(("report", str(self._last_report)))
         if self._last_html_report is not None:
@@ -314,7 +406,7 @@ class HeadlessRunner(MonitorSession):
             Text.assemble(
                 ("RESULT ", "bold"),
                 (f" {verdict} ", f"bold {PALETTE.ink} on {color}"),
-                f"  {reason} {sep} fails on {self.fail_on.value.upper()} or above",
+                f"  {reason} {sep} {self._policy_text()}",
             ),
             soft_wrap=True,
         )
@@ -330,7 +422,9 @@ class HeadlessRunner(MonitorSession):
             f"### DrainTracer leak check: {verdict}",
             "",
             f"**{_markdown(Path(self.target_path).name)}** · {_markdown(self.outcome_text())} · "
-            f"{format_duration(self._uptime())} · fails on {self.fail_on.value.upper()} or above",
+            f"{format_duration(self._uptime())} · {_markdown(self._policy_text())}",
+            "",
+            f"Measurement: {_markdown(self._measurement_text())}",
             "",
         ]
         if self._last_report_data is not None:
@@ -367,20 +461,18 @@ class HeadlessRunner(MonitorSession):
         """Surface the verdict as a GitHub Actions annotation on CI runs."""
         if not self._github_actions:
             return
-        if status in (EXIT_LEAK, EXIT_ERROR):
+        if status in (EXIT_LEAK, EXIT_ERROR, EXIT_INCONCLUSIVE, EXIT_TARGET_ERROR):
             command = "error"
         elif (
             self.worst_severity != LeakSeverity.NONE
             or status != EXIT_PASS
             or not self.conclusive
+            or self.partial_coverage
         ):
             command = "warning"
         else:
             return
-        message = (
-            f"{Path(self.target_path).name}: {reason} "
-            f"(fails on {self.fail_on.value.upper()} or above)"
-        )
+        message = f"{Path(self.target_path).name}: {reason} ({self._policy_text()})"
         if self._last_report is not None:
             message += f". Report: {self._last_report}"
         title = _escape_property("DrainTracer leak check")
@@ -409,9 +501,11 @@ def _escape_property(value: str) -> str:
 
 __all__ = [
     "EXIT_ERROR",
+    "EXIT_INCONCLUSIVE",
     "EXIT_INTERRUPTED",
     "EXIT_LEAK",
     "EXIT_PASS",
+    "EXIT_TARGET_ERROR",
     "FAIL_ON_CHOICES",
     "HeadlessRunner",
 ]
