@@ -10,41 +10,8 @@ current release and [AGENTS.md](AGENTS.md) for the release policy.
 
 ## Unreleased
 
-- Kept unknown measurements apart from real zeros: unreadable counters are
-  marked unmeasured, snapshots record per-metric coverage, and access
-  changes restart detection windows instead of passing for growth.
-- Showed evidence states in leak health (collecting, no sustained growth,
-  unavailable, partial coverage) and kept the session worst separate.
-- Added optional `--fail-on-inconclusive` (exit 3) and
-  `--fail-on-target-error` (exit 4) headless policies, and separate target,
-  measurement, and monitor-error outcomes in summaries and report schema 3.
-- Showed the memory metric behind alerts: the memory card and compact strip
-  chart private bytes with RSS (working set) as context, narrow process tables
-  keep `PRIVATE`, alerts and exported JSON name `private_bytes`, and help
-  explains the two counters.
-- Attributed growth to processes: samples carry each process's identity (PID
-  and creation time), the detector keeps bounded per-process histories, and
-  alerts rank contributors over their window, separating growth from newly
-  started workers. Process starts, exits, and restarts are logged, the header
-  shows start/exit counts, and reports keep live and exited process summaries.
-- Kept exact session facts when chart history is thinned: reports add
-  `session_facts` (peaks with timestamps, worst severity and when it was
-  reached, signal episode counts, evaluated time, sample counts, coverage)
-  that analysis, HTML, and diffs prefer, and mark "chart thinned 1:N".
-- Measured the monitor itself: snapshots carry cadence, collection time,
-  handle-classification age and cost, failed and dropped samples, and
-  DrainTracer's own CPU and memory. Leak health shows sample freshness,
-  summaries report the monitor cost, and HTML reports add a diagnostics panel.
-- Made "my fix helped" defensible: reports record an `experiment` section
-  (`--workload-id`, `--build`, `--operations`, `--note`, sampling settings,
-  and machine details) with target arguments reduced to a count and
-  fingerprint and secret-looking label values redacted. Report comparisons
-  classify caveats, qualify verdicts that rest on them
-  (`IMPROVED (QUALIFIED)`), and `diff --strict` reports `NOT COMPARABLE` or
-  `INSUFFICIENT COVERAGE` with exit `3`. Comparisons show whole-run peaks and
-  growth per operation, and optional budgets (`--budget-private`,
-  `--budget-handles`, `--budget-threads`) fail diffs with exit `4` and
-  headless runs with exit `5`, even without a leak signal.
+### Added
+
 - Added focused dashboard views on number keys, with `Esc` back to the
   overview: `2` a process inspector (searchable tree or growth ranking over a
   window or lifetime, exited processes, and a selected-process detail that
@@ -56,16 +23,54 @@ current release and [AGENTS.md](AGENTS.md) for the release policy.
   numbered markers that reports export as `markers`. Arrow, Home/End, and
   paging keys are decoded on Windows and POSIX terminals, help scrolls, and
   legacy code pages get safe replacements for characters they cannot show.
-- Said "no live process" instead of "no readable process" once the monitored
-  tree has exited, so an ended run no longer looks like an access problem.
-- Logged a budget that the first sample already exceeds after the headless
-  launch line instead of before it.
-- Redacted secret options such as `--password value` pasted into experiment
-  labels, not only `password=value` assignments.
-- Kept the Windows dashboard responsive when a key such as `à` arrives as a
-  lone extended-key prefix; it no longer waits for another key press.
+- Made "my fix helped" defensible: reports record an `experiment` section
+  (`--workload-id`, `--build`, `--operations`, `--note`, sampling settings,
+  and machine details) with target arguments reduced to a count and
+  fingerprint and secret-looking label values redacted. Report comparisons
+  classify caveats, qualify verdicts that rest on them
+  (`IMPROVED (QUALIFIED)`), and `diff --strict` reports `NOT COMPARABLE` or
+  `INSUFFICIENT COVERAGE` with exit `3`. Comparisons show whole-run peaks and
+  growth per operation, and optional budgets (`--budget-private`,
+  `--budget-handles`, `--budget-threads`) fail diffs with exit `4` and
+  headless runs with exit `5`, even without a leak signal.
+- Measured the monitor itself: snapshots carry cadence, collection time,
+  handle-classification age and cost, failed and dropped samples, and
+  DrainTracer's own CPU and memory. Leak health shows sample freshness,
+  summaries report the monitor cost, and HTML reports add a diagnostics panel.
+- Kept exact session facts when chart history is thinned: reports add
+  `session_facts` (peaks with timestamps, worst severity and when it was
+  reached, signal episode counts, evaluated time, sample counts, coverage)
+  that analysis, HTML, and diffs prefer, and mark "chart thinned 1:N".
+- Attributed growth to processes: samples carry each process's identity (PID
+  and creation time), the detector keeps bounded per-process histories, and
+  alerts rank contributors over their window, separating growth from newly
+  started workers. Process starts, exits, and restarts are logged, the header
+  shows start/exit counts, and reports keep live and exited process summaries.
+- Showed the memory metric behind alerts: the memory card and compact strip
+  chart private bytes with RSS (working set) as context, narrow process tables
+  keep `PRIVATE`, alerts and exported JSON name `private_bytes`, and help
+  explains the two counters.
+- Added optional `--fail-on-inconclusive` (exit 3) and
+  `--fail-on-target-error` (exit 4) headless policies, and separate target,
+  measurement, and monitor-error outcomes in summaries and report schema 3.
+- Showed evidence states in leak health (collecting, no sustained growth,
+  unavailable, partial coverage) and kept the session worst separate.
+- Kept unknown measurements apart from real zeros: unreadable counters are
+  marked unmeasured, snapshots record per-metric coverage, and access
+  changes restart detection windows instead of passing for growth.
+
+### Fixed
+
 - Ended process-inspector growth at the displayed sample, so growth and the
   values beside it describe the same moment.
+- Kept the Windows dashboard responsive when a key such as `à` arrives as a
+  lone extended-key prefix; it no longer waits for another key press.
+- Redacted secret options such as `--password value` pasted into experiment
+  labels, not only `password=value` assignments.
+- Logged a budget that the first sample already exceeds after the headless
+  launch line instead of before it.
+- Said "no live process" instead of "no readable process" once the monitored
+  tree has exited, so an ended run no longer looks like an access problem.
 
 ## v5.1.1 — 2026-10-22
 
