@@ -291,8 +291,9 @@ class HeadlessRunner(MonitorSession):
         self._print_line(
             "stat",
             f"cpu {totals.get('cpu_percent', 0.0):.1f}% {sep} "
-            f"rss {self._format_bytes(totals.get('rss_bytes', 0.0))} {sep} "
+            # Private bytes first: they drive the memory signal; RSS is context.
             f"private {self._format_bytes(totals.get('private_bytes', 0.0))} {sep} "
+            f"rss {self._format_bytes(totals.get('rss_bytes', 0.0))} {sep} "
             f"handles {int(totals.get('handles', 0.0)):,} {sep} "
             f"threads {int(totals.get('threads', 0.0)):,} {sep} "
             f"{processes} process{'es' if processes != 1 else ''} {sep} "
@@ -380,8 +381,8 @@ class HeadlessRunner(MonitorSession):
             ("measured", self._measurement_text()),
             ("duration", f"{self._format_duration(self._uptime())} {sep} "
                          f"{self._sample_count:,} samples"),
-            ("peaks", f"RSS {self._format_bytes(self._peaks['rss_bytes'])} {sep} "
-                      f"private {self._format_bytes(self._peaks['private_bytes'])} {sep} "
+            ("peaks", f"private {self._format_bytes(self._peaks['private_bytes'])} {sep} "
+                      f"RSS (working set) {self._format_bytes(self._peaks['rss_bytes'])} {sep} "
                       f"{int(self._peaks['handles']):,} handles {sep} "
                       f"{int(self._peaks['threads']):,} threads"),
             ("signals", self.signals_text()),

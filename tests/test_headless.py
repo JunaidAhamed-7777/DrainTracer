@@ -42,6 +42,20 @@ class ExitStatusTests(unittest.TestCase):
                 runner._accept_snapshot(make_snapshot(alerts=(make_alert(severity=observed),)))
                 self.assertEqual(runner.exit_status(), expected)
 
+    def test_progress_and_summary_lead_with_private_bytes(self) -> None:
+        from helpers import make_process
+
+        mib = 1024 * 1024
+        runner = self._runner()
+        runner._accept_snapshot(
+            make_snapshot(processes=(make_process(100, rss=300 * mib, private=25 * mib),))
+        )
+        runner._print_progress()
+        runner._print_summary()
+        output = _output(runner).replace("·", "|")
+        self.assertIn("private 25.0 MB | rss 300.0 MB", output)
+        self.assertIn("private 25.0 MB | RSS (working set) 300.0 MB", output)
+
     def test_clean_run_passes(self) -> None:
         runner = self._runner()
         runner._accept_snapshot(make_snapshot())
