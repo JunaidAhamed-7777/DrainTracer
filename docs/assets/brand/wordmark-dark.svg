@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="256" viewBox="0 0 1000 256" role="img" aria-labelledby="title desc">
+  <title id="title">DrainTracer wordmark on ink</title>
+  <desc id="desc">DrainTracer. See what keeps growing. A teal pipe releases an amber droplet into a tracing reticle.</desc>
+  <rect width="1000" height="256" rx="24" fill="#101820"/>
+  <g transform="translate(16 8) scale(.88)">
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M32 60h102a44 44 0 0 1 44 44v12" stroke="#73DACA" stroke-width="26"/>
+      <path d="M50 43v34" stroke="#73DACA" stroke-width="8"/>
+      <path d="M160 116h36" stroke="#73DACA" stroke-width="12"/>
+      <path d="M190.42 138.64a48 48 0 0 1 33.94 33.94M224.36 197.42a48 48 0 0 1-33.94 33.94M165.58 231.36a48 48 0 0 1-33.94-33.94M131.64 172.58a48 48 0 0 1 33.94-33.94" stroke="#73DACA" stroke-width="5"/>
+      <path d="M178 129v12m0 88v12M122 185h12m88 0h12" stroke="#E0AF68" stroke-width="5"/>
+    </g>
+    <path d="M178 156c-6 13-19 25-19 36a19 19 0 0 0 38 0c0-11-13-23-19-36Z" fill="#E0AF68"/>
+  </g>
+  <g font-family="Segoe UI, Arial, sans-serif">
+    <text x="266" y="132" font-size="92" font-weight="700" letter-spacing="-4" fill="#EAF2F4">Drain<tspan fill="#73DACA">Tracer</tspan></text>
+    <text x="270" y="184" font-size="28" fill="#BACBD0">See what keeps growing.</text>
+  </g>
+</svg>

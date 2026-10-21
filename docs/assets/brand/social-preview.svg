@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
+  <title id="title">DrainTracer social preview</title>
+  <desc id="desc">DrainTracer. See what keeps growing. Open source Windows process resource monitor for memory, handles, and threads. A leaky pipe and tracing reticle illustrate resource leak detection.</desc>
+  <defs>
+    <pattern id="grid" width="64" height="64" patternUnits="userSpaceOnUse">
+      <path d="M64 0H0v64" fill="none" stroke="#22313B" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="1280" height="640" fill="#101820"/>
+  <rect width="1280" height="640" fill="url(#grid)" opacity=".6"/>
+  <path d="M64 128h1152M64 552h1152" stroke="#35464F" stroke-width="1"/>
+  <g fill="none" stroke="#73DACA" opacity=".12">
+    <circle cx="1110" cy="402" r="174"/>
+    <circle cx="1110" cy="402" r="210"/>
+    <path d="M1110 152v440M860 402h356"/>
+  </g>
+  <g font-family="Segoe UI, Arial, sans-serif">
+    <text x="64" y="88" font-size="17" letter-spacing="4" fill="#BACBD0">OPEN SOURCE / WINDOWS</text>
+    <text x="64" y="278" font-size="104" font-weight="700" letter-spacing="-5" fill="#EAF2F4">Drain<tspan fill="#73DACA">Tracer</tspan></text>
+    <text x="68" y="350" font-size="42" fill="#EAF2F4">See what keeps growing.</text>
+    <text x="68" y="408" font-size="20" fill="#BACBD0">Resource leak monitoring for process trees.</text>
+    <text x="68" y="510" font-size="18" letter-spacing="4" fill="#BACBD0">MEMORY / HANDLES / THREADS</text>
+    <text x="64" y="598" font-size="17" letter-spacing="2" fill="#BACBD0">DRAINTRACER</text>
+  </g>
+  <g transform="translate(846 122) scale(1.5)">
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M32 60h102a44 44 0 0 1 44 44v12" stroke="#73DACA" stroke-width="26"/>
+      <path d="M50 43v34" stroke="#73DACA" stroke-width="8"/>
+      <path d="M160 116h36" stroke="#73DACA" stroke-width="12"/>
+      <path d="M190.42 138.64a48 48 0 0 1 33.94 33.94M224.36 197.42a48 48 0 0 1-33.94 33.94M165.58 231.36a48 48 0 0 1-33.94-33.94M131.64 172.58a48 48 0 0 1 33.94-33.94" stroke="#73DACA" stroke-width="5"/>
+      <path d="M178 129v12m0 88v12M122 185h12m88 0h12" stroke="#E0AF68" stroke-width="5"/>
+    </g>
+    <path d="M178 156c-6 13-19 25-19 36a19 19 0 0 0 38 0c0-11-13-23-19-36Z" fill="#E0AF68"/>
+  </g>
+  <path d="M1102 590h24l16-16h20l18-20h22" fill="none" stroke="#E0AF68" stroke-width="2"/>
+  <circle cx="1202" cy="554" r="4" fill="#E0AF68"/>
+</svg>
