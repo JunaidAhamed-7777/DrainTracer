@@ -34,7 +34,8 @@ def _live_query(value: str, current: str) -> str:
     if value.startswith("/"):
         command, separator, text = value.partition(" ")
         return text.strip() if command.casefold() == "/search" and separator else current
-    return value.strip()
+    value = value.strip()
+    return (value.lstrip("0") or "0") if value.isdecimal() else value
 
 
 def _label(value: str) -> str:
@@ -142,11 +143,11 @@ def _select_process(
         if _compact(console):
             help_text = "Name or PID; /search TEXT\n/next /prev /refresh\n/clear | Q cancel"
             if keyboard:
-                help_text = "Up/Down/Enter; PID/name\n/search /clear /refresh\n/next /prev | Esc/Q"
+                help_text = "Type name/PID: filter\nUp/Down/Enter; Esc/Q\n/search /clear /refresh"
         else:
             help_text = "Type a name to search, or enter a listed PID to hook."
             if keyboard:
-                help_text = "Up/Down: move | Enter: select > row | Type a PID or name; Enter to submit."
+                help_text = "Type to filter live | Up/Down: move | Enter: select > row or exact PID."
             help_text += "\n/search TEXT (name or PID) | /next | /prev | /refresh | /clear | Q to cancel"
             if keyboard:
                 help_text += " | Esc: cancel"
@@ -168,14 +169,24 @@ def _select_process(
                     cursor = min(max(0, cursor + (1 if key.kind == "down" else -1)),
                                  max(0, len(matches) - 1))
                     buffer = ""
+                    notice = ""
                     continue
-                if key.kind == "backspace":
-                    buffer = buffer[:-1]
-                    continue
-                if key.kind == "text":
-                    buffer += key.text
+                if key.kind in ("backspace", "text"):
+                    if key.kind == "backspace":
+                        buffer = (buffer or query)[:-1]
+                    elif key.text.startswith("/") and not buffer.startswith("/"):
+                        buffer = key.text
+                    else:
+                        buffer += key.text
+                    updated = _live_query(buffer, query)
+                    if updated != query:
+                        query, page, cursor = updated, 0, 0
+                    notice = ""
                     continue
                 value, buffer = buffer.strip(), ""
+                if value and not value.startswith("/") and not value.isdecimal() and value.casefold() != "q":
+                    # Names already filtered the list; Enter selects its active row.
+                    value = ""
             else:
                 console.print(frame)
                 value = console.input(Text("Program or search: ", style="bold")).strip()

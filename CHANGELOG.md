@@ -5,6 +5,13 @@ feature milestones remain in [future-plan.md](future-plan.md), and the complete
 commit history records earlier changes. Versions follow the repository rule:
 each focused change advances the runtime version by exactly `0.1`.
 
+## v4.1 — 2026-10-21
+
+- Filtered the interactive program list on each typed character and
+  Backspace, with Enter selecting a highlighted name match or exact PID.
+- Preserved arrow navigation within matches, the 15-row cap, explicit
+  refresh/commands, and the non-terminal line-input workflow.
+
 ## v4.0 — 2026-10-21
 
 - Added live-query parsing for names, PIDs, and explicit searches while

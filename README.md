@@ -74,8 +74,9 @@ The last command offers two startup choices:
   batch file in the native file picker.
 - **2 — Hook to a running program:** browse up to 15 names and PIDs at a
   time. Use **Up/Down** to highlight a program and **Enter** to select it,
-  or type a listed PID and press Enter. Type a name and press Enter to
-  search. Use `/next` and `/prev` for pages, `/refresh` to reload, and
+  or type a listed PID and press Enter. The list filters as you type a
+  name or PID; Backspace updates it immediately. Use `/next` and `/prev`
+  for pages, `/refresh` to reload, and
   `/clear` to reset the search. Quitting detaches and leaves the program running.
 
 Type `Q` to cancel either startup prompt. Supplying `--target` or `--pid`

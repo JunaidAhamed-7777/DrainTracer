@@ -22,19 +22,30 @@ running program names and PIDs, with at most **15 programs per page**
 Moving past a page boundary shows the next or previous page automatically.
 You can also type a listed PID and press Enter to select it directly.
 
-Type a name and press Enter to filter the list. Names are matched without
-case sensitivity; programs with the same name keep their separate PIDs.
-Backspace edits typed input. Arrow navigation clears unfinished input so
-Enter selects the highlighted program. Press Escape to cancel. Redirected
-or non-terminal input retains the typed PID/search workflow; empty lines
-in that mode do not select a program.
+The list filters live as you type a name or PID; no Enter is needed to
+search. Backspace broadens the results immediately, and deleting the last
+character restores the full list. Names are matched without case
+sensitivity; programs with the same name keep their separate PIDs.
+Enter after a name selects the highlighted match. Enter after digits
+selects that exact PID, even if another partial match is highlighted.
+Arrow navigation keeps the filter and selects among its results; typing
+again starts a replacement search, and Backspace edits the existing filter.
+Press Escape to cancel. Redirected or non-terminal input retains the
+line-based PID/search workflow, where Enter submits a search and empty
+lines do not select a program.
 
 - `/search TEXT`: filter names or PIDs, including partial numeric searches
-  such as `/search 424`. Bare digits select an exact listed PID.
+  such as `/search 424`. Its text also filters live in an interactive
+  terminal. Bare digits select an exact listed PID.
 - `/next` and `/prev`: move between pages.
 - `/refresh`: reload running programs while keeping the search.
 - `/clear`: remove the search and return to the first page.
 - `Q` or `/quit`: cancel the picker. Use `/search q` to search a reserved name.
+
+Slash commands run on Enter and keep the active filter while their command
+name is being typed. Typing `/` starts a command without appending it to an
+existing search. Refresh reloads the inventory; typing only filters that
+snapshot and does not repeatedly rescan the system.
 
 The list omits DrainTracer itself and the idle PID. An exited or changed
 selection refreshes the list. Processes whose identity cannot be read are

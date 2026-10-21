@@ -15,7 +15,7 @@ from src.running_processes import RunningProcess
 
 class ProcessPresentationTests(unittest.TestCase):
     def test_live_query_handles_name_pid_and_explicit_search_edits(self) -> None:
-        for value, expected in ((" Ed ", "Ed"), ("42", "42"), ("", ""),
+        for value, expected in ((" Ed ", "Ed"), ("42", "42"), ("0042", "42"), ("", ""),
                                 ("/search 42", "42"), ("/SEARCH editor", "editor")):
             with self.subTest(value=value):
                 self.assertEqual(picker._live_query(value, "old"), expected)
@@ -175,11 +175,44 @@ class KeyboardSelectionTests(unittest.TestCase):
             self.display = display
             return picker.select_running_process(self.console)
 
-    def frames(self) -> str:
-        console = make_console()
+    def frame_outputs(self) -> list[str]:
+        frames = []
         for call in self.display.return_value.__enter__.return_value.update.call_args_list:
+            console = make_console()
             console.print(call.args[0])
-        return console.file.getvalue()
+            frames.append(console.file.getvalue())
+        return frames
+
+    def frames(self) -> str:
+        return "\n".join(self.frame_outputs())
+
+    def test_typing_and_backspace_filter_rows_before_enter_without_rescanning(self) -> None:
+        self.scan.return_value = [*self.rows, RunningProcess(52, "worker.exe", 3.0)]
+        self.assertIsNone(self.choose(PickerKey("text", "e"), PickerKey("text", "d"),
+                                      PickerKey("backspace"), PickerKey("backspace"), PickerKey("escape")))
+        frames = self.frame_outputs()
+        self.assertIn("worker.exe", frames[0])
+        self.assertIn("Editor.exe", frames[2])
+        self.assertNotIn("worker.exe", frames[2])
+        self.assertIn("worker.exe", frames[3])
+        self.assertIn("worker.exe", frames[4])
+        self.scan.assert_called_once_with()
+        self.current.assert_not_called()
+
+    def test_enter_after_typing_a_name_selects_without_an_extra_search_submission(self) -> None:
+        self.assertEqual(self.choose(PickerKey("text", "editor"), PickerKey("enter")), 42)
+        self.current.assert_called_once_with(self.rows[0])
+
+    def test_numeric_input_filters_live_but_exact_pid_wins_over_the_first_match(self) -> None:
+        self.scan.return_value = [self.rows[1], self.rows[0], RunningProcess(52, "worker.exe", 3.0)]
+        self.assertEqual(self.choose(PickerKey("text", "4"), PickerKey("text", "2"),
+                                     PickerKey("enter")), 42)
+        self.assertNotIn("worker.exe", self.frame_outputs()[1])
+        self.current.assert_called_once_with(self.rows[0])
+
+    def test_zero_padded_pid_remains_directly_selectable(self) -> None:
+        self.assertEqual(self.choose(PickerKey("text", "0042"), PickerKey("enter")), 42)
+        self.assertIn("Editor.exe", self.frame_outputs()[-1])
 
     def test_arrows_cross_the_15_row_boundary_and_enter_selects(self) -> None:
         self.scan.return_value = [RunningProcess(pid, f"app{pid}.exe", 1.0) for pid in range(1, 32)]
@@ -198,9 +231,12 @@ class KeyboardSelectionTests(unittest.TestCase):
                                      PickerKey("enter")), 142)
         self.current.assert_called_once_with(self.rows[1])
 
-    def test_arrows_clear_unsubmitted_input_before_enter(self) -> None:
-        self.assertEqual(self.choose(PickerKey("text", "999"), PickerKey("down"),
+    def test_arrows_keep_the_live_filter_before_enter(self) -> None:
+        self.scan.return_value = [*self.rows, RunningProcess(52, "worker.exe", 3.0)]
+        self.assertEqual(self.choose(PickerKey("text", "editor"), PickerKey("down"),
                                      PickerKey("enter")), 142)
+        self.assertNotIn("worker.exe", self.frame_outputs()[-1])
+        self.assertIn("Search: editor", self.frame_outputs()[-1])
 
     def test_empty_search_results_do_not_select_a_process(self) -> None:
         self.assertIsNone(self.choose(PickerKey("text", "missing"), PickerKey("enter"),
