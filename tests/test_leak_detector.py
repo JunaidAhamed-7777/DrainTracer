@@ -56,6 +56,16 @@ class SeriesEvaluationTests(unittest.TestCase):
         self.assertAlmostEqual(alert.slope_per_second, 8 * MB)
         self.assertEqual(alert.baseline_value, values[0])
 
+    def test_memory_alert_names_private_bytes(self) -> None:
+        detector = _detector(window_seconds=(10.0,))
+        values = [100 * MB + index * 4 * MB for index in range(21)]
+        now = _feed(detector, values)
+        alert = detector._evaluate_series(
+            detector._memory_series, LeakResource.MEMORY, now, values[-1]
+        )
+        self.assertEqual(alert.metric, "private_bytes")
+        self.assertTrue(alert.message.startswith("Potential memory (private bytes) leak: +"))
+
     def test_window_must_be_mostly_covered(self) -> None:
         detector = _detector(window_seconds=(10.0,))
         values = [100 * MB + index * 4 * MB for index in range(16)]  # only 7.5 s

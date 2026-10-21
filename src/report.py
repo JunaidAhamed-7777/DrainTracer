@@ -74,6 +74,7 @@ def snapshot_to_dict(snapshot: MetricsSnapshot) -> dict[str, Any]:
     data["alerts"] = [
         {
             "resource": alert.resource.value,
+            "metric": alert.metric,
             "severity": alert.severity.value,
             "message": alert.message,
             "slope_per_second": alert.slope_per_second,

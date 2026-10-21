@@ -16,6 +16,7 @@ import psutil
 from .events import (
     COVERAGE_METRICS,
     METRIC_KEYS,
+    METRIC_LABELS,
     RESOURCE_METRICS,
     EvidenceState,
     LeakAlert,
@@ -827,8 +828,14 @@ class LeakDetector:
             if severity == LeakSeverity.NONE:
                 continue
 
+            # Name the counter for memory: "memory" alone reads as RSS.
+            subject = (
+                f"{resource.value} ({METRIC_LABELS[RESOURCE_METRICS[resource]]})"
+                if resource == LeakResource.MEMORY
+                else resource.value
+            )
             message = (
-                f"Potential {resource.value} leak: "
+                f"Potential {subject} leak: "
                 f"+{_format_quantity(resource, delta)} over {window:.0f}s "
                 f"(slope {_format_quantity(resource, slope, precise=True)}/s, "
                 f"monotonic {monotonic_ratio:.0%})"

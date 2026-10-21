@@ -61,6 +61,15 @@ class LeakAlert:
     baseline_value: float
     growth_by_type: dict[str, int] | None = None
 
+    @property
+    def metric(self) -> str:
+        """The totals key whose growth raised this alert.
+
+        Memory alerts come from private bytes, not RSS, so views and reports
+        name the metric explicitly instead of saying only "memory".
+        """
+        return RESOURCE_METRICS[self.resource]
+
 
 # Per-process counters a sample can carry, named like the snapshot totals.
 METRIC_KEYS = (
@@ -82,6 +91,15 @@ RESOURCE_METRICS: dict[LeakResource, str] = {
 # Metrics whose coverage snapshots record: the signal inputs plus RSS,
 # which the dashboard charts next to private bytes.
 COVERAGE_METRICS = ("rss_bytes", "private_bytes", "handles", "threads")
+# One name per memory counter everywhere it is shown. Private bytes are the
+# committed memory a process alone owns and drive the memory signal; RSS is
+# the working set (resident pages, shared ones included) and is context only.
+METRIC_LABELS: dict[str, str] = {
+    "private_bytes": "private bytes",
+    "rss_bytes": "RSS (working set)",
+    "handles": "handles",
+    "threads": "threads",
+}
 
 
 class EvidenceState(str, Enum):

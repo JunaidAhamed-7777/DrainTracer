@@ -134,6 +134,7 @@ class ReportStorageTests(unittest.TestCase):
         encoded = json.loads(json.dumps(data))
         self.assertEqual(encoded["severity"], "high")
         self.assertEqual(encoded["alerts"][0]["resource"], "memory")
+        self.assertEqual(encoded["alerts"][0]["metric"], "private_bytes")
 
 
 class SnapshotCoverageTests(unittest.TestCase):
