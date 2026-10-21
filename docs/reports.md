@@ -27,6 +27,12 @@ the error is logged. An in-progress dashboard export can have
 
 ## Read the HTML report
 
+Reusable styles and chart code are committed in
+`leak_reports/frames/report.css` and `leak_reports/frames/report.js`.
+They contain generation assets, not sample measurements. The exporter
+locates them relative to the application source and embeds them in each
+generated page; they are not required alongside a report when sharing it.
+
 Open the `.html` file directly in a browser. It is self-contained: styles,
 charts, and report data are embedded, with no external libraries or network
 requests. Sharing the file is enough to share its interactive view.

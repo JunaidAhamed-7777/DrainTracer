@@ -60,7 +60,12 @@ dmypy.json
 # --- Project artifacts ---
 leak_report.json
 leak_report*.json
-leak_reports/
+# Keep only reusable report frames; generated and legacy outputs stay local.
+/leak_reports/*
+!/leak_reports/frames/
+/leak_reports/frames/*
+!/leak_reports/frames/report.css
+!/leak_reports/frames/report.js
 torture/reports/
 *.log
 logs/
