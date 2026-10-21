@@ -1,0 +1,10 @@
+Use case: logo-brand
+Asset type: finished wide README masthead / GitHub social preview for the open-source developer tool DrainTracer.
+Primary request: Build a confident, original brand identity around a leaking pipe and a tracing reticle. This is a Windows terminal tool that monitors memory, handles, threads, and descendant processes for sustained resource growth.
+Composition: landscape 3:1 banner, carefully typeset large wordmark on left 55%, a large sculptural graphic on right 35%, generous safe margins on all sides. Professional engineering instrument aesthetic, restrained Swiss typographic layout, striking enough to lead an excellent open source README.
+Scene/backdrop: near-black midnight ink #101820, subtle precision grid and very faint technical construction arcs.
+Graphic: an elegant thick tubular pipe in luminous muted teal #73DACA, with one right angle elbow turning downwards and a tiny separation at its outlet. One sharply shaped amber #E0AF68 droplet falls below the pipe, precisely surrounded by an incomplete circular reticle and four minimal targeting ticks. The target is the escaping droplet, not a gun target or weapon. A hairline trace connects to a tiny trend motif. Make it read immediately as leak detection, not plumbing services.
+Style: beautifully refined flat vector-like geometry with subtle illuminated edges, crisp consistent strokes, no cartoon, no clip-art, no 3D chrome, no stock photography, no generic shield.
+Typography: technically precise clean grotesk, wordmark in warm white #EAF2F4. Teal accent on Tracer if elegant. Amber used only for droplet and small detail.
+Text (verbatim): large "DrainTracer"; under it "See what keeps growing."; small quiet line "WINDOWS PROCESS RESOURCE MONITOR"; very small footer line "MEMORY / HANDLES / THREADS".
+Constraints: spell every word exactly; no extra text, no UI dashboard, no fake metrics, no badges, no watermark. Finished composed brand banner, not a sheet of options.
