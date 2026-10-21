@@ -12,14 +12,66 @@ From a local clone:
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install -e .
+.\.venv\Scripts\python.exe -m draintracer --help
 .\.venv\Scripts\python.exe src/main.py --help
 ```
 
 Using the virtual environment's executable directly avoids depending on
 PowerShell script activation. The examples below use `python`; activate
 the environment or substitute `.\.venv\Scripts\python.exe` consistently.
-There is currently no package build step or installed console entry point.
+The editable install adds the `draintracer` command while using the source
+checkout for development. `python -m draintracer` works when the environment's
+Scripts directory is not on `PATH`. The original source workflow remains
+available with `pip install -r requirements.txt` and `python src/main.py`.
+
+## Build and verify distributions
+
+Install the build frontend and create both a wheel and source archive:
+
+```powershell
+python -m pip install build
+python -m build
+```
+
+Build metadata comes from `pyproject.toml` and `setup.py`. The package version
+is extracted from `DashboardApp.VERSION` in `src/dashboard.py`; do not add a
+second independently maintained version. The build must include all required
+runtime modules, `TITLE.txt`, the report CSS and JavaScript, and the packaged
+installation inventory. Missing source inputs must fail the build rather
+than producing an incomplete package.
+
+Install the wheel into a fresh environment and verify it from a writable
+directory outside the checkout. Replace the wheel filename with the one
+created under `dist`:
+
+```powershell
+python -m venv C:\temp\draintracer-wheel-test
+C:\temp\draintracer-wheel-test\Scripts\python.exe -m pip install .\dist\draintracer-5.0.0-py3-none-any.whl
+Set-Location C:\temp
+.\draintracer-wheel-test\Scripts\draintracer.exe --help
+.\draintracer-wheel-test\Scripts\python.exe -m draintracer --help
+```
+
+Then monitor a bounded target and export both JSON and HTML. Check startup
+artwork, offline charts, report output under the working directory, and
+configuration discovery from that directory. Test installation of the
+source archive as well; it must be able to build the same complete wheel.
+Repository fixtures remain in the checkout, so use their absolute paths
+when testing an installed command from elsewhere.
+
+An installed package validates its bundled files and gives pip reinstall
+guidance if they are missing. It must not offer Git repair or write generated
+reports into its installation directory. The source-checkout entry retains
+the committed snapshot and opt-in Git recovery behavior.
+
+Python script targets use the monitor's interpreter. Install DrainTracer in
+the target's environment, or select that environment's `python.exe` with
+`--target` and put the script path and arguments after `--`.
+
+Building and local installation do not publish a release. PyPI publication
+is a separate future step; do not advertise `pip install draintracer` until
+a release is actually available there.
 
 ## Find the right module
 
@@ -158,7 +210,8 @@ series as `MAJOR.MINOR.0`, so patch releases keep that label unchanged; update
 it when MAJOR or MINOR changes. Any release tag must use the exact
 runtime/release-entry version.
 Headless banners and generated reports derive their full version from the
-runtime value. Preserve historical changelog and roadmap versions.
+runtime value, and distribution metadata extracts the same value without
+its leading `v`. Preserve historical changelog and roadmap versions.
 
 Update user-facing docs alongside behavior changes, including controls,
 configuration, report fields, and process ownership. `TITLE.txt` remains

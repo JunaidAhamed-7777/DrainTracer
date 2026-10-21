@@ -1,0 +1,8 @@
+include TITLE.txt
+include runtime-manifest.json
+include requirements.txt
+include leak_reports/frames/report.css
+include leak_reports/frames/report.js
+recursive-include src *.py
+recursive-include tests *.py
+include examples/drainrc.toml

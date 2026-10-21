@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
-import sys
 
 from rich import box
 from rich.console import Console, Group, RenderableType
@@ -59,7 +57,7 @@ _SEVERITY_STYLE = {
 
 def build_diff_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog=f"{os.path.basename(sys.argv[0]) or 'draintracer'} diff",
+        prog="draintracer diff",
         description=(
             "Compare two leak reports: did a change reduce drift or resolve a leak? "
             "Signals and post-warm-up drift are compared per resource."

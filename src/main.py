@@ -23,14 +23,31 @@ _INSTALLATION_CORE = frozenset({
 })
 
 
-def _installation_status(root: Path) -> tuple[tuple[str, ...], str | None]:
+def _installation_context() -> tuple[Path, bool]:
+    """Distinguish the preserved source layout from the wheel's package layout."""
+    package = Path(__file__).resolve().parent
+    packaged = package.name != "src"
+    return (package if packaged else package.parent), packaged
+
+
+def _installation_status(
+    root: Path, *, packaged: bool = False,
+) -> tuple[tuple[str, ...], str | None]:
     """Read the committed snapshot without importing application dependencies.
 
     The snapshot is never regenerated from the running installation: doing so
     could silently accept an incomplete checkout as the expected structure.
     """
     root = root.resolve()
-    manifest = root / _INSTALLATION_MANIFEST
+
+    def installed_path(relative: str) -> Path:
+        if not packaged:
+            return root / relative
+        if relative.startswith("src/"):
+            return root / relative[4:]
+        return root / "_data" / relative
+
+    manifest = installed_path(_INSTALLATION_MANIFEST)
     try:
         if not manifest.resolve().is_relative_to(root):
             return (), "The runtime snapshot resolves outside the installation."
@@ -56,7 +73,7 @@ def _installation_status(root: Path) -> tuple[tuple[str, ...], str | None]:
     missing = []
     try:
         for relative in required:
-            path = root / relative
+            path = installed_path(relative)
             if not path.resolve().is_relative_to(root):
                 return (), f"Required file resolves outside the installation: {relative}"
             if not path.is_file():
@@ -168,16 +185,32 @@ def _restart_installation(root: Path, argv: list[str]) -> int:
                 continue
 
 
-def _check_installation(root: Path, argv: list[str]) -> int | None:
+def _check_installation(
+    root: Path, argv: list[str], *, packaged: bool = False,
+) -> int | None:
     """Return None to continue startup, or an exit code after recovery/cancel."""
     attempted = os.environ.pop("_DRAINTRACER_REPAIR_ATTEMPTED", None) == "1"
-    missing, error = _installation_status(root)
+    if packaged:
+        missing, error = _installation_status(root, packaged=True)
+    else:
+        missing, error = _installation_status(root)
     if not missing and error is None:
         return None
     print("DrainTracer installation check failed.")
     print(f"Installation folder: {root}")
     if error:
         print(error)
+    if packaged:
+        if missing:
+            print("Missing required files:")
+            for relative in missing:
+                print(f"  - {relative}")
+        print("Reinstall DrainTracer from the wheel, source archive, or package source you used:")
+        prefix = "& " if os.name == "nt" else ""
+        print(f'  {prefix}"{sys.executable}" -m pip install --force-reinstall <package-source>')
+        print("No files were changed. Installed packages are repaired with pip.")
+        return 2
+    if error:
         print("Review runtime-manifest.json or restore it from Git, then start again.")
         return 2
     print("Missing required files:")
@@ -243,13 +276,15 @@ def _make_output_safe() -> None:
 # Keeping it here also lets recovery run when an entire backend module is gone.
 if __name__ == "__main__":
     _make_output_safe()
-    _startup_result = _check_installation(Path(__file__).resolve().parents[1], sys.argv[1:])
+    _runtime_root, _packaged = _installation_context()
+    _startup_result = _check_installation(_runtime_root, sys.argv[1:], packaged=_packaged)
     if _startup_result is not None:
         raise SystemExit(_startup_result)
 
 if __package__ in (None, ""):
     # Keep ``python src/main.py`` working when launched from the repository root.
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    __package__ = "src"
 
 try:
     from rich import box
@@ -257,7 +292,7 @@ try:
     from rich.panel import Panel
     from rich.text import Text
 
-    from src.config import (
+    from .config import (
         FAIL_ON_CHOICES,
         MAX_SAMPLE_INTERVAL,
         MAX_WARMUP,
@@ -268,31 +303,33 @@ try:
         MonitorSettings,
         resolve_settings,
     )
-    from src.dashboard import DashboardApp
-    from src.diff_command import run_diff
-    from src.events import LeakSeverity
-    from src.file_picker import select_target_file
-    from src.headless import EXIT_ERROR, HeadlessRunner
-    from src.process_picker import select_running_process
-    from src.process_runner import ProcessManagerError
-    from src.report import DEFAULT_REPORT_DIR
-    from src.startup import choose_startup_action
-    from src.theme import PALETTE, blend
-    from src.units import parse_duration
+    from .dashboard import DashboardApp
+    from .diff_command import run_diff
+    from .events import LeakSeverity
+    from .file_picker import select_target_file
+    from .headless import EXIT_ERROR, HeadlessRunner
+    from .process_picker import select_running_process
+    from .process_runner import ProcessManagerError
+    from .report import DEFAULT_REPORT_DIR
+    from .resources import resource_path
+    from .startup import choose_startup_action
+    from .theme import PALETTE, blend
+    from .units import parse_duration
 except ModuleNotFoundError as _dependency_error:
     if (__name__ != "__main__"
             or (_dependency_error.name or "").split(".")[0] not in {"rich", "psutil", "tomli"}):
         raise
     print(f"DrainTracer needs the Python dependency: {_dependency_error.name}")
     print("Install the requirements with the same Python, then start again:")
-    _requirements = Path(__file__).resolve().parents[1] / "requirements.txt"
+    _runtime_root, _packaged = _installation_context()
+    _requirements = _runtime_root / ("_data/requirements.txt" if _packaged else "requirements.txt")
     _prefix = "& " if os.name == "nt" else ""
     print(f'  {_prefix}"{sys.executable}" -m pip install -r "{_requirements}"')
     raise SystemExit(2) from None
 
 
 def _load_title_art() -> str:
-    title_path = Path(__file__).resolve().parents[1] / "TITLE.txt"
+    title_path = resource_path("TITLE.txt")
     try:
         title = title_path.read_text(encoding="utf-8").strip()
     except OSError:
@@ -372,22 +409,24 @@ def _window(value: str) -> float:
 
 _EXAMPLES = """\
 examples:
-  python src/main.py                                   choose to open or hook to a program
-  python src/main.py --target app.exe -- --port 8080   launch with arguments
-  python src/main.py --pid 4820                        attach to a running process
-  python src/main.py --profile ci --target app.exe     use a .drainrc profile
-  python src/main.py --warmup 15s --target server.exe  ignore startup growth
-  python src/main.py --headless --target app.exe --timeout 2m --fail-on medium
-  python src/main.py diff before.json after.json       compare two reports
+  draintracer                                      choose to open or hook to a program
+  draintracer --target app.exe -- --port 8080        launch with arguments
+  draintracer --pid 4820                            attach to a running process
+  draintracer --profile ci --target app.exe          use a .drainrc profile
+  draintracer --warmup 15s --target server.exe        ignore startup growth
+  draintracer --headless --target app.exe --timeout 2m --fail-on medium
+  draintracer diff before.json after.json            compare two reports
 """
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
+        prog="draintracer",
         description="Monitor Windows process resources and detect likely leaks.",
         epilog=_EXAMPLES,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    parser.add_argument("--version", action="version", version=f"DrainTracer {DashboardApp.VERSION}")
     target = parser.add_argument_group("target")
     source = target.add_mutually_exclusive_group()
     source.add_argument(
@@ -575,7 +614,8 @@ def main(argv: list[str] | None = None) -> int:
     _make_output_safe()
     if __name__ != "__main__":
         arguments = list(sys.argv[1:] if argv is None else argv)
-        startup_result = _check_installation(Path(__file__).resolve().parents[1], arguments)
+        root, packaged = _installation_context()
+        startup_result = _check_installation(root, arguments, packaged=packaged)
         if startup_result is not None:
             return startup_result
     _configure_logging()

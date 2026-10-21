@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "draintracer"
+dynamic = ["version", "dependencies"]
+description = "Resource growth monitoring for Windows process trees"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{name = "Junaid Ahamed"}]
+keywords = ["windows", "memory-leak", "resource-monitor", "cli", "tui"]
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Topic :: Software Development :: Debuggers",
+    "Topic :: System :: Monitoring",
+]
+
+[project.scripts]
+draintracer = "draintracer.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/JunaidAhamed-7777/DrainTracer"
+Documentation = "https://github.com/JunaidAhamed-7777/DrainTracer#readme"
+Issues = "https://github.com/JunaidAhamed-7777/DrainTracer/issues"
+Releases = "https://github.com/JunaidAhamed-7777/DrainTracer/blob/main/RELEASES.md"
+
+[tool.setuptools]
+packages = ["draintracer"]
+package-dir = {draintracer = "src"}
+include-package-data = false
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}

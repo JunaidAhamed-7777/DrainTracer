@@ -29,6 +29,7 @@ from .analysis import (
 )
 from .handle_types import describe_type_growth
 from .report import report_filename, write_text_atomic
+from .resources import resource_path
 from .units import format_bytes, format_clock, format_duration
 
 _RESOURCE_TITLES = {
@@ -547,7 +548,7 @@ def _rate(resource: str, per_second: float) -> str:
     return f"{sign}{magnitude:,.2f}{unit}"
 
 
-_FRAME_DIR = Path(__file__).resolve().parents[1] / "leak_reports" / "frames"
+_FRAME_DIR = resource_path("leak_reports/frames")
 
 
 @lru_cache(maxsize=2)

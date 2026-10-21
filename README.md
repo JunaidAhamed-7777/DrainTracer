@@ -62,27 +62,55 @@ memory-growth workload. Values and process IDs vary by run.*
 
 ## Get started
 
-You need **Windows 10/11**, **Python 3.10+**, and Git to clone the repository.
-DrainTracer currently runs from source. From PowerShell:
+You need **Windows 10/11** and **Python 3.10+**. Install from GitHub in
+PowerShell; Git is not required:
+
+```powershell
+python -m pip install https://github.com/JunaidAhamed-7777/DrainTracer/archive/refs/heads/main.zip
+draintracer --help
+draintracer
+```
+
+This installs the current `main` branch. DrainTracer is not yet published
+on PyPI. You can also install a built wheel or source archive with
+`python -m pip install PATH_TO_FILE`.
+
+If the command is not on `PATH`, use `python -m draintracer --help` or
+`python -m draintracer` with the same Python used to install it. Run from
+your project folder: configuration discovery starts there, and reports
+are written relative to that working directory by default.
+
+### Install from a checkout
+
+Clone the repository to use the included workloads or develop DrainTracer.
+This route needs Git:
 
 ```powershell
 git clone https://github.com/JunaidAhamed-7777/DrainTracer.git
 cd DrainTracer
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe src/main.py
+.\.venv\Scripts\python.exe -m pip install .
+.\.venv\Scripts\python.exe -m draintracer
 ```
 
-Before starting, DrainTracer checks the committed
+The existing source command also works: install `requirements.txt` with
+the same Python, then run `python src/main.py` from the checkout. For the
+source examples below, activate the environment or replace `python` with
+`.\.venv\Scripts\python.exe`. Calling that executable directly avoids
+PowerShell activation-policy changes.
+
+Before starting from a checkout, DrainTracer checks the committed
 [runtime snapshot](runtime-manifest.json) for required source files, title
 artwork, and report frames. If files are missing, it lists them and offers
 **Enter** to run `git pull --ff-only origin main`, restore missing tracked
 files, and restart with the same Python and arguments. **Q** cancels.
 The check runs on every launch, including the first. Generated reports and
 user settings are not required. Headless or redirected runs report missing
-files with exit code `2` without prompting or pulling.
+files with exit code `2` without prompting or pulling. Installed packages
+check their bundled runtime files and assets instead; an incomplete
+installation gives pip reinstall guidance and never attempts Git recovery.
 
-Once the check passes, the last command offers two startup choices:
+Once the check passes, `draintracer` offers two startup choices:
 
 - **1 — Open a program:** select an executable, Python script, or Windows
   batch file in the native file picker.
@@ -94,13 +122,12 @@ Once the check passes, the last command offers two startup choices:
   `/clear` to reset the search. Quitting detaches and leaves the program running.
 
 Type `Q` to cancel either startup prompt. Supplying `--target` or `--pid`
-skips the menu. Calling the virtual environment's Python directly avoids
-PowerShell activation-policy changes.
-
-For the examples below, activate that environment or replace `python` with
-`.\.venv\Scripts\python.exe`.
+skips the menu. All installed-command examples also work with
+`python -m draintracer`; checkout users can use `python src/main.py`.
 
 ### Try an included workload
+
+These fixtures are in the source checkout; run from its root:
 
 ```powershell
 python src/main.py --target .\torture\memory_leak.py --timeout 20s
@@ -115,16 +142,24 @@ explains all fixtures and their limits.
 
 ```powershell
 # Launch a target; quote paths containing spaces
-python src/main.py --target "C:\work\My App\worker.exe"
+draintracer --target "C:\work\My App\worker.exe"
 
 # Pass arguments to the target after --
-python src/main.py --target .\worker.py -- --iterations 10
+draintracer --target .\worker.py -- --iterations 10
 
 # Attach to a running process; replace 4820 with its actual PID
-python src/main.py --pid 4820
+draintracer --pid 4820
 
 # Allow startup growth, then watch a representative workload
-python src/main.py --target .\server.exe --warmup 15s --timeout 2m
+draintracer --target .\server.exe --warmup 15s --timeout 2m
+```
+
+Python script targets run with DrainTracer's Python interpreter. Install
+DrainTracer in the target's environment, or explicitly launch that
+environment's Python and pass the script after `--`:
+
+```powershell
+draintracer --target "C:\work\app\.venv\Scripts\python.exe" -- "C:\work\app\worker.py"
 ```
 
 **Process ownership matters:** quitting or timing out stops a launched target
@@ -154,6 +189,8 @@ readable fallback when it cannot be displayed.
 
 ## Run a leak check in CI
 
+From the source checkout, use the included stable workload:
+
 ```powershell
 python src/main.py --headless --target .\torture\steady.py --timeout 15s --fail-on medium
 ```
@@ -176,11 +213,11 @@ priority and GitHub Actions integration.
 
 ## Tune it to your workload
 
-Copy [examples/drainrc.toml](examples/drainrc.toml) to `.drainrc` in your project,
-or select it explicitly:
+Copy [examples/drainrc.toml](examples/drainrc.toml) to `.drainrc` in your project.
+From a source checkout, you can also select that example explicitly:
 
 ```powershell
-python src/main.py --config .\examples\drainrc.toml --profile heavy --target .\server.exe
+draintracer --config .\examples\drainrc.toml --profile heavy --target .\server.exe
 ```
 
 Profiles configure sampling, detection windows, warm-up, thresholds, time
@@ -200,16 +237,18 @@ creates a JSON/HTML pair under
 `leak_reports/reports/worker.exe_2026-10-21/` for a program named `worker.exe`
 on that date. The actual program filename and recorded creation date name
 the folder; UUID filenames keep repeated exports distinct. `--report-dir`
-changes the output root while keeping that grouping. Reusable HTML styles
-and chart code live in the committed `leak_reports/frames/` directory;
+changes the output root while keeping that grouping. The default output root
+is relative to your working directory, including for installed packages.
+Reusable HTML styles and chart code live in the committed
+`leak_reports/frames/` directory and are bundled in installed packages;
 generated reports are ignored by Git.
 
 The HTML report works offline, with interactive charts, signal episodes, events,
 and a process list. JSON supports scripts and report comparisons:
 
 ```powershell
-python src/main.py diff .\before.json .\after.json
-python src/main.py diff .\before.json .\after.json --fail-on-regression
+draintracer diff .\before.json .\after.json
+draintracer diff .\before.json .\after.json --fail-on-regression
 ```
 
 Use comparable workloads, durations, warm-ups, and settings. Long sessions use
