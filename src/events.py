@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from enum import Enum
 from queue import Empty, Queue
@@ -284,6 +284,24 @@ class ResourceEvidence:
     @property
     def partial(self) -> bool:
         return self.coverage is not None and self.coverage.partial
+
+    @property
+    def unavailable_reason(self) -> str:
+        """Why an ``UNAVAILABLE`` resource has no measurement.
+
+        Once the monitored tree has exited there is nothing left to read,
+        which is not the same as live processes refusing access; saying
+        "no readable process" then would suggest a permissions problem.
+        """
+        if self.coverage is not None and self.coverage.total == 0:
+            return "no live process"
+        return "no readable process"
+
+
+def unavailable_reason(evidence: Iterable[ResourceEvidence]) -> str:
+    """The shared reason when every resource is unavailable at one sample."""
+    reasons = {item.unavailable_reason for item in evidence}
+    return reasons.pop() if len(reasons) == 1 else "no readable process"
 
 
 # Per-process counters kept in bounded histories for growth attribution.

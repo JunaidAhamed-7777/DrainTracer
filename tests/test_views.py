@@ -390,6 +390,13 @@ class EvidenceViewTests(ViewRenderingMixin, unittest.TestCase):
         blocked._handle_key("3")
         output = self._text(blocked)
         self.assertIn("Unavailable: no live process could be read", output)
+        exited = _app(120, 40)
+        sample_trees(exited, [[make_process(100)]] * 5 + [[]] * 2)
+        exited._handle_key("3")
+        output = self._text(exited)
+        self.assertIn("Unavailable: the monitored tree has no live process", output)
+        exited._handle_key("5")
+        self.assertIn("nothing to evaluate: no live process", self._text(exited))
 
     def test_narrow_tables_keep_the_decisive_columns(self) -> None:
         app = self._app(80, 24)

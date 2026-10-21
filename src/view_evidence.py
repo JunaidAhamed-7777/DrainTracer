@@ -323,6 +323,8 @@ class EvidenceViewMixin:
         if evidence.state == EvidenceState.WARMING_UP:
             return "Warming up: windows are not evaluated until the warm-up ends."
         if evidence.state == EvidenceState.UNAVAILABLE:
+            if evidence.unavailable_reason == "no live process":
+                return "Unavailable: the monitored tree has no live process, so no window was evaluated."
             return "Unavailable: no live process could be read, so no window was evaluated."
         return "No window evaluations for this sample."
 

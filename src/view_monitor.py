@@ -16,7 +16,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from .events import COVERAGE_METRICS, METRIC_LABELS, EvidenceState
+from .events import COVERAGE_METRICS, METRIC_LABELS, EvidenceState, unavailable_reason
 from .units import format_duration
 from .widgets import Sized
 
@@ -208,6 +208,8 @@ class MonitorViewMixin:
         if states == {EvidenceState.WARMING_UP}:
             return Text("waiting for the warm-up to finish", style=palette.muted)
         if states == {EvidenceState.UNAVAILABLE}:
+            if unavailable_reason(self.snapshot.evidence) == "no live process":
+                return Text("nothing to evaluate: no live process", style=palette.muted)
             return Text("nothing readable to evaluate", style=f"bold {palette.danger}")
         return Text(f"evaluated with the last sample ({_age(age)} ago)")
 

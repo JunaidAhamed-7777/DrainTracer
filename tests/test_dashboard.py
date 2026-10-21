@@ -732,6 +732,19 @@ class EvidenceDisplayTests(unittest.TestCase):
             self.assertNotIn("NO ACTIVE LEAK SIGNALS", output)
             self.assertNotIn("CLEAR", output)
 
+    def test_an_exited_tree_is_not_described_as_unreadable(self) -> None:
+        exited = _app()
+        _sampled(exited, [[make_process(100)]] * 5 + [[]] * 3)
+        output = self._render(exited)
+        self.assertIn("UNAVAILABLE", output)
+        self.assertIn("no live process", output)
+        self.assertNotIn("no readable process", output)
+        from src.headless import HeadlessRunner
+
+        self.assertEqual(
+            HeadlessRunner._evidence_text(exited.snapshot), "UNAVAILABLE (no live process)"
+        )
+
     def test_partial_coverage_is_shown_in_the_panel_and_summary(self) -> None:
         from helpers import make_denied
 

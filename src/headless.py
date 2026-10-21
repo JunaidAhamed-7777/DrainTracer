@@ -17,7 +17,7 @@ from .config import FAIL_ON_CHOICES, MonitorSettings
 from .analysis import RESOURCES, summarize
 from .budgets import BudgetCheck, check_budgets
 from .dashboard import DashboardApp
-from .events import EvidenceState, LeakSeverity, severity_rank
+from .events import EvidenceState, LeakSeverity, severity_rank, unavailable_reason
 from .report import DEFAULT_REPORT_DIR
 from .report_diff import format_amount, format_drift
 from .session import MonitorSession
@@ -333,7 +333,7 @@ class HeadlessRunner(MonitorSession):
         if not states:
             return ""
         if states == {EvidenceState.UNAVAILABLE}:
-            text = "UNAVAILABLE (no readable process)"
+            text = f"UNAVAILABLE ({unavailable_reason(snapshot.evidence)})"
         elif EvidenceState.COLLECTING in states:
             least = min(
                 (item for item in snapshot.evidence if item.state == EvidenceState.COLLECTING),

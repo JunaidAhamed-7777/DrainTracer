@@ -56,6 +56,8 @@ current release and [AGENTS.md](AGENTS.md) for the release policy.
   numbered markers that reports export as `markers`. Arrow, Home/End, and
   paging keys are decoded on Windows and POSIX terminals, help scrolls, and
   legacy code pages get safe replacements for characters they cannot show.
+- Said "no live process" instead of "no readable process" once the monitored
+  tree has exited, so an ended run no longer looks like an access problem.
 
 ## v5.1.1 — 2026-10-22
 

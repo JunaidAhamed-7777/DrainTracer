@@ -27,6 +27,7 @@ from .events import (
     ProcessMetrics,
     ResourceEvidence,
     severity_rank,
+    unavailable_reason,
 )
 from .config import MonitorSettings
 from .handle_types import describe_type_growth
@@ -1268,7 +1269,10 @@ class DashboardApp(
         if not evidence:
             return banner(f"{glyphs.dot} AWAITING SAMPLES", palette.accent)
         if states == {EvidenceState.UNAVAILABLE}:
-            return banner(f"{glyphs.error} UNAVAILABLE {glyphs.sep} no readable process", palette.danger)
+            return banner(
+                f"{glyphs.error} UNAVAILABLE {glyphs.sep} {unavailable_reason(evidence)}",
+                palette.danger,
+            )
         if EvidenceState.STALE in states:
             return banner(f"{glyphs.dot} PAUSED {glyphs.sep} evidence on hold", palette.warn)
         collecting = [item for item in evidence if item.state == EvidenceState.COLLECTING]
@@ -1360,7 +1364,7 @@ class DashboardApp(
                 f"{format_duration(evidence.needed_seconds)}",
             )
         if state == EvidenceState.UNAVAILABLE:
-            return "N/A", palette.danger, "no readable process"
+            return "N/A", palette.danger, evidence.unavailable_reason
         if state == EvidenceState.STALE:
             return "PAUSED", palette.warn, "evidence on hold while paused"
         if state == EvidenceState.WARMING_UP:
