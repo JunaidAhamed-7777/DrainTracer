@@ -12,8 +12,11 @@ from helpers import make_alert, make_process, make_snapshot
 from src.events import LeakResource, LeakSeverity
 from src.report import snapshot_to_dict
 from src.report_diff import (
+    COMPARABLE,
     IMPROVED,
+    INSUFFICIENT_COVERAGE,
     MIXED,
+    NOT_COMPARABLE,
     REGRESSED,
     UNCHANGED,
     DiffError,
@@ -211,6 +214,103 @@ class CoverageWarningTests(unittest.TestCase):
                          ["memory", "handles", "threads"])
         self.assertEqual(comparison.to_dict()["before"]["partial_coverage"], [])
 
+
+ENVIRONMENT = {"os": "Windows", "os_release": "11", "cpu_count": 8,
+               "total_memory_bytes": 16 * 1024 * MB, "machine": "AMD64"}
+
+
+def _experiment(args=("--port", "1"), **labels) -> dict:
+    """An ``experiment`` section as a session would write it."""
+    from src.experiment import ExperimentInfo, experiment_record
+
+    environment = {**ENVIRONMENT, **labels.pop("environment", {})}
+    return experiment_record(
+        ExperimentInfo(**labels), args=list(args), mode="launch", duration_seconds=10.0,
+        sample_interval_ms=500, windows_seconds=[10.0], warmup_seconds=0.0,
+        timeout_seconds=None, environment=environment,
+    )
+
+
+class EquivalenceTests(unittest.TestCase):
+    setUp = ComparisonTests.setUp
+    _load = ComparisonTests._load
+
+    def _compare(self, before: dict, after: dict, strict: bool = False):
+        return compare_reports(self._load("a.json", before), self._load("b.json", after),
+                               strict=strict)
+
+    def test_a_shorter_lighter_run_cannot_earn_an_unqualified_improvement(self) -> None:
+        before = _run(4.0, severity=LeakSeverity.HIGH, samples=41,
+                      experiment=_experiment(workload_id="import", operations=1000))
+        after = _run(0.0, samples=11, experiment=_experiment(workload_id="import", operations=100))
+        result = self._compare(before, after)
+        self.assertEqual(result.measured_verdict, IMPROVED)
+        self.assertEqual(result.verdict, IMPROVED)
+        self.assertTrue(result.qualified)
+        self.assertEqual(result.verdict_label, "improved (qualified)")
+        self.assertIn("(qualified by 2 caveats)", result.headline())
+        self.assertEqual([caveat.kind for caveat in result.caveats], ["operations", "duration"])
+
+        strict = self._compare(before, after, strict=True)
+        self.assertEqual(strict.verdict, NOT_COMPARABLE)
+        self.assertEqual(strict.verdict_label, NOT_COMPARABLE)
+        self.assertFalse(strict.qualified)
+        self.assertTrue(strict.headline().startswith("not comparable (operations, duration);"))
+        data = strict.to_dict()
+        self.assertEqual((data["verdict"], data["measured_verdict"], data["strict"]),
+                         ("not comparable", "improved", True))
+        self.assertEqual(data["caveats"][0]["blocks"], "not comparable")
+        self.assertEqual(data["after"]["experiment"]["operations"], 100)
+
+    def test_equivalent_runs_keep_an_unqualified_verdict_in_strict_mode(self) -> None:
+        before = _run(4.0, severity=LeakSeverity.HIGH,
+                      experiment=_experiment(workload_id="import", build="1.0", operations=1000))
+        after = _run(0.0, experiment=_experiment(workload_id="import", build="1.1",
+                                                 operations=1040))
+        result = self._compare(before, after, strict=True)
+        self.assertEqual(result.caveats, ())
+        self.assertEqual(result.comparability, COMPARABLE)
+        self.assertEqual((result.verdict, result.verdict_label), (IMPROVED, IMPROVED))
+        self.assertFalse(result.qualified)
+
+    def test_unjudged_or_partial_runs_are_insufficient_coverage(self) -> None:
+        result = self._compare(_run(4.0, severity=LeakSeverity.HIGH),
+                               _run(0.0, detection_ran=False), strict=True)
+        self.assertEqual(result.verdict, INSUFFICIENT_COVERAGE)
+        self.assertEqual(result.measured_verdict, IMPROVED)
+        # Different experiments outrank missing coverage.
+        other = self._compare(_run(4.0), _run(0.0, detection_ran=False,
+                                              target_path="C:\\other.exe"), strict=True)
+        self.assertEqual(other.verdict, NOT_COMPARABLE)
+
+    def test_workload_arguments_and_one_sided_labels_block_strict_comparisons(self) -> None:
+        cases = (
+            (_experiment(workload_id="a"), _experiment(workload_id="b"),
+             "different workloads (a and b)"),
+            (_experiment(workload_id="a"), None, "only report A names its workload (a)"),
+            (_experiment(args=("--port", "1")), _experiment(args=("--port", "2")),
+             "launched with different arguments"),
+            (_experiment(operations=10), _experiment(), "only report A records an operation"),
+        )
+        for before, after, message in cases:
+            with self.subTest(message=message):
+                extra_a = {"experiment": before} if before else {}
+                extra_b = {"experiment": after} if after else {}
+                result = self._compare(_run(**extra_a), _run(**extra_b), strict=True)
+                self.assertIn(message, " | ".join(result.warnings))
+                self.assertEqual(result.verdict, NOT_COMPARABLE)
+
+    def test_different_machines_qualify_without_blocking(self) -> None:
+        before = _run(4.0, severity=LeakSeverity.HIGH, experiment=_experiment())
+        after = _run(0.0, experiment=_experiment(environment={"cpu_count": 4}))
+        result = self._compare(before, after, strict=True)
+        self.assertEqual(result.verdict_label, "improved (qualified)")
+        self.assertIn("different environments (CPUs 8 vs 4)", result.warnings[0])
+
+    def test_reports_without_experiment_sections_compare_as_before(self) -> None:
+        result = self._compare(_run(4.0, severity=LeakSeverity.HIGH), _run(0.0), strict=True)
+        self.assertEqual((result.verdict, result.qualified), (IMPROVED, False))
+        self.assertIsNone(result.to_dict()["before"]["experiment"])
 
 if __name__ == "__main__":
     unittest.main()

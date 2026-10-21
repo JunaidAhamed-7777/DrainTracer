@@ -11,6 +11,14 @@ resource the comparison looks at two things:
 Drift differences inside a noise band (a resource-specific floor or 10% of
 the larger rate, whichever is bigger) count as unchanged, and a faster
 drift only counts as a regression when the newer run is actually growing.
+
+A difference only shows that a fix helped when the runs were equivalent
+experiments. Each reason they might not be is a ``Caveat``: different
+targets, workloads, arguments, settings or operation counts, very different
+lengths, an unjudged run, or partial coverage. Any caveat qualifies the
+verdict (``improved (qualified)``), so a shorter or lighter run cannot earn
+an unqualified result. In strict mode the blocking caveats replace the
+verdict with ``not comparable`` or ``insufficient coverage``.
 """
 
 from __future__ import annotations
@@ -29,6 +37,7 @@ from .analysis import (
     severity_rank,
     summarize,
 )
+from .experiment import ExperimentData, load_experiment
 from .handle_types import CATEGORIES as HANDLE_CATEGORIES
 from .units import format_bytes, format_duration
 
@@ -42,6 +51,12 @@ REGRESSED = "regressed"
 UNCHANGED = "unchanged"
 UNKNOWN = "unknown"
 MIXED = "mixed"
+# Strict-mode verdicts that replace the measured one.
+NOT_COMPARABLE = "not comparable"
+INSUFFICIENT_COVERAGE = "insufficient coverage"
+COMPARABLE = "comparable"
+# Operation counts further apart than this are different workloads.
+OPERATIONS_TOLERANCE = 0.10
 
 
 class DiffError(ValueError):
@@ -62,6 +77,11 @@ class LoadedReport:
         return Path(target).name or "unknown target"
 
     @property
+    def experiment(self) -> ExperimentData | None:
+        """Workload labels and provenance; ``None`` for older reports."""
+        return load_experiment(self.data)
+
+    @property
     def detection_ran(self) -> bool:
         # Reports from before v1.4 lack the field; assume detection ran.
         return self.data.get("detection_ran") is not False
@@ -75,6 +95,23 @@ class LoadedReport:
         return tuple(
             resource for resource in RESOURCES if self.summary.resources[resource].partial
         )
+
+
+@dataclass(frozen=True)
+class Caveat:
+    """One reason two runs may not be equivalent experiments.
+
+    ``blocks`` names the strict-mode verdict the caveat forces
+    (``NOT_COMPARABLE`` or ``INSUFFICIENT_COVERAGE``), or is ``None`` for
+    caveats that only qualify the result.
+    """
+
+    kind: str
+    message: str
+    blocks: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"kind": self.kind, "message": self.message, "blocks": self.blocks}
 
 
 @dataclass(frozen=True)
@@ -132,9 +169,46 @@ class ReportComparison:
     resources: tuple[ResourceComparison, ...]
     handle_type_growth: Mapping[str, tuple[int | None, int | None]]
     warnings: tuple[str, ...] = field(default_factory=tuple)
+    caveats: tuple[Caveat, ...] = field(default_factory=tuple)
+    # Strict comparisons refuse a measured verdict when a caveat blocks it.
+    strict: bool = False
+
+    @property
+    def comparability(self) -> str:
+        """``comparable``, or the strict verdict the worst blocking caveat forces.
+
+        Not comparable wins over insufficient coverage: runs of different
+        experiments say nothing even with perfect coverage.
+        """
+        blocks = {caveat.blocks for caveat in self.caveats}
+        if NOT_COMPARABLE in blocks:
+            return NOT_COMPARABLE
+        if INSUFFICIENT_COVERAGE in blocks:
+            return INSUFFICIENT_COVERAGE
+        return COMPARABLE
+
+    @property
+    def blocked(self) -> bool:
+        """Whether strict mode withholds the measured verdict."""
+        return self.strict and self.comparability != COMPARABLE
+
+    @property
+    def qualified(self) -> bool:
+        """Whether caveats limit what the measured verdict shows."""
+        return bool(self.caveats or self.warnings) and not self.blocked
 
     @property
     def verdict(self) -> str:
+        """The measured verdict, or the strict-mode refusal that replaces it."""
+        return self.comparability if self.blocked else self.measured_verdict
+
+    @property
+    def verdict_label(self) -> str:
+        """The verdict as shown: ``improved (qualified)`` when caveats apply."""
+        return f"{self.verdict} (qualified)" if self.qualified else self.verdict
+
+    @property
+    def measured_verdict(self) -> str:
         better = any(item.improved for item in self.resources)
         worse = any(item.regressed for item in self.resources)
         if better and worse:
@@ -161,9 +235,14 @@ class ReportComparison:
         for item in self.resources:
             if item.trend in {IMPROVED, REGRESSED}:
                 notes.append(f"{item.resource} drift {item.describe_change()}")
-        if not notes:
-            return "no meaningful change in leak signals or drift"
-        return "; ".join(notes)
+        text = "; ".join(notes) if notes else "no meaningful change in leak signals or drift"
+        if self.blocked:
+            reasons = [caveat.kind for caveat in self.caveats if caveat.blocks == self.verdict]
+            return f"{self.verdict} ({', '.join(dict.fromkeys(reasons))}); measured: {text}"
+        if self.qualified:
+            count = len(self.caveats or self.warnings)
+            text += f" (qualified by {count} caveat{'s' if count != 1 else ''})"
+        return text
 
     def to_dict(self) -> dict[str, Any]:
         """JSON-ready comparison for scripts and CI."""
@@ -180,10 +259,16 @@ class ReportComparison:
                 "partial_coverage": list(report.partial_resources),
                 "exact_facts": report.summary.exact,
                 "chart_stride": report.summary.chart_stride,
+                "experiment": _experiment_side(report.experiment),
             }
 
         return {
             "verdict": self.verdict,
+            "verdict_label": self.verdict_label,
+            "measured_verdict": self.measured_verdict,
+            "qualified": self.qualified,
+            "strict": self.strict,
+            "comparability": self.comparability,
             "headline": self.headline(),
             "before": side(self.before),
             "after": side(self.after),
@@ -210,6 +295,7 @@ class ReportComparison:
                 for category, (before, after) in self.handle_type_growth.items()
             },
             "warnings": list(self.warnings),
+            "caveats": [caveat.to_dict() for caveat in self.caveats],
         }
 
 
@@ -243,8 +329,26 @@ def load_report(path: str | Path) -> LoadedReport:
     return LoadedReport(path=report_path, data=data, summary=summary)
 
 
-def compare_reports(before: LoadedReport, after: LoadedReport) -> ReportComparison:
-    """Compare an earlier report with a later one."""
+def _experiment_side(experiment: ExperimentData | None) -> dict[str, Any] | None:
+    if experiment is None:
+        return None
+    return {
+        "workload_id": experiment.workload_id,
+        "build": experiment.build,
+        "operations": experiment.operations,
+        "argument_count": experiment.argument_count,
+    }
+
+
+def compare_reports(
+    before: LoadedReport, after: LoadedReport, *, strict: bool = False
+) -> ReportComparison:
+    """Compare an earlier report with a later one.
+
+    With ``strict``, a caveat that makes the runs non-equivalent replaces
+    the verdict with ``not comparable`` or ``insufficient coverage``.
+    """
+    caveats = comparability_caveats(before, after)
     resources = tuple(
         ResourceComparison(
             resource=resource,
@@ -266,7 +370,9 @@ def compare_reports(before: LoadedReport, after: LoadedReport) -> ReportComparis
         after=after,
         resources=resources,
         handle_type_growth=_handle_type_growth(before.summary, after.summary),
-        warnings=tuple(_comparability_warnings(before, after)),
+        warnings=tuple(caveat.message for caveat in caveats),
+        caveats=tuple(caveats),
+        strict=strict,
     )
 
 
@@ -316,44 +422,131 @@ def _handle_type_growth(
     }
 
 
-def _comparability_warnings(before: LoadedReport, after: LoadedReport) -> list[str]:
-    warnings: list[str] = []
+def comparability_caveats(before: LoadedReport, after: LoadedReport) -> list[Caveat]:
+    """Every reason the two runs may not be equivalent experiments, in a stable order."""
+    caveats: list[Caveat] = []
+
+    def add(kind: str, message: str, blocks: str | None = None) -> None:
+        caveats.append(Caveat(kind, message, blocks))
+
     if before.name != after.name:
-        warnings.append(f"the reports monitored different targets ({before.name} and {after.name})")
+        add("target", f"the reports monitored different targets ({before.name} and {after.name})",
+            NOT_COMPARABLE)
+    caveats.extend(_experiment_caveats(before.experiment, after.experiment))
     for label, report in (("A", before), ("B", after)):
         if not report.detection_ran:
-            warnings.append(
+            add("inconclusive",
                 f"report {label} never filled a detection window, so its lack of "
-                "signals is inconclusive"
-            )
+                "signals is inconclusive", INSUFFICIENT_COVERAGE)
         partial = report.partial_resources
         if partial:
             samples = max(report.summary.resources[r].partial_samples for r in partial)
             measured = max(report.summary.resources[r].measured_samples for r in partial)
-            warnings.append(
+            add("partial coverage",
                 f"report {label} could not read every process ({', '.join(partial)} totals "
                 f"partial in {samples:,} of {measured:,} samples), so its totals are lower "
-                "bounds and may miss growth in the unreadable processes"
-            )
+                "bounds and may miss growth in the unreadable processes", INSUFFICIENT_COVERAGE)
         if report.summary.chart_thinned and not report.summary.exact:
-            warnings.append(
+            add("thinned",
                 f"report {label} keeps 1 in {report.summary.chart_stride} samples and predates "
-                "exact session facts, so its peaks and episode counts may miss short events"
-            )
+                "exact session facts, so its peaks and episode counts may miss short events")
     differences = _settings_differences(before.data, after.data)
     if differences:
-        warnings.append(
+        add("settings",
             "the runs used different settings (" + "; ".join(differences) + "), so "
-            "signal severities are not directly comparable"
-        )
+            "signal severities are not directly comparable", NOT_COMPARABLE)
     shorter, longer = sorted((before.summary.duration, after.summary.duration))
     if longer > 0 and shorter < longer / 2:
-        warnings.append(
+        add("duration",
             f"the runs differ in length ({format_duration(before.summary.duration)} and "
             f"{format_duration(after.summary.duration)}); drift from the shorter one is "
-            "less certain and long windows may not have filled"
-        )
-    return warnings
+            "less certain and long windows may not have filled", NOT_COMPARABLE)
+    machine = _environment_differences(before.experiment, after.experiment)
+    if machine:
+        add("environment",
+            "the runs measured different environments (" + "; ".join(machine) + "), "
+            "so absolute peaks may differ for reasons other than the change")
+    return caveats
+
+
+def _experiment_caveats(
+    before: ExperimentData | None, after: ExperimentData | None
+) -> list[Caveat]:
+    """Workload, argument and operation-count differences between the runs.
+
+    Reports without an experiment section (older ones, or runs given no
+    labels) only raise a caveat when the other run states something they
+    cannot confirm.
+    """
+    caveats: list[Caveat] = []
+    old = before or ExperimentData()
+    new = after or ExperimentData()
+    if old.workload_id != new.workload_id:
+        if old.workload_id and new.workload_id:
+            message = f"the runs used different workloads ({old.workload_id} and {new.workload_id})"
+        else:
+            named = old.workload_id or new.workload_id
+            which = "A" if old.workload_id else "B"
+            message = (
+                f"only report {which} names its workload ({named}), so the runs cannot be "
+                "shown to use the same one"
+            )
+        caveats.append(Caveat("workload", message, NOT_COMPARABLE))
+    if (
+        old.argument_count is not None
+        and new.argument_count is not None
+        and (old.argument_count, old.argument_fingerprint)
+        != (new.argument_count, new.argument_fingerprint)
+    ):
+        caveats.append(Caveat(
+            "arguments",
+            f"the targets were launched with different arguments ({old.argument_count} and "
+            f"{new.argument_count}, fingerprints differ)",
+            NOT_COMPARABLE,
+        ))
+    if old.operations is not None and new.operations is not None:
+        larger = max(old.operations, new.operations)
+        if abs(old.operations - new.operations) > OPERATIONS_TOLERANCE * larger:
+            caveats.append(Caveat(
+                "operations",
+                f"the runs processed different amounts of work ({old.operations:,g} and "
+                f"{new.operations:,g} operations); compare growth per operation instead",
+                NOT_COMPARABLE,
+            ))
+    elif (old.operations is None) != (new.operations is None):
+        which = "A" if old.operations is not None else "B"
+        caveats.append(Caveat(
+            "operations",
+            f"only report {which} records an operation count, so the amount of work "
+            "cannot be shown to match",
+            NOT_COMPARABLE,
+        ))
+    return caveats
+
+
+def _environment_differences(
+    before: ExperimentData | None, after: ExperimentData | None
+) -> list[str]:
+    """Machine differences that can shift absolute peaks; empty without both records."""
+    old = (before.environment if before else None) or {}
+    new = (after.environment if after else None) or {}
+    differences = []
+    for key, label in (
+        ("os_release", "OS"),
+        ("cpu_count", "CPUs"),
+        ("total_memory_bytes", "memory"),
+        ("machine", "architecture"),
+    ):
+        first, second = old.get(key), new.get(key)
+        if first is None or second is None or first == second:
+            continue
+        if key == "total_memory_bytes" and all(
+            isinstance(value, (int, float)) for value in (first, second)
+        ):
+            differences.append(f"{label} {format_bytes(first)} vs {format_bytes(second)}")
+        else:
+            differences.append(f"{label} {first} vs {second}")
+    return differences
 
 
 def _settings_differences(before: Mapping[str, Any], after: Mapping[str, Any]) -> list[str]:
@@ -405,7 +598,11 @@ def format_amount(resource: str, value: float | None, signed: bool = False) -> s
 
 
 __all__ = [
+    "COMPARABLE",
+    "Caveat",
     "DiffError",
+    "INSUFFICIENT_COVERAGE",
+    "NOT_COMPARABLE",
     "IMPROVED",
     "LoadedReport",
     "MIXED",
@@ -414,6 +611,7 @@ __all__ = [
     "ResourceComparison",
     "UNCHANGED",
     "UNKNOWN",
+    "comparability_caveats",
     "compare_reports",
     "format_amount",
     "format_drift",
