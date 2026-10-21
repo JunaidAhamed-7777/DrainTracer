@@ -325,8 +325,9 @@ Use comparable workloads, durations, warm-ups, and settings. Long sessions
 thin the stored chart history; reports then say "chart thinned 1:N", while
 peaks with their times, worst severities, signal episode counts, evaluated
 time, and sample counts stay exact in `session_facts`. Reports include local
-paths and process details, so review them before sharing. The [report guide](docs/reports.md) covers the schema, retention,
-interpretation, and comparison exit codes.
+paths and process details, so review them before sharing. The
+[report guide](docs/reports.md) covers the schema, retention, interpretation,
+and comparison exit codes.
 
 ## Documentation
 
