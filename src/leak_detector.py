@@ -14,12 +14,18 @@ from types import MappingProxyType
 import psutil
 
 from .events import (
+    COVERAGE_METRICS,
+    METRIC_KEYS,
+    RESOURCE_METRICS,
+    EvidenceState,
     LeakAlert,
     LeakResource,
     LeakSeverity,
+    MetricCoverage,
     MetricsSnapshot,
     MetricsStream,
     ProcessMetrics,
+    ResourceEvidence,
 )
 from .handle_types import (
     CATEGORIES,
@@ -38,6 +44,10 @@ DEFAULT_SAMPLE_INTERVAL_MS = 500
 DEFAULT_WINDOWS_SECONDS = (10.0, 30.0, 60.0)
 DEFAULT_HANDLE_TYPES_INTERVAL = 2.0
 MIB = 1024 * 1024
+# A window is judged once it holds this many points spanning this share of it.
+MIN_WINDOW_POINTS = 4
+MIN_WINDOW_COVERAGE = 0.85
+_ALL_METRICS = tuple(METRIC_KEYS)
 # Back off handle classification so it stays near 5% of one core.
 _CLASSIFY_COST_FACTOR = 20.0
 
@@ -80,9 +90,31 @@ class _SamplePoint:
 
 @dataclass
 class _ResourceSeries:
+    """Valid observations of one resource total since its measured set last changed.
+
+    ``segment`` identifies the processes left out of the total (alive but
+    unreadable). When it changes, the total starts or stops counting a
+    process for a reason that has nothing to do with growth, so earlier
+    points no longer compare and the series starts over.
+    """
+
     name: str
     resource: LeakResource
     points: deque[_SamplePoint]
+    segment: frozenset[int] | None = None
+
+    def continue_segment(self, segment: frozenset[int]) -> bool:
+        """Keep the points if ``segment`` matches; else clear them. Return whether kept."""
+        if segment == self.segment:
+            return True
+        self.points.clear()
+        self.segment = segment
+        return False
+
+    def interrupt(self) -> None:
+        """Forget the points after an observation that could not be measured."""
+        self.points.clear()
+        self.segment = None
 
     def add(self, timestamp: float, value: float, max_age_seconds: float) -> None:
         self.points.append(_SamplePoint(timestamp, value))
@@ -93,6 +125,19 @@ class _ResourceSeries:
     def points_in_window(self, timestamp: float, window_seconds: float) -> list[_SamplePoint]:
         cutoff = timestamp - window_seconds
         return [point for point in self.points if point.timestamp >= cutoff]
+
+    def eligible_points(self, timestamp: float, window_seconds: float) -> list[_SamplePoint] | None:
+        """The window's points when there are enough to judge it, else ``None``.
+
+        Counting nominal sample slots would miss real windows when sampling
+        takes extra time, so most of the window must have elapsed instead.
+        """
+        points = self.points_in_window(timestamp, window_seconds)
+        if len(points) < MIN_WINDOW_POINTS:
+            return None
+        if points[-1].timestamp - points[0].timestamp < window_seconds * MIN_WINDOW_COVERAGE:
+            return None
+        return points
 
 
 class LeakDetector:
@@ -148,6 +193,8 @@ class LeakDetector:
         self._last_totals: dict[str, float] | None = None
         self._last_alerts: tuple[LeakAlert, ...] = ()
         self._last_severity = LeakSeverity.NONE
+        self._last_coverage: dict[str, MetricCoverage] | None = None
+        self._last_evidence: tuple[ResourceEvidence, ...] = ()
         self._next_classification = 0.0
         self._handle_type_history: deque[tuple[float, HandleCounts]] = deque()
 
@@ -182,7 +229,7 @@ class LeakDetector:
     def detection_started(self) -> bool:
         """Whether the shortest window has ever held enough samples to judge.
 
-        Until then no signal can be raised, so a clean result says nothing.
+        Any resource counts. Until then no signal can be raised, so a clean result says nothing.
         """
         return self._detection_started
 
@@ -288,6 +335,10 @@ class LeakDetector:
             severity=LeakSeverity.NONE,
             sample_interval_ms=self.sample_interval_ms,
             metadata={"sampling_error": error},
+            evidence=tuple(
+                ResourceEvidence(resource=resource, state=EvidenceState.UNAVAILABLE)
+                for resource in RESOURCE_METRICS
+            ),
         )
 
     def _build_paused_snapshot(self) -> MetricsSnapshot:
@@ -303,6 +354,10 @@ class LeakDetector:
             sample_interval_ms=self.sample_interval_ms,
             metadata={"last_error": self.process_manager.last_error, "paused": True},
             warming_up=self.warming_up,
+            coverage=self._last_coverage,
+            evidence=tuple(
+                replace(item, state=EvidenceState.STALE) for item in self._last_evidence
+            ),
         )
 
     @staticmethod
@@ -323,6 +378,7 @@ class LeakDetector:
         self.process_manager.refresh_process_tree()
         processes = self._sample_processes()
         totals = self._aggregate_totals(processes)
+        coverage = self._coverage(processes)
         processes, handle_types = self._classify_handles(processes)
         max_age = self.max_window_seconds * 1.5
         if handle_types is not None:
@@ -337,15 +393,16 @@ class LeakDetector:
         if not warming_up:
             # Series start empty after the warm-up, so initialization growth
             # never reaches a window.
-            self._memory_series.add(now, totals["private_bytes"], max_age)
-            self._handle_series.add(now, totals["handles"], max_age)
-            self._thread_series.add(now, totals["threads"], max_age)
+            self._extend_series(now, totals, coverage, max_age)
             if not self._detection_started:
                 self._detection_started = self._window_ready(now)
             alerts = self._evaluate_leaks(now, totals)
         severity = self._max_severity(alerts)
+        evidence = self._evidence(now, warming_up, coverage, alerts)
         self._last_alerts = tuple(alerts)
         self._last_severity = severity
+        self._last_coverage = coverage
+        self._last_evidence = evidence
 
         return MetricsSnapshot(
             timestamp=now,
@@ -360,13 +417,113 @@ class LeakDetector:
             metadata={"tracked_pids": sorted(self.process_manager.tracked_pids)},
             handle_types=handle_types,
             warming_up=warming_up,
+            coverage=coverage,
+            evidence=evidence,
         )
 
+    def _series(self) -> dict[LeakResource, _ResourceSeries]:
+        return {
+            LeakResource.MEMORY: self._memory_series,
+            LeakResource.HANDLES: self._handle_series,
+            LeakResource.THREADS: self._thread_series,
+        }
+
+    def _extend_series(
+        self,
+        now: float,
+        totals: Mapping[str, float],
+        coverage: Mapping[str, MetricCoverage],
+        max_age: float,
+    ) -> None:
+        """Add each valid resource total to its series.
+
+        An observation with no measured process is invalid: it breaks the
+        series rather than adding a false zero. A change in which live
+        processes are unreadable (access lost or regained, an unreadable
+        process starting or exiting) starts a new segment, so a window
+        never spans samples whose totals cover different processes and the
+        change cannot pass for growth or a drop. Readable processes that
+        start or exit stay in one segment: their effect on the total is real.
+        """
+        for resource, series in self._series().items():
+            metric = RESOURCE_METRICS[resource]
+            measured = coverage[metric]
+            if measured.unavailable:
+                series.interrupt()
+                continue
+            series.continue_segment(frozenset(measured.unmeasured_pids))
+            series.add(now, totals[metric], max_age)
+
     def _window_ready(self, now: float) -> bool:
-        """Whether the shortest window passes the evaluation preconditions."""
+        """Whether any resource's shortest window passes the evaluation preconditions."""
         window = self.window_seconds[0]
-        points = self._memory_series.points_in_window(now, window)
-        return len(points) >= 4 and points[-1].timestamp - points[0].timestamp >= window * 0.85
+        return any(
+            series.eligible_points(now, window) is not None for series in self._series().values()
+        )
+
+    @staticmethod
+    def _coverage(processes: Iterable[ProcessMetrics]) -> dict[str, MetricCoverage]:
+        """How many live processes each covered metric was read from.
+
+        Processes that already exited are left out: they no longer hold
+        resources, so they are neither measured nor missing.
+        """
+        live = [process for process in processes if process.status != psutil.STATUS_DEAD]
+        coverage = {}
+        for metric in COVERAGE_METRICS:
+            missing = tuple(sorted(p.pid for p in live if not p.measured(metric)))
+            coverage[metric] = MetricCoverage(
+                metric=metric,
+                measured=len(live) - len(missing),
+                total=len(live),
+                unmeasured_pids=missing,
+            )
+        return coverage
+
+    def _evidence(
+        self,
+        now: float,
+        warming_up: bool,
+        coverage: Mapping[str, MetricCoverage],
+        alerts: Iterable[LeakAlert],
+    ) -> tuple[ResourceEvidence, ...]:
+        """What each resource's signal can say at this sample, for the front ends.
+
+        The UI renders these states and never re-derives them from the totals.
+        """
+        by_resource = {alert.resource: alert for alert in alerts}
+        needed_seconds = self.window_seconds[0] * MIN_WINDOW_COVERAGE
+        evidence = []
+        for resource, series in self._series().items():
+            measured = coverage.get(RESOURCE_METRICS[resource])
+            points = [] if warming_up else list(series.points)
+            elapsed = points[-1].timestamp - points[0].timestamp if len(points) >= 2 else 0.0
+            alert = by_resource.get(resource)
+            window: float | None = None
+            if warming_up:
+                state = EvidenceState.WARMING_UP
+            elif measured is None or measured.unavailable:
+                state = EvidenceState.UNAVAILABLE
+            elif alert is not None:
+                state, window = EvidenceState.GROWTH, alert.window_seconds
+            else:
+                judged = [w for w in self.window_seconds if series.eligible_points(now, w)]
+                state = EvidenceState.NO_GROWTH if judged else EvidenceState.COLLECTING
+                window = judged[-1] if judged else None
+            evidence.append(
+                ResourceEvidence(
+                    resource=resource,
+                    state=state,
+                    valid_samples=len(points),
+                    needed_samples=MIN_WINDOW_POINTS,
+                    elapsed_seconds=elapsed,
+                    needed_seconds=needed_seconds,
+                    evaluated_window_seconds=window,
+                    severity=alert.severity if alert is not None else LeakSeverity.NONE,
+                    coverage=measured,
+                )
+            )
+        return tuple(evidence)
 
     def _advance_warmup(self, now: float, totals: dict[str, float]) -> bool:
         """Count active sampling time; return whether the warm-up continues.
@@ -457,8 +614,15 @@ class LeakDetector:
     def _sample_process(
         self, proc: psutil.Process, entry: ProcessEntry | None = None
     ) -> ProcessMetrics:
+        """Read one process; counters that cannot be read are marked unmeasured.
+
+        Unreadable counters keep a 0 in their field for compatibility, but
+        ``unmeasured`` names them so totals, coverage and detection never
+        treat that 0 as a real measurement.
+        """
         access_denied = False
         pid = proc.pid
+        unmeasured: list[str] = []
 
         try:
             with proc.oneshot():
@@ -471,16 +635,17 @@ class LeakDetector:
                 rss = int(mem.rss)
                 vms = int(mem.vms)
                 private_bytes = int(getattr(mem, "private", mem.rss))
-                handles = self._safe_num_handles(proc)
+                read_handles = self._safe_num_handles(proc)
                 threads = entry.threads if entry is not None else proc.num_threads()
-                cpu_percent = self._sample_cpu_percent(proc)
-                io_read_bps, io_write_bps = self._sample_io_rates(proc)
+                read_cpu = self._sample_cpu_percent(proc)
+                rates = self._sample_io_rates(proc)
         except psutil.AccessDenied:
             access_denied = True
             name = "access-denied"
             status = "unknown"
             rss = vms = private_bytes = handles = threads = 0
             cpu_percent = io_read_bps = io_write_bps = 0.0
+            unmeasured = list(_ALL_METRICS)
         except psutil.NoSuchProcess:
             return ProcessMetrics(
                 pid=pid,
@@ -495,6 +660,7 @@ class LeakDetector:
                 io_read_bytes_per_sec=0.0,
                 io_write_bytes_per_sec=0.0,
                 access_denied=False,
+                unmeasured=_ALL_METRICS,
             )
         except (psutil.Error, OSError) as exc:
             return ProcessMetrics(
@@ -511,7 +677,18 @@ class LeakDetector:
                 io_write_bytes_per_sec=0.0,
                 access_denied=isinstance(exc, psutil.AccessDenied),
                 ppid=self.process_manager.parent_of(pid),
+                unmeasured=_ALL_METRICS,
             )
+        else:
+            handles = 0 if read_handles is None else read_handles
+            cpu_percent = 0.0 if read_cpu is None else read_cpu
+            io_read_bps, io_write_bps = rates if rates is not None else (0.0, 0.0)
+            if read_handles is None:
+                unmeasured.append("handles")
+            if read_cpu is None:
+                unmeasured.append("cpu_percent")
+            if rates is None:
+                unmeasured += ["io_read_bytes_per_sec", "io_write_bytes_per_sec"]
 
         return ProcessMetrics(
             pid=pid,
@@ -527,29 +704,32 @@ class LeakDetector:
             io_write_bytes_per_sec=io_write_bps,
             access_denied=access_denied,
             ppid=self.process_manager.parent_of(pid),
+            unmeasured=tuple(unmeasured),
         )
 
     @staticmethod
-    def _safe_num_handles(proc: psutil.Process) -> int:
+    def _safe_num_handles(proc: psutil.Process) -> int | None:
+        """The handle count, or ``None`` when it cannot be read (never a false 0)."""
         try:
             return int(proc.num_handles())
         except (AttributeError, OSError, psutil.AccessDenied, NotImplementedError):
-            return 0
+            return None
 
-    def _sample_cpu_percent(self, proc: psutil.Process) -> float:
+    def _sample_cpu_percent(self, proc: psutil.Process) -> float | None:
         """CPU used since the previous sample, as a percentage of one core.
 
         psutil's ``cpu_percent(interval=None)`` keeps its baseline on the
         ``Process`` object, and tracked processes are reopened for every
         sample, so it would always report zero. Keep a CPU-time baseline
         per PID instead; like psutil, the result can exceed 100% when a
-        process uses several cores.
+        process uses several cores. Returns ``None`` when the CPU times
+        cannot be read.
         """
         try:
             times = proc.cpu_times()
             used = float(times.user) + float(times.system)
         except (psutil.Error, OSError, AttributeError):
-            return 0.0
+            return None
         stamp = time.monotonic()
         baseline = self._cpu_baselines.get(proc.pid)
         self._cpu_baselines[proc.pid] = (stamp, used)
@@ -560,13 +740,14 @@ class LeakDetector:
             return 0.0
         return max(0.0, (used - baseline[1]) / elapsed * 100.0)
 
-    def _sample_io_rates(self, proc: psutil.Process) -> tuple[float, float]:
+    def _sample_io_rates(self, proc: psutil.Process) -> tuple[float, float] | None:
+        """Read and write rates since the previous sample, or ``None`` when unreadable."""
         try:
             counters = proc.io_counters()
             read_bytes = int(counters.read_bytes)
             write_bytes = int(counters.write_bytes)
         except (psutil.Error, OSError, AttributeError):
-            return 0.0, 0.0
+            return None
         stamp = time.monotonic()
         baseline = self._io_baselines.get(proc.pid)
         self._io_baselines[proc.pid] = (stamp, read_bytes, write_bytes)
@@ -582,15 +763,14 @@ class LeakDetector:
 
     @staticmethod
     def _aggregate_totals(processes: list[ProcessMetrics]) -> dict[str, float]:
+        """Sum each metric over the processes it was measured for.
+
+        Totals stay plain numbers for compatibility; the snapshot's
+        ``coverage`` says when one leaves processes out.
+        """
         return {
-            "rss_bytes": float(sum(p.rss_bytes for p in processes)),
-            "vms_bytes": float(sum(p.vms_bytes for p in processes)),
-            "private_bytes": float(sum(p.private_bytes for p in processes)),
-            "handles": float(sum(p.handles for p in processes)),
-            "threads": float(sum(p.threads for p in processes)),
-            "cpu_percent": float(sum(p.cpu_percent for p in processes)),
-            "io_read_bytes_per_sec": float(sum(p.io_read_bytes_per_sec for p in processes)),
-            "io_write_bytes_per_sec": float(sum(p.io_write_bytes_per_sec for p in processes)),
+            key: float(sum(getattr(p, key) for p in processes if p.measured(key)))
+            for key in METRIC_KEYS
         }
 
     def _evaluate_leaks(self, timestamp: float, totals: dict[str, float]) -> list[LeakAlert]:
@@ -624,13 +804,8 @@ class LeakDetector:
         best_since = timestamp
 
         for window in self.window_seconds:
-            points = series.points_in_window(timestamp, window)
-            if len(points) < 4:
-                continue
-            covered = points[-1].timestamp - points[0].timestamp
-            # Require most of the window to have elapsed. Counting nominal
-            # 500 ms slots misses real windows when sampling takes extra time.
-            if covered < window * 0.85:
+            points = series.eligible_points(timestamp, window)
+            if points is None:
                 continue
 
             values = [point.value for point in points]

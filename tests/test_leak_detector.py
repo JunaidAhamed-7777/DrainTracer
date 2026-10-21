@@ -346,6 +346,174 @@ class WarmupTests(unittest.TestCase):
                 _detector(warmup_seconds=value)
 
 
+def _denied(pid: int):
+    """A process whose counters could not be read, as the sampler reports it."""
+    from src.events import METRIC_KEYS, ProcessMetrics
+
+    return ProcessMetrics(
+        pid=pid, name="access-denied", status="unknown", rss_bytes=0, vms_bytes=0,
+        private_bytes=0, handles=0, threads=0, cpu_percent=0.0,
+        io_read_bytes_per_sec=0.0, io_write_bytes_per_sec=0.0,
+        access_denied=True, unmeasured=tuple(METRIC_KEYS),
+    )
+
+
+def _collect_trees(detector: LeakDetector, trees: list[list]) -> list:
+    """Collect one snapshot per process list, 0.5 s apart."""
+    from unittest import mock
+
+    snapshots = []
+    for index, processes in enumerate(trees):
+        with mock.patch.object(detector, "_sample_processes", return_value=list(processes)), \
+                mock.patch("src.leak_detector.time.time", return_value=1000.0 + index * 0.5), \
+                mock.patch("src.leak_detector.time.monotonic", return_value=50.0 + index * 0.5):
+            snapshots.append(detector._collect_snapshot())
+    return snapshots
+
+
+class MeasurementValidityTests(unittest.TestCase):
+    def _detector(self, **kwargs) -> LeakDetector:
+        from unittest import mock
+
+        return _detector(
+            window_seconds=(10.0,), classifier=mock.Mock(available=False), **kwargs
+        )
+
+    def test_unreadable_handle_counts_are_unknown_not_zero(self) -> None:
+        from unittest import mock
+
+        proc = mock.Mock()
+        proc.num_handles.side_effect = OSError("denied")
+        self.assertIsNone(LeakDetector._safe_num_handles(proc))
+
+        detector = self._detector()
+        proc = mock.MagicMock(pid=7)
+        proc.name.return_value = "app.exe"
+        proc.status.return_value = "running"
+        proc.memory_info.return_value = mock.Mock(rss=10, vms=20, private=8)
+        proc.num_handles.side_effect = psutil_access_denied()
+        proc.num_threads.return_value = 3
+        proc.cpu_times.side_effect = OSError("no")
+        proc.io_counters.return_value = mock.Mock(read_bytes=0, write_bytes=0)
+        metrics = detector._sample_process(proc)
+        self.assertEqual(metrics.handles, 0)
+        self.assertFalse(metrics.measured("handles"))
+        self.assertFalse(metrics.measured("cpu_percent"))
+        self.assertTrue(metrics.measured("private_bytes"))
+        self.assertTrue(metrics.measured("io_read_bytes_per_sec"))
+
+    def test_partial_coverage_is_reported(self) -> None:
+        from helpers import make_process
+
+        detector = self._detector()
+        snapshot = _collect_trees(detector, [[make_process(1), _denied(2)]])[0]
+        coverage = snapshot.coverage["private_bytes"]
+        self.assertEqual((coverage.measured, coverage.total), (1, 2))
+        self.assertEqual(coverage.unmeasured_pids, (2,))
+        self.assertTrue(coverage.partial)
+        self.assertEqual(snapshot.unmeasured_pids, (2,))
+        memory = snapshot.evidence_for(LeakResource.MEMORY)
+        self.assertTrue(memory.partial)
+        self.assertEqual(snapshot.totals["private_bytes"], 10 * MB)
+
+    def test_exited_processes_are_neither_measured_nor_missing(self) -> None:
+        from dataclasses import replace
+
+        from helpers import make_process
+
+        gone = replace(make_process(3), status="dead", unmeasured=("handles",))
+        snapshot = _collect_trees(self._detector(), [[make_process(1), gone]])[0]
+        self.assertEqual(snapshot.coverage["handles"].total, 1)
+        self.assertFalse(snapshot.coverage["handles"].partial)
+
+    def test_access_loss_and_recovery_raise_no_alert(self) -> None:
+        from dataclasses import replace
+
+        from helpers import make_process
+
+        steady = make_process(1, rss=100 * MB)
+        worker = make_process(2, rss=50 * MB)
+        trees = (
+            [[steady, worker]] * 21 + [[steady, _denied(2)]] * 10 + [[steady, worker]] * 25
+        )
+        snapshots = _collect_trees(self._detector(), trees)
+        self.assertFalse(any(snapshot.alerts for snapshot in snapshots))
+        states = [snapshot.evidence_for(LeakResource.MEMORY).state for snapshot in snapshots]
+        from src.events import EvidenceState
+
+        self.assertEqual(states[20], EvidenceState.NO_GROWTH)
+        self.assertEqual(states[21], EvidenceState.COLLECTING)  # the segment restarted
+        self.assertEqual(states[31], EvidenceState.COLLECTING)  # and again on recovery
+        self.assertEqual(states[-1], EvidenceState.NO_GROWTH)
+
+        # Control: the same totals measured for real are a genuine change.
+        emptied = replace(worker, rss_bytes=0, vms_bytes=0, private_bytes=0)
+        control = [[steady, worker]] * 21 + [[steady, emptied]] * 10 + [[steady, worker]] * 25
+        self.assertTrue(any(s.alerts for s in _collect_trees(self._detector(), control)))
+
+    def test_an_unmeasurable_tree_is_unavailable(self) -> None:
+        from src.events import EvidenceState
+
+        snapshots = _collect_trees(self._detector(), [[_denied(1)]] * 30)
+        evidence = snapshots[-1].evidence_for(LeakResource.HANDLES)
+        self.assertEqual(evidence.state, EvidenceState.UNAVAILABLE)
+        self.assertEqual(evidence.valid_samples, 0)
+        self.assertTrue(snapshots[-1].coverage["handles"].unavailable)
+
+
+class EvidenceStateTests(unittest.TestCase):
+    def test_states_progress_from_collecting_to_a_judgement(self) -> None:
+        from unittest import mock
+
+        from helpers import make_process
+        from src.events import EvidenceState
+
+        detector = _detector(window_seconds=(10.0, 30.0), classifier=mock.Mock(available=False))
+        flat = _collect_trees(detector, [[make_process(1)]] * 21)
+        first, last = flat[0].evidence_for(LeakResource.THREADS), flat[-1].evidence_for(
+            LeakResource.THREADS
+        )
+        self.assertEqual(first.state, EvidenceState.COLLECTING)
+        self.assertEqual((first.valid_samples, first.needed_samples), (1, 4))
+        self.assertEqual(first.needed_seconds, 8.5)
+        self.assertEqual(flat[16].evidence_for(LeakResource.THREADS).elapsed_seconds, 8.0)
+        self.assertEqual(last.state, EvidenceState.NO_GROWTH)
+        self.assertEqual(last.evaluated_window_seconds, 10.0)
+        self.assertIsNone(first.evaluated_window_seconds)
+
+        growing = _detector(window_seconds=(10.0,), classifier=mock.Mock(available=False))
+        trees = [[make_process(1, rss=100 * MB + index * 4 * MB)] for index in range(21)]
+        evidence = _collect_trees(growing, trees)[-1].evidence_for(LeakResource.MEMORY)
+        self.assertEqual(evidence.state, EvidenceState.GROWTH)
+        self.assertEqual(evidence.severity, LeakSeverity.HIGH)
+        self.assertEqual(evidence.evaluated_window_seconds, 10.0)
+
+    def test_warmup_and_pause_have_their_own_states(self) -> None:
+        from unittest import mock
+
+        from helpers import make_process
+        from src.events import EvidenceState
+
+        detector = _detector(
+            window_seconds=(10.0,), warmup_seconds=5.0, classifier=mock.Mock(available=False)
+        )
+        snapshot = _collect_trees(detector, [[make_process(1)]])[0]
+        self.assertEqual(
+            {item.state for item in snapshot.evidence}, {EvidenceState.WARMING_UP}
+        )
+        with mock.patch.object(type(detector.process_manager), "is_running",
+                               new_callable=mock.PropertyMock, return_value=True):
+            paused = detector._build_paused_snapshot()
+        self.assertEqual({item.state for item in paused.evidence}, {EvidenceState.STALE})
+        self.assertIsNotNone(paused.coverage)
+
+
+def psutil_access_denied():
+    import psutil
+
+    return psutil.AccessDenied(7)
+
+
 class SamplingLoopTests(unittest.TestCase):
     def test_the_loop_survives_failures_and_reports_them(self) -> None:
         import time

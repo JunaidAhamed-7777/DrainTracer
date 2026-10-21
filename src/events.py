@@ -62,12 +62,102 @@ class LeakAlert:
     growth_by_type: dict[str, int] | None = None
 
 
+# Per-process counters a sample can carry, named like the snapshot totals.
+METRIC_KEYS = (
+    "rss_bytes",
+    "vms_bytes",
+    "private_bytes",
+    "handles",
+    "threads",
+    "cpu_percent",
+    "io_read_bytes_per_sec",
+    "io_write_bytes_per_sec",
+)
+# The totals series behind each resource's leak signal.
+RESOURCE_METRICS: dict[LeakResource, str] = {
+    LeakResource.MEMORY: "private_bytes",
+    LeakResource.HANDLES: "handles",
+    LeakResource.THREADS: "threads",
+}
+# Metrics whose coverage snapshots record: the signal inputs plus RSS,
+# which the dashboard charts next to private bytes.
+COVERAGE_METRICS = ("rss_bytes", "private_bytes", "handles", "threads")
+
+
+class EvidenceState(str, Enum):
+    """How much a resource's leak signal can say at one sample.
+
+    The states keep "nothing found" apart from "nothing judged yet": only
+    ``NO_GROWTH`` and ``GROWTH`` come from an evaluated window.
+    """
+
+    WARMING_UP = "warming_up"
+    COLLECTING = "collecting"
+    NO_GROWTH = "no_growth"
+    GROWTH = "growth"
+    UNAVAILABLE = "unavailable"
+    STALE = "stale"
+
+
+@dataclass(frozen=True)
+class MetricCoverage:
+    """How many live processes one metric could actually be read from.
+
+    Unreadable counters are not zeros: the totals only add up the
+    ``measured`` processes, so a partial total is a lower bound.
+    """
+
+    metric: str
+    measured: int
+    total: int
+    unmeasured_pids: tuple[int, ...] = ()
+
+    @property
+    def partial(self) -> bool:
+        """Some, but not all, live processes were measured."""
+        return 0 < self.measured < self.total
+
+    @property
+    def unavailable(self) -> bool:
+        """No live process could be measured, so the total means nothing."""
+        return self.measured == 0
+
+
+@dataclass(frozen=True)
+class ResourceEvidence:
+    """The detector's evidence for one resource at one sample.
+
+    ``valid_samples`` and ``elapsed_seconds`` describe the current series
+    segment: valid observations since the measured process set last
+    changed. ``needed_samples`` and ``needed_seconds`` are what the shortest
+    window requires before it can be judged. ``evaluated_window_seconds``
+    is the longest window judged at this sample (the alerting one for
+    ``GROWTH``), else ``None``.
+    """
+
+    resource: LeakResource
+    state: EvidenceState
+    valid_samples: int = 0
+    needed_samples: int = 0
+    elapsed_seconds: float = 0.0
+    needed_seconds: float = 0.0
+    evaluated_window_seconds: float | None = None
+    severity: LeakSeverity = LeakSeverity.NONE
+    coverage: MetricCoverage | None = None
+
+    @property
+    def partial(self) -> bool:
+        return self.coverage is not None and self.coverage.partial
+
+
 @dataclass(frozen=True)
 class ProcessMetrics:
     """Aggregated metrics for one process in the monitored tree.
 
     ``handle_types`` maps handle categories (see ``handle_types.CATEGORIES``)
     to counts on samples where handle types were classified, else ``None``.
+    ``unmeasured`` names the counters (``METRIC_KEYS``) that could not be
+    read; their fields hold 0 for compatibility but are unknown, not zero.
     """
 
     pid: int
@@ -84,6 +174,11 @@ class ProcessMetrics:
     access_denied: bool = False
     ppid: int | None = None
     handle_types: dict[str, int] | None = None
+    unmeasured: tuple[str, ...] = ()
+
+    def measured(self, metric: str) -> bool:
+        """Whether ``metric`` was read for this process (a zero is then real)."""
+        return metric not in self.unmeasured
 
 
 @dataclass(frozen=True)
@@ -93,6 +188,9 @@ class MetricsSnapshot:
     ``handle_types`` holds tree-wide handle counts per category on samples
     where handle types were classified (every few seconds), else ``None``.
     ``warming_up`` is true while leak heuristics are deferred by a warm-up.
+    ``coverage`` maps ``COVERAGE_METRICS`` to how many live processes each
+    was read from (``None`` on snapshots that measured nothing new), and
+    ``evidence`` holds one ``ResourceEvidence`` per signal resource.
     """
 
     timestamp: float
@@ -107,6 +205,20 @@ class MetricsSnapshot:
     metadata: dict[str, Any] = field(default_factory=dict)
     handle_types: dict[str, int] | None = None
     warming_up: bool = False
+    coverage: dict[str, MetricCoverage] | None = None
+    evidence: tuple[ResourceEvidence, ...] = ()
+
+    def evidence_for(self, resource: LeakResource) -> ResourceEvidence | None:
+        return next((item for item in self.evidence if item.resource == resource), None)
+
+    @property
+    def unmeasured_pids(self) -> tuple[int, ...]:
+        """Live processes missing at least one covered metric, sorted."""
+        if not self.coverage:
+            return ()
+        return tuple(
+            sorted({pid for item in self.coverage.values() for pid in item.unmeasured_pids})
+        )
 
 
 SnapshotCallback = Callable[[MetricsSnapshot], None]
