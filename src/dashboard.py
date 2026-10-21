@@ -335,6 +335,9 @@ class DashboardApp(ProcessesViewMixin, EvidenceViewMixin, MonitorViewMixin, Moni
                 )
         elif normalized == "o":
             self._open_last_report()
+        elif normalized == "m":
+            # Works in every view; marks timing only, it does not touch the target.
+            self.add_marker()
         elif normalized == "q":
             self._quit_requested = True
             self._append_event("Quit requested", "info")
@@ -522,6 +525,8 @@ class DashboardApp(ProcessesViewMixin, EvidenceViewMixin, MonitorViewMixin, Moni
                 "Sort processes by tree, memory (private bytes), handles, or CPU "
                 f"(now: {self._sort_label()})",
             ),
+            ("M", "Add a numbered marker to the event log, timeline and report "
+                  "(marks timing, not cause)"),
             ("? / H", "Show or hide this help; Esc closes it"),
             ("Q", quit_text),
         ):

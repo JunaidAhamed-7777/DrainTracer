@@ -124,6 +124,16 @@ class NavigationTests(unittest.TestCase):
             self.assertEqual(len(output.splitlines()), 24)
             self.assertTrue(all(len(line) <= 80 for line in output.splitlines()))
 
+    def test_m_adds_a_marker_from_any_view(self) -> None:
+        app = _app()
+        growing_session(app, 3)
+        app._handle_key("m")
+        app._handle_key("5")
+        app._handle_key("M")
+        self.assertEqual([mark.label for mark in app.markers], ["marker 1", "marker 2"])
+        self.assertTrue(app._events[-1][1].startswith("Marker 2: marker 2"))
+        self.assertFalse(app.detector.is_paused)
+
     def test_help_scrolls_on_small_terminals(self) -> None:
         app = _app(80, 24)
         growing_session(app, 3)
