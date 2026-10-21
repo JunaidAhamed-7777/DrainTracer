@@ -23,9 +23,11 @@ from .events import (
     LifecycleEvent,
     LifecycleKind,
     ProcessCounts,
+    ProcessGrowth,
     ProcessMetrics,
     ProcessSummary,
 )
+from .stats import least_squares_slope
 
 # Live processes that keep a point history; more are counted and summarized
 # but cannot be attributed growth.
@@ -298,6 +300,52 @@ class ProcessHistory:
                     for stamp, values in track.points
                 )
             return ()
+
+    def growth(
+        self, metric: str, since: float, until: float | None = None
+    ) -> tuple[ProcessGrowth, ...]:
+        """Each process's signed change and slope of ``metric`` over ``[since, until]``.
+
+        Covers live processes and recently exited ones that still hold
+        points, ordered by PID. Unlike ``attribute`` this compares measured
+        values only (a new process grows from its first sample), which is
+        what a per-process inspector shows. ``until`` defaults to now.
+        """
+        index = TRACKED_METRICS.index(metric)
+        with self._lock:
+            tracks = [*self._live.values(), *self._departed]
+            rows: list[ProcessGrowth] = []
+            for track in tracks:
+                if track.points is None:
+                    continue
+                values = [
+                    (stamp, point[index])
+                    for stamp, point in track.points
+                    if stamp >= since and (until is None or stamp <= until)
+                    and point[index] is not None
+                ]
+                if not values:
+                    continue
+                times = [stamp for stamp, _value in values]
+                series = [float(value) for _stamp, value in values]
+                rows.append(
+                    ProcessGrowth(
+                        pid=track.pid,
+                        create_time=track.create_time,
+                        name=track.name or "unknown",
+                        ppid=track.ppid,
+                        metric=metric,
+                        first_value=series[0],
+                        last_value=series[-1],
+                        delta=series[-1] - series[0],
+                        slope_per_second=least_squares_slope(times, series),
+                        samples=len(series),
+                        span_seconds=times[-1] - times[0],
+                        new_process=track.first_seen > since,
+                        exited=track.exited_at is not None,
+                    )
+                )
+        return tuple(sorted(rows, key=lambda row: (row.pid, row.create_time or 0.0)))
 
     def attribute(self, metric: str, since: float, until: float) -> Attribution:
         """Split growth of ``metric`` over ``[since, until]`` between processes.

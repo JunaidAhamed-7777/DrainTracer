@@ -401,6 +401,35 @@ class ProcessSummary:
 
 
 @dataclass(frozen=True)
+class ProcessGrowth:
+    """How one process's metric changed over an interval of its own history.
+
+    ``delta`` is the last measured value in the interval minus the first,
+    signed; ``slope_per_second`` the least-squares rate over those points.
+    ``new_process`` marks one first seen inside the interval, ``exited``
+    one that left the tree. This describes a process; it is not a signal.
+    """
+
+    pid: int
+    create_time: float | None
+    name: str
+    ppid: int | None
+    metric: str
+    first_value: float
+    last_value: float
+    delta: float
+    slope_per_second: float
+    samples: int
+    span_seconds: float
+    new_process: bool = False
+    exited: bool = False
+
+    @property
+    def identity(self) -> tuple[int, float | None]:
+        return (self.pid, self.create_time)
+
+
+@dataclass(frozen=True)
 class ProcessMetrics:
     """Aggregated metrics for one process in the monitored tree.
 

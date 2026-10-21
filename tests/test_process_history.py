@@ -206,5 +206,36 @@ class DetectorLifecycleTests(unittest.TestCase):
         self.assertEqual((summary.pid, summary.growth("private_bytes")), (2, 80 * MB))
 
 
+class GrowthTests(unittest.TestCase):
+    def test_signed_growth_and_slope_per_process_over_an_interval(self) -> None:
+        history = ProcessHistory(90.0)
+        for step in range(11):
+            stamp = step * 1.0
+            processes = [_parent(), _worker(1, 10 + step), _worker(2, 50 - step * 2)]
+            if step >= 6:
+                processes.append(_worker(3, 5))
+            history.observe(stamp, processes)
+        rows = {row.pid: row for row in history.growth("private_bytes", since=4.0)}
+        self.assertEqual(sorted(rows), [1, 2, 3, 100])
+        self.assertEqual(rows[1].delta, 6 * MB)
+        self.assertAlmostEqual(rows[1].slope_per_second, 1 * MB)
+        self.assertEqual(rows[2].delta, -12 * MB)
+        self.assertAlmostEqual(rows[2].slope_per_second, -2 * MB)
+        self.assertEqual((rows[1].samples, rows[1].span_seconds), (7, 6.0))
+        self.assertTrue(rows[3].new_process)
+        self.assertEqual(rows[3].delta, 0.0)  # measured values only, unlike attribution
+        self.assertFalse(rows[1].new_process)
+
+    def test_exited_processes_keep_their_growth_and_unmeasured_points_are_skipped(self) -> None:
+        history = ProcessHistory(90.0)
+        history.observe(0.0, [_parent(), _worker(1, 10)])
+        history.observe(1.0, [_parent(), _worker(1, 14)])
+        history.observe(2.0, [_parent(), replace(make_denied(5, ppid=100), create_time=5.0)])
+        rows = {row.pid: row for row in history.growth("private_bytes", since=0.0)}
+        self.assertTrue(rows[1].exited)
+        self.assertEqual(rows[1].delta, 4 * MB)
+        self.assertNotIn(5, rows)  # never measured
+        self.assertEqual(history.growth("handles", since=10.0), ())
+
 if __name__ == "__main__":
     unittest.main()
