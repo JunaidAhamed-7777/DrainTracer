@@ -30,12 +30,23 @@ from .events import (
 )
 from .config import MonitorSettings
 from .handle_types import describe_type_growth
-from .keys import ESCAPE, KeyReader, normalize_key
+from .keys import (
+    DOWN,
+    END,
+    ESCAPE,
+    HOME,
+    PAGE_DOWN,
+    PAGE_UP,
+    UP,
+    KeyReader,
+    normalize_key,
+)
 from .report import DEFAULT_REPORT_DIR
 from .session import MonitorSession
 from .theme import PALETTE
 from .units import format_duration
-from .widgets import Sized, Sparkline
+from .view_monitor import MonitorViewMixin
+from .widgets import LegacySafe, Lines, Sized, Sparkline
 
 
 logger = logging.getLogger(__name__)
@@ -43,9 +54,23 @@ logger = logging.getLogger(__name__)
 # Process table orders cycled with S.
 SORT_MODES = ("tree", "memory", "handles", "cpu")
 
+# Numbered views: the key selects the view, the label names its tab.
+VIEWS = {
+    "1": ("overview", "OVERVIEW", "OVR"),
+    "5": ("monitor", "MONITOR", "MON"),
+}
+VIEW_NAMES = tuple(name for name, _label, _short in VIEWS.values())
+# Lines the help panel scrolls per key; Home jumps back to the top.
+HELP_SCROLL = {UP: -1, DOWN: 1, PAGE_UP: -10, PAGE_DOWN: 10, HOME: -10**6, END: 10**6}
 
-class DashboardApp(MonitorSession):
-    """Render a monitor session live in the terminal and handle its controls."""
+
+class DashboardApp(MonitorViewMixin, MonitorSession):
+    """Render a monitor session live in the terminal and handle its controls.
+
+    The overview shows everything at a glance; numbered views focus on one
+    question each. Views only render what the session and detector already
+    produced, and switching views never changes monitoring.
+    """
 
     VERSION = "v5.1.1"
     DELTA_WINDOW_SECONDS = 10.0
@@ -81,10 +106,12 @@ class DashboardApp(MonitorSession):
         self._quit_requested = False
         self._loop_errors: set[str] = set()
         self._show_help = False
+        self._help_offset = 0
         self._sort_mode = SORT_MODES[0]
         self._kill_armed_until = 0.0
         self._cpu_cores = psutil.cpu_count(logical=True) or 1
         self._keys = KeyReader()
+        self._view = "overview"
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -213,9 +240,25 @@ class DashboardApp(MonitorSession):
         key = normalize_key(key)
         normalized = key.lower()
 
-        if key in {"?", ESCAPE} or normalized == "h":
-            # Esc only closes; ? and H toggle.
-            self._show_help = False if key == ESCAPE else not self._show_help
+        if self._show_help and key == ESCAPE:
+            self._show_help = False
+            return
+        if self._show_help and key in HELP_SCROLL:
+            self._help_offset = max(0, self._help_offset + HELP_SCROLL[key])
+            return
+        if not self._show_help:
+            # The active view sees keys first: navigation, and text while searching.
+            handler = getattr(self, f"_{self._view}_key", None)
+            if handler is not None and handler(key):
+                return
+        if key == ESCAPE:
+            self._set_view("overview")
+        elif key == "?" or normalized == "h":
+            self._show_help = not self._show_help
+            self._help_offset = 0
+        elif key in VIEWS:
+            self._show_help = False
+            self._set_view(VIEWS[key][0])
         elif normalized == "s":
             position = SORT_MODES.index(self._sort_mode)
             self._sort_mode = SORT_MODES[(position + 1) % len(SORT_MODES)]
@@ -290,6 +333,16 @@ class DashboardApp(MonitorSession):
             self._quit_requested = True
             self._append_event("Quit requested", "info")
 
+    def _set_view(self, view: str) -> None:
+        """Switch the focused view; monitoring and the target are unaffected."""
+        if view in VIEW_NAMES:
+            self._view = view
+
+    @property
+    def view(self) -> str:
+        """The focused view's name, such as ``overview`` or ``monitor``."""
+        return self._view
+
     # ------------------------------------------------------------------
     # Layout
     # ------------------------------------------------------------------
@@ -297,8 +350,20 @@ class DashboardApp(MonitorSession):
     WIDE_LAYOUT_COLUMNS = 110
     COMPACT_LAYOUT_ROWS = 30
     SPLIT_BOTTOM_COLUMNS = 80
+    # Focused views add the event log below them from this height.
+    VIEW_EVENT_ROWS = 36
+    VIEW_HELP = {
+        "overview": "resource cards, process tree, leak health and events",
+        "monitor": "sampling cadence and cost, coverage, freshness, monitor footprint",
+    }
 
-    def _render(self) -> Layout:
+    def _render(self) -> RenderableType:
+        """The current frame, made printable on legacy code pages."""
+        layout = self._render_layout()
+        encoding = self.console.encoding
+        return LegacySafe(layout, encoding) if LegacySafe.needed(encoding) else layout
+
+    def _render_layout(self) -> Layout:
         if self._show_help:
             layout = Layout(name="root")
             layout.split_column(
@@ -307,6 +372,8 @@ class DashboardApp(MonitorSession):
                 Layout(self._render_footer(), name="footer", size=1),
             )
             return layout
+        if self._view != "overview":
+            return self._render_focused_view()
         width, height = self.console.size
         wide = width >= self.WIDE_LAYOUT_COLUMNS
         compact = height < self.COMPACT_LAYOUT_ROWS
@@ -362,6 +429,56 @@ class DashboardApp(MonitorSession):
         layout["body"].split_column(metrics, health, bottom)
         return layout
 
+    def _render_focused_view(self) -> Layout:
+        """One view with a compact status line, plus context on larger terminals.
+
+        At 80x24 every row but the status line and the footer goes to the
+        view; tall terminals get the full header, the view tabs, and the
+        event log as supporting context.
+        """
+        width, height = self.console.size
+        roomy = height >= self.COMPACT_LAYOUT_ROWS
+        body = getattr(self, f"_render_{self._view}_view")()
+        parts = [Layout(self._render_header(), name="header", size=3)] if roomy else []
+        parts.append(Layout(self._render_status_line(), name="status", size=1))
+        parts.append(Layout(body, name="body", ratio=1))
+        if roomy and height >= self.VIEW_EVENT_ROWS:
+            parts.append(Layout(self._render_event_panel(), name="events", size=7))
+        parts.append(Layout(self._render_footer(), name="footer", size=1))
+        layout = Layout(name="root")
+        layout.split_column(*parts)
+        return layout
+
+    def _render_status_line(self) -> Table:
+        """View tabs on the left; run state, signal, and sample age on the right."""
+        palette, glyphs = self.palette, self.glyphs
+        width = self.console.size.width
+        tabs = Text(no_wrap=True, overflow="ellipsis")
+        for key, (name, label, short) in VIEWS.items():
+            if name == self._view:
+                tabs.append(f" {key} {label} ", style=f"bold {palette.ink} on {palette.accent}")
+            else:
+                tabs.append(f" {key} {short if width < 110 else label.title()} ",
+                            style=palette.muted)
+        status, status_color = self._status(self.snapshot)
+        right = Text(no_wrap=True)
+        right.append(f" {glyphs.dot} {status} ", style=f"bold {palette.ink} on {status_color}")
+        snapshot = self.snapshot
+        if snapshot is not None and snapshot.severity != LeakSeverity.NONE:
+            right.append(
+                f" {glyphs.warn} {snapshot.severity.value.upper()}",
+                style=f"bold {self._severity_color(snapshot.severity)}",
+            )
+        if snapshot is not None:
+            age = max(0.0, time.time() - snapshot.timestamp)
+            right.append(f" {format_duration(age) if age >= 60 else f'{age:.1f}s'} ",
+                         style=palette.muted)
+        bar = Table.grid(expand=True)
+        bar.add_column(ratio=1, no_wrap=True, overflow="ellipsis")
+        bar.add_column(justify="right", no_wrap=True)
+        bar.add_row(tabs, right)
+        return bar
+
     def _render_help(self) -> Panel:
         """Keys, how to read a signal, and the settings this session runs with."""
         palette, glyphs = self.palette, self.glyphs
@@ -398,6 +515,19 @@ class DashboardApp(MonitorSession):
             ("Q", quit_text),
         ):
             keys.add_row(key, meaning)
+
+        views = grid()
+        for key, (name, label, _short) in VIEWS.items():
+            views.add_row(key, f"{label.title()}: {self.VIEW_HELP[name]}")
+        views.add_row(
+            "Esc",
+            "Back to the overview (closes this help first). Views change only what is "
+            "shown; sampling and the target are unaffected",
+        )
+        view_keys = getattr(self, f"_{self._view}_help_keys", lambda: [])()
+        in_view = grid()
+        for key, meaning in view_keys:
+            in_view.add_row(key, meaning)
 
         signals = Text(
             "A leak signal means private memory, handles, or threads kept growing "
@@ -447,21 +577,45 @@ class DashboardApp(MonitorSession):
         session.add_row("Settings", Text(self.settings.describe()))
         session.add_row("Reports", Text(os.path.abspath(self.report_dir)))
 
+        parts: list[RenderableType] = [section("KEYS"), keys, Text("")]
+        if view_keys:
+            label = next(label for name, label, _s in VIEWS.values() if name == self._view)
+            parts += [section(f"IN {label}"), in_view, Text("")]
+        parts += [
+            section("VIEWS"), views, Text(""),
+            section("THIS SESSION"), session, Text(""),
+            section("READING A SIGNAL"), signals, Text(""),
+            section("MEMORY COUNTERS"), counters,
+        ]
+        content = Group(*parts)
         return Panel(
-            Group(
-                section("KEYS"), keys, Text(""),
-                section("READING A SIGNAL"), signals, Text(""),
-                section("MEMORY COUNTERS"), counters, Text(""),
-                section("THIS SESSION"), session,
-            ),
+            Sized(lambda width, height: self._scrolled(content, width, height)),
             title=Text(" HELP ", style=f"bold {palette.accent}"),
             title_align="left",
-            subtitle=Text(" ? or Esc to close ", style=palette.muted),
+            subtitle=Text(f" {glyphs.up}{glyphs.down} scroll {glyphs.sep} ? or Esc to close ",
+                          style=palette.muted),
             subtitle_align="right",
             border_style=palette.border,
             box=box.ROUNDED,
             padding=(0, 1),
         )
+
+    def _scrolled(self, content: RenderableType, width: int, height: int | None) -> RenderableType:
+        """The help content from ``_help_offset``, clamped, with a note when more follows."""
+        options = self.console.options.update(width=width, height=None)
+        lines = self.console.render_lines(content, options, pad=False)
+        if height is None or len(lines) <= height:
+            self._help_offset = 0
+            return Lines(lines)
+        self._help_offset = min(self._help_offset, len(lines) - height + 1)
+        shown = lines[self._help_offset : self._help_offset + height - 1]
+        below = len(lines) - self._help_offset - len(shown)
+        note = Text(
+            f"{self.glyphs.down} {below} more line{'s' if below != 1 else ''}"
+            if below > 0 else "end of help",
+            style=self.palette.muted,
+        )
+        return Group(Lines(shown), note)
 
     def _render_header(self) -> RenderableType:
         palette, glyphs = self.palette, self.glyphs
@@ -525,6 +679,19 @@ class DashboardApp(MonitorSession):
         palette = self.palette
         roomy = self.console.size.width >= 120
         keys = Text(no_wrap=True, overflow="ellipsis")
+        quit_label = ("detach & quit" if roomy else "detach") if self.attached else "quit"
+        if self._view != "overview" and not self._show_help:
+            # The view's own keys first; the target controls stay in help.
+            controls = list(getattr(self, f"_{self._view}_controls")())
+            controls += [
+                ("ESC", "overview" if roomy else "back", palette.muted),
+                ("?", "help", palette.muted),
+                ("Q", quit_label, palette.accent_alt),
+            ]
+            for key, label, color in controls:
+                keys.append(f" {key} ", style=f"bold {palette.ink} on {color}")
+                keys.append(f" {label}  ", style=palette.muted)
+            return keys
         controls = []
         if not self.manager.contains_monitor:
             controls += [
@@ -535,8 +702,8 @@ class DashboardApp(MonitorSession):
         if self._last_html_report is not None:
             controls.append(("O", "open report" if roomy else "open", palette.teal))
         controls.append(("S", "sort", palette.cyan))
+        controls.append((f"{min(VIEWS)}-{max(VIEWS)}", "views", palette.cyan))
         controls.append(("?", "help", palette.muted))
-        quit_label = ("detach & quit" if roomy else "detach") if self.attached else "quit"
         controls.append(("Q", quit_label, palette.accent_alt))
         for key, label, color in controls:
             keys.append(f" {key} ", style=f"bold {palette.ink} on {color}")

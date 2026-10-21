@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 
+from rich.cells import cell_len
 from rich.console import Console, ConsoleOptions, RenderableType, RenderResult
+from rich.segment import Segment
 from rich.text import Text
 
 from .theme import Glyphs
@@ -79,6 +81,71 @@ class Sparkline:
         yield Text("\n".join(rows), style=self.color, no_wrap=True, overflow="crop")
 
 
+class LegacySafe:
+    """Replace characters a legacy code page cannot show, keeping cell widths.
+
+    The glyph sets already fall back to ASCII, but Rich adds its own "…"
+    when it truncates text, and process names or paths may hold any
+    character. On a non-UTF console each unencodable character becomes
+    ``?`` repeated over its cell width (``.`` for the ellipsis), so the
+    layout keeps its shape and nothing fails to print.
+    """
+
+    def __init__(self, renderable: RenderableType, encoding: str) -> None:
+        self.renderable = renderable
+        self.encoding = encoding
+
+    @staticmethod
+    def needed(encoding: str | None) -> bool:
+        return not (encoding or "utf-8").lower().startswith("utf")
+
+    def __rich_console__(
+        self, console: Console, options: ConsoleOptions
+    ) -> RenderResult:
+        encoding = self.encoding
+        cache: dict[str, str] = {}
+        for segment in console.render(self.renderable, options):
+            text = segment.text
+            if not text or segment.control or text.isascii():
+                yield segment
+                continue
+            try:
+                text.encode(encoding)
+            except UnicodeEncodeError:
+                text = "".join(_legacy_char(char, encoding, cache) for char in text)
+            except LookupError:
+                text = "".join(_legacy_char(char, "ascii", cache) for char in text)
+            yield Segment(text, segment.style, segment.control)
+
+
+def _legacy_char(char: str, encoding: str, cache: dict[str, str]) -> str:
+    known = cache.get(char)
+    if known is not None:
+        return known
+    try:
+        char.encode(encoding)
+        replacement = char
+    except UnicodeEncodeError:
+        replacement = "." if char == "…" else "?" * max(1, cell_len(char))
+    cache[char] = replacement
+    return replacement
+
+
+class Lines:
+    """Pre-rendered lines of segments, for views that scroll their content."""
+
+    def __init__(self, lines: Sequence[Sequence[Segment]]) -> None:
+        self.lines = list(lines)
+
+    def __rich_console__(
+        self, console: Console, options: ConsoleOptions
+    ) -> RenderResult:
+        for index, line in enumerate(self.lines):
+            yield from line
+            if index < len(self.lines) - 1:
+                yield Segment.line()
+
+
 class Sized:
     """Defer building a renderable until its final width and height are known."""
 
@@ -91,4 +158,4 @@ class Sized:
         yield self.factory(options.max_width, options.height)
 
 
-__all__ = ["Sized", "Sparkline"]
+__all__ = ["LegacySafe", "Lines", "Sized", "Sparkline"]

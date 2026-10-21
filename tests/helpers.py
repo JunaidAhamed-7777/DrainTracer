@@ -130,6 +130,25 @@ def make_snapshot(
     )
 
 
+def sample_trees(session, trees, start: int = 0) -> None:
+    """Run a session's own detector over process lists, 0.5 s apart, and accept each."""
+    from unittest import mock
+
+    session.detector.classifier = mock.Mock(available=False)
+    for index, processes in enumerate(trees, start):
+        with mock.patch.object(session.detector, "_sample_processes", return_value=list(processes)), \
+                mock.patch("src.leak_detector.time.time", return_value=1000.0 + index * 0.5), \
+                mock.patch("src.leak_detector.time.monotonic", return_value=50.0 + index * 0.5):
+            session._accept_snapshot(session.detector._collect_snapshot())
+
+
+def render_text(app, renderable=None) -> str:
+    """Print ``renderable`` (default: the whole dashboard) and return the text."""
+    with app.console.capture() as capture:
+        app.console.print(app._render() if renderable is None else renderable)
+    return capture.get()
+
+
 class EncodedBuffer(io.StringIO):
     """StringIO that reports a chosen console encoding."""
 

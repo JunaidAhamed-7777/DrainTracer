@@ -7,6 +7,7 @@ from dataclasses import replace
 from unittest import mock
 
 from helpers import make_console, make_denied, make_process, make_snapshot
+from helpers import sample_trees as sampled
 
 from src.events import LeakResource, LeakSeverity, TimelineKind
 from src.session import MonitorSession
@@ -20,16 +21,6 @@ class _Session(MonitorSession):
 
 def _session() -> _Session:
     return _Session("C:/targets/worker.exe", console=make_console())
-
-
-def sampled(session: MonitorSession, trees: list, start: int = 0) -> None:
-    """Run the session's own detector over process lists, 0.5 s apart."""
-    session.detector.classifier = mock.Mock(available=False)
-    for index, processes in enumerate(trees, start):
-        with mock.patch.object(session.detector, "_sample_processes", return_value=list(processes)), \
-                mock.patch("src.leak_detector.time.time", return_value=1000.0 + index * 0.5), \
-                mock.patch("src.leak_detector.time.monotonic", return_value=50.0 + index * 0.5):
-            session._accept_snapshot(session.detector._collect_snapshot())
 
 
 def _worker(pid: int, private_mb: float = 10, ppid: int = 100):

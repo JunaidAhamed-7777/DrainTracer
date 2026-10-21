@@ -38,6 +38,7 @@
     "src/stats.py",
     "src/theme.py",
     "src/units.py",
+    "src/view_monitor.py",
     "src/widgets.py"
   ]
 }
