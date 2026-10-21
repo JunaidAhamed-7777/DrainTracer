@@ -242,6 +242,79 @@ distinction between launched and attached targets throughout this plan.
 as a regression gate. Installation and documentation work can proceed in
 parallel; claims about reliable checks must wait for measured results.
 
+### Investigation workflow follow-ups (P1, from the product assessment)
+
+These are the items from [Immediate additions.md](Immediate%20additions.md)
+that remain after milestone 12. The validation set and observer-cost
+budgets are tracked under T3 and T5, and the pilot study under O2. Keep
+sampling and evaluation on the detector thread and the TUI as a renderer;
+do not change heuristic thresholds alongside presentation work.
+
+- [ ] **I1. Saved-run comparison view (assessment View 4).** Load a
+  baseline report in the dashboard and show comparability first, then
+  changes in growth, peaks, coverage, and signal episodes, reusing
+  `report_diff` and its strict semantics. Show per-operation results only
+  when both runs recorded operations.
+  **Done when:** a non-comparable baseline shows its caveats before any
+  improvement label, and the view's verdict matches `draintracer diff`.
+
+- [ ] **I2. Repeated runs and variability.** Accept several equivalent
+  reports per side and show the spread of drift and peaks. One rule to
+  evaluate: count a change as improved only when the two sides' ranges do
+  not overlap.
+  **Done when:** noisy repeated runs cannot produce an unqualified
+  improvement from a single favorable pair.
+
+- [ ] **I3. Host context for the monitor view (assessment View 5).** Sample
+  host CPU and available memory/commit at a bounded cadence and show it as
+  context, never as proof that the target caused pressure.
+  **Done when:** the monitor view and reports show host pressure with its
+  sampling age, and collection stays within the T5 budgets.
+
+- [ ] **I4. Timeline and marker follow-ups.** A per-process scope and a
+  selectable time range beyond the last 240 samples, a label prompt for
+  `M` markers (`add_marker(label)` already exists), and markers drawn in
+  the HTML report.
+  **Done when:** a user can mark "opened document", find it in the timeline
+  for one process, and see it in the exported HTML.
+
+- [ ] **I5. Investigation summary and next-step guidance (assessment P2).**
+  A compact, redacted summary of what grew, where, and over which interval,
+  suitable for an issue or bug report, with handoff guidance to Windows
+  Performance Recorder/Analyzer or runtime-specific profilers. Never promise
+  a source-code root cause from resource slopes.
+  **Done when:** a summary pasted into an issue names the resource, metric,
+  contributing process, interval, and coverage, without local secrets.
+
+- [ ] **I6. Specialized Windows views, when real users need them.** GDI and
+  USER object counts (via `GetGuiResources`, with failure kept distinct from
+  a genuine zero), thread activity and churn (needs per-thread sampling;
+  low CPU alone does not establish a deadlock), deeper per-process I/O
+  detail (never labeled as network throughput or latency), and bounded,
+  opt-in handle detail beyond the existing type breakdown. GPU, network
+  latency, heap allocation trees, and automatic optimization advice wait
+  for demonstrated use cases.
+  **Done when:** each added view answers a need recorded from a pilot user
+  (O2) and has a measured collection cost.
+
+- [ ] **I7. Remaining consistency gaps.** Smaller issues found while
+  delivering milestone 12:
+  - Headless `signals` still prints "clear" for resources on runs that never
+    judged a window, although the measured row says inconclusive.
+  - The HTML report does not yet render per-resource evidence states or
+    coverage, and there is no headless STAT line for process counts.
+  - Report analysis and diffs do not use process attribution yet.
+  - The evidence view's "within processes already running" figure leaves
+    out negative contributions from exits, so it can exceed the window delta.
+  - Budgets accept fractional handle and thread counts.
+  - With help open, global keys (including `K`) still act.
+  - The dashboard does not show configured budgets, and diffs do not check
+    budgets recorded in a report.
+  - Steady churn of one process per sample logs one lifecycle line per
+    sample, bounded only by the 200-event log.
+  **Done when:** each gap is fixed with a regression test or recorded as an
+  intentional limitation in the relevant guide.
+
 ### Phase 2 — Make installation and everyday use accessible (P1)
 
 - [x] **D1. Ship an installable package and console command.** Delivered
@@ -479,6 +552,15 @@ security review.
   **Done when:** teams repeatedly complete local, CI, and shared-comparison
   workflows, can explain the evidence, and agree which failures must be
   fixed before wider availability.
+  **Start earlier with the local tool:** the product assessment proposes a
+  pilot of 5–10 Windows developers with real long-running workers, desktop
+  apps, or multiprocess tools, investigating their own problems with
+  minimal coaching. Record whether they identify the contributing process,
+  understand the evidence, export a useful report, and verify a change;
+  what they would have used otherwise; time to useful evidence; misleading
+  signals and missed known problems; and whether they return unprompted.
+  This needs no hosted service and should guide I1–I6 before more panels
+  are added. The pilot size is a proposal, not evidence of demand.
 
 - [ ] **O3. Improve attribution through separately scoped diagnostics.**
   Extend per-process history with PID/creation-time identity, lifetime, and
