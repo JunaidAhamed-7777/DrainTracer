@@ -18,6 +18,10 @@ current release and [AGENTS.md](AGENTS.md) for the release policy.
 - Added optional `--fail-on-inconclusive` (exit 3) and
   `--fail-on-target-error` (exit 4) headless policies, and separate target,
   measurement, and monitor-error outcomes in summaries and report schema 3.
+- Showed the memory metric behind alerts: the memory card and compact strip
+  chart private bytes with RSS (working set) as context, narrow process tables
+  keep `PRIVATE`, alerts and exported JSON name `private_bytes`, and help
+  explains the two counters.
 
 ## v5.1.1 — 2026-10-22
 

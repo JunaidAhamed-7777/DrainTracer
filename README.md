@@ -184,7 +184,7 @@ Use the target's own file logging when needed. See the
 ## Dashboard keys
 
 - `Space` — pause or resume sampling and the target tree.
-- `S` — cycle process order: tree, memory, handles, CPU.
+- `S` — cycle process order: tree, memory (private bytes), handles, CPU.
 - `E` — export JSON and HTML reports.
 - `O` — open the latest HTML export.
 - `?` / `H` — show help and active settings; `Esc` closes it.
@@ -244,7 +244,9 @@ sample interval is **500 ms**, with **10 s, 30 s, and 60 s** detection windows.
 
 The detector combines trend slope, monotonic growth, and recovery checks across
 eligible windows. A single sample cannot establish a leak signal. Private bytes
-drive memory alerts; RSS, CPU, and I/O provide context. Read the
+drive memory alerts, so the memory card, compact strip, and narrow process
+tables show `PRIVATE`; RSS (working set), CPU, and I/O provide context, and
+neither memory counter alone proves an allocation leak. Read the
 [configuration reference](docs/configuration.md) for discovery, precedence, and
 units, and [working-principle.md](working-principle.md) for the detection math.
 
