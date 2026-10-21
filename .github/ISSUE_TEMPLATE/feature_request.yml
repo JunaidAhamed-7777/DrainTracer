@@ -1,0 +1,23 @@
+name: Feature request
+description: Propose a change with a concrete monitoring use case.
+title: "[Feature] "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the workload and the limitation you encounter today.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Proposed behavior
+      description: Show an example command, workflow, or output if useful. Explain what would change for the user.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and tradeoffs
+      description: Optional. Include current workarounds and effects on detection, Windows compatibility, cleanup, or resource usage.

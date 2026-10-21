@@ -1,0 +1,38 @@
+name: Bug report
+description: Report a reproducible problem with monitoring, controls, or reports.
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search existing issues first. For vulnerabilities, follow [SECURITY.md](https://github.com/JunaidAhamed-7777/DrainTracer/blob/main/SECURITY.md) instead of sharing exploit details here. Review all evidence for secrets and identifying information.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the actual result and what you expected, including a headless exit code if relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include the command, launch or attach mode, settings/profile, and a minimal target or relevant torture fixture.
+      placeholder: |
+        1. Run ...
+        2. Press ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: DrainTracer version or commit, Windows version, Python version, terminal, and whether the session is elevated.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs, screenshots, or report excerpts
+      description: Optional. Redact sensitive details; include only what helps reproduce the problem.
