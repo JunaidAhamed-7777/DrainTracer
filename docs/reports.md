@@ -126,6 +126,18 @@ without `session_facts` fall back to retained snapshots, and comparisons
 warn when such a report was thinned. The headless failure decision uses the
 strongest signal observed during the session.
 
+The `experiment` section records the optional labels (`workload_id`,
+`build`, `operations`, `note`), the mode, `arguments` (`count` and a
+16-character SHA-256 `fingerprint` only), duration, sampling settings,
+budgets, and the environment: OS name, release and version, architecture,
+CPU count, total memory, Python version, and DrainTracer version. Host and
+user names and environment variables are not recorded, and secret-looking
+label values (`password=`, `token:`, `api_key=`, bearer tokens, URL
+credentials) become `<redacted>`. The fingerprint lets comparisons notice
+different arguments; a short, guessable argument can still be confirmed by
+hashing guesses, so it is not encryption. Headless reports add the checked
+`budgets` under `headless`.
+
 The target's console output is not included. Target paths, process names,
 PIDs, timestamps, settings paths, and event messages may reveal information
 about the local environment. Inspect a report before posting it publicly.
@@ -154,12 +166,32 @@ and regressions across resources or measures.
 
 By default a valid comparison exits `0` regardless of verdict.
 `--fail-on-regression` returns `1` for `REGRESSED` or `MIXED`. Unreadable or
-invalid reports, or a comparison failure, return `2`.
+invalid reports, or a comparison failure, return `2`. With `--strict`, runs
+that are not equivalent return `3` (this wins over the other codes), and a
+budget flag (`--budget-private SIZE`, `--budget-handles N`,
+`--budget-threads N`) exceeded by the later run's whole-run peak returns `4`.
 
-Comparisons warn about different targets, detector settings, substantially
-different durations, and runs that never filled a detection window. Those
-warnings matter: a shorter or less demanding test can appear improved
-without demonstrating a fix. Keep the workload, machine conditions,
+Each reason the runs may not be equivalent is a caveat. Blocking caveats are
+different targets, workload IDs, launch arguments, detector settings, or
+operation counts (more than 10% apart, or recorded by only one run), and
+runs more than 2x apart in length; these make a strict comparison
+`NOT COMPARABLE`. A run that never filled a detection window, or partial
+coverage, makes it `INSUFFICIENT COVERAGE`. Different machines and thinned
+reports without exact facts only qualify the result. Without `--strict` any
+caveat qualifies the verdict: the badge reads `IMPROVED (QUALIFIED)`, the
+headline ends with the caveat count, and the output says what `--strict`
+would report. A shorter or less demanding test can appear improved without
+demonstrating a fix.
+
+The comparison also shows each resource's whole-run peak (warm-up included,
+exact when the report has session facts), so stable but excessive usage is
+visible without a leak signal, and growth per operation when both runs
+recorded `--operations`. The JSON adds `verdict_label`, `measured_verdict`
+(the direction measured even when strict mode withholds it), `qualified`,
+`strict`, `comparability`, `caveats` (`kind`, `message`, `blocks`),
+`budgets`, `over_budget`, per-resource `metric`, `run_peak_before/after` and
+`growth_per_operation_before/after`, and each side's `experiment` labels.
+`verdict` stays the measured verdict unless strict mode withholds it. Keep the workload, machine conditions,
 settings, warm-up, and duration as consistent as practical. Compare reports
 from before v1.3 or v1.4 with care: they may lack settings or detection
 coverage fields.

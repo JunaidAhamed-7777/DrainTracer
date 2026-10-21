@@ -35,6 +35,16 @@ current release and [AGENTS.md](AGENTS.md) for the release policy.
   handle-classification age and cost, failed and dropped samples, and
   DrainTracer's own CPU and memory. Leak health shows sample freshness,
   summaries report the monitor cost, and HTML reports add a diagnostics panel.
+- Made "my fix helped" defensible: reports record an `experiment` section
+  (`--workload-id`, `--build`, `--operations`, `--note`, sampling settings,
+  and machine details) with target arguments reduced to a count and
+  fingerprint and secret-looking label values redacted. Report comparisons
+  classify caveats, qualify verdicts that rest on them
+  (`IMPROVED (QUALIFIED)`), and `diff --strict` reports `NOT COMPARABLE` or
+  `INSUFFICIENT COVERAGE` with exit `3`. Comparisons show whole-run peaks and
+  growth per operation, and optional budgets (`--budget-private`,
+  `--budget-handles`, `--budget-threads`) fail diffs with exit `4` and
+  headless runs with exit `5`, even without a leak signal.
 
 ## v5.1.1 — 2026-10-22
 

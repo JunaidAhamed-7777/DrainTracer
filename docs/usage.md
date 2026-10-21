@@ -218,11 +218,15 @@ The exit code describes DrainTracer's result, not the target's exit code:
   read).
 - `4`: only with `--fail-on-target-error`: a launched target exited by
   itself with a non-zero code. A target DrainTracer stopped does not count.
+- `5`: only with a budget (`--budget-private SIZE`, `--budget-handles N`,
+  `--budget-threads N`, or the matching settings): a whole-run peak,
+  warm-up included, exceeded it. The event log notes the first breach of
+  each budget, and the summary has a `budgets` row.
 - `130`: Ctrl+C when no signal had reached the failure threshold.
 
 A failing signal takes precedence over an interruption or runtime/report
 error; interruption takes precedence over runtime/report errors, and those
-over the optional `4` and then `3`. Both policies are off by default and
+over `5`, then the optional `4`, then `3`. Both policies are off by default and
 can also be set with `fail_on_target_error` and `fail_on_inconclusive` in a
 settings file. The summary prints the target outcome, the measurement
 outcome (`conclusive`, `partial` when some processes were unreadable, or

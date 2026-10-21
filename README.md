@@ -228,6 +228,9 @@ result, rather than forwarding the target's exit code:
   failing signal or interruption applies.
 - `3` / `4` — only with `--fail-on-inconclusive` (no window judged) or
   `--fail-on-target-error` (the launched target exited non-zero).
+- `5` — only with a budget such as `--budget-private 500MB`,
+  `--budget-handles 2000`, or `--budget-threads 64`: a peak exceeded it,
+  even with no leak signal, because stable usage can still be excessive.
 - `130` — interrupted with Ctrl+C before a failing signal.
 
 The summary and report keep the target outcome, the measurement outcome
@@ -277,7 +280,21 @@ a process list, and a ranking of growing processes that keeps ones that exited. 
 ```powershell
 draintracer diff .\before.json .\after.json
 draintracer diff .\before.json .\after.json --fail-on-regression
+draintracer diff .\before.json .\after.json --strict --budget-private 500MB
 ```
+
+Label each run so comparisons can tell equivalent experiments apart:
+`--workload-id`, `--build`, `--operations N` (shows growth per operation),
+and `--note` are recorded in the report's `experiment` section with the
+sampling settings and machine details. Target arguments are only counted and
+fingerprinted, environment variables are never recorded, and
+`password=...`-style values in labels are redacted. Any comparability caveat
+qualifies the verdict, for example `IMPROVED (QUALIFIED)`, so a shorter or
+lighter run cannot earn a clean result. `--strict` instead reports
+`NOT COMPARABLE` (different targets, workloads, arguments, settings, operation
+counts, or lengths over 2x apart) or `INSUFFICIENT COVERAGE` (an unjudged run
+or partial coverage) and exits `3`; a diff budget exceeded by the later run
+exits `4`.
 
 Use comparable workloads, durations, warm-ups, and settings. Long sessions
 thin the stored chart history; reports then say "chart thinned 1:N", while

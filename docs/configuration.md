@@ -64,6 +64,17 @@ are rejected before a process is launched or attached.
 - `fail_on_target_error`: `true` makes a headless run exit `4` when a
   launched target exits by itself with a non-zero code; default `false`.
   CLI: `--fail-on-target-error`.
+- `workload_id`, `build`, `note`: non-empty strings recorded in the report's
+  `experiment` section for comparisons; secret-looking values are redacted.
+  CLI: `--workload-id ID`, `--build LABEL`, `--note TEXT`.
+- `operations`: positive operation count or input size of the workload;
+  comparisons show growth per operation when both runs set it. CLI:
+  `--operations N`.
+- `budget_private`, `budget_handles`, `budget_threads`: absolute peak
+  ceilings, a size such as `"500MB"` for private bytes and counts otherwise.
+  A headless run whose whole-run peak exceeds one exits `5`. CLI:
+  `--budget-private SIZE`, `--budget-handles N`, `--budget-threads N`, which
+  require `--headless`.
 - `report_dir`: output root; default `"leak_reports/reports"`. Each export
   goes into a program-filename/date folder beneath it. A file's
   relative value is relative to that file. A relative CLI override is
