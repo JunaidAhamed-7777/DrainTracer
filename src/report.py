@@ -16,6 +16,9 @@ from .events import MetricsSnapshot
 
 DEFAULT_REPORT_DIR = "leak_reports/reports"
 REPORT_SCHEMA = 2
+_WINDOWS_DEVICES = {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"} | {
+    f"{prefix}{number}" for prefix in ("COM", "LPT") for number in "123456789¹²³"
+}
 
 
 def new_report_id() -> str:
@@ -53,7 +56,10 @@ def report_directory(report: Mapping[str, Any], root: str | Path) -> Path:
     safe = "".join(
         character if character.isprintable() and character not in '<>:"/\\|?*' else "_"
         for character in filename
-    ).strip(" .")[:100].rstrip(" .")
+    ).strip(" .")
+    if safe.split(".", 1)[0].rstrip(" ").upper() in _WINDOWS_DEVICES:
+        safe = "_" + safe
+    safe = safe[:100].rstrip(" .")
     if not safe:
         raise ValueError("report target_path has no usable filename")
     return Path(root) / f"{safe}_{moment.date().isoformat()}"

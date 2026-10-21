@@ -5,6 +5,11 @@ feature milestones remain in [future-plan.md](future-plan.md), and the complete
 commit history records earlier changes. Versions follow the repository rule:
 each focused change advances the runtime version by exactly `0.1`.
 
+## v4.5 — 2026-10-21
+
+- Escaped Windows device basenames, including extension-bearing names,
+  when deriving dated report directories.
+
 ## v4.4 — 2026-10-21
 
 - Grouped JSON/HTML export pairs under `leak_reports/reports/` by real

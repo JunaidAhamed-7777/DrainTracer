@@ -72,6 +72,13 @@ class ReportDirectoryTests(unittest.TestCase):
             with self.subTest(override=override), self.assertRaises(ValueError):
                 report_directory(base | override, "reports")
 
+    def test_reserved_windows_device_names_with_extensions_are_safe(self) -> None:
+        for filename in ("CON.exe", "con.txt", "LPT1.log", "COM9.exe", "COM¹.exe", "CONIN$.exe"):
+            with self.subTest(filename=filename):
+                report = {"target_path": filename, "created_at": "2026-10-21T12:00:00+05:30"}
+                self.assertEqual(report_directory(report, "reports").name,
+                                 f"_{filename}_2026-10-21")
+
 
 class ReportStorageTests(unittest.TestCase):
     def test_write_creates_directory_and_named_file(self) -> None:
