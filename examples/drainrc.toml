@@ -37,6 +37,10 @@ critical_slope = "2/s"
 [profiles.ci]
 timeout = "2m"
 fail_on = "medium"
+# Optional: also fail runs that judged no window (exit 3) or whose launched
+# target exited with a non-zero code (exit 4).
+# fail_on_inconclusive = true
+# fail_on_target_error = true
 
 # Game engines and data pipelines legitimately grow memory fast while they
 # load assets and warm caches. Longer windows and much higher memory

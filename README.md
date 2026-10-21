@@ -191,6 +191,12 @@ Use the target's own file logging when needed. See the
 - `K` — terminate the monitored tree; confirm with a second press when attached.
 - `Q` — quit, cleaning up a launched tree or detaching from an attached tree.
 
+Leak health shows the current evidence apart from the session's worst signal:
+`COLLECTING EVIDENCE` until the shortest window fills, `NO SUSTAINED GROWTH`
+once one was judged clean, a severity when growth is detected, and
+`UNAVAILABLE` or `PARTIAL` when processes cannot be read. Unreadable counters
+count as unknown, never zero, and access changes restart detection windows.
+
 The layout adapts to terminal size and uses ASCII fallbacks for legacy Windows
 encodings. Startup artwork still comes from [TITLE.txt](TITLE.txt), with a
 readable fallback when it cannot be displayed.
@@ -212,8 +218,12 @@ result, rather than forwarding the target's exit code:
 - `1` — a signal reached the threshold at any point, even if it later cleared.
 - `2` — a usage, startup, monitoring, or report error, unless a higher-priority
   failing signal or interruption applies.
+- `3` / `4` — only with `--fail-on-inconclusive` (no window judged) or
+  `--fail-on-target-error` (the launched target exited non-zero).
 - `130` — interrupted with Ctrl+C before a failing signal.
 
+The summary and report keep the target outcome, the measurement outcome
+(conclusive, partial coverage, or inconclusive), and monitor errors apart.
 The default failure threshold is `high`. Allow enough time after warm-up for
 a detection window to fill, and inspect the verdict as well as the exit code.
 The [headless guide](docs/usage.md#run-without-a-dashboard) covers outcome

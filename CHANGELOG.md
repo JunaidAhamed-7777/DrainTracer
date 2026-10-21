@@ -8,6 +8,17 @@ follow Semantic Versioning once per published release, with major bumps
 reserved for the repository owner. See [RELEASES.md](RELEASES.md) for the
 current release and [AGENTS.md](AGENTS.md) for the release policy.
 
+## Unreleased
+
+- Kept unknown measurements apart from real zeros: unreadable counters are
+  marked unmeasured, snapshots record per-metric coverage, and access
+  changes restart detection windows instead of passing for growth.
+- Showed evidence states in leak health (collecting, no sustained growth,
+  unavailable, partial coverage) and kept the session worst separate.
+- Added optional `--fail-on-inconclusive` (exit 3) and
+  `--fail-on-target-error` (exit 4) headless policies, and separate target,
+  measurement, and monitor-error outcomes in summaries and report schema 3.
+
 ## v5.1.1 — 2026-10-22
 
 - Fixed the PyPI package description's image and documentation links.

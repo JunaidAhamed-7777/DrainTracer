@@ -70,11 +70,16 @@ interval and use their own timestamps.
 
 ## Use the JSON data
 
-The current layout is `report_schema: 2`. The report contains identity and
+The current layout is `report_schema: 3`. The report contains identity and
 session timestamps, application version, target and mode, resolved
-settings, warm-up status, events, and chronological telemetry snapshots.
-Each snapshot contains process records, tree totals, alerts, severity,
-availability details, and any handle classifications.
+settings, warm-up status, measurement coverage, separate target,
+measurement, and monitor-error outcomes, events, and chronological
+telemetry snapshots. Each snapshot contains process records, tree totals,
+alerts, severity, per-metric coverage, per-resource evidence states, and
+any handle classifications. Counters a process could not be read for are
+listed in its `unmeasured` field; their `0` values are unknown, and analysis
+and comparisons treat them as gaps. Comparisons warn when either run had
+partial coverage.
 
 For integrations, inspect `report_schema` and allow additional fields.
 Do not treat a missing field in an older report as an observed zero.

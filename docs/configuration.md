@@ -58,6 +58,12 @@ are rejected before a process is launched or attached.
 - `fail_on`: headless failure threshold, `"low"`, `"medium"`, `"high"`,
   or `"critical"`; default `"high"`. CLI: `--fail-on SEVERITY`, which
   requires `--headless`.
+- `fail_on_inconclusive`: `true` makes a headless run that judged no
+  detection window exit `3` instead of `0`; default `false`. CLI:
+  `--fail-on-inconclusive`.
+- `fail_on_target_error`: `true` makes a headless run exit `4` when a
+  launched target exits by itself with a non-zero code; default `false`.
+  CLI: `--fail-on-target-error`.
 - `report_dir`: output root; default `"leak_reports/reports"`. Each export
   goes into a program-filename/date folder beneath it. A file's
   relative value is relative to that file. A relative CLI override is

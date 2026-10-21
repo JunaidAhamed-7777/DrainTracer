@@ -152,6 +152,24 @@ exceed 100%. The memory card's headline is RSS; the memory leak heuristic
 uses private bytes. A warning identifies sustained resource growth that
 needs investigation; it does not identify an allocation or prove a leak.
 
+The leak health panel shows the current evidence, separate from the
+session's worst signal:
+
+- `COLLECTING EVIDENCE 6s/8.5s` (rows: `COLLECT`): the shortest window is
+  still filling; no conclusion is possible yet.
+- `NO SUSTAINED GROWTH (60s window)` (rows: `STEADY`): a window was judged
+  and showed no sustained growth.
+- A severity such as `HIGH LEAK SIGNAL`: growth was detected.
+- `UNAVAILABLE` (rows: `N/A`): no process in the tree could be read.
+- `PAUSED`: evidence is on hold while sampling is paused.
+- `PARTIAL: 1 process unreadable`: totals leave unreadable processes out,
+  so they are lower bounds. The process table marks those rows `denied`.
+
+Unreadable counters are unknown, not zero. When a process becomes
+unreadable or readable again, the affected resource restarts its windows,
+so gaining or losing access cannot pass for growth or a drop. The event
+log records each change, and reports keep per-sample coverage.
+
 The dashboard adapts to narrow and short terminals and uses ASCII fallbacks
 for legacy encodings. A real interactive terminal is needed for controls;
 use headless mode when redirecting output or running in CI.
@@ -195,10 +213,21 @@ The exit code describes DrainTracer's result, not the target's exit code:
   even if it subsequently cleared.
 - `2`: invalid usage, startup failure, or a monitoring/report failure when
   no higher-priority outcome applies.
+- `3`: only with `--fail-on-inconclusive`: no detection window was judged
+  (the run was too short, the warm-up never finished, or nothing could be
+  read).
+- `4`: only with `--fail-on-target-error`: a launched target exited by
+  itself with a non-zero code. A target DrainTracer stopped does not count.
 - `130`: Ctrl+C when no signal had reached the failure threshold.
 
 A failing signal takes precedence over an interruption or runtime/report
-error; interruption takes precedence over runtime/report errors. Check the
+error; interruption takes precedence over runtime/report errors, and those
+over the optional `4` and then `3`. Both policies are off by default and
+can also be set with `fail_on_target_error` and `fail_on_inconclusive` in a
+settings file. The summary prints the target outcome, the measurement
+outcome (`conclusive`, `partial` when some processes were unreadable, or
+`inconclusive` with its reason), and monitor errors on separate lines; the
+report's `outcome` object holds the same three parts. Check the
 printed errors and report as well as the exit code when diagnosing a run.
 An HTML companion failure is logged while the JSON report remains usable.
 

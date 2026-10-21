@@ -86,9 +86,13 @@ The dashboard displays RSS as its main memory usage value. The memory leak
 heuristic uses the aggregated private-byte series because private bytes more
 closely represent memory owned by the monitored process tree.
 
-Access-denied or unavailable processes contribute zero-valued metrics and are
-marked with `access_denied` or an unavailable status rather than being
-silently treated as a measured value.
+Access-denied or unavailable processes keep `0` in their metric fields for
+compatibility, but list those counters in `unmeasured`, so the value is
+unknown rather than zero. A counter that fails on its own (for example the
+handle count) is marked the same way. Totals add up only the measured
+processes, and each snapshot's `coverage` records, per metric, how many live
+processes were measured and which PIDs were not. Exited processes count as
+neither.
 
 ## 3. System handles
 
@@ -286,6 +290,27 @@ overall severity is the strongest severity among its active alerts.
 `NONE` means that no current window met all criteria. It does not prove that
 the target is leak-free.
 
+### Measurement gaps and evidence states
+
+Each resource series only holds valid observations. A sample where no live
+process could be measured for that resource is invalid and clears the
+series instead of adding a false zero. The series also starts a new segment
+whenever the set of live but unreadable processes changes (access lost or
+regained, or an unreadable process starting or exiting), so a window only
+spans samples whose totals cover the same processes; access changes cannot
+look like growth or a drop. Readable processes that start or exit stay in
+the same segment, since their effect on the totals is real. A window
+becomes eligible again once the new segment holds four samples covering
+85% of it.
+
+Every snapshot carries one `evidence` entry per resource, computed by the
+detector: `warming_up`, `collecting` (with the segment's valid sample count
+and elapsed time against the four samples and 85% of the shortest window
+needed), `no_growth` (with the longest window judged), `growth` (with the
+alert's severity and window), `unavailable` (nothing readable), or `stale`
+(paused). The dashboard and headless output render these states; they do
+not re-derive them.
+
 Pausing the monitor does not append another sample and does not clear the last
 alert. The paused snapshot repeats the last process totals so the dashboard
 does not fall to zero while sampling is stopped.
@@ -390,7 +415,11 @@ running or releases an attached one, and a report is exported.
 The exit code is `1` when the strongest signal seen during the run reached
 `--fail-on` (default `high`), otherwise `130` after Ctrl+C, `2` when the
 report could not be written or monitoring failed unexpectedly, and `0` for
-a clean run. Startup failures and usage errors also return `2`. Because the
+a clean run. Startup failures and usage errors also return `2`. Two
+optional policies, off by default, turn otherwise passing runs into
+failures: `--fail-on-target-error` returns `4` when a launched root exited
+by itself with a non-zero code, and `--fail-on-inconclusive` returns `3`
+when no detection window was judged. Because the
 verdict uses the strongest signal seen at any point, a signal that later
 clears still fails the run. An unexpected error still stops or releases the
 target and exports what was collected before the run exits.
@@ -419,7 +448,7 @@ asset fails HTML export without discarding the completed JSON report.
 ```json
 {
   "report_id": "3f2a9c1e-5b7d-4e0a-9c61-0d2f7e8b4a10",
-  "report_schema": 2,
+  "report_schema": 3,
   "created_at": "2026-10-13T07:25:21.161+05:30",
   "session_started_at": "2026-10-13T07:25:15.621+05:30",
   "session_ended_at": null,
@@ -440,7 +469,9 @@ asset fails HTML export without discarding the completed JSON report.
   dashboard event log, footer, and exit summary.
 - `report_schema` — report layout version. Schema `2` introduced the
   fields above; older reports have no `report_id` and carry a Unix
-  `exported_at` instead.
+  `exported_at` instead. Schema `3` added the optional `coverage` and
+  `outcome` blocks, snapshot `coverage` and `evidence`, and per-process
+  `unmeasured`; readers treat them as absent in older reports.
 - `created_at` — ISO 8601 local time, with UTC offset, when the report was
   written.
 - `session_started_at` — ISO 8601 time the monitor attached.
@@ -467,8 +498,18 @@ asset fails HTML export without discarding the completed JSON report.
   (per resource, `critical_delta` and `critical_slope`), and
   `timeout_seconds`. Reports from runs with different settings are not
   directly comparable.
-- `headless` — present for `--headless` runs: the `fail_on` severity and
-  whether it was `breached`.
+- `headless` — present for `--headless` runs: the `fail_on` severity,
+  whether it was `breached`, and the `fail_on_inconclusive` and
+  `fail_on_target_error` policies.
+- `coverage` — session coverage of the signal metrics: `samples` with live
+  processes, whether coverage was ever `partial`, per-metric
+  `partial_samples` and `unavailable_samples`, `unreadable_pids` (bounded),
+  and the `latest` snapshot coverage.
+- `outcome` — three separate results: `target` (`state`, `exit_code`,
+  `failed`, `description`), `measurement` (`result` of `conclusive`,
+  `partial`, or `inconclusive`, `detection_ran`, `partial_coverage`, the
+  inconclusive `reason`, and a `coverage` description), and
+  `monitor_errors` (distinct sampling, report, and run errors).
 - `warmup` — `null` without a warm-up; otherwise its length in `seconds`,
   whether it `completed`, `completed_at` (ISO 8601), and the `baseline`
   totals at that moment.
@@ -511,6 +552,12 @@ Each item in `snapshots` contains:
 - `handle_types` — tree-wide handle counts per category on samples where
   handles were classified; `null` on the others.
 - `warming_up` — `true` while a warm-up defers the leak heuristics.
+- `coverage` — per metric (`rss_bytes`, `private_bytes`, `handles`,
+  `threads`): `measured` and `total` live processes and `unmeasured_pids`;
+  `null` on failed samples and in reports before schema 3.
+- `evidence` — per resource: `state`, `severity`, `valid_samples`,
+  `elapsed_seconds`, and `evaluated_window_seconds` (see
+  [evidence states](#measurement-gaps-and-evidence-states)).
 
 ### Per-process fields
 
@@ -531,9 +578,11 @@ io_write_bytes_per_sec
 access_denied
 ppid
 handle_types
+unmeasured
 ```
 
-`ppid` is the parent PID recorded while walking the tree; it is `null` for
+`unmeasured` lists the metric names that could not be read for the process;
+their fields hold `0` but are unknown. `ppid` is the parent PID recorded while walking the tree; it is `null` for
 the root and for processes whose parent was never tracked. `handle_types`
 holds the process's handle counts per category on classified samples and is
 `null` otherwise.
