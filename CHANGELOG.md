@@ -5,6 +5,11 @@ feature milestones remain in [future-plan.md](future-plan.md), and the complete
 commit history records earlier changes. Versions follow the repository rule:
 each focused change advances the runtime version by exactly `0.1`.
 
+## v3.5 — 2026-10-21
+
+- Kept process rows visible in small terminals with compact table/help
+  output and single-line search labels.
+
 ## v3.4 — 2026-10-21
 
 - Reset supported psutil inventory caches before refreshing so a reused

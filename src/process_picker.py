@@ -29,6 +29,10 @@ def _label(value: str) -> str:
     return "".join(character if character.isprintable() else " " for character in value)
 
 
+def _compact(console: Console) -> bool:
+    return console.width < 50 or console.height < 22
+
+
 def _render_page(
     console: Console, processes: Sequence[RunningProcess], query: str, page: int
 ) -> int:
@@ -39,14 +43,15 @@ def _render_page(
     start = page * page_size
     console.print(Text("RUNNING PROGRAMS", style=f"bold {PALETTE.accent}"))
     if query:
-        console.print(Text(f"Search: {_label(query)}", style=PALETTE.muted))
+        console.print(Text(f"Search: {_label(query)}", style=PALETTE.muted,
+                           no_wrap=True, overflow="ellipsis"))
     if not processes:
         message = "No programs match. Change the search or use /clear or /refresh."
         if not query:
             message = "No running programs are available. Use /refresh to try again."
         console.print(Text(message, style=PALETTE.warn))
         return page
-    table = Table(box=box.SIMPLE, expand=True, padding=(0, 1))
+    table = Table(box=None if _compact(console) else box.SIMPLE, expand=True, padding=(0, 1))
     table.add_column("PID", justify="right", no_wrap=True, style=PALETTE.accent)
     table.add_column("Program", ratio=1, no_wrap=True, overflow="ellipsis")
     for process in processes[start : start + page_size]:
@@ -54,10 +59,10 @@ def _render_page(
         table.add_row(str(process.pid), Text(_label(process.name) + suffix))
     console.print(table)
     end = min(start + page_size, len(processes))
-    console.print(
-        Text(f"Showing {start + 1}-{end} of {len(processes)} | Page {page + 1}/{pages}",
-             style=PALETTE.muted)
-    )
+    summary = f"Showing {start + 1}-{end} of {len(processes)} | Page {page + 1}/{pages}"
+    if _compact(console):
+        summary = f"{len(processes)} matches | Page {page + 1}/{pages}"
+    console.print(Text(summary, style=PALETTE.muted))
     return page
 
 
@@ -82,11 +87,15 @@ def select_running_process(console: Console) -> int | None:
             console.print(Text("Process list unavailable. Use /refresh to retry.", style=PALETTE.warn))
         else:
             page = _render_page(console, matches, query, page)
-        console.print(Text("Type a name to search, or enter a listed PID to hook.", style=PALETTE.muted))
-        console.print(
-            Text("/search TEXT (name or PID) | /next | /prev | /refresh | /clear | Q to cancel",
-                 style=PALETTE.muted)
-        )
+        if _compact(console):
+            console.print(Text("Name or PID; /search TEXT\n/next /prev /refresh\n/clear | Q cancel",
+                               style=PALETTE.muted))
+        else:
+            console.print(Text("Type a name to search, or enter a listed PID to hook.", style=PALETTE.muted))
+            console.print(
+                Text("/search TEXT (name or PID) | /next | /prev | /refresh | /clear | Q to cancel",
+                     style=PALETTE.muted)
+            )
         try:
             value = console.input(Text("Program or search: ", style="bold")).strip()
         except EOFError:

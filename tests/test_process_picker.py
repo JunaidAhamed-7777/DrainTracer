@@ -123,6 +123,13 @@ class ProcessSelectionTests(unittest.TestCase):
         with self.assertRaises(KeyboardInterrupt):
             self.choose(KeyboardInterrupt())
 
+    def test_tiny_terminal_keeps_a_selectable_row_above_the_prompt(self) -> None:
+        self.console = make_console(width=24, height=10)
+        self.assertIsNone(self.choose("Editor", "q"))
+        last_screen = self.console.file.getvalue().split("RUNNING PROGRAMS")[-1]
+        self.assertTrue(any("42" in line for line in last_screen.splitlines()[-10:]))
+        self.assertIn("/next /prev /refresh", last_screen)
+
 
 if __name__ == "__main__":
     unittest.main()
