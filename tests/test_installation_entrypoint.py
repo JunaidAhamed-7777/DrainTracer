@@ -108,7 +108,7 @@ class InstallationEntrypointTests(unittest.TestCase):
                 _run(root, cwd=elsewhere),
                 "leak_reports/frames/report.css",
             )
-            self.assertIn(str(root), output)
+            self.assertIn(str(root.resolve()), output)
 
     def test_headless_missing_files_exit_without_a_recovery_prompt(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

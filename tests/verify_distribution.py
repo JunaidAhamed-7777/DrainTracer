@@ -76,7 +76,7 @@ def verify_distribution(wheel: Path) -> str:
     environment.update(PYTHONNOUSERSITE="1", PYTHONIOENCODING="utf-8")
 
     with tempfile.TemporaryDirectory(prefix="draintracer-distribution-") as temporary:
-        workspace = Path(temporary)
+        workspace = Path(temporary).resolve()
         environment_dir = workspace / "environment"
         cwd = workspace / "user-project"
         cwd.mkdir()
