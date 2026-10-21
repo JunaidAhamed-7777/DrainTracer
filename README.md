@@ -51,6 +51,10 @@ memory-growth workload. Values and process IDs vary by run.*
   including children that outlive their root.
 - **Read the trends.** Watch CPU, RSS, private bytes, virtual memory, handles,
   threads, and I/O, with sparklines and per-process measurements.
+- **Find the growing process.** Alerts name the process whose counter grew
+  most over the alert window ("mostly worker.exe PID 1234"), say when growth
+  came from newly started workers instead, and the header counts processes
+  started and exited. Starts, exits, and restarts appear in the event log.
 - **Separate startup from steady state.** Use a warm-up and project profiles
   for cache loading, JIT compilation, or heavier workloads.
 - **Investigate handle growth.** See file, socket, registry, event, and other
@@ -264,7 +268,7 @@ Reusable HTML styles and chart code live in the committed
 generated reports are ignored by Git.
 
 The HTML report works offline, with interactive charts, signal episodes, events,
-and a process list. JSON supports scripts and report comparisons:
+a process list, and a ranking of growing processes that keeps ones that exited. JSON supports scripts and report comparisons:
 
 ```powershell
 draintracer diff .\before.json .\after.json

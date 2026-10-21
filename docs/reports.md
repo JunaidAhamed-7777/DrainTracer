@@ -81,6 +81,16 @@ listed in its `unmeasured` field; their `0` values are unknown, and analysis
 and comparisons treat them as gaps. Comparisons warn when either run had
 partial coverage.
 
+Process records carry `create_time`; with the PID it identifies one process,
+so a reused PID is a different process. Snapshots list `lifecycle` events
+(`started`, `exited`, `restarted`) and `process_counts`. Alerts list
+`contributors` (PID, creation time, name, `delta`, `share`, `new_process`,
+`exited`) ranked over the alert window, with `growth_from_new_processes`,
+`growth_within_existing`, and `mostly_new_processes`. The top-level
+`processes` section holds the final counts and bounded `live` and `exited`
+per-process summaries (first, last, peak, and growth of private bytes,
+handles, and threads). Older reports lack these fields.
+
 For integrations, inspect `report_schema` and allow additional fields.
 Do not treat a missing field in an older report as an observed zero.
 Enum values such as resource and severity are lowercase strings. Local

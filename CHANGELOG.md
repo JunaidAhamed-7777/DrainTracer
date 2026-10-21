@@ -22,6 +22,11 @@ current release and [AGENTS.md](AGENTS.md) for the release policy.
   chart private bytes with RSS (working set) as context, narrow process tables
   keep `PRIVATE`, alerts and exported JSON name `private_bytes`, and help
   explains the two counters.
+- Attributed growth to processes: samples carry each process's identity (PID
+  and creation time), the detector keeps bounded per-process histories, and
+  alerts rank contributors over their window, separating growth from newly
+  started workers. Process starts, exits, and restarts are logged, the header
+  shows start/exit counts, and reports keep live and exited process summaries.
 
 ## v5.1.1 — 2026-10-22
 
