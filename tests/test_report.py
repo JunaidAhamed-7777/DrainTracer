@@ -157,6 +157,20 @@ class SnapshotCoverageTests(unittest.TestCase):
         self.assertIn("handles", encoded["processes"][1]["unmeasured"])
         self.assertIsNone(snapshot_to_dict(make_snapshot())["coverage"])
 
+    def test_monitor_diagnostics_are_serialized(self) -> None:
+        from dataclasses import replace
+
+        from src.events import MonitorDiagnostics
+
+        snapshot = replace(
+            make_snapshot(),
+            diagnostics=MonitorDiagnostics(500, actual_interval_ms=512.5, collection_ms=12.0),
+        )
+        encoded = json.loads(json.dumps(snapshot_to_dict(snapshot)))
+        self.assertEqual(encoded["diagnostics"]["actual_interval_ms"], 512.5)
+        self.assertEqual(encoded["diagnostics"]["collection_ms"], 12.0)
+        self.assertIsNone(snapshot_to_dict(make_snapshot())["diagnostics"])
+
 
 if __name__ == "__main__":
     unittest.main()

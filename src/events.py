@@ -329,6 +329,41 @@ class ProcessMetrics:
 
 
 @dataclass(frozen=True)
+class MonitorDiagnostics:
+    """How well and how cheaply the monitor itself sampled, at one snapshot.
+
+    Measured by the detector on its own thread so a reader can judge
+    whether a recording is trustworthy: the cadence actually achieved
+    against the one requested, what this sample cost, how stale the
+    handle-type breakdown is, how many samples failed or were dropped
+    before a front end read them, and the monitor process's own CPU and
+    memory. ``None`` marks a value that could not be measured (yet).
+    """
+
+    requested_interval_ms: int
+    # Mean start-to-start interval over the recent collected samples.
+    actual_interval_ms: float | None = None
+    # Wall time spent collecting this sample (None on paused/failed ones).
+    collection_ms: float | None = None
+    # Seconds since handle types were last classified, and that pass's cost.
+    handle_types_age_seconds: float | None = None
+    handle_types_cost_ms: float | None = None
+    failed_samples: int = 0
+    dropped_snapshots: int = 0
+    # The DrainTracer process: CPU % of one core since the previous sample.
+    monitor_cpu_percent: float | None = None
+    monitor_rss_bytes: int | None = None
+    monitor_private_bytes: int | None = None
+
+    @property
+    def cadence_lag_ms(self) -> float | None:
+        """How much slower than requested sampling ran (negative: faster)."""
+        if self.actual_interval_ms is None:
+            return None
+        return self.actual_interval_ms - self.requested_interval_ms
+
+
+@dataclass(frozen=True)
 class MetricsSnapshot:
     """Point-in-time view of the monitored process tree and leak state.
 
@@ -338,6 +373,8 @@ class MetricsSnapshot:
     ``coverage`` maps ``COVERAGE_METRICS`` to how many live processes each
     was read from (``None`` on snapshots that measured nothing new), and
     ``evidence`` holds one ``ResourceEvidence`` per signal resource.
+    ``diagnostics`` describes the monitor's own sampling (``None`` on
+    snapshots not built by the detector).
     """
 
     timestamp: float
@@ -358,6 +395,7 @@ class MetricsSnapshot:
     process_counts: ProcessCounts | None = None
     process_summaries: tuple[ProcessSummary, ...] = ()
     exited_processes: tuple[ProcessSummary, ...] = ()
+    diagnostics: MonitorDiagnostics | None = None
 
     def evidence_for(self, resource: LeakResource) -> ResourceEvidence | None:
         return next((item for item in self.evidence if item.resource == resource), None)
@@ -382,6 +420,12 @@ class MetricsStream:
         self._queue: Queue[MetricsSnapshot] = Queue(maxsize=max_queue_size)
         self._callbacks: list[SnapshotCallback] = []
         self._lock = threading.Lock()
+        self._dropped = 0
+
+    @property
+    def dropped(self) -> int:
+        """Snapshots discarded because the queue was full when they arrived."""
+        return self._dropped
 
     def subscribe(self, callback: SnapshotCallback) -> None:
         """Register a callback invoked on every published snapshot."""
@@ -411,6 +455,7 @@ class MetricsStream:
         except Exception:
             try:
                 self._queue.get_nowait()
+                self._dropped += 1
             except Empty:
                 pass
             try:

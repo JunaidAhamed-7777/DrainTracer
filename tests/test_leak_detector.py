@@ -582,6 +582,94 @@ class SamplingLoopTests(unittest.TestCase):
         self.assertGreaterEqual(len(detector.stream.drain()), 5)
 
 
+class MonitorDiagnosticsTests(unittest.TestCase):
+    def _collect(self, detector: LeakDetector, clocks: list[float]):
+        from unittest import mock
+
+        from helpers import make_process
+
+        snapshots = []
+        for clock in clocks:
+            with mock.patch.object(
+                detector, "_sample_processes", return_value=[make_process(1)]
+            ), mock.patch("src.leak_detector.time.monotonic", return_value=clock):
+                snapshots.append(detector._collect_snapshot())
+        return snapshots
+
+    def test_snapshots_report_cadence_cost_and_monitor_footprint(self) -> None:
+        from unittest import mock
+
+        detector = _detector(sample_interval_ms=500, classifier=mock.Mock(available=False))
+        first, second, third = self._collect(detector, [10.0, 10.6, 11.2])
+        self.assertIsNone(first.diagnostics.actual_interval_ms)  # one start: no cadence yet
+        diagnostics = third.diagnostics
+        self.assertEqual(diagnostics.requested_interval_ms, 500)
+        self.assertAlmostEqual(diagnostics.actual_interval_ms, 600.0)
+        self.assertAlmostEqual(diagnostics.cadence_lag_ms, 100.0)
+        self.assertGreaterEqual(diagnostics.collection_ms, 0.0)
+        self.assertIsNone(diagnostics.handle_types_age_seconds)  # never classified
+        self.assertGreater(diagnostics.monitor_rss_bytes, 0)
+        self.assertIsNotNone(diagnostics.monitor_cpu_percent)  # baseline from earlier samples
+        self.assertEqual((diagnostics.failed_samples, diagnostics.dropped_snapshots), (0, 0))
+
+    def test_a_pause_restarts_the_cadence_and_paused_snapshots_cost_nothing(self) -> None:
+        from unittest import mock
+
+        detector = _detector(sample_interval_ms=500, classifier=mock.Mock(available=False))
+        self._collect(detector, [10.0, 10.5])
+        detector._collect_starts.clear()  # what the loop does on a paused tick
+        paused = detector._build_paused_snapshot()
+        self.assertIsNone(paused.diagnostics.collection_ms)
+        self.assertIsNone(paused.diagnostics.actual_interval_ms)
+        (after,) = self._collect(detector, [100.0])
+        self.assertIsNone(after.diagnostics.actual_interval_ms)  # the pause is not a slow sample
+
+    def test_classification_age_and_cost(self) -> None:
+        from unittest import mock
+
+        from helpers import make_process
+
+        classifier = mock.Mock(available=True)
+        classifier.classify.return_value = {1: _counts(file=1)}
+        detector = _detector(classifier=classifier)
+        with mock.patch("src.leak_detector.time.monotonic", side_effect=[50.0, 50.02]):
+            detector._classify_handles([make_process(1)])
+        self.assertAlmostEqual(detector._classify_cost_ms, 20.0)
+        with mock.patch("src.leak_detector.time.monotonic", return_value=53.0):
+            diagnostics = detector._diagnostics(1.0)
+        self.assertAlmostEqual(diagnostics.handle_types_age_seconds, 3.0)
+        self.assertAlmostEqual(diagnostics.handle_types_cost_ms, 20.0)
+
+    def test_failures_and_dropped_snapshots_are_counted(self) -> None:
+        import time
+        from unittest import mock
+
+        from src.events import MetricsStream
+
+        detector = _detector(
+            sample_interval_ms=20, classifier=mock.Mock(available=False),
+            stream=MetricsStream(max_queue_size=2),
+        )
+        with mock.patch.object(detector, "_collect_snapshot", side_effect=RuntimeError("boom")), \
+                self.assertLogs("src.leak_detector", "ERROR"):
+            detector.start()
+            time.sleep(0.2)
+            detector.stop()
+        last = detector.stream.drain()[-1]
+        self.assertGreater(last.diagnostics.failed_samples, 2)
+        self.assertGreater(detector.stream.dropped, 0)
+        self.assertGreater(last.diagnostics.dropped_snapshots, 0)
+
+    def test_an_unreadable_monitor_process_is_unknown(self) -> None:
+        from unittest import mock
+
+        import psutil
+
+        detector = _detector(classifier=mock.Mock(available=False))
+        with mock.patch("src.leak_detector.psutil.Process", side_effect=psutil.AccessDenied(1)):
+            self.assertEqual(detector._sample_self(), (None, None, None))
+
+
 class SeverityScoreTests(unittest.TestCase):
     def test_score_tiers(self) -> None:
         score = LeakDetector._score_severity

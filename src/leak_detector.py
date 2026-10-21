@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 import threading
 import time
 from collections import deque
@@ -25,6 +26,7 @@ from .events import (
     MetricCoverage,
     MetricsSnapshot,
     MetricsStream,
+    MonitorDiagnostics,
     ProcessMetrics,
     ProcessSummary,
     ResourceEvidence,
@@ -53,6 +55,8 @@ MIN_WINDOW_COVERAGE = 0.85
 _ALL_METRICS = tuple(METRIC_KEYS)
 # Back off handle classification so it stays near 5% of one core.
 _CLASSIFY_COST_FACTOR = 20.0
+# Collected samples the reported cadence averages over.
+CADENCE_SAMPLES = 20
 
 
 @dataclass(frozen=True)
@@ -204,6 +208,14 @@ class LeakDetector:
         # growth can be attributed over any alert window.
         self._process_history = ProcessHistory(self.max_window_seconds * 1.5)
         self._last_summaries: tuple[ProcessSummary, ...] = ()
+        # Monitor diagnostics: recent sample start times, failures, the last
+        # handle classification, and the monitor's own CPU-time baseline.
+        self._collect_starts: deque[float] = deque(maxlen=CADENCE_SAMPLES)
+        self._failed_samples = 0
+        self._classified_at: float | None = None
+        self._classify_cost_ms: float | None = None
+        self._self_process: psutil.Process | None = None
+        self._self_cpu_baseline: tuple[float, float] | None = None
 
         # Warm-up: sampling runs but leak heuristics wait until this much
         # active (unpaused) sampling time has passed.
@@ -300,6 +312,8 @@ class LeakDetector:
                 if self._pause_event.is_set():
                     # Paused time does not count toward the warm-up.
                     self._last_active_sample = None
+                    # A pause is not a slow sample: restart the cadence.
+                    self._collect_starts.clear()
                     snapshot = self._build_paused_snapshot()
                 else:
                     snapshot = self._collect_snapshot()
@@ -308,6 +322,7 @@ class LeakDetector:
                 if error != last_error:
                     logger.exception("Resource sampling failed")
                 last_error = error
+                self._failed_samples += 1
                 snapshot = self._build_error_snapshot(error)
             else:
                 last_error = None
@@ -347,6 +362,7 @@ class LeakDetector:
             severity=LeakSeverity.NONE,
             sample_interval_ms=self.sample_interval_ms,
             metadata={"sampling_error": error},
+            diagnostics=self._diagnostics(None),
             evidence=tuple(
                 ResourceEvidence(resource=resource, state=EvidenceState.UNAVAILABLE)
                 for resource in RESOURCE_METRICS
@@ -373,6 +389,7 @@ class LeakDetector:
             process_counts=self._process_history.counts,
             process_summaries=self._last_summaries,
             exited_processes=self._process_history.exited(),
+            diagnostics=self._diagnostics(None),
         )
 
     @staticmethod
@@ -390,6 +407,8 @@ class LeakDetector:
 
     def _collect_snapshot(self) -> MetricsSnapshot:
         now = time.time()
+        started = time.perf_counter()
+        self._collect_starts.append(time.monotonic())
         self.process_manager.refresh_process_tree()
         processes = self._sample_processes()
         lifecycle = self._process_history.observe(now, processes)
@@ -420,6 +439,7 @@ class LeakDetector:
         self._last_coverage = coverage
         self._last_evidence = evidence
         self._last_summaries = self._process_history.summaries()
+        diagnostics = self._diagnostics((time.perf_counter() - started) * 1000.0)
 
         return MetricsSnapshot(
             timestamp=now,
@@ -440,7 +460,56 @@ class LeakDetector:
             process_counts=self._process_history.counts,
             process_summaries=self._last_summaries,
             exited_processes=self._process_history.exited(),
+            diagnostics=diagnostics,
         )
+
+    def _diagnostics(self, collection_ms: float | None) -> MonitorDiagnostics:
+        """The monitor's own cadence, cost and footprint for this snapshot.
+
+        Everything here is bookkeeping the detector already has, plus one
+        cheap read of its own process, so diagnostics never slow sampling.
+        """
+        starts = self._collect_starts
+        interval = (
+            (starts[-1] - starts[0]) / (len(starts) - 1) * 1000.0 if len(starts) >= 2 else None
+        )
+        age = (
+            max(0.0, time.monotonic() - self._classified_at)
+            if self._classified_at is not None
+            else None
+        )
+        cpu, rss, private = self._sample_self()
+        return MonitorDiagnostics(
+            requested_interval_ms=self.sample_interval_ms,
+            actual_interval_ms=interval,
+            collection_ms=collection_ms,
+            handle_types_age_seconds=age,
+            handle_types_cost_ms=self._classify_cost_ms,
+            failed_samples=self._failed_samples,
+            dropped_snapshots=self.stream.dropped,
+            monitor_cpu_percent=cpu,
+            monitor_rss_bytes=rss,
+            monitor_private_bytes=private,
+        )
+
+    def _sample_self(self) -> tuple[float | None, int | None, int | None]:
+        """DrainTracer's own CPU % of one core since the last call, RSS, and private bytes."""
+        try:
+            if self._self_process is None:
+                self._self_process = psutil.Process(os.getpid())
+            proc = self._self_process
+            times = proc.cpu_times()
+            used = float(times.user) + float(times.system)
+            memory = proc.memory_info()
+        except (psutil.Error, OSError, AttributeError):
+            return None, None, None
+        stamp = time.monotonic()
+        baseline, self._self_cpu_baseline = self._self_cpu_baseline, (stamp, used)
+        cpu = None
+        if baseline is not None and stamp > baseline[0]:
+            cpu = max(0.0, (used - baseline[1]) / (stamp - baseline[0]) * 100.0)
+        private = getattr(memory, "private", None)
+        return cpu, int(memory.rss), int(private) if private is not None else None
 
     def _series(self) -> dict[LeakResource, _ResourceSeries]:
         return {
@@ -585,11 +654,13 @@ class LeakDetector:
             return processes, None
         per_pid = self.classifier.classify(measured)
         cost = time.monotonic() - clock
+        self._classify_cost_ms = cost * 1000.0
         self._next_classification = clock + max(
             self.handle_types_interval, cost * _CLASSIFY_COST_FACTOR
         )
         if per_pid is None:
             return processes, None
+        self._classified_at = clock
         classified = [
             replace(process, handle_types=per_pid[process.pid])
             if process.pid in measured and process.pid in per_pid
