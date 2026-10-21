@@ -55,18 +55,23 @@ memory-growth workload. Values and process IDs vary by run.*
   most over the alert window ("mostly worker.exe PID 1234"), say when growth
   came from newly started workers instead, and the header counts processes
   started and exited. Starts, exits, and restarts appear in the event log.
-- **Trust the recording.** Leak health shows how fresh the last sample is,
-  what it cost to collect, and the cadence achieved ("sample 0.4s ago · 12 ms ·
-  cadence 502 ms"), amber when samples go stale; reports add the monitor's own
-  CPU and memory.
+- **Trust the recording.** Leak health says whether each resource is still
+  collecting evidence, judged clean, growing, or unreadable, and how fresh the
+  last sample is ("sample 0.4s ago · 12 ms · cadence 502 ms"), amber when
+  samples go stale; reports add coverage and the monitor's own CPU and memory.
+- **Ask why.** Focused views rank growing processes, show each detection
+  window's checks behind a verdict, annotate a timeline with your markers, and
+  report monitor health, without pausing sampling.
 - **Separate startup from steady state.** Use a warm-up and project profiles
   for cache loading, JIT compilation, or heavier workloads.
 - **Investigate handle growth.** See file, socket, registry, event, and other
   handle categories when Windows exposes them.
 - **Keep the evidence.** Export JSON and an offline interactive HTML report;
-  compare two reports for resolved, new, or worsening signals.
+  compare two labeled runs for resolved, new, or worsening signals, with
+  verdicts qualified (or refused under `--strict`) when the runs differ.
 - **Check in CI.** Run headless with a time limit, configurable failure
-  severity, GitHub Actions annotations, and a job summary.
+  severity, optional policies and absolute budgets, GitHub Actions
+  annotations, and a job summary.
 
 ## Get started
 
@@ -292,8 +297,10 @@ Reusable HTML styles and chart code live in the committed
 `leak_reports/frames/` directory and are bundled in installed packages;
 generated reports are ignored by Git.
 
-The HTML report works offline, with interactive charts, signal episodes, events,
-a process list, and a ranking of growing processes that keeps ones that exited. JSON supports scripts and report comparisons:
+The HTML report works offline, with interactive charts, signal episodes,
+events, a process list, a ranking of growing processes that keeps ones that
+exited, run provenance, and monitor diagnostics. JSON supports scripts and
+report comparisons:
 
 ```powershell
 draintracer diff .\before.json .\after.json
@@ -317,8 +324,8 @@ exits `4`.
 Use comparable workloads, durations, warm-ups, and settings. Long sessions
 thin the stored chart history; reports then say "chart thinned 1:N", while
 peaks with their times, worst severities, signal episode counts, evaluated
-time, and sample counts stay exact in `session_facts`. Reports include local paths and process details, so review them before
-sharing. The [report guide](docs/reports.md) covers the schema, retention,
+time, and sample counts stay exact in `session_facts`. Reports include local
+paths and process details, so review them before sharing. The [report guide](docs/reports.md) covers the schema, retention,
 interpretation, and comparison exit codes.
 
 ## Documentation
