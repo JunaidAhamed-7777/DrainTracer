@@ -363,5 +363,25 @@ class PolicyFlagTests(unittest.TestCase):
                 self.assertIn(f"{flag} only applies with --headless", message)
 
 
+
+class ExperimentFlagTests(unittest.TestCase):
+    def test_experiment_labels_reach_the_settings(self) -> None:
+        with mock.patch.object(cli, "HeadlessRunner") as runner:
+            runner.return_value.run.return_value = 0
+            cli._main(make_console(), [
+                "--headless", "--target", "a.exe", "--no-config", "--workload-id", "import-1k",
+                "--build", "1.4.2", "--operations", "1000", "--note", "nightly",
+            ])
+        experiment = runner.call_args.kwargs["settings"].experiment
+        self.assertEqual(
+            (experiment.workload_id, experiment.build, experiment.operations, experiment.note),
+            ("import-1k", "1.4.2", 1000.0, "nightly"),
+        )
+
+    def test_operations_must_be_positive(self) -> None:
+        self.assertIn("greater than zero", _parse_error(["--operations", "0", "--target", "x"]))
+        self.assertIn("non-negative", _parse_error(["--operations", "-4", "--target", "x"]))
+
+
 if __name__ == "__main__":
     unittest.main()

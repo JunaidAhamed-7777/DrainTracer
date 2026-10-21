@@ -314,7 +314,7 @@ try:
     from .resources import resource_path
     from .startup import choose_startup_action
     from .theme import PALETTE, blend
-    from .units import parse_duration
+    from .units import parse_count, parse_duration
 except ModuleNotFoundError as _dependency_error:
     if (__name__ != "__main__"
             or (_dependency_error.name or "").split(".")[0] not in {"rich", "psutil", "tomli"}):
@@ -400,6 +400,16 @@ def _warmup(value: str) -> float:
     return seconds
 
 
+def _operations(value: str) -> float:
+    try:
+        count = parse_count(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+    if not count > 0:
+        raise argparse.ArgumentTypeError("the operation count must be greater than zero")
+    return count
+
+
 def _window(value: str) -> float:
     seconds = _duration_arg(value)
     if not 0 < seconds <= MAX_WINDOW:
@@ -415,6 +425,7 @@ examples:
   draintracer --profile ci --target app.exe          use a .drainrc profile
   draintracer --warmup 15s --target server.exe        ignore startup growth
   draintracer --headless --target app.exe --timeout 2m --fail-on medium
+  draintracer --headless --target app.exe --workload-id import-1k --operations 1000
   draintracer diff before.json after.json            compare two reports
 """
 
@@ -486,6 +497,36 @@ def build_parser() -> argparse.ArgumentParser:
             "Report root; exports are grouped by target filename and date "
             f"(default: {DEFAULT_REPORT_DIR})."
         ),
+    )
+
+    experiment = parser.add_argument_group(
+        "experiment",
+        "Labels recorded in the report so comparisons can tell equivalent runs apart. "
+        "Target arguments are only counted and fingerprinted, never stored.",
+    )
+    experiment.add_argument(
+        "--workload-id",
+        metavar="ID",
+        help="Name of the workload this run exercised, e.g. import-1k.",
+    )
+    experiment.add_argument(
+        "--build",
+        metavar="LABEL",
+        help="Application build or version under test, e.g. 1.4.2 or a commit hash.",
+    )
+    experiment.add_argument(
+        "--operations",
+        type=_operations,
+        metavar="N",
+        help=(
+            "Operations or input size the workload processed; comparisons show "
+            "growth per operation when both runs set it."
+        ),
+    )
+    experiment.add_argument(
+        "--note",
+        metavar="TEXT",
+        help="Free-text note; secret-looking values such as password=... are redacted.",
     )
 
     files = parser.add_argument_group("settings files")
@@ -570,6 +611,9 @@ def _resolve_settings(args: argparse.Namespace) -> MonitorSettings:
             overrides[key] = getattr(args, key)
     if args.report_dir is not None:
         overrides["report_dir"] = args.report_dir
+    for key in ("workload_id", "build", "operations", "note"):
+        if getattr(args, key) is not None:
+            overrides[key] = getattr(args, key)
     return resolve_settings(
         config_path=args.config,
         profile=args.profile,

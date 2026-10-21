@@ -25,6 +25,7 @@ from .events import (
     ProcessSummary,
     severity_rank,
 )
+from .experiment import experiment_record
 from .handle_types import describe_type_growth
 from .history import SnapshotHistory
 from .html_report import write_html_report
@@ -791,6 +792,7 @@ class MonitorSession:
                 for stamp, message, level in self._events
             ],
             "settings": self._settings_record(),
+            "experiment": self._experiment_record(),
             "warmup": self._warmup_record(),
             "detection_ran": self.detector.detection_started,
             "coverage": self._coverage_record(),
@@ -927,6 +929,26 @@ class MonitorSession:
             "completed_at": iso_timestamp(completed_at) if completed_at else None,
             "baseline": dict(detector.warmup_baseline) if detector.warmup_baseline else None,
         }
+
+    def _experiment_record(self) -> dict[str, Any]:
+        """Workload labels, sampling and environment, with arguments redacted.
+
+        Comparisons read this to tell equivalent experiments from runs that
+        only share a target; see ``src/experiment.py`` for what is redacted.
+        """
+        detector = self.detector
+        return experiment_record(
+            self.settings.experiment,
+            args=None if self.attached else self.manager.args,
+            mode="attach" if self.attached else "launch",
+            duration_seconds=self._uptime() if self._started_at else None,
+            sample_interval_ms=detector.sample_interval_ms,
+            windows_seconds=detector.window_seconds,
+            warmup_seconds=detector.warmup_seconds,
+            timeout_seconds=self.timeout,
+            budgets=self.settings.budgets,
+            version=self.VERSION,
+        )
 
     def _settings_record(self) -> dict[str, Any]:
         """The detector configuration in effect, for reports and comparisons."""

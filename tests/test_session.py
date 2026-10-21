@@ -57,6 +57,28 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(record["timeout_seconds"], 30.0)
         self.assertEqual(record["warmup_seconds"], 0.0)
 
+    def test_reports_record_redacted_experiment_provenance(self) -> None:
+        from dataclasses import replace
+
+        from src.config import MonitorSettings
+
+        settings = replace(
+            MonitorSettings(), workload_id="import-1k", build="1.4.2", operations=1000.0,
+            note="token=abc123 nightly", budgets={"handles": 2000.0},
+        )
+        session = _Session("C:/targets/worker.exe", args=["--password", "hunter2"],
+                           console=make_console(), settings=settings)
+        record = session.build_report()["experiment"]
+        self.assertEqual((record["workload_id"], record["build"], record["operations"]),
+                         ("import-1k", "1.4.2", 1000.0))
+        self.assertEqual(record["note"], "token=<redacted> nightly")
+        self.assertEqual(record["arguments"]["count"], 2)
+        self.assertNotIn("hunter2", repr(session.build_report()))
+        self.assertEqual(record["budgets"], {"handles": 2000.0})
+        self.assertEqual(record["sampling"]["interval_ms"], 500)
+        self.assertEqual(record["environment"]["draintracer_version"], "test")
+        self.assertIsNone(record["duration_seconds"])  # never started
+
     def test_reports_describe_a_replaced_detector(self) -> None:
         from src.leak_detector import LeakDetector
 

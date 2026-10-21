@@ -21,6 +21,7 @@ redacted by default:
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import math
 import os
@@ -28,6 +29,7 @@ import platform
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any
 
 import psutil
@@ -103,8 +105,15 @@ def arguments_record(args: Sequence[str] | None) -> dict[str, Any]:
 def environment_record(version: str | None = None) -> dict[str, Any]:
     """The machine and runtime a run measured, without identifying the host or user.
 
-    Each probe is best effort: a value that cannot be read is ``None``.
+    Each probe is best effort: a value that cannot be read is ``None``. The
+    probes run once per process, since every export would otherwise repeat
+    them and none of the values change while DrainTracer runs.
     """
+    return dict(_environment(version))
+
+
+@functools.lru_cache(maxsize=4)
+def _environment(version: str | None) -> Mapping[str, Any]:
 
     def probe(read) -> Any:
         try:
@@ -112,7 +121,7 @@ def environment_record(version: str | None = None) -> dict[str, Any]:
         except Exception:  # an unusual platform; leave the detail out
             return None
 
-    return {
+    return MappingProxyType({
         "os": probe(platform.system) or None,
         "os_release": probe(platform.release) or None,
         "os_version": probe(platform.version) or None,
@@ -122,7 +131,7 @@ def environment_record(version: str | None = None) -> dict[str, Any]:
         "python_version": probe(platform.python_version) or None,
         "python_implementation": probe(platform.python_implementation) or None,
         "draintracer_version": version,
-    }
+    })
 
 
 def experiment_record(
