@@ -68,7 +68,16 @@ python -m venv .venv
 .\.venv\Scripts\python.exe src/main.py
 ```
 
-The last command offers two startup choices:
+Before starting, DrainTracer checks the committed
+[runtime snapshot](runtime-manifest.json) for required source files, title
+artwork, and report frames. If files are missing, it lists them and offers
+**Enter** to run `git pull --ff-only origin main`, restore missing tracked
+files, and restart with the same Python and arguments. **Q** cancels.
+The check runs on every launch, including the first. Generated reports and
+user settings are not required. Headless or redirected runs report missing
+files with exit code `2` without prompting or pulling.
+
+Once the check passes, the last command offers two startup choices:
 
 - **1 — Open a program:** select an executable, Python script, or Windows
   batch file in the native file picker.

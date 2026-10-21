@@ -26,6 +26,7 @@ class InstallationGitTests(unittest.TestCase):
         self.assertEqual(output.strip(), "up to date")
         command = run.call_args.args[0]
         self.assertIsInstance(command, list)
+        self.assertIn("--literal-pathspecs", command)
         self.assertEqual(command[-4:], ["pull", "--ff-only", "origin", "main"])
         self.assertFalse(run.call_args.kwargs.get("shell", False))
         self.assertEqual(run.call_args.kwargs["timeout"], 60)
@@ -68,6 +69,7 @@ class InstallationPromptTests(unittest.TestCase):
         terminal: bool = True,
         argv: list[str] | None = None,
         repaired: bool = True,
+        restart_status: int = 0,
         restart_error: OSError | None = None,
     ) -> tuple[int | None, str, mock.Mock, mock.Mock, mock.Mock]:
         output = io.StringIO()
@@ -77,9 +79,12 @@ class InstallationPromptTests(unittest.TestCase):
         with (
             mock.patch.object(cli, "_installation_status", return_value=status),
             mock.patch.object(cli.sys, "stdin", stdin),
+            mock.patch.object(cli, "_installation_input_is_terminal", return_value=terminal),
             mock.patch("builtins.input", side_effect=answers) as read,
             mock.patch.object(cli, "_repair_installation", return_value=repaired) as repair,
-            mock.patch.object(cli.os, "execv", side_effect=restart_error) as restart,
+            mock.patch.object(
+                cli, "_restart_installation", return_value=restart_status, side_effect=restart_error,
+            ) as restart,
             contextlib.redirect_stdout(output),
             contextlib.redirect_stderr(output),
         ):
@@ -109,11 +114,14 @@ class InstallationPromptTests(unittest.TestCase):
         read.assert_called_once()
         root = Path.cwd().resolve()
         repair.assert_called_once_with(root)
-        restart.assert_called_once_with(
-            sys.executable,
-            [sys.executable, str(root / "src/main.py"), *argv],
-        )
-        self.assertEqual(os.environ.get("_DRAINTRACER_REPAIR_ATTEMPTED"), "1")
+        restart.assert_called_once_with(root, argv)
+        self.assertNotIn("_DRAINTRACER_REPAIR_ATTEMPTED", os.environ)
+
+    def test_restarted_application_exit_status_is_preserved(self) -> None:
+        result, _output, _read, repair, restart = self._invoke(restart_status=130)
+        self.assertEqual(result, 130)
+        repair.assert_called_once()
+        restart.assert_called_once()
 
     def test_repair_failure_does_not_restart_or_repeat_pull(self) -> None:
         result, _output, read, repair, restart = self._invoke(repaired=False)
@@ -189,6 +197,61 @@ class InstallationPromptTests(unittest.TestCase):
         read.assert_not_called()
         repair.assert_not_called()
         restart.assert_not_called()
+
+
+class InstallationInputTests(unittest.TestCase):
+    def test_absent_or_redirected_input_is_not_a_terminal(self) -> None:
+        for stdin in (None, io.StringIO("\n")):
+            with self.subTest(stdin=type(stdin).__name__), mock.patch.object(cli.sys, "stdin", stdin):
+                self.assertFalse(cli._installation_input_is_terminal())
+
+    def test_closed_input_is_not_a_terminal(self) -> None:
+        stdin = io.StringIO()
+        stdin.close()
+        with mock.patch.object(cli.sys, "stdin", stdin):
+            self.assertFalse(cli._installation_input_is_terminal())
+
+
+class InstallationRestartTests(unittest.TestCase):
+    def test_restart_inherits_working_directory_and_streams_and_waits_for_child(self) -> None:
+        root = Path.cwd().resolve()
+        working = Path.cwd()
+        argv = ["--target", "C:/work/my worker.py", "--", "--headless"]
+        child = mock.MagicMock()
+        child.__enter__.return_value = child
+        child.wait.return_value = 7
+        with (
+            mock.patch.dict(os.environ, {"DRAINTRACER_TEST_SETTING": "preserve"}, clear=True),
+            mock.patch.object(subprocess, "Popen", return_value=child) as spawn,
+        ):
+            result = cli._restart_installation(root, argv)
+            self.assertNotIn("_DRAINTRACER_REPAIR_ATTEMPTED", os.environ)
+        self.assertEqual(result, 7)
+        self.assertEqual(Path.cwd(), working)
+        spawn.assert_called_once()
+        self.assertEqual(
+            spawn.call_args.args[0],
+            [sys.executable, str(root / "src/main.py"), *argv],
+        )
+        options = spawn.call_args.kwargs
+        self.assertEqual(options["env"]["_DRAINTRACER_REPAIR_ATTEMPTED"], "1")
+        self.assertEqual(options["env"]["DRAINTRACER_TEST_SETTING"], "preserve")
+        self.assertFalse(options.get("shell", False))
+        for option in ("cwd", "stdin", "stdout", "stderr"):
+            self.assertIsNone(options.get(option))
+        child.wait.assert_called_once()
+
+    def test_interrupt_waits_for_child_cleanup_without_terminating_it(self) -> None:
+        child = mock.MagicMock()
+        child.__enter__.return_value = child
+        child.wait.side_effect = [KeyboardInterrupt(), 130]
+        with mock.patch.object(subprocess, "Popen", return_value=child):
+            result = cli._restart_installation(Path.cwd(), [])
+        self.assertEqual(result, 130)
+        self.assertEqual(child.wait.call_count, 2)
+        child.kill.assert_not_called()
+        child.terminate.assert_not_called()
+        child.send_signal.assert_not_called()
 
 
 @unittest.skipUnless(shutil.which("git"), "Git is required for isolated recovery integration")
@@ -299,6 +362,22 @@ class InstallationRecoveryTests(unittest.TestCase):
             self.assertFalse(result)
             self.assertTrue(replacement.is_dir())
             self.assertEqual(marker.read_text(encoding="utf-8"), "preserve me")
+
+    def test_manifest_pathspec_cannot_restore_existing_modified_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self._checkout(Path(temporary))
+            manifest = root / "runtime-manifest.json"
+            document = json.loads(manifest.read_text(encoding="utf-8"))
+            document["required_files"].append("src/*.py")
+            manifest.write_text(json.dumps(document), encoding="utf-8")
+            modified = root / "src/modified.py"
+            modified.write_text("preserve user edits\n", encoding="utf-8")
+
+            result, _output = self._repair(root)
+
+            self.assertFalse(result)
+            self.assertEqual(modified.read_text(encoding="utf-8"), "preserve user edits\n")
+            self.assertEqual(json.loads(manifest.read_text(encoding="utf-8")), document)
 
     def test_subdirectory_is_not_accepted_as_the_checkout_root(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

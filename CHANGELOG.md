@@ -5,6 +5,13 @@ feature milestones remain in [future-plan.md](future-plan.md), and the complete
 commit history records earlier changes. Versions follow the repository rule:
 each focused change advances the runtime version by exactly `0.1`.
 
+## v4.8 — 2026-10-21
+
+- Check the runtime snapshot before application imports on every CLI
+  launch; missing files offer Enter to pull, restore, and restart.
+- Added clear cancellation, noninteractive/headless errors, and missing
+  Python dependency instructions before monitoring begins.
+
 ## v4.7 — 2026-10-21
 
 - Added opt-in fast-forward Git recovery of missing runtime files, scoped

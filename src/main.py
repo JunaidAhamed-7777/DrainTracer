@@ -72,7 +72,7 @@ def _run_installation_git(root: Path, args: list[str]) -> str:
     environment.update(GIT_TERMINAL_PROMPT="0", GCM_INTERACTIVE="Never")
     try:
         result = subprocess.run(
-            ["git", "-C", str(root), *args],
+            ["git", "--literal-pathspecs", "-C", str(root), *args],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -133,6 +133,41 @@ def _repair_installation(root: Path) -> bool:
         return False
 
 
+def _installation_input_is_terminal() -> bool:
+    """Exclude pipes and Windows NUL, which misleadingly reports isatty()."""
+    try:
+        if sys.stdin is None or not sys.stdin.isatty():
+            return False
+        if os.name == "nt":
+            import ctypes
+            import msvcrt
+
+            handle = msvcrt.get_osfhandle(sys.stdin.fileno())
+            mode = ctypes.c_ulong()
+            return bool(ctypes.windll.kernel32.GetConsoleMode(
+                ctypes.c_void_p(handle), ctypes.byref(mode)
+            ))
+        return True
+    except (OSError, TypeError, ValueError):
+        return False
+
+
+def _restart_installation(root: Path, argv: list[str]) -> int:
+    """Keep the same console and wait for the restarted CLI, including on Windows."""
+    environment = os.environ.copy()
+    environment["_DRAINTRACER_REPAIR_ATTEMPTED"] = "1"
+    with subprocess.Popen(
+        [sys.executable, str(root / "src/main.py"), *argv], env=environment
+    ) as restarted:
+        while True:
+            try:
+                return restarted.wait()
+            except KeyboardInterrupt:
+                # The child receives the same console event. Let its normal
+                # cleanup finish instead of killing it while it owns a target.
+                continue
+
+
 def _check_installation(root: Path, argv: list[str]) -> int | None:
     """Return None to continue startup, or an exit code after recovery/cancel."""
     attempted = os.environ.pop("_DRAINTRACER_REPAIR_ATTEMPTED", None) == "1"
@@ -152,11 +187,7 @@ def _check_installation(root: Path, argv: list[str]) -> int | None:
         print("Recovery was already attempted. Restore the missing files before starting again.")
         return 2
     arguments = argv[:argv.index("--")] if "--" in argv else argv
-    try:
-        interactive = sys.stdin is not None and sys.stdin.isatty()
-    except (OSError, ValueError):
-        interactive = False
-    if "--headless" in arguments or not interactive:
+    if "--headless" in arguments or not _installation_input_is_terminal():
         print("Automatic recovery needs an interactive terminal; no files were changed.")
         print("Run DrainTracer interactively, or pull and restore the missing files manually.")
         return 2
@@ -181,50 +212,83 @@ def _check_installation(root: Path, argv: list[str]) -> int | None:
         if not _repair_installation(root):
             return 2
         print("Required files are available. Restarting DrainTracer...")
-        os.environ["_DRAINTRACER_REPAIR_ATTEMPTED"] = "1"
-        os.execv(sys.executable, [sys.executable, str(root / "src/main.py"), *argv])
+        sys.stdout.flush()
+        sys.stderr.flush()
+        return _restart_installation(root, argv)
     except KeyboardInterrupt:
-        os.environ.pop("_DRAINTRACER_REPAIR_ATTEMPTED", None)
         print("\nRecovery interrupted.")
         return 130
     except OSError as exc:
-        os.environ.pop("_DRAINTRACER_REPAIR_ATTEMPTED", None)
         print(f"Cannot restart DrainTracer: {exc}")
         return 2
-    return 0
 
 
-from rich import box
-from rich.console import Console
-from rich.panel import Panel
-from rich.text import Text
+def _make_output_safe() -> None:
+    """Replace characters the output encoding cannot show instead of crashing.
+
+    Piped output on Windows (CI logs, redirection) uses the ANSI code page,
+    which cannot encode every process name or path.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(errors="replace")
+        except (OSError, ValueError):
+            pass
+
+
+# This entry-point-only check must precede Rich and every application import.
+# Keeping it here also lets recovery run when an entire backend module is gone.
+if __name__ == "__main__":
+    _make_output_safe()
+    _startup_result = _check_installation(Path(__file__).resolve().parents[1], sys.argv[1:])
+    if _startup_result is not None:
+        raise SystemExit(_startup_result)
 
 if __package__ in (None, ""):
     # Keep ``python src/main.py`` working when launched from the repository root.
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.config import (
-    FAIL_ON_CHOICES,
-    MAX_SAMPLE_INTERVAL,
-    MAX_WARMUP,
-    MAX_WINDOW,
-    MAX_WINDOWS,
-    MIN_SAMPLE_INTERVAL,
-    ConfigError,
-    MonitorSettings,
-    resolve_settings,
-)
-from src.dashboard import DashboardApp
-from src.diff_command import run_diff
-from src.events import LeakSeverity
-from src.file_picker import select_target_file
-from src.headless import EXIT_ERROR, HeadlessRunner
-from src.process_picker import select_running_process
-from src.process_runner import ProcessManagerError
-from src.report import DEFAULT_REPORT_DIR
-from src.startup import choose_startup_action
-from src.theme import PALETTE, blend
-from src.units import parse_duration
+try:
+    from rich import box
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.text import Text
+
+    from src.config import (
+        FAIL_ON_CHOICES,
+        MAX_SAMPLE_INTERVAL,
+        MAX_WARMUP,
+        MAX_WINDOW,
+        MAX_WINDOWS,
+        MIN_SAMPLE_INTERVAL,
+        ConfigError,
+        MonitorSettings,
+        resolve_settings,
+    )
+    from src.dashboard import DashboardApp
+    from src.diff_command import run_diff
+    from src.events import LeakSeverity
+    from src.file_picker import select_target_file
+    from src.headless import EXIT_ERROR, HeadlessRunner
+    from src.process_picker import select_running_process
+    from src.process_runner import ProcessManagerError
+    from src.report import DEFAULT_REPORT_DIR
+    from src.startup import choose_startup_action
+    from src.theme import PALETTE, blend
+    from src.units import parse_duration
+except ModuleNotFoundError as _dependency_error:
+    if (__name__ != "__main__"
+            or (_dependency_error.name or "").split(".")[0] not in {"rich", "psutil", "tomli"}):
+        raise
+    print(f"DrainTracer needs the Python dependency: {_dependency_error.name}")
+    print("Install the requirements with the same Python, then start again:")
+    _requirements = Path(__file__).resolve().parents[1] / "requirements.txt"
+    _prefix = "& " if os.name == "nt" else ""
+    print(f'  {_prefix}"{sys.executable}" -m pip install -r "{_requirements}"')
+    raise SystemExit(2) from None
 
 
 def _load_title_art() -> str:
@@ -479,22 +543,6 @@ def _report_crash(console: Console, code: int) -> int:
     return code
 
 
-def _make_output_safe() -> None:
-    """Replace characters the output encoding cannot show instead of crashing.
-
-    Piped output on Windows (CI logs, redirection) uses the ANSI code page,
-    which cannot encode every process name or path.
-    """
-    for stream in (sys.stdout, sys.stderr):
-        reconfigure = getattr(stream, "reconfigure", None)
-        if reconfigure is None:
-            continue
-        try:
-            reconfigure(errors="replace")
-        except (OSError, ValueError):
-            pass
-
-
 def _configure_logging() -> logging.Handler | None:
     """Keep diagnostics off the terminal; ``DRAINTRACER_LOG`` sends them to a file.
 
@@ -525,6 +573,11 @@ def _configure_logging() -> logging.Handler | None:
 
 def main(argv: list[str] | None = None) -> int:
     _make_output_safe()
+    if __name__ != "__main__":
+        arguments = list(sys.argv[1:] if argv is None else argv)
+        startup_result = _check_installation(Path(__file__).resolve().parents[1], arguments)
+        if startup_result is not None:
+            return startup_result
     _configure_logging()
     console = Console()
     try:

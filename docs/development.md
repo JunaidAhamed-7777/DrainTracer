@@ -23,8 +23,9 @@ There is currently no package build step or installed console entry point.
 
 ## Find the right module
 
-- [main.py](../src/main.py): argument parsing, settings resolution,
-  startup artwork from `TITLE.txt`, and launch/attach dispatch.
+- [main.py](../src/main.py): standard-library startup file check and
+  opt-in Git recovery before dependency imports, argument parsing,
+  settings resolution, title artwork, and launch/attach dispatch.
 - [runtime-manifest.json](../runtime-manifest.json): committed inventory of
   required runtime modules and assets. Update it when adding, moving, or
   removing runtime files; do not include generated reports or caches. The

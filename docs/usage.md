@@ -6,6 +6,34 @@ Run the commands below from the repository root after installing
 `requirements.txt` into a Python 3.10+ environment on Windows 10/11.
 DrainTracer currently runs from source; the command is `python src/main.py`.
 
+## Startup file check and recovery
+
+Every launch checks the installation against the committed
+`runtime-manifest.json` before importing the application or starting a
+target. The snapshot includes runtime modules, `TITLE.txt`, requirements,
+and the reusable report CSS/JavaScript. It does not require generated
+reports, caches, a virtual environment, or your `.drainrc` file. Paths are
+checked relative to the installation, independent of the working directory.
+
+If required files are missing, the CLI lists their paths. Press **Enter**
+to run `git pull --ff-only origin main` in that checkout. After a successful
+pull, DrainTracer restores only absent required files that Git tracks,
+checks again, and restarts with the same Python, arguments, and working
+directory. This also repairs deleted files when Git says the branch is
+already up to date. Existing files, staged deletions, and directories that
+occupy a required file's path are not overwritten by the restoration.
+
+Press **Q** or close input to cancel with exit code `2`; Ctrl+C exits `130`.
+Git must be installed, the source must be a Git checkout with an `origin`
+remote, and the pull must be able to fast-forward. Recovery stops on Git
+errors or if files are still missing; it does not reset or switch branches.
+An invalid snapshot needs review or restoration from Git before startup.
+
+Headless mode and redirected input never prompt or pull automatically;
+an incomplete installation exits `2` with instructions. Missing Python
+packages instead show a command to install `requirements.txt` using the
+current Python. A Git pull does not install Python dependencies.
+
 ## Choose a target
 
 Start without arguments to choose how to monitor a program:
