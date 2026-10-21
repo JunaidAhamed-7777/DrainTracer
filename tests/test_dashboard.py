@@ -58,6 +58,7 @@ class SignalTransitionTests(unittest.TestCase):
         messages = self._messages(app)
         self.assertEqual(len(messages), 1)
         self.assertIn("Memory leak signal MEDIUM", messages[0])
+        self.assertIn("B private in 10s", messages[0])
 
     def test_escalation_and_clear_are_logged(self) -> None:
         app = _app()
@@ -343,6 +344,8 @@ class HelpAndSortTests(unittest.TestCase):
         self.assertIn("HELP", output)
         self.assertIn("READING A SIGNAL", output)
         self.assertIn("built-in defaults", output)
+        self.assertIn("MEMORY COUNTERS", output)
+        self.assertIn("RSS (working set)", output)
         app._handle_key("\x1b")
         self.assertNotIn("READING A SIGNAL", self._render(app))
         app._handle_key("H")
@@ -444,7 +447,7 @@ class HealthDetailTests(unittest.TestCase):
             growth_by_type={"file": 340, "event": 2},
         )
         self.assertEqual(app._health_detail(alert), "+10 in 10s · file +340 · 1.0/s")
-        self.assertEqual(app._health_detail(make_alert()), "+10.0 B in 10s · 1.0 B/s")
+        self.assertEqual(app._health_detail(make_alert()), "+10.0 B private in 10s · 1.0 B/s")
 
 
 class TimeLimitTests(unittest.TestCase):

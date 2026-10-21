@@ -639,7 +639,8 @@ class MonitorSession:
     def _alert_summary(self, alert: LeakAlert) -> str:
         delta = alert.current_value - alert.baseline_value
         if alert.resource == LeakResource.MEMORY:
-            amount = self._format_bytes(delta)
+            # Say which counter grew: the memory card also lists RSS.
+            amount = f"{self._format_bytes(delta)} private"
             rate = f"{self._format_bytes(alert.slope_per_second)}/s"
         else:
             amount = f"{delta:,.0f}"

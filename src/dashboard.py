@@ -409,6 +409,14 @@ class DashboardApp(MonitorSession):
             "some processes could not be read: totals leave them out, and a change in "
             "which ones restarts the windows.",
         )
+        counters = Text(
+            "PRIVATE is private committed memory: bytes a process alone has "
+            "reserved backing for, in RAM or the page file. The memory signal "
+            "judges this counter. RSS (working set) is the memory resident in RAM "
+            "right now, shared pages included; Windows trims and refills it, so it "
+            "is shown for context only. Growth in either is not proof of an "
+            "application allocation leak: caches, pools, and fragmentation grow too.",
+        )
 
         session = grid()
         detector = self.detector
@@ -425,7 +433,7 @@ class DashboardApp(MonitorSession):
         threads = limits[LeakResource.THREADS]
         session.add_row(
             "Thresholds",
-            f"memory {self._format_bytes(memory.critical_delta)}, "
+            f"private {self._format_bytes(memory.critical_delta)}, "
             f"{self._format_bytes(memory.critical_slope)}/s {glyphs.sep} "
             f"handles {handles.critical_delta:,.0f}, {handles.critical_slope:g}/s {glyphs.sep} "
             f"threads {threads.critical_delta:,.0f}, {threads.critical_slope:g}/s",
@@ -438,6 +446,7 @@ class DashboardApp(MonitorSession):
             Group(
                 section("KEYS"), keys, Text(""),
                 section("READING A SIGNAL"), signals, Text(""),
+                section("MEMORY COUNTERS"), counters, Text(""),
                 section("THIS SESSION"), session,
             ),
             title=Text(" HELP ", style=f"bold {palette.accent}"),
@@ -1124,7 +1133,8 @@ class DashboardApp(MonitorSession):
         """
         delta = alert.current_value - alert.baseline_value
         if alert.resource == LeakResource.MEMORY:
-            amount = self._format_bytes(delta)
+            # Say which counter grew: the memory card also lists RSS.
+            amount = f"{self._format_bytes(delta)} private"
             rate = f"{self._format_bytes(alert.slope_per_second)}/s"
         else:
             amount = f"{delta:,.0f}"
@@ -1222,8 +1232,8 @@ class DashboardApp(MonitorSession):
             grid.add_row("Settings", Text(self.settings.describe()))
         grid.add_row(
             "Peaks",
-            f"RSS {self._format_bytes(self._peaks['rss_bytes'])} {glyphs.sep} "
             f"private {self._format_bytes(self._peaks['private_bytes'])} {glyphs.sep} "
+            f"RSS (working set) {self._format_bytes(self._peaks['rss_bytes'])} {glyphs.sep} "
             f"{int(self._peaks['handles']):,} handles {glyphs.sep} "
             f"{int(self._peaks['threads']):,} threads",
         )
