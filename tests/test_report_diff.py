@@ -172,5 +172,27 @@ class FormatTests(unittest.TestCase):
         self.assertEqual(format_drift("threads", None), "—")
 
 
+class CoverageWarningTests(unittest.TestCase):
+    setUp = ComparisonTests.setUp
+    _load = ComparisonTests._load
+    _compare = ComparisonTests._compare
+
+    def test_partial_coverage_is_warned_about(self) -> None:
+        from helpers import make_denied
+
+        after = _run()
+        for index in range(5):
+            after["snapshots"][index] = snapshot_to_dict(make_snapshot(
+                processes=(make_process(100), make_denied(200)),
+                timestamp=1000.0 + index * 0.5, measured_coverage=True))
+        comparison = self._compare(_run(), after)
+        warnings = " | ".join(comparison.warnings)
+        self.assertIn("report B could not read every process", warnings)
+        self.assertIn("partial in 5 of 21 samples", warnings)
+        self.assertEqual(comparison.to_dict()["after"]["partial_coverage"],
+                         ["memory", "handles", "threads"])
+        self.assertEqual(comparison.to_dict()["before"]["partial_coverage"], [])
+
+
 if __name__ == "__main__":
     unittest.main()

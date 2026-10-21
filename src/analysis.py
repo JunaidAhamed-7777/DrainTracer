@@ -65,11 +65,28 @@ class Sample:
     error: bool
     handle_types: Mapping[str, int] | None = None
     warming_up: bool = False
+    # (measured, total) live processes per metric; None in older reports.
+    coverage: Mapping[str, tuple[int, int]] | None = None
 
     @property
     def measured(self) -> bool:
         """Whether the totals measure a live process tree."""
         return not self.paused and not self.error and self.process_count > 0
+
+    def measured_metric(self, key: str) -> bool:
+        """Whether ``key``'s total measures at least one live process.
+
+        Older reports carry no coverage; their totals count as measured.
+        """
+        if not self.measured:
+            return False
+        counts = (self.coverage or {}).get(key)
+        return counts is None or counts[0] > 0 or counts[1] == 0
+
+    def partial(self, key: str) -> bool:
+        """Whether ``key``'s total left out some live processes."""
+        counts = (self.coverage or {}).get(key)
+        return counts is not None and counts[0] < counts[1]
 
 
 def load_samples(report: Mapping[str, Any]) -> list[Sample]:
@@ -114,10 +131,25 @@ def load_samples(report: Mapping[str, Any]) -> list[Sample]:
                 error=isinstance(metadata, Mapping) and bool(metadata.get("sampling_error")),
                 handle_types=handle_types,
                 warming_up=bool(item.get("warming_up")),
+                coverage=_coverage_counts(item.get("coverage")),
             )
         )
     samples.sort(key=lambda sample: sample.timestamp)
     return samples
+
+
+def _coverage_counts(value: Any) -> dict[str, tuple[int, int]] | None:
+    """``(measured, total)`` per metric from a snapshot's ``coverage``, if usable."""
+    if not isinstance(value, Mapping):
+        return None
+    counts: dict[str, tuple[int, int]] = {}
+    for metric, item in value.items():
+        if not isinstance(metric, str) or not isinstance(item, Mapping):
+            continue
+        measured, total = finite(item.get("measured")), finite(item.get("total"))
+        if measured is not None and total is not None and 0 <= measured <= total:
+            counts[metric] = (int(measured), int(total))
+    return counts or None
 
 
 def _handle_counts(value: Any) -> dict[str, int] | None:
@@ -245,6 +277,14 @@ class ResourceSummary:
     drift_per_second: float | None
     worst: str
     episodes: int
+    # Judged samples whose total left out unreadable live processes. When
+    # most samples were complete, growth and drift use only those.
+    partial_samples: int = 0
+    measured_samples: int = 0
+
+    @property
+    def partial(self) -> bool:
+        return self.partial_samples > 0
 
     @property
     def growth(self) -> float | None:
@@ -279,6 +319,11 @@ class ReportSummary:
             return 0.0
         return max(0.0, self.ended - self.started)
 
+    @property
+    def partial_coverage(self) -> bool:
+        """Whether any signal total left out unreadable processes."""
+        return any(item.partial for item in self.resources.values())
+
 
 def summarize(report: Mapping[str, Any], samples: Sequence[Sample] | None = None) -> ReportSummary:
     """Summarize a report; pass ``samples`` to reuse an earlier ``load_samples``."""
@@ -290,7 +335,10 @@ def summarize(report: Mapping[str, Any], samples: Sequence[Sample] | None = None
     changes = signal_changes(samples)
 
     peaks = {
-        key: max((sample.totals.get(key, 0.0) for sample in measured), default=0.0)
+        key: max(
+            (sample.totals.get(key, 0.0) for sample in measured if sample.measured_metric(key)),
+            default=0.0,
+        )
         for key in TOTAL_KEYS
     }
     worst_by_resource = {resource: 0 for resource in RESOURCES}
@@ -300,7 +348,13 @@ def summarize(report: Mapping[str, Any], samples: Sequence[Sample] | None = None
 
     resources: dict[str, ResourceSummary] = {}
     for resource, key in SIGNAL_TOTALS.items():
-        points = [(sample.timestamp, sample.totals[key]) for sample in judged if key in sample.totals]
+        valid = [s for s in judged if key in s.totals and s.measured_metric(key)]
+        partial = sum(1 for sample in valid if sample.partial(key))
+        complete = [sample for sample in valid if not sample.partial(key)]
+        # A total that leaves processes out is a lower bound; mixing it with
+        # complete totals would read access changes as growth or a drop.
+        basis = complete if partial and len(complete) >= max(2, len(valid) / 2) else valid
+        points = [(sample.timestamp, sample.totals[key]) for sample in basis]
         drift = (
             least_squares_slope([stamp for stamp, _ in points], [value for _, value in points])
             if len(points) >= 2
@@ -314,6 +368,8 @@ def summarize(report: Mapping[str, Any], samples: Sequence[Sample] | None = None
             drift_per_second=drift,
             worst=SEVERITIES[worst_by_resource[resource]],
             episodes=sum(1 for episode in episodes if episode.resource == resource),
+            partial_samples=partial,
+            measured_samples=len(valid),
         )
 
     classified = [sample for sample in judged if sample.handle_types]
@@ -379,8 +435,9 @@ def chart_payload(
     """Compact, JSON-ready series and annotations for the report charts.
 
     Times are seconds since the first sample. Values are ``None`` where the
-    tree was not measured (paused, failed sample, or no live process) so
-    charts break the line instead of drawing a false drop.
+    tree was not measured (paused, failed sample, no live process, or no
+    readable process for that metric) so charts break the line instead of
+    drawing a false drop.
     """
     samples = load_samples(report) if samples is None else samples
     summary = summarize(report, samples) if summary is None else summary
@@ -398,7 +455,7 @@ def chart_payload(
     for name, key, digits in CHART_SERIES:
         values: list[float | None] = []
         for sample in samples:
-            value = sample.totals.get(key) if sample.measured else None
+            value = sample.totals.get(key) if sample.measured_metric(key) else None
             values.append(None if value is None else round(value, digits) if digits else round(value))
         series[name] = values
 

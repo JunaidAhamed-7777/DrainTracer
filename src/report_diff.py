@@ -66,6 +66,16 @@ class LoadedReport:
         # Reports from before v1.4 lack the field; assume detection ran.
         return self.data.get("detection_ran") is not False
 
+    @property
+    def partial_resources(self) -> tuple[str, ...]:
+        """Signal resources whose totals left out unreadable processes.
+
+        Reports from before schema 3 carry no coverage and list none.
+        """
+        return tuple(
+            resource for resource in RESOURCES if self.summary.resources[resource].partial
+        )
+
 
 @dataclass(frozen=True)
 class ResourceComparison:
@@ -167,6 +177,7 @@ class ReportComparison:
                 "duration_seconds": round(report.summary.duration, 3),
                 "worst": report.summary.worst,
                 "detection_ran": report.detection_ran,
+                "partial_coverage": list(report.partial_resources),
             }
 
         return {
@@ -310,6 +321,15 @@ def _comparability_warnings(before: LoadedReport, after: LoadedReport) -> list[s
             warnings.append(
                 f"report {label} never filled a detection window, so its lack of "
                 "signals is inconclusive"
+            )
+        partial = report.partial_resources
+        if partial:
+            samples = max(report.summary.resources[r].partial_samples for r in partial)
+            measured = max(report.summary.resources[r].measured_samples for r in partial)
+            warnings.append(
+                f"report {label} could not read every process ({', '.join(partial)} totals "
+                f"partial in {samples:,} of {measured:,} samples), so its totals are lower "
+                "bounds and may miss growth in the unreadable processes"
             )
     differences = _settings_differences(before.data, after.data)
     if differences:

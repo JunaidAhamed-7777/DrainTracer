@@ -246,5 +246,45 @@ class ChartPayloadTests(unittest.TestCase):
         self.assertIsNone(payload["start"])
 
 
+class CoverageAnalysisTests(unittest.TestCase):
+    def test_unreadable_totals_are_gaps_not_zeros(self) -> None:
+        from helpers import make_denied
+
+        report = _report(
+            _snap(1.0, measured_coverage=True),
+            _snap(2.0, processes=(make_denied(100),), measured_coverage=True),
+            _snap(3.0, rss_mb=12, measured_coverage=True),
+        )
+        samples = load_samples(report)
+        self.assertFalse(samples[1].measured_metric("private_bytes"))
+        self.assertEqual(chart_payload(report)["series"]["private"][1], None)
+        self.assertEqual(summarize(report).resources["memory"].measured_samples, 2)
+
+    def test_partial_totals_give_way_to_complete_ones(self) -> None:
+        from helpers import make_denied
+
+        def whole(stamp: float) -> dict:
+            processes = (make_process(100, rss=10 * MB), make_process(200, rss=50 * MB))
+            return _snap(stamp, processes=processes, measured_coverage=True)
+
+        partial = _snap(3.0, processes=(make_process(100, rss=10 * MB), make_denied(200)),
+                        measured_coverage=True)
+        summary = summarize(_report(whole(1.0), whole(2.0), partial, whole(4.0)))
+        memory = summary.resources["memory"]
+        self.assertEqual(memory.partial_samples, 1)
+        self.assertTrue(summary.partial_coverage)
+        self.assertEqual(memory.growth, 0.0)  # the partial dip is left out
+        self.assertEqual(memory.drift_per_second, 0.0)
+
+    def test_reports_without_coverage_still_load(self) -> None:
+        snapshot = _snap(1.0)
+        snapshot.pop("coverage")
+        snapshot.pop("evidence")
+        sample = load_samples(_report(snapshot))[0]
+        self.assertIsNone(sample.coverage)
+        self.assertTrue(sample.measured_metric("handles"))
+        self.assertFalse(summarize(_report(snapshot)).partial_coverage)
+
+
 if __name__ == "__main__":
     unittest.main()
