@@ -414,5 +414,88 @@ class CoverageTests(unittest.TestCase):
         self.assertFalse(session.target_failed)
 
 
+class ProcessLifecycleTests(unittest.TestCase):
+    """Lifecycle and attribution from detector snapshots, as the session sees them."""
+
+    MB = 1024 * 1024
+
+    def _run(self, trees) -> _Session:
+        from unittest import mock
+
+        session = _Session("C:/targets/worker.exe", console=make_console())
+        detector = session.detector
+        detector.window_seconds = (10.0,)
+        detector.classifier = mock.Mock(available=False)
+        for index, processes in enumerate(trees):
+            with mock.patch.object(detector, "_sample_processes", return_value=list(processes)),                     mock.patch("src.leak_detector.time.time", return_value=1000.0 + index * 0.5),                     mock.patch("src.leak_detector.time.monotonic", return_value=50.0 + index * 0.5):
+                session._accept_snapshot(detector._collect_snapshot())
+        return session
+
+    def _worker(self, pid: int, private_mb: float = 10):
+        from dataclasses import replace
+
+        from helpers import make_process
+
+        return replace(
+            make_process(pid, ppid=100, private=int(private_mb * self.MB)), create_time=float(pid)
+        )
+
+    def _messages(self, session: _Session) -> list[str]:
+        return [message for _s, message, _l in session._events]
+
+    def test_starts_and_exits_are_logged_and_bursts_coalesced(self) -> None:
+        from helpers import make_process
+
+        root = make_process(100, name="parent.exe")
+        burst = [self._worker(pid) for pid in range(1, 7)]
+        session = self._run([
+            [root, self._worker(1)],
+            [root, self._worker(1), self._worker(2)],
+            [root, self._worker(2)],
+            [root, *burst],
+            [root],
+        ])
+        messages = self._messages(session)
+        self.assertIn("Process started: worker.exe PID 2", messages)
+        self.assertIn("Process exited: worker.exe PID 1", messages)
+        self.assertIn("6 processes exited (worker.exe x6)", messages)
+        restarted = [m for m in messages if m.startswith("Process restarted")]
+        self.assertEqual(len(restarted), 1)  # one exit can be replaced once
+        self.assertIn("4 processes started (worker.exe x4)", messages)
+        counts = session.process_counts
+        self.assertEqual((counts.live, counts.exited), (1, 7))
+
+        report = session.build_report()
+        self.assertEqual(report["processes"]["counts"]["exited"], 7)
+        self.assertEqual(len(report["processes"]["exited"]), 7)
+        self.assertEqual(report["processes"]["live"][0]["pid"], 100)
+        self.assertNotIn("process_summaries", report["snapshots"][-1])
+        stored = list(session._snapshot_history)[-1]
+        self.assertEqual(stored.exited_processes, ())  # history stays lean
+
+    def test_alert_summaries_name_the_growing_worker(self) -> None:
+        from helpers import make_process
+
+        root = make_process(100, name="parent.exe")
+        trees = [[root, self._worker(1), self._worker(2, 30 + index * 4)] for index in range(21)]
+        session = self._run(trees)
+        line = next(m for m in self._messages(session) if m.startswith("Memory leak signal"))
+        self.assertIn(" MB private in 10s, mostly worker.exe PID 2 ", line)
+        report = session.build_report()
+        self.assertEqual(report["snapshots"][-1]["alerts"][0]["contributors"][0]["pid"], 2)
+
+    def test_new_worker_growth_is_worded_as_capacity(self) -> None:
+        from helpers import make_process
+
+        root = make_process(100, name="parent.exe")
+        trees = [
+            [root, *[self._worker(10 + n, 20) for n in range(index // 5 + 1)]]
+            for index in range(21)
+        ]
+        session = self._run(trees)
+        line = next(m for m in self._messages(session) if m.startswith("Memory leak signal"))
+        self.assertIn("mostly new worker processes", line)
+
+
 if __name__ == "__main__":
     unittest.main()

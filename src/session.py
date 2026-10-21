@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from collections import deque
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -13,10 +14,14 @@ from .config import MonitorSettings
 from .events import (
     RESOURCE_METRICS,
     LeakAlert,
+    LifecycleEvent,
+    LifecycleKind,
     LeakResource,
     LeakSeverity,
     MetricsSnapshot,
     MetricsStream,
+    ProcessCounts,
+    ProcessSummary,
     severity_rank,
 )
 from .handle_types import describe_type_growth
@@ -35,6 +40,7 @@ from .report import (
     iso_timestamp,
     new_report_id,
     coverage_to_dict,
+    process_summary_to_dict,
     report_directory,
     snapshot_to_dict,
     write_json_report,
@@ -50,6 +56,8 @@ MONITOR_ERROR_LIMIT = 20
 MEASUREMENT_CONCLUSIVE = "conclusive"
 MEASUREMENT_PARTIAL = "partial"
 MEASUREMENT_INCONCLUSIVE = "inconclusive"
+# Lifecycle events of one kind in one sample beyond this are logged as one line.
+LIFECYCLE_DETAIL_LIMIT = 3
 # Windows errors for files that cannot be started as programs: bad image,
 # bad format, wrong signature, or the wrong machine type.
 _NOT_A_PROGRAM = {129, 191, 193, 216}
@@ -460,7 +468,13 @@ class MonitorSession:
     # ------------------------------------------------------------------
 
     def _accept_snapshot(self, snapshot: MetricsSnapshot) -> None:
-        self._snapshot_history.append(snapshot)
+        # Per-process summaries describe the latest state only; keeping them
+        # on every stored snapshot would multiply memory by the tree size.
+        self._snapshot_history.append(
+            replace(snapshot, process_summaries=(), exited_processes=())
+            if snapshot.process_summaries or snapshot.exited_processes
+            else snapshot
+        )
         failure = snapshot.metadata.get("sampling_error")
         if failure:
             # A failed sample carries no measurements: keep showing the last
@@ -507,7 +521,66 @@ class MonitorSession:
             self._log_warmup_complete(snapshot)
 
         if not snapshot.monitoring_paused:
+            self._log_lifecycle(snapshot)
             self._log_signal_transitions(snapshot)
+
+    @property
+    def process_counts(self) -> ProcessCounts | None:
+        """Live processes and start/exit/restart totals from the latest sample."""
+        return self.snapshot.process_counts if self.snapshot is not None else None
+
+    @property
+    def exited_processes(self) -> tuple[ProcessSummary, ...]:
+        """Summaries of the most recent processes that left the tree."""
+        return self.snapshot.exited_processes if self.snapshot is not None else ()
+
+    def _log_lifecycle(self, snapshot: MetricsSnapshot) -> None:
+        """Log process starts, exits and restarts; coalesce bursts of one kind.
+
+        The root's exit is left to the target-exit message.
+        """
+        groups: dict[LifecycleKind, list[LifecycleEvent]] = {}
+        for event in snapshot.lifecycle:
+            if event.kind == LifecycleKind.EXITED and event.pid == snapshot.root_pid:
+                continue
+            groups.setdefault(event.kind, []).append(event)
+        for kind, events in groups.items():
+            level = "warn" if kind == LifecycleKind.RESTARTED else "info"
+            if len(events) <= LIFECYCLE_DETAIL_LIMIT:
+                for event in events:
+                    self._append_event(self._lifecycle_line(event), level)
+                continue
+            names: dict[str, int] = {}
+            for event in events:
+                names[event.name] = names.get(event.name, 0) + 1
+            shown = ", ".join(
+                f"{name} x{count}" if count > 1 else name
+                for name, count in sorted(names.items(), key=lambda item: -item[1])[:3]
+            )
+            more = ", ..." if len(names) > 3 else ""
+            self._append_event(f"{len(events)} processes {kind.value} ({shown}{more})", level)
+
+    def _lifecycle_line(self, event: LifecycleEvent) -> str:
+        who = f"{event.name} PID {event.pid}"
+        if event.kind == LifecycleKind.RESTARTED:
+            return f"Process restarted: {who} replaces PID {event.replaces_pid}"
+        return f"Process {event.kind.value}: {who}"
+
+    def attribution_text(self, alert: LeakAlert) -> str | None:
+        """Where an alert's growth came from, or ``None`` without attribution.
+
+        For example ``mostly worker.exe PID 1234`` or ``mostly new worker
+        processes``; the detector made the ranking, this only words it.
+        """
+        top = alert.top_contributor
+        if top is None:
+            return None
+        if alert.mostly_new_processes:
+            return "mostly new worker processes"
+        who = f"{top.name} PID {top.pid}"
+        if top.exited:
+            who += ", exited"
+        return f"mostly {who}" if top.share > 0.5 else f"largest {who} ({top.share:.0%})"
 
     def _track_coverage(self, snapshot: MetricsSnapshot, first: bool) -> None:
         """Count partial samples and log processes that become (un)readable.
@@ -645,7 +718,11 @@ class MonitorSession:
         else:
             amount = f"{delta:,.0f}"
             rate = f"{alert.slope_per_second:,.1f}/s"
-        summary = f"+{amount} in {alert.window_seconds:.0f}s {self.glyphs.sep} {rate}"
+        summary = f"+{amount} in {alert.window_seconds:.0f}s"
+        attribution = self.attribution_text(alert)
+        if attribution:
+            summary += f", {attribution}"
+        summary += f" {self.glyphs.sep} {rate}"
         types = describe_type_growth(alert.growth_by_type or {})
         return f"{summary} {self.glyphs.sep} {types}" if types else summary
 
@@ -707,11 +784,32 @@ class MonitorSession:
             "detection_ran": self.detector.detection_started,
             "coverage": self._coverage_record(),
             "outcome": self._outcome_record(),
+            "processes": self._processes_record(),
             # Samples taken, and how many the snapshot list skips between
             # entries once a long session has been thinned (1: none).
             "sample_count": self._sample_count,
             "snapshot_stride": self._snapshot_history.stride,
             "snapshots": [snapshot_to_dict(snapshot) for snapshot in self._snapshot_history],
+        }
+
+    def _processes_record(self) -> dict[str, Any]:
+        """Process counts and per-identity summaries, live and exited, for reports."""
+        snapshot = self.snapshot
+        counts = snapshot.process_counts if snapshot is not None else None
+        return {
+            "counts": None
+            if counts is None
+            else {
+                "live": counts.live,
+                "started": counts.started,
+                "exited": counts.exited,
+                "restarted": counts.restarted,
+            },
+            "live": [
+                process_summary_to_dict(item)
+                for item in (snapshot.process_summaries if snapshot else ())
+            ],
+            "exited": [process_summary_to_dict(item) for item in self.exited_processes],
         }
 
     def _warmup_record(self) -> dict[str, Any] | None:
