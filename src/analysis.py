@@ -281,6 +281,10 @@ class ResourceSummary:
     # most samples were complete, growth and drift use only those.
     partial_samples: int = 0
     measured_samples: int = 0
+    # From session facts when the report has them: when the worst tier was
+    # first reached, and how long the signal was raised in all.
+    worst_at: float | None = None
+    signal_seconds: float | None = None
 
     @property
     def partial(self) -> bool:
@@ -291,6 +295,86 @@ class ResourceSummary:
         if self.first is None or self.last is None:
             return None
         return self.last - self.first
+
+
+@dataclass(frozen=True)
+class SessionFactsData:
+    """A report's ``session_facts``: exact even when the snapshots were thinned.
+
+    Every field is optional in the JSON; missing or malformed values are
+    left out so analysis falls back to what the snapshots show.
+    """
+
+    peaks: Mapping[str, tuple[float, float | None]]
+    worst: Mapping[str, tuple[str, float | None]]
+    episodes: Mapping[str, int]
+    signal_seconds: Mapping[str, float]
+    samples: Mapping[str, int]
+    first_at: float | None = None
+    last_at: float | None = None
+    evaluated_seconds: float | None = None
+    after_warmup_seconds: float | None = None
+    chart_stride: int | None = None
+    chart_stored: int | None = None
+    chart_seen: int | None = None
+    monitor: Mapping[str, Any] | None = None
+
+
+def _count(value: Any) -> int | None:
+    number = finite(value)
+    return int(number) if number is not None and number >= 0 else None
+
+
+def load_facts(report: Mapping[str, Any]) -> SessionFactsData | None:
+    """Parse ``session_facts`` leniently; ``None`` for older reports without them."""
+    raw = report.get("session_facts")
+    if not isinstance(raw, Mapping):
+        return None
+
+    def section(name: str) -> Mapping[str, Any]:
+        value = raw.get(name)
+        return value if isinstance(value, Mapping) else {}
+
+    peaks: dict[str, tuple[float, float | None]] = {}
+    for key, item in section("peaks").items():
+        value = finite(item.get("value")) if isinstance(item, Mapping) else None
+        if key in TOTAL_KEYS and value is not None:
+            peaks[key] = (value, finite(item.get("timestamp")))
+    worst: dict[str, tuple[str, float | None]] = {}
+    episodes: dict[str, int] = {}
+    signal_seconds: dict[str, float] = {}
+    for resource, item in section("signals").items():
+        if resource not in RESOURCES or not isinstance(item, Mapping):
+            continue
+        rank = severity_rank(item.get("worst"))
+        worst[resource] = (SEVERITIES[rank], finite(item.get("worst_at")) if rank else None)
+        count = _count(item.get("episodes"))
+        if count is not None:
+            episodes[resource] = count
+        seconds = finite(item.get("signal_seconds"))
+        if seconds is not None and seconds >= 0:
+            signal_seconds[resource] = seconds
+    samples: dict[str, int] = {}
+    for key, value in section("samples").items():
+        count = _count(value)
+        if isinstance(key, str) and count is not None:
+            samples[key] = count
+    evaluation, chart, monitor = section("evaluation"), section("chart"), section("monitor")
+    return SessionFactsData(
+        peaks=peaks,
+        worst=worst,
+        episodes=episodes,
+        signal_seconds=signal_seconds,
+        samples=samples,
+        first_at=finite(raw.get("first_sample_at")),
+        last_at=finite(raw.get("last_sample_at")),
+        evaluated_seconds=finite(evaluation.get("evaluated_seconds")),
+        after_warmup_seconds=finite(evaluation.get("after_warmup_seconds")),
+        chart_stride=_count(chart.get("stride")) or None,
+        chart_stored=_count(chart.get("stored")),
+        chart_seen=_count(chart.get("seen")),
+        monitor=dict(monitor) if monitor else None,
+    )
 
 
 @dataclass(frozen=True)
@@ -312,6 +396,20 @@ class ReportSummary:
     handle_type_growth: Mapping[str, int] | None = None
     # First and last timestamps of the warm-up, when the run had one.
     warmup: tuple[float, float] | None = None
+    # Exact facts exported by the session (None for older reports), when
+    # each peak in ``peaks`` was reached, and the stored chart's thinning.
+    facts: SessionFactsData | None = None
+    peak_times: Mapping[str, float] | None = None
+    chart_stride: int = 1
+
+    @property
+    def exact(self) -> bool:
+        """Whether peaks, worst tiers and episode counts come from every sample."""
+        return self.facts is not None
+
+    @property
+    def chart_thinned(self) -> bool:
+        return self.chart_stride > 1
 
     @property
     def duration(self) -> float:
@@ -326,8 +424,15 @@ class ReportSummary:
 
 
 def summarize(report: Mapping[str, Any], samples: Sequence[Sample] | None = None) -> ReportSummary:
-    """Summarize a report; pass ``samples`` to reuse an earlier ``load_samples``."""
+    """Summarize a report; pass ``samples`` to reuse an earlier ``load_samples``.
+
+    Peaks, worst tiers, episode counts and the sample count come from the
+    report's ``session_facts`` when present, because a thinned snapshot
+    list can miss a one-sample peak or a short episode. Growth and drift
+    always come from the snapshots; older reports use them for everything.
+    """
     samples = load_samples(report) if samples is None else samples
+    facts = load_facts(report)
     measured = [sample for sample in samples if sample.measured]
     # Growth and drift start from the post-warm-up baseline, like detection.
     judged = [sample for sample in measured if not sample.warming_up]
@@ -345,6 +450,15 @@ def summarize(report: Mapping[str, Any], samples: Sequence[Sample] | None = None
     for episode in episodes:
         rank = severity_rank(episode.severity)
         worst_by_resource[episode.resource] = max(worst_by_resource[episode.resource], rank)
+    peak_times: dict[str, float] | None = None
+    if facts is not None:
+        peak_times = {}
+        for key, (value, stamp) in facts.peaks.items():
+            peaks[key] = value
+            if stamp is not None:
+                peak_times[key] = stamp
+        for resource, (severity, _stamp) in facts.worst.items():
+            worst_by_resource[resource] = max(worst_by_resource[resource], severity_rank(severity))
 
     resources: dict[str, ResourceSummary] = {}
     for resource, key in SIGNAL_TOTALS.items():
@@ -367,9 +481,14 @@ def summarize(report: Mapping[str, Any], samples: Sequence[Sample] | None = None
             peak=max((value for _, value in points), default=None),
             drift_per_second=drift,
             worst=SEVERITIES[worst_by_resource[resource]],
-            episodes=sum(1 for episode in episodes if episode.resource == resource),
+            episodes=max(
+                sum(1 for episode in episodes if episode.resource == resource),
+                facts.episodes.get(resource, 0) if facts else 0,
+            ),
             partial_samples=partial,
             measured_samples=len(valid),
+            worst_at=facts.worst.get(resource, ("none", None))[1] if facts else None,
+            signal_seconds=facts.signal_seconds.get(resource) if facts else None,
         )
 
     classified = [sample for sample in judged if sample.handle_types]
@@ -384,10 +503,22 @@ def summarize(report: Mapping[str, Any], samples: Sequence[Sample] | None = None
         } or None
 
     active = [sample for sample in samples if not sample.paused]
+    sample_count = len(active)
+    started = samples[0].timestamp if samples else None
+    ended = samples[-1].timestamp if samples else None
+    stride = _count(report.get("snapshot_stride")) or 1
+    if facts is not None:
+        recorded = facts.samples.get("collected", 0) + facts.samples.get("failed", 0)
+        sample_count = max(sample_count, recorded)
+        if facts.first_at is not None:
+            started = facts.first_at if started is None else min(started, facts.first_at)
+        if facts.last_at is not None:
+            ended = facts.last_at if ended is None else max(ended, facts.last_at)
+        stride = max(stride, facts.chart_stride or 1)
     return ReportSummary(
-        started=samples[0].timestamp if samples else None,
-        ended=samples[-1].timestamp if samples else None,
-        sample_count=len(active),
+        started=started,
+        ended=ended,
+        sample_count=sample_count,
         max_processes=max((sample.process_count for sample in samples), default=0),
         worst=SEVERITIES[max(worst_by_resource.values(), default=0)],
         peaks=peaks,
@@ -397,6 +528,9 @@ def summarize(report: Mapping[str, Any], samples: Sequence[Sample] | None = None
         handle_types=last_types,
         handle_type_growth=type_growth,
         warmup=_warmup_span(samples),
+        facts=facts,
+        peak_times=peak_times,
+        chart_stride=stride,
     )
 
 
@@ -557,10 +691,12 @@ __all__ = [
     "SEVERITIES",
     "SIGNAL_TOTALS",
     "Sample",
+    "SessionFactsData",
     "SignalChange",
     "alert_episodes",
     "chart_payload",
     "finite",
+    "load_facts",
     "load_samples",
     "severity_rank",
     "signal_changes",

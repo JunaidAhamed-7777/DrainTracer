@@ -145,5 +145,65 @@ class SessionFactsTests(unittest.TestCase):
         self.assertEqual(facts["coverage"]["samples"], 0)  # these snapshots record no coverage
 
 
+class ReloadedFactsTests(unittest.TestCase):
+    def _report(self) -> tuple[dict, float, int]:
+        session = _SmallHistorySession("C:/targets/worker.exe", console=make_console())
+        snapshots, spike_at = long_session_snapshots()
+        for snapshot in snapshots:
+            session._accept_snapshot(snapshot)
+        return json.loads(json.dumps(session.build_report(), default=str)), spike_at, len(snapshots)
+
+    def test_analysis_of_a_reopened_report_keeps_the_exact_facts(self) -> None:
+        from src.analysis import alert_episodes, load_samples, summarize
+
+        report, spike_at, total = self._report()
+        samples = load_samples(report)
+        self.assertLess(len(alert_episodes(samples)), 30)  # the chart alone loses episodes
+
+        summary = summarize(report, samples)
+        self.assertTrue(summary.exact)
+        self.assertTrue(summary.chart_thinned)
+        self.assertEqual(summary.chart_stride, report["snapshot_stride"])
+        self.assertEqual(summary.peaks["private_bytes"], 600 * MB)
+        self.assertEqual(summary.peak_times["private_bytes"], spike_at)
+        memory = summary.resources["memory"]
+        self.assertEqual(memory.episodes, 30)
+        self.assertEqual(memory.worst, "medium")
+        self.assertEqual(memory.worst_at, START + 1.5)
+        self.assertEqual(memory.signal_seconds, 30.0)
+        self.assertEqual(summary.sample_count, total)
+        self.assertEqual(summary.facts.evaluated_seconds, (total - 1) * 0.5)
+        self.assertEqual(summary.facts.monitor["collection_ms"]["max"], 13.0)
+
+    def test_older_reports_fall_back_to_the_snapshots(self) -> None:
+        from src.analysis import load_samples, summarize
+
+        report, _spike_at, _total = self._report()
+        del report["session_facts"]
+        summary = summarize(report)
+        self.assertFalse(summary.exact)
+        self.assertIsNone(summary.peak_times)
+        self.assertIsNone(summary.resources["memory"].worst_at)
+        self.assertLess(summary.peaks["private_bytes"], 500 * MB)
+        self.assertEqual(summary.sample_count, len(load_samples(report)))
+        self.assertTrue(summary.chart_thinned)  # snapshot_stride still says so
+
+    def test_malformed_facts_are_ignored_field_by_field(self) -> None:
+        from src.analysis import load_facts
+
+        facts = load_facts({"session_facts": {
+            "peaks": {"private_bytes": {"value": "big"}, "handles": {"value": 9, "timestamp": 3}},
+            "signals": {"memory": {"worst": "bogus", "episodes": -1}, "disks": {}},
+            "samples": {"collected": 4.0, "failed": None},
+            "chart": "thinned",
+        }})
+        self.assertEqual(dict(facts.peaks), {"handles": (9.0, 3.0)})
+        self.assertEqual(facts.worst["memory"], ("none", None))
+        self.assertEqual(dict(facts.episodes), {})
+        self.assertEqual(dict(facts.samples), {"collected": 4})
+        self.assertIsNone(facts.chart_stride)
+        self.assertIsNone(load_facts({"session_facts": []}))
+
+
 if __name__ == "__main__":
     unittest.main()
