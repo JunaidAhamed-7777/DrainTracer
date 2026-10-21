@@ -18,24 +18,49 @@ Core modules are under `src/`:
 
 ## Mandatory versioning rule
 
-The application started at `v0.1`. Initializing this instruction file advanced
-the runtime version to `v0.2`; that sentence is history, not the live release.
-Read `DashboardApp.VERSION` before editing. **Every subsequent change to the
-repository must increment the application version by exactly `0.1`.** For
-example:
+Starting with the owner-approved `v5.0.0` release, use Semantic Versioning:
+`vMAJOR.MINOR.PATCH`. Each component is an integer, not a decimal fraction;
+for example, `v5.0.99 -> v5.0.100`. Earlier versions retain their history.
 
-```text
-v0.1 -> v0.2 -> v0.3 -> v0.4
+- Increment PATCH for backward-compatible bug-fix releases.
+- Increment MINOR for backward-compatible feature releases and reset PATCH
+  to zero.
+- **Only the repository owner may authorize a MAJOR increment.** A major
+  release resets MINOR and PATCH to zero. Obtain explicit owner approval
+  before publishing incompatible changes or changing the major version.
+- Prepare one version increment per published release. Individual commits,
+  pushes, and merges do not independently increment the version. Multiple
+  small commits can belong to one release; retries and no-op pushes do not
+  create another version.
+
+Read `DashboardApp.VERSION` in `src/dashboard.py` before editing. It remains
+the canonical runtime value. When preparing a release, update it and the
+current version at the top of `RELEASES.md` together. Keep release records
+newest first and preserve previous entries. A release tag, when publishing
+one, must match the full runtime version; never reuse an existing release
+version for different published contents.
+
+Near the top of `README.md`, display the **release series** as
+`vMAJOR.MINOR.0`, linking to `RELEASES.md` for the exact current version.
+Patch releases keep the same README series; major/minor releases update it.
+Keep version values in generated reports consistent when regenerating them.
+
+## Mandatory snapshot check
+
+Before and after every repository change, compare the committed
+`runtime-manifest.json` snapshot with the current required runtime file
+structure. Run:
+
+```powershell
+python -m unittest discover -s tests -p test_installation.py
 ```
 
-Update the canonical runtime value in `src/dashboard.py`:
-
-```python
-DashboardApp.VERSION = "vX.Y"
-```
-
-Keep version values in generated reports consistent when those reports are
-regenerated. Do not make unrelated versioning or naming changes.
+Review any difference. Update the snapshot only for intentional additions,
+moves, or removals of required runtime files, in the same focused change.
+Do not regenerate it from an incomplete checkout to make missing files pass.
+File-content edits alone do not change this structural inventory. Generated
+reports, caches, environments, user settings, and documentation such as
+`RELEASES.md` are not required runtime files and must stay outside it.
 
 ## Implementation guidance
 
@@ -54,8 +79,10 @@ regenerated. Do not make unrelated versioning or naming changes.
 
 Before finishing a change:
 
-1. Read the current `DashboardApp.VERSION`.
-2. Increment it by exactly `0.1`.
+1. Read the current `DashboardApp.VERSION`; change it only when preparing a
+   release under the versioning rule above.
+2. Compare the committed snapshot with the current required runtime
+   structure before and after the change; run the installation tests.
 3. Run `python -m compileall -q src`.
 4. Run relevant smoke tests and `ReadLints` on edited files.
 5. Run `git diff --check` and confirm the working tree state.
