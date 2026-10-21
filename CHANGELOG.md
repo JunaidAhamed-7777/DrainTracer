@@ -5,6 +5,11 @@ feature milestones remain in [future-plan.md](future-plan.md), and the complete
 commit history records earlier changes. Versions follow the repository rule:
 each focused change advances the runtime version by exactly `0.1`.
 
+## v3.1 — 2026-10-21
+
+- Added name/PID filtering and bounded process-list pages with literal,
+  encoding-safe labels and clear empty-result states.
+
 ## v3.0 — 2026-10-21
 
 - Added read-only running-process discovery with sorted names/PIDs and
