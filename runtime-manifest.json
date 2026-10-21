@@ -21,6 +21,7 @@
     "src/leak_detector.py",
     "src/main.py",
     "src/picker_input.py",
+    "src/process_history.py",
     "src/process_picker.py",
     "src/process_runner.py",
     "src/process_table.py",

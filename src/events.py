@@ -44,12 +44,36 @@ class LeakResource(str, Enum):
 
 
 @dataclass(frozen=True)
+class GrowthContributor:
+    """One process's change in an alerted metric over the alert window.
+
+    ``share`` is its part of all positive growth in that window.
+    ``new_process`` marks a process started inside the window, whose whole
+    value counts as growth; ``exited`` one that ended before the window did.
+    """
+
+    pid: int
+    create_time: float | None
+    name: str
+    delta: float
+    share: float
+    new_process: bool = False
+    exited: bool = False
+
+
+@dataclass(frozen=True)
 class LeakAlert:
     """A single leak heuristic result for one resource category.
 
     ``growth_by_type`` is set for handle alerts when handle types were
     classified during the window: the change per handle category between
     the first classification in the window and the latest one.
+
+    ``contributors`` ranks the processes whose alerted metric grew over the
+    same window, largest first. Growth is split into what processes that
+    already ran at the window start added (``growth_within_existing``) and
+    what processes started inside the window brought
+    (``growth_from_new_processes``); both sum positive changes only.
     """
 
     resource: LeakResource
@@ -60,6 +84,24 @@ class LeakAlert:
     current_value: float
     baseline_value: float
     growth_by_type: dict[str, int] | None = None
+    contributors: tuple[GrowthContributor, ...] = ()
+    growth_from_new_processes: float = 0.0
+    growth_within_existing: float = 0.0
+
+    @property
+    def top_contributor(self) -> GrowthContributor | None:
+        """The process that grew the alerted metric most over the window."""
+        return self.contributors[0] if self.contributors else None
+
+    @property
+    def mostly_new_processes(self) -> bool:
+        """Whether processes started inside the window account for most growth.
+
+        Then the total grew because the tree added capacity (new workers),
+        which is not by itself a leak inside any one process.
+        """
+        growth = self.growth_from_new_processes + self.growth_within_existing
+        return growth > 0 and self.growth_from_new_processes > growth / 2
 
     @property
     def metric(self) -> str:
@@ -168,6 +210,85 @@ class ResourceEvidence:
         return self.coverage is not None and self.coverage.partial
 
 
+# Per-process counters kept in bounded histories for growth attribution.
+TRACKED_METRICS = ("private_bytes", "handles", "threads")
+
+
+class LifecycleKind(str, Enum):
+    """What happened to a process between two samples."""
+
+    STARTED = "started"
+    EXITED = "exited"
+    # A start that replaces a process of the same name and parent which
+    # exited moments before (a crashed or recycled worker coming back).
+    RESTARTED = "restarted"
+
+
+@dataclass(frozen=True)
+class LifecycleEvent:
+    """A process joining or leaving the monitored tree.
+
+    ``replaces_pid`` is the exited process a ``RESTARTED`` start replaced.
+    """
+
+    kind: LifecycleKind
+    timestamp: float
+    pid: int
+    name: str
+    create_time: float | None = None
+    ppid: int | None = None
+    replaces_pid: int | None = None
+
+
+@dataclass(frozen=True)
+class ProcessCounts:
+    """Live processes now, and lifecycle totals since monitoring began.
+
+    Restarts are also counted as starts, so ``started`` is every arrival.
+    """
+
+    live: int
+    started: int = 0
+    exited: int = 0
+    restarted: int = 0
+
+
+@dataclass(frozen=True)
+class ProcessSummary:
+    """What one process (one identity) did while it was monitored.
+
+    ``first``, ``last`` and ``peak`` map ``TRACKED_METRICS`` to values; a
+    metric that was never measured for the process is absent. ``exited_at``
+    is set once the process has left the tree.
+    """
+
+    pid: int
+    create_time: float | None
+    name: str
+    ppid: int | None
+    first_seen: float
+    last_seen: float
+    samples: int
+    first: dict[str, float]
+    last: dict[str, float]
+    peak: dict[str, float]
+    exited_at: float | None = None
+
+    @property
+    def identity(self) -> tuple[int, float | None]:
+        return (self.pid, self.create_time)
+
+    @property
+    def exited(self) -> bool:
+        return self.exited_at is not None
+
+    def growth(self, metric: str) -> float | None:
+        """Change from the first to the last measured value, if both exist."""
+        if metric not in self.first or metric not in self.last:
+            return None
+        return self.last[metric] - self.first[metric]
+
+
 @dataclass(frozen=True)
 class ProcessMetrics:
     """Aggregated metrics for one process in the monitored tree.
@@ -233,6 +354,10 @@ class MetricsSnapshot:
     warming_up: bool = False
     coverage: dict[str, MetricCoverage] | None = None
     evidence: tuple[ResourceEvidence, ...] = ()
+    lifecycle: tuple[LifecycleEvent, ...] = ()
+    process_counts: ProcessCounts | None = None
+    process_summaries: tuple[ProcessSummary, ...] = ()
+    exited_processes: tuple[ProcessSummary, ...] = ()
 
     def evidence_for(self, resource: LeakResource) -> ResourceEvidence | None:
         return next((item for item in self.evidence if item.resource == resource), None)

@@ -7,12 +7,12 @@ import math
 import os
 import uuid
 from collections.abc import Mapping
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
-from .events import MetricCoverage, MetricsSnapshot
+from .events import LifecycleEvent, MetricCoverage, MetricsSnapshot, ProcessSummary
 
 DEFAULT_REPORT_DIR = "leak_reports/reports"
 # 3: snapshots add per-metric ``coverage`` and per-resource ``evidence``,
@@ -69,8 +69,14 @@ def report_directory(report: Mapping[str, Any], root: str | Path) -> Path:
 
 
 def snapshot_to_dict(snapshot: MetricsSnapshot) -> dict[str, Any]:
-    """Convert a snapshot to JSON-safe primitives."""
-    data = asdict(snapshot)
+    """Convert a snapshot to JSON-safe primitives.
+
+    Per-process summaries are left out: they repeat on every sample, and
+    reports carry them once at the top level instead.
+    """
+    data = asdict(replace(snapshot, process_summaries=(), exited_processes=()))
+    del data["process_summaries"], data["exited_processes"]
+    data["lifecycle"] = [lifecycle_to_dict(event) for event in snapshot.lifecycle]
     data["alerts"] = [
         {
             "resource": alert.resource.value,
@@ -100,6 +106,37 @@ def snapshot_to_dict(snapshot: MetricsSnapshot) -> dict[str, Any]:
         for item in snapshot.evidence
     }
     return data
+
+
+def lifecycle_to_dict(event: LifecycleEvent) -> dict[str, Any]:
+    """A process start, exit or restart as JSON primitives."""
+    return {
+        "kind": event.kind.value,
+        "timestamp": event.timestamp,
+        "pid": event.pid,
+        "name": event.name,
+        "create_time": event.create_time,
+        "ppid": event.ppid,
+        "replaces_pid": event.replaces_pid,
+    }
+
+
+def process_summary_to_dict(summary: ProcessSummary) -> dict[str, Any]:
+    """One process identity's lifetime and counter summary as JSON primitives."""
+    return {
+        "pid": summary.pid,
+        "create_time": summary.create_time,
+        "name": summary.name,
+        "ppid": summary.ppid,
+        "first_seen": summary.first_seen,
+        "last_seen": summary.last_seen,
+        "exited_at": summary.exited_at,
+        "samples": summary.samples,
+        "first": dict(summary.first),
+        "last": dict(summary.last),
+        "peak": dict(summary.peak),
+        "growth": {metric: summary.growth(metric) for metric in summary.last},
+    }
 
 
 def coverage_to_dict(coverage: Mapping[str, MetricCoverage] | None) -> dict[str, Any] | None:
@@ -175,7 +212,9 @@ __all__ = [
     "REPORT_SCHEMA",
     "coverage_to_dict",
     "iso_timestamp",
+    "lifecycle_to_dict",
     "new_report_id",
+    "process_summary_to_dict",
     "report_directory",
     "report_filename",
     "snapshot_to_dict",

@@ -26,6 +26,7 @@ from .events import (
     MetricsSnapshot,
     MetricsStream,
     ProcessMetrics,
+    ProcessSummary,
     ResourceEvidence,
 )
 from .handle_types import (
@@ -35,6 +36,7 @@ from .handle_types import (
     describe_type_growth,
     total_counts,
 )
+from .process_history import ProcessHistory
 from .process_runner import ProcessManager
 from .process_table import ProcessEntry, ProcessTable
 from .stats import least_squares_slope
@@ -198,6 +200,10 @@ class LeakDetector:
         self._last_evidence: tuple[ResourceEvidence, ...] = ()
         self._next_classification = 0.0
         self._handle_type_history: deque[tuple[float, HandleCounts]] = deque()
+        # Per-process histories reach back as far as the series do, so
+        # growth can be attributed over any alert window.
+        self._process_history = ProcessHistory(self.max_window_seconds * 1.5)
+        self._last_summaries: tuple[ProcessSummary, ...] = ()
 
         # Warm-up: sampling runs but leak heuristics wait until this much
         # active (unpaused) sampling time has passed.
@@ -215,6 +221,11 @@ class LeakDetector:
     @property
     def is_paused(self) -> bool:
         return self._pause_event.is_set()
+
+    @property
+    def process_history(self) -> ProcessHistory:
+        """Per-process histories; safe to read from other threads."""
+        return self._process_history
 
     @property
     def warming_up(self) -> bool:
@@ -359,6 +370,9 @@ class LeakDetector:
             evidence=tuple(
                 replace(item, state=EvidenceState.STALE) for item in self._last_evidence
             ),
+            process_counts=self._process_history.counts,
+            process_summaries=self._last_summaries,
+            exited_processes=self._process_history.exited(),
         )
 
     @staticmethod
@@ -378,6 +392,7 @@ class LeakDetector:
         now = time.time()
         self.process_manager.refresh_process_tree()
         processes = self._sample_processes()
+        lifecycle = self._process_history.observe(now, processes)
         totals = self._aggregate_totals(processes)
         coverage = self._coverage(processes)
         processes, handle_types = self._classify_handles(processes)
@@ -404,6 +419,7 @@ class LeakDetector:
         self._last_severity = severity
         self._last_coverage = coverage
         self._last_evidence = evidence
+        self._last_summaries = self._process_history.summaries()
 
         return MetricsSnapshot(
             timestamp=now,
@@ -420,6 +436,10 @@ class LeakDetector:
             warming_up=warming_up,
             coverage=coverage,
             evidence=evidence,
+            lifecycle=lifecycle,
+            process_counts=self._process_history.counts,
+            process_summaries=self._last_summaries,
+            exited_processes=self._process_history.exited(),
         )
 
     def _series(self) -> dict[LeakResource, _ResourceSeries]:
