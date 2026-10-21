@@ -877,6 +877,8 @@ class LeakDetector:
                 best_alert = candidate
                 best_since = times[0]
 
+        if best_alert is not None:
+            best_alert = self._attribute(best_alert, best_since, timestamp)
         if best_alert is not None and resource == LeakResource.HANDLES:
             growth = self._handle_growth_since(best_since)
             if growth:
@@ -887,6 +889,37 @@ class LeakDetector:
                     message=f"{best_alert.message}; {described}" if described else best_alert.message,
                 )
         return best_alert
+
+    def _attribute(self, alert: LeakAlert, since: float, until: float) -> LeakAlert:
+        """Name the processes behind an alert's growth over its own window.
+
+        The alert and its severity stand as judged on the totals; this only
+        says where the growth came from, so growth from newly started
+        workers is described as such instead of as a leak in one process.
+        """
+        result = self._process_history.attribute(alert.metric, since, until)
+        if not result.contributors:
+            return alert
+        attributed = replace(
+            alert,
+            contributors=result.contributors,
+            growth_from_new_processes=result.growth_from_new_processes,
+            growth_within_existing=result.growth_within_existing,
+        )
+        if attributed.mostly_new_processes:
+            count = result.new_processes
+            noun = "process" if count == 1 else "processes"
+            note = f"mostly new worker {noun} ({count} started in the window)"
+        else:
+            top = result.contributors[0]
+            amount = _format_quantity(alert.resource, top.delta)
+            who = f"{top.name} PID {top.pid}"
+            note = (
+                f"mostly {who} (+{amount})"
+                if top.share > 0.5
+                else f"largest: {who} (+{amount}, {top.share:.0%})"
+            )
+        return replace(attributed, message=f"{alert.message}; {note}")
 
     _least_squares_slope = staticmethod(least_squares_slope)
 

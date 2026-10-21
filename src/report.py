@@ -88,6 +88,21 @@ def snapshot_to_dict(snapshot: MetricsSnapshot) -> dict[str, Any]:
             "current_value": alert.current_value,
             "baseline_value": alert.baseline_value,
             "growth_by_type": alert.growth_by_type,
+            "contributors": [
+                {
+                    "pid": item.pid,
+                    "create_time": item.create_time,
+                    "name": item.name,
+                    "delta": item.delta,
+                    "share": round(item.share, 4),
+                    "new_process": item.new_process,
+                    "exited": item.exited,
+                }
+                for item in alert.contributors
+            ],
+            "growth_from_new_processes": alert.growth_from_new_processes,
+            "growth_within_existing": alert.growth_within_existing,
+            "mostly_new_processes": alert.mostly_new_processes,
         }
         for alert in snapshot.alerts
     ]

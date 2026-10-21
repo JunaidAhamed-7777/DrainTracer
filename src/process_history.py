@@ -118,6 +118,8 @@ class Attribution:
     contributors: tuple[GrowthContributor, ...]
     growth_from_new_processes: float
     growth_within_existing: float
+    # Processes started inside the window whose arrival added to the total.
+    new_processes: int = 0
 
 
 class ProcessHistory:
@@ -344,7 +346,8 @@ class ProcessHistory:
             )
             for track, delta, new, exited in ranked
         )
-        return Attribution(contributors, growth_new, growth_existing)
+        new_count = sum(1 for _t, delta, new, _e in changes if new and delta > 0)
+        return Attribution(contributors, growth_new, growth_existing, new_count)
 
 
 __all__ = [

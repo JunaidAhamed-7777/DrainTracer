@@ -164,6 +164,47 @@ class DetectorLifecycleTests(unittest.TestCase):
         self.assertEqual(data["lifecycle"][0]["kind"], "exited")
         self.assertEqual(data["process_counts"]["live"], 2)
 
+    def test_alerts_name_the_growing_worker(self) -> None:
+        trees = [
+            [_parent(), _worker(1, 50), _worker(2, 30 + index * 4), _worker(3, 80)]
+            for index in range(21)
+        ]
+        _detector, snapshots = self._collect(trees)
+        (alert,) = [a for a in snapshots[-1].alerts if a.metric == "private_bytes"]
+        self.assertEqual(alert.top_contributor.pid, 2)
+        self.assertEqual(alert.top_contributor.delta, 80 * MB)
+        self.assertFalse(alert.mostly_new_processes)
+        self.assertEqual(alert.growth_within_existing, 80 * MB)
+        self.assertIn("; mostly worker.exe PID 2 (+80.0 MB)", alert.message)
+
+        from src.report import snapshot_to_dict
+
+        (record,) = snapshot_to_dict(snapshots[-1])["alerts"]
+        self.assertEqual(record["contributors"][0]["pid"], 2)
+        self.assertEqual(record["contributors"][0]["share"], 1.0)
+        self.assertFalse(record["mostly_new_processes"])
+
+    def test_new_worker_capacity_is_not_described_as_one_process_leaking(self) -> None:
+        trees = [
+            [_parent(), *[_worker(10 + n, 20) for n in range(index // 5 + 1)]]
+            for index in range(21)
+        ]
+        _detector, snapshots = self._collect(trees)
+        (alert,) = [a for a in snapshots[-1].alerts if a.metric == "private_bytes"]
+        self.assertTrue(alert.mostly_new_processes)
+        self.assertEqual(alert.growth_from_new_processes, 80 * MB)
+        self.assertIn("mostly new worker processes (4 started in the window)", alert.message)
+        self.assertTrue(all(c.new_process for c in alert.contributors))
+
+    def test_an_exited_worker_is_still_found_in_reports(self) -> None:
+        trees = [[_parent(), _worker(2, 30 + index * 4)] for index in range(21)]
+        trees += [[_parent()]] * 2
+        _detector, snapshots = self._collect(trees)
+        alerted = next(s for s in snapshots if s.alerts)
+        self.assertEqual(alerted.alerts[0].top_contributor.pid, 2)
+        (summary,) = snapshots[-1].exited_processes
+        self.assertEqual((summary.pid, summary.growth("private_bytes")), (2, 80 * MB))
+
 
 if __name__ == "__main__":
     unittest.main()
