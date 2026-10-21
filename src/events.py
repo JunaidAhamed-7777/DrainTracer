@@ -183,6 +183,79 @@ class MetricCoverage:
         return self.measured == 0
 
 
+class WindowVerdict(str, Enum):
+    """Why one detection window did or did not raise a signal.
+
+    The first two mean the window could not be judged yet; the rest are
+    the detector's checks in the order it applies them.
+    """
+
+    TOO_FEW_SAMPLES = "too_few_samples"
+    SHORT_SPAN = "short_span"
+    NO_UPWARD_TREND = "no_upward_trend"
+    NOT_MONOTONIC = "not_monotonic"
+    TOO_MANY_DROPS = "too_many_drops"
+    BELOW_THRESHOLDS = "below_thresholds"
+    QUALIFIED = "qualified"
+
+
+# Verdicts for windows that held too little data to be judged.
+UNJUDGED_VERDICTS = frozenset({WindowVerdict.TOO_FEW_SAMPLES, WindowVerdict.SHORT_SPAN})
+
+
+@dataclass(frozen=True)
+class WindowEvaluation:
+    """The values one detection window was judged on, as the detector saw them.
+
+    Emitted so views can explain a signal (or its absence) without
+    re-running detection. Values are ``None`` for windows that held too
+    few points to compute them. ``score`` is the heuristic severity score;
+    it ranks growth against the thresholds and is not a probability.
+    """
+
+    window_seconds: float
+    verdict: WindowVerdict
+    points: int
+    span_seconds: float
+    baseline_value: float | None = None
+    current_value: float | None = None
+    slope_per_second: float | None = None
+    monotonic_ratio: float | None = None
+    drop_ratio: float | None = None
+    score: float | None = None
+    severity: LeakSeverity = LeakSeverity.NONE
+
+    @property
+    def judged(self) -> bool:
+        """Whether the window held enough data for the growth checks to run."""
+        return self.verdict not in UNJUDGED_VERDICTS
+
+    @property
+    def qualified(self) -> bool:
+        return self.verdict == WindowVerdict.QUALIFIED
+
+    @property
+    def delta(self) -> float | None:
+        if self.baseline_value is None or self.current_value is None:
+            return None
+        return self.current_value - self.baseline_value
+
+
+@dataclass(frozen=True)
+class DetectionCriteria:
+    """The fixed rules a window must pass, as the detector applies them.
+
+    ``severity_scores`` lists the minimum heuristic score for each tier,
+    strongest first.
+    """
+
+    min_points: int
+    min_span_ratio: float
+    min_monotonic_ratio: float
+    max_drop_ratio: float
+    severity_scores: tuple[tuple[LeakSeverity, float], ...]
+
+
 @dataclass(frozen=True)
 class ResourceEvidence:
     """The detector's evidence for one resource at one sample.
@@ -192,7 +265,9 @@ class ResourceEvidence:
     changed. ``needed_samples`` and ``needed_seconds`` are what the shortest
     window requires before it can be judged. ``evaluated_window_seconds``
     is the longest window judged at this sample (the alerting one for
-    ``GROWTH``), else ``None``.
+    ``GROWTH``), else ``None``. ``windows`` holds one ``WindowEvaluation``
+    per configured window, shortest first (empty during warm-up and while
+    nothing can be measured).
     """
 
     resource: LeakResource
@@ -204,6 +279,7 @@ class ResourceEvidence:
     evaluated_window_seconds: float | None = None
     severity: LeakSeverity = LeakSeverity.NONE
     coverage: MetricCoverage | None = None
+    windows: tuple[WindowEvaluation, ...] = ()
 
     @property
     def partial(self) -> bool:

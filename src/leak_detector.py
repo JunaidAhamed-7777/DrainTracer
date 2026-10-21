@@ -19,6 +19,7 @@ from .events import (
     METRIC_KEYS,
     METRIC_LABELS,
     RESOURCE_METRICS,
+    DetectionCriteria,
     EvidenceState,
     LeakAlert,
     LeakResource,
@@ -30,6 +31,8 @@ from .events import (
     ProcessMetrics,
     ProcessSummary,
     ResourceEvidence,
+    WindowEvaluation,
+    WindowVerdict,
 )
 from .handle_types import (
     CATEGORIES,
@@ -52,6 +55,24 @@ MIB = 1024 * 1024
 # A window is judged once it holds this many points spanning this share of it.
 MIN_WINDOW_POINTS = 4
 MIN_WINDOW_COVERAGE = 0.85
+# A judged window signals only with an upward trend, at least this share of
+# steps not falling, and at most this share of samples below the running peak.
+MIN_MONOTONIC_RATIO = 0.65
+MAX_DROP_RATIO = 0.15
+# Minimum heuristic score per severity tier, strongest first.
+SEVERITY_SCORES: tuple[tuple[LeakSeverity, float], ...] = (
+    (LeakSeverity.CRITICAL, 4.5),
+    (LeakSeverity.HIGH, 3.5),
+    (LeakSeverity.MEDIUM, 2.5),
+    (LeakSeverity.LOW, 1.8),
+)
+DETECTION_CRITERIA = DetectionCriteria(
+    min_points=MIN_WINDOW_POINTS,
+    min_span_ratio=MIN_WINDOW_COVERAGE,
+    min_monotonic_ratio=MIN_MONOTONIC_RATIO,
+    max_drop_ratio=MAX_DROP_RATIO,
+    severity_scores=SEVERITY_SCORES,
+)
 _ALL_METRICS = tuple(METRIC_KEYS)
 # Back off handle classification so it stays near 5% of one core.
 _CLASSIFY_COST_FACTOR = 20.0
@@ -202,6 +223,8 @@ class LeakDetector:
         self._last_severity = LeakSeverity.NONE
         self._last_coverage: dict[str, MetricCoverage] | None = None
         self._last_evidence: tuple[ResourceEvidence, ...] = ()
+        # Each resource's window evaluations from the latest judged sample.
+        self._last_windows: dict[LeakResource, tuple[WindowEvaluation, ...]] = {}
         self._next_classification = 0.0
         self._handle_type_history: deque[tuple[float, HandleCounts]] = deque()
         # Per-process histories reach back as far as the series do, so
@@ -425,6 +448,7 @@ class LeakDetector:
         self._last_totals = dict(totals)
         warming_up = self._advance_warmup(now, totals)
         alerts: list[LeakAlert] = []
+        self._last_windows = {}
         if not warming_up:
             # Series start empty after the warm-up, so initialization growth
             # never reaches a window.
@@ -590,16 +614,19 @@ class LeakDetector:
             elapsed = points[-1].timestamp - points[0].timestamp if len(points) >= 2 else 0.0
             alert = by_resource.get(resource)
             window: float | None = None
+            windows: tuple[WindowEvaluation, ...] = ()
             if warming_up:
                 state = EvidenceState.WARMING_UP
             elif measured is None or measured.unavailable:
                 state = EvidenceState.UNAVAILABLE
-            elif alert is not None:
-                state, window = EvidenceState.GROWTH, alert.window_seconds
             else:
-                judged = [w for w in self.window_seconds if series.eligible_points(now, w)]
-                state = EvidenceState.NO_GROWTH if judged else EvidenceState.COLLECTING
-                window = judged[-1] if judged else None
+                windows = self._last_windows.get(resource, ())
+                if alert is not None:
+                    state, window = EvidenceState.GROWTH, alert.window_seconds
+                else:
+                    judged = [w for w in self.window_seconds if series.eligible_points(now, w)]
+                    state = EvidenceState.NO_GROWTH if judged else EvidenceState.COLLECTING
+                    window = judged[-1] if judged else None
             evidence.append(
                 ResourceEvidence(
                     resource=resource,
@@ -611,6 +638,7 @@ class LeakDetector:
                     evaluated_window_seconds=window,
                     severity=alert.severity if alert is not None else LeakSeverity.NONE,
                     coverage=measured,
+                    windows=windows,
                 )
             )
         return tuple(evidence)
@@ -876,17 +904,24 @@ class LeakDetector:
             LeakResource.THREADS: (self._thread_series, totals["threads"]),
         }
 
+        self._last_windows = {}
         for resource, (series, current_value) in series_map.items():
-            alert = self._evaluate_series(
+            alert, windows = self._evaluate_windows(
                 series=series,
                 resource=resource,
                 timestamp=timestamp,
                 current_value=current_value,
             )
+            self._last_windows[resource] = windows
             if alert is not None:
                 alerts.append(alert)
 
         return alerts
+
+    @property
+    def criteria(self) -> DetectionCriteria:
+        """The window rules this detector applies, for views that explain them."""
+        return DETECTION_CRITERIA
 
     def _evaluate_series(
         self,
@@ -895,12 +930,28 @@ class LeakDetector:
         timestamp: float,
         current_value: float,
     ) -> LeakAlert | None:
+        return self._evaluate_windows(series, resource, timestamp, current_value)[0]
+
+    def _evaluate_windows(
+        self,
+        series: _ResourceSeries,
+        resource: LeakResource,
+        timestamp: float,
+        current_value: float,
+    ) -> tuple[LeakAlert | None, tuple[WindowEvaluation, ...]]:
+        """Judge every window; return the strongest alert and each window's evaluation.
+
+        The evaluations record the exact values the checks used, so the
+        evidence view can say why a window did or did not qualify.
+        """
         best_alert: LeakAlert | None = None
         best_since = timestamp
+        evaluations: list[WindowEvaluation] = []
 
         for window in self.window_seconds:
             points = series.eligible_points(timestamp, window)
             if points is None:
+                evaluations.append(self._unjudged_window(series, timestamp, window))
                 continue
 
             values = [point.value for point in points]
@@ -910,17 +961,38 @@ class LeakDetector:
             drop_ratio = self._drop_ratio(values)
             baseline = values[0]
             delta = current_value - baseline
+            judged = WindowEvaluation(
+                window_seconds=window,
+                verdict=WindowVerdict.QUALIFIED,
+                points=len(points),
+                span_seconds=times[-1] - times[0],
+                baseline_value=baseline,
+                current_value=current_value,
+                slope_per_second=slope,
+                monotonic_ratio=monotonic_ratio,
+                drop_ratio=drop_ratio,
+            )
 
-            if slope <= 0 or monotonic_ratio < 0.65:
+            if slope <= 0 or monotonic_ratio < MIN_MONOTONIC_RATIO:
+                verdict = (
+                    WindowVerdict.NO_UPWARD_TREND if slope <= 0 else WindowVerdict.NOT_MONOTONIC
+                )
+                evaluations.append(replace(judged, verdict=verdict))
                 continue
-            if drop_ratio > 0.15:
+            if drop_ratio > MAX_DROP_RATIO:
+                evaluations.append(replace(judged, verdict=WindowVerdict.TOO_MANY_DROPS))
                 continue
 
-            severity = self._score_severity(
+            score = self._severity_score(
                 resource, slope, delta, monotonic_ratio, window, self.thresholds
             )
+            severity = self._severity_for_score(score)
             if severity == LeakSeverity.NONE:
+                evaluations.append(
+                    replace(judged, verdict=WindowVerdict.BELOW_THRESHOLDS, score=score)
+                )
                 continue
+            evaluations.append(replace(judged, score=score, severity=severity))
 
             # Name the counter for memory: "memory" alone reads as RSS.
             subject = (
@@ -959,7 +1031,23 @@ class LeakDetector:
                     growth_by_type=growth,
                     message=f"{best_alert.message}; {described}" if described else best_alert.message,
                 )
-        return best_alert
+        return best_alert, tuple(evaluations)
+
+    @staticmethod
+    def _unjudged_window(
+        series: _ResourceSeries, timestamp: float, window: float
+    ) -> WindowEvaluation:
+        """A window still filling: how many points it holds and over how long."""
+        points = series.points_in_window(timestamp, window)
+        span = points[-1].timestamp - points[0].timestamp if len(points) >= 2 else 0.0
+        verdict = (
+            WindowVerdict.TOO_FEW_SAMPLES
+            if len(points) < MIN_WINDOW_POINTS
+            else WindowVerdict.SHORT_SPAN
+        )
+        return WindowEvaluation(
+            window_seconds=window, verdict=verdict, points=len(points), span_seconds=span
+        )
 
     def _attribute(self, alert: LeakAlert, since: float, until: float) -> LeakAlert:
         """Name the processes behind an alert's growth over its own window.
@@ -1013,8 +1101,9 @@ class LeakDetector:
             peak = max(peak, value)
         return drops / (len(values) - 1)
 
-    @staticmethod
+    @classmethod
     def _score_severity(
+        cls,
         resource: LeakResource,
         slope: float,
         delta: float,
@@ -1022,6 +1111,20 @@ class LeakDetector:
         window: float,
         thresholds: Mapping[LeakResource, ResourceThresholds] | None = None,
     ) -> LeakSeverity:
+        return cls._severity_for_score(
+            cls._severity_score(resource, slope, delta, monotonic_ratio, window, thresholds)
+        )
+
+    @staticmethod
+    def _severity_score(
+        resource: LeakResource,
+        slope: float,
+        delta: float,
+        monotonic_ratio: float,
+        window: float,
+        thresholds: Mapping[LeakResource, ResourceThresholds] | None = None,
+    ) -> float:
+        """Heuristic score: growth and rate against the thresholds, plus steadiness."""
         limits = (thresholds or DEFAULT_THRESHOLDS)[resource]
         score = 0.0
 
@@ -1033,15 +1136,13 @@ class LeakDetector:
             score += 0.5
         elif window >= 30:
             score += 0.25
+        return score
 
-        if score >= 4.5:
-            return LeakSeverity.CRITICAL
-        if score >= 3.5:
-            return LeakSeverity.HIGH
-        if score >= 2.5:
-            return LeakSeverity.MEDIUM
-        if score >= 1.8:
-            return LeakSeverity.LOW
+    @staticmethod
+    def _severity_for_score(score: float) -> LeakSeverity:
+        for severity, minimum in SEVERITY_SCORES:
+            if score >= minimum:
+                return severity
         return LeakSeverity.NONE
 
     @staticmethod

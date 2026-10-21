@@ -687,5 +687,97 @@ class SeverityScoreTests(unittest.TestCase):
         self.assertEqual(score(resource, 0.8, 40, 1.0, 60.0), LeakSeverity.MEDIUM)
 
 
+class WindowEvaluationTests(unittest.TestCase):
+    """Each window's checks are emitted as data, matching the alert decision."""
+
+    def _windows(self, values: list[float], windows=(10.0,)):
+        detector = _detector(window_seconds=windows)
+        now = _feed(detector, values)
+        return detector._evaluate_windows(
+            detector._memory_series, LeakResource.MEMORY, now, values[-1]
+        )
+
+    def test_a_qualifying_window_records_the_values_behind_the_alert(self) -> None:
+        from src.events import WindowVerdict
+
+        values = [100 * MB + index * 4 * MB for index in range(21)]
+        alert, (window,) = self._windows(values)
+        self.assertEqual(window.verdict, WindowVerdict.QUALIFIED)
+        self.assertTrue(window.qualified and window.judged)
+        self.assertEqual(window.points, 21)
+        self.assertEqual(window.span_seconds, 10.0)
+        self.assertEqual(window.baseline_value, alert.baseline_value)
+        self.assertEqual(window.delta, 80 * MB)
+        self.assertAlmostEqual(window.slope_per_second, alert.slope_per_second)
+        self.assertEqual(window.monotonic_ratio, 1.0)
+        self.assertEqual(window.drop_ratio, 0.0)
+        self.assertEqual(window.severity, alert.severity)
+        # 80/50 + min(8/5, 3) + 1.0 = 4.2: HIGH, below the CRITICAL score of 4.5.
+        self.assertAlmostEqual(window.score, 4.2)
+
+    def test_each_failed_check_names_itself(self) -> None:
+        from src.events import WindowVerdict
+
+        cases = {
+            WindowVerdict.NO_UPWARD_TREND: [100 * MB] * 21,
+            WindowVerdict.TOO_MANY_DROPS: [100 * MB + (i % 4) * 20 * MB for i in range(21)],
+            WindowVerdict.NOT_MONOTONIC: [100 * MB + i * MB + (i % 2) * 3 * MB for i in range(21)],
+            WindowVerdict.BELOW_THRESHOLDS: [100 * MB + i * 1024 for i in range(21)],
+        }
+        for verdict, values in cases.items():
+            with self.subTest(verdict=verdict):
+                alert, (window,) = self._windows(values)
+                self.assertIsNone(alert)
+                self.assertEqual(window.verdict, verdict)
+                self.assertTrue(window.judged)
+                self.assertIsNotNone(window.monotonic_ratio)
+                self.assertIsNotNone(window.drop_ratio)
+        _alert, (below,) = self._windows(cases[WindowVerdict.BELOW_THRESHOLDS])
+        self.assertLess(below.score, 1.8)
+
+    def test_unfilled_windows_say_what_is_missing(self) -> None:
+        from src.events import WindowVerdict
+
+        _alert, (short, long) = self._windows(
+            [100 * MB + i * MB for i in range(16)], windows=(10.0, 30.0)
+        )
+        self.assertEqual(short.verdict, WindowVerdict.SHORT_SPAN)
+        self.assertEqual((short.points, short.span_seconds), (16, 7.5))
+        self.assertFalse(short.judged)
+        self.assertIsNone(short.slope_per_second)
+        self.assertEqual(long.verdict, WindowVerdict.SHORT_SPAN)
+        _alert, (few,) = self._windows([1.0, 2.0])
+        self.assertEqual(few.verdict, WindowVerdict.TOO_FEW_SAMPLES)
+
+    def test_criteria_match_the_checks_applied(self) -> None:
+        criteria = _detector().criteria
+        self.assertEqual(
+            (criteria.min_points, criteria.min_span_ratio, criteria.min_monotonic_ratio,
+             criteria.max_drop_ratio),
+            (4, 0.85, 0.65, 0.15),
+        )
+        self.assertEqual(criteria.severity_scores[-1], (LeakSeverity.LOW, 1.8))
+
+    def test_snapshot_evidence_carries_every_window(self) -> None:
+        from helpers import make_process
+
+        detector = _detector(window_seconds=(10.0, 30.0))
+        snapshots = _collect_trees(detector, [[make_process(1)]] * 25)
+        evidence = snapshots[-1].evidence_for(LeakResource.MEMORY)
+        self.assertEqual([w.window_seconds for w in evidence.windows], [10.0, 30.0])
+        self.assertTrue(evidence.windows[0].judged)
+        self.assertFalse(evidence.windows[1].judged)
+
+    def test_no_windows_while_warming_up_or_unreadable(self) -> None:
+        from helpers import make_process
+
+        warming = _detector(warmup_seconds=60.0)
+        (snapshot,) = _collect_trees(warming, [[make_process(1)]])
+        self.assertTrue(all(item.windows == () for item in snapshot.evidence))
+        blocked = _detector()
+        snapshots = _collect_trees(blocked, [[_denied(1)]] * 5)
+        self.assertTrue(all(item.windows == () for item in snapshots[-1].evidence))
+
+
 if __name__ == "__main__":
     unittest.main()
