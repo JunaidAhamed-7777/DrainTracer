@@ -122,6 +122,37 @@ class LayoutTests(unittest.TestCase):
                 self.assertIn("LEAK HEALTH", output)
                 self.assertIn("EVENT LOG", output)
 
+    def _memory_app(self, width: int, height: int) -> DashboardApp:
+        """Six samples where private bytes grow and RSS stays flat."""
+        mib = 1024 * 1024
+        app = _app(width, height)
+        for index in range(6):
+            app._accept_snapshot(
+                make_snapshot(
+                    processes=(make_process(100, ppid=1, rss=300 * mib, private=(20 + index) * mib),),
+                    timestamp=1000.0 + index,
+                )
+            )
+        return app
+
+    def test_memory_card_headlines_private_bytes_with_rss_as_context(self) -> None:
+        app = self._memory_app(140, 40)
+        card = app._render_memory_card()
+        self.assertEqual(card.title.plain, " MEMORY  PRIVATE ")
+        output = self._render(app)
+        self.assertIn("MEMORY  PRIVATE", output)
+        self.assertIn("25.0 MB", output)
+        self.assertIn("RSS (working set) 300.0 MB", output)
+        self.assertIn("+5.0 MB", output)  # the delta follows private bytes, not flat RSS
+
+    def test_compact_layouts_show_private_bytes(self) -> None:
+        for width, height in ((80, 24), (60, 24)):
+            with self.subTest(width=width, height=height):
+                output = self._render(self._memory_app(width, height))
+                self.assertIn("PRIVATE", output)
+                self.assertIn("25.0 MB", output)
+                self.assertNotIn("RSS", output)
+
     def test_legacy_code_page_uses_ascii_only(self) -> None:
         app = _app(120, 40, encoding="cp1252")
         app._accept_snapshot(make_snapshot())

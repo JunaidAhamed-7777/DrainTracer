@@ -30,14 +30,16 @@ def make_process(
     rss: int = 10 * 1024 * 1024,
     handles: int = 50,
     threads: int = 4,
+    private: int | None = None,
 ) -> ProcessMetrics:
+    """A readable process; private bytes equal ``rss`` unless given."""
     return ProcessMetrics(
         pid=pid,
         name=name,
         status="running",
         rss_bytes=rss,
         vms_bytes=rss * 2,
-        private_bytes=rss,
+        private_bytes=rss if private is None else private,
         handles=handles,
         threads=threads,
         cpu_percent=1.5,

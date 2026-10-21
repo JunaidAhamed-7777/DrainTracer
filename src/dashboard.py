@@ -579,24 +579,39 @@ class DashboardApp(MonitorSession):
         )
 
     def _render_memory_card(self) -> Panel:
+        """Chart private bytes, the memory signal's input, with RSS as context.
+
+        Charting RSS here would show a trend the detector never judged, so
+        the headline, delta, and chart follow private bytes and the working
+        set is only listed in the footer.
+        """
         totals = self._totals()
         palette, glyphs = self.palette, self.glyphs
-        rss = totals.get("rss_bytes", 0.0)
+        private = totals.get("private_bytes", 0.0)
         detail = (
-            f"private {self._format_bytes(totals.get('private_bytes', 0.0))} "
+            f"RSS (working set) {self._format_bytes(totals.get('rss_bytes', 0.0))} "
             f"{glyphs.sep} virtual {self._format_bytes(totals.get('vms_bytes', 0.0))}"
         )
         return self._metric_card(
-            "MEMORY  RSS",
+            "MEMORY  PRIVATE",
             palette.accent,
-            self._format_bytes(rss),
-            self._delta_text("rss_bytes", self._format_bytes, steady=max(64 * 1024, rss * 0.005)),
-            self._spark(
-                "rss_bytes",
-                palette.accent,
-                min_span=max(1024 * 1024, self._peaks["rss_bytes"] * 0.02),
-            ),
+            self._format_bytes(private),
+            self._private_delta(),
+            self._private_spark(),
             detail,
+        )
+
+    def _private_delta(self) -> Text:
+        private = self._totals().get("private_bytes", 0.0)
+        return self._delta_text(
+            "private_bytes", self._format_bytes, steady=max(64 * 1024, private * 0.005)
+        )
+
+    def _private_spark(self) -> Sparkline:
+        return self._spark(
+            "private_bytes",
+            self.palette.accent,
+            min_span=max(1024 * 1024, self._peaks["private_bytes"] * 0.02),
         )
 
     def _render_handles_card(self) -> Panel:
@@ -670,11 +685,9 @@ class DashboardApp(MonitorSession):
             ("CPU", palette.cyan, f"{totals.get('cpu_percent', 0.0):.1f}%",
              Text(f"peak {self._peaks['cpu_percent']:.0f}%", style=palette.muted),
              self._spark("cpu_percent", palette.cyan, floor=0.0, min_span=10.0)),
-            ("MEMORY", palette.accent, self._format_bytes(totals.get("rss_bytes", 0.0)),
-             self._delta_text("rss_bytes", self._format_bytes,
-                              steady=max(64 * 1024, totals.get("rss_bytes", 0.0) * 0.005)),
-             self._spark("rss_bytes", palette.accent,
-                         min_span=max(1024 * 1024, self._peaks["rss_bytes"] * 0.02))),
+            # Private bytes drive the memory signal; the strip has no room for RSS.
+            ("PRIVATE", palette.accent, self._format_bytes(totals.get("private_bytes", 0.0)),
+             self._private_delta(), self._private_spark()),
             ("HANDLES", palette.warn, f"{int(totals.get('handles', 0.0)):,}",
              self._delta_text("handles", count, steady=0.5),
              self._spark("handles", palette.warn, min_span=8.0)),
