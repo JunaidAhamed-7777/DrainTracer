@@ -14,7 +14,7 @@ from typing import Any
 
 from .events import MetricsSnapshot
 
-DEFAULT_REPORT_DIR = "leak_reports"
+DEFAULT_REPORT_DIR = "leak_reports/reports"
 REPORT_SCHEMA = 2
 
 

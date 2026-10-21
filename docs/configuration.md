@@ -58,7 +58,8 @@ are rejected before a process is launched or attached.
 - `fail_on`: headless failure threshold, `"low"`, `"medium"`, `"high"`,
   or `"critical"`; default `"high"`. CLI: `--fail-on SEVERITY`, which
   requires `--headless`.
-- `report_dir`: output directory; default `"leak_reports"`. A file's
+- `report_dir`: output root; default `"leak_reports/reports"`. Each export
+  goes into a program-filename/date folder beneath it. A file's
   relative value is relative to that file. A relative CLI override is
   relative to the current working directory. CLI: `--report-dir DIR`.
 - `default_profile`: name of an existing profile to apply when `--profile`
@@ -75,7 +76,7 @@ for example `[draintracer.profiles.ci]`.
 sample_interval = "500ms"
 windows = ["10s", "30s", "60s"]
 warmup = "15s"
-report_dir = "leak_reports"
+report_dir = "leak_reports/reports"
 
 [thresholds.memory]
 critical_delta = "50MB"

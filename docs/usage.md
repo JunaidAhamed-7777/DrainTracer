@@ -184,7 +184,7 @@ An existing Windows job can run:
   run: python src/main.py --headless --target .\dist\app.exe --timeout 2m --warmup 15s
 ```
 
-Install the dependencies earlier in the job and retain `leak_reports/` with
+Install the dependencies earlier in the job and retain `leak_reports/reports/` with
 an artifact upload step that runs even when the check fails. Choose a
 timeout and workload long enough for detection to run; exit `0` alone does
 not distinguish clean from inconclusive.

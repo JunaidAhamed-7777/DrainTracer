@@ -6,18 +6,29 @@
 
 Press `E` in the dashboard to export the samples collected so far. Each
 successful export writes a JSON report and an HTML companion with the same
-UUID:
+UUID. Reusable generation assets are tracked; generated reports are ignored.
+For `worker.exe` monitored on October 21, 2026, the layout is:
 
 ```text
 leak_reports/
-  leak_report_<UUID>.json
-  leak_report_<UUID>.html
+  frames/
+    report.css
+    report.js
+  reports/
+    worker.exe_2026-10-21/
+      leak_report_3f2a9c1e-5b7d-4e0a-9c61-0d2f7e8b4a10.json
+      leak_report_3f2a9c1e-5b7d-4e0a-9c61-0d2f7e8b4a10.html
 ```
 
 Press `O` to open the latest HTML export. Dashboard exports are explicit;
 headless runs automatically export after monitoring ends. Set
-`--report-dir DIR` or `report_dir` in a settings file to change the location.
-A fresh UUID prevents repeated exports from overwriting earlier reports.
+`--report-dir DIR` or `report_dir` in a settings file to change the output
+root; the program/date folder is created beneath that root. Its date comes
+from the report's recorded `created_at` offset, and invalid Windows filename
+characters are replaced while long names are bounded. Missing target/date
+metadata is rejected instead of making placeholder directory names.
+A fresh UUID prevents repeated same-program/day exports from overwriting
+earlier reports. Both formats always share the same grouped directory.
 The event log and session summary show the actual filenames.
 
 Both formats are written through temporary sibling files followed by a

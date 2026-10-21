@@ -195,8 +195,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--report-dir",
         metavar="DIR",
         help=(
-            "Directory for exported reports, named leak_report_<UUID>.json and "
-            f".html (default: {DEFAULT_REPORT_DIR})."
+            "Report root; exports are grouped by target filename and date "
+            f"(default: {DEFAULT_REPORT_DIR})."
         ),
     )
 

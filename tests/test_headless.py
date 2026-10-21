@@ -211,7 +211,7 @@ class EndToEndTests(unittest.TestCase):
         )
 
     def _report(self) -> dict:
-        reports = list((self.root / "reports").glob("leak_report_*.json"))
+        reports = list((self.root / "reports").glob("*/leak_report_*.json"))
         self.assertEqual(len(reports), 1)
         return json.loads(reports[0].read_text(encoding="utf-8"))
 

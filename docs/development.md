@@ -53,6 +53,10 @@ There is currently no package build step or installed console entry point.
   [analysis.py](../src/analysis.py), and
   [html_report.py](../src/html_report.py): bounded export history,
   serialization, report analysis, and offline interactive charts.
+- [Report frames](../leak_reports/frames/): reusable CSS and JavaScript
+  inlined into exported HTML. Generated reports under
+  `leak_reports/reports/` stay ignored; do not add sample reports or captures
+  to the source frames.
 - [report_diff.py](../src/report_diff.py) and
   [diff_command.py](../src/diff_command.py): report loading,
   comparison rules, JSON output, and terminal presentation.

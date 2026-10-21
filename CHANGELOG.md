@@ -5,6 +5,13 @@ feature milestones remain in [future-plan.md](future-plan.md), and the complete
 commit history records earlier changes. Versions follow the repository rule:
 each focused change advances the runtime version by exactly `0.1`.
 
+## v4.4 — 2026-10-21
+
+- Grouped JSON/HTML export pairs under `leak_reports/reports/` by real
+  program filename and creation date, retaining unique UUID filenames.
+- Applied the same grouping to custom report roots and kept JSON exports
+  available if the reusable HTML frame assets are missing.
+
 ## v4.3 — 2026-10-21
 
 - Added Windows-safe report grouping from the real target filename and

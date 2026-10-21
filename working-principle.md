@@ -397,13 +397,24 @@ target and exports what was collected before the run exits.
 
 ## 7. Leak report structure
 
-Each export writes new files to the report directory (`leak_reports/` by
-default; change it with `--report-dir`). The filenames embed a random UUID4,
+Each export writes new files beneath the report root
+(`leak_reports/reports/` by default; change it with `--report-dir`), grouped
+by the actual target filename and the date in `created_at`. For example,
+`worker.exe_2026-10-21/` holds that program's exports on that date. Invalid
+Windows filename characters are replaced and component length is bounded.
+The filenames embed a random UUID4,
 `leak_report_<UUID>.json` and `leak_report_<UUID>.html`, so repeated exports
 never overwrite each other. Files are written to a temporary sibling first
 and then renamed into place; a failed write removes the temporary file. If
 the HTML page cannot be rendered or written, the JSON report is kept and
 the failure is logged.
+
+Reusable style/chart source files are committed under `leak_reports/frames/`
+and loaded relative to the application source. Their contents are embedded
+in each HTML export, preserving offline sharing and CSP hash validation.
+Generated reports, including custom-root fixture outputs, are not source
+assets; the default generated subtree is ignored by Git. A missing frame
+asset fails HTML export without discarding the completed JSON report.
 
 ```json
 {

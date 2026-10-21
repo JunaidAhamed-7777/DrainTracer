@@ -497,6 +497,7 @@ class ExportTests(unittest.TestCase):
         import tempfile
         from datetime import datetime
         from pathlib import Path
+        from unittest import mock
 
         with tempfile.TemporaryDirectory() as temp:
             report_dir = Path(temp) / "leak_reports"
@@ -504,11 +505,14 @@ class ExportTests(unittest.TestCase):
                 "C:/targets/worker.exe", console=make_console(), report_dir=report_dir
             )
             app._accept_snapshot(make_snapshot())
-            app._handle_key("e")
-            app._handle_key("e")
+            with mock.patch("src.session.iso_timestamp", return_value="2026-10-21T12:00:00+05:30"):
+                app._handle_key("e")
+                app._handle_key("e")
 
-            files = sorted(report_dir.glob("leak_report_*.json"))
+            grouped_dir = report_dir / "worker.exe_2026-10-21"
+            files = sorted(grouped_dir.glob("leak_report_*.json"))
             self.assertEqual(len(files), 2)
+            self.assertEqual(list(report_dir.iterdir()), [grouped_dir])
             ids = set()
             for path in files:
                 report = json.loads(path.read_text(encoding="utf-8"))
@@ -524,9 +528,9 @@ class ExportTests(unittest.TestCase):
             self.assertIn(app._last_report_id, saved[-1])
             self.assertIn("(JSON + HTML)", saved[-1])
 
-            pages = sorted(report_dir.glob("leak_report_*.html"))
+            pages = sorted(grouped_dir.glob("leak_report_*.html"))
             self.assertEqual([page.stem for page in pages], [path.stem for path in files])
-            self.assertEqual(app._last_html_report, report_dir / f"{app._last_report.stem}.html")
+            self.assertEqual(app._last_html_report, app._last_report.with_suffix(".html"))
 
     def test_html_failure_keeps_the_json_report(self) -> None:
         import tempfile
@@ -540,10 +544,33 @@ class ExportTests(unittest.TestCase):
                 app._handle_key("e")
             self.assertTrue(app._last_report.is_file())
             self.assertIsNone(app._last_html_report)
-            self.assertEqual(list(Path(temp).glob("*.html")), [])
+            self.assertEqual(list(Path(temp).rglob("*.html")), [])
             messages = [message for _s, message, _l in app._events]
             self.assertIn("HTML report failed: boom", messages)
             self.assertTrue(messages[-1].endswith("(JSON)"))
+
+
+    def test_missing_frame_assets_keep_json_in_the_grouped_directory(self) -> None:
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+
+        from src import html_report
+
+        with tempfile.TemporaryDirectory() as temp:
+            app = DashboardApp("worker.exe", console=make_console(), report_dir=temp)
+            app._accept_snapshot(make_snapshot())
+            html_report._load_frame.cache_clear()
+            try:
+                with mock.patch.object(html_report, "_FRAME_DIR", Path(temp) / "missing-frames"):
+                    path = app.export_log()
+                self.assertTrue(path.is_file())
+                self.assertTrue(path.parent.name.startswith("worker.exe_"))
+                self.assertIsNone(app._last_html_report)
+                self.assertTrue(any(message.startswith("HTML report failed:")
+                                    for _s, message, _l in app._events))
+            finally:
+                html_report._load_frame.cache_clear()
 
 
 class ExportFailureTests(unittest.TestCase):

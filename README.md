@@ -182,8 +182,13 @@ units, and [working-principle.md](working-principle.md) for the detection math.
 ## Save and compare evidence
 
 Press `E` in the dashboard; headless runs export automatically. Each export
-creates `leak_report_<UUID>.json` and `leak_report_<UUID>.html` under
-`leak_reports/`, or your chosen `--report-dir`.
+creates a JSON/HTML pair under
+`leak_reports/reports/worker.exe_2026-10-21/` for a program named `worker.exe`
+on that date. The actual program filename and recorded creation date name
+the folder; UUID filenames keep repeated exports distinct. `--report-dir`
+changes the output root while keeping that grouping. Reusable HTML styles
+and chart code live in the committed `leak_reports/frames/` directory;
+generated reports are ignored by Git.
 
 The HTML report works offline, with interactive charts, signal episodes, events,
 and a process list. JSON supports scripts and report comparisons:

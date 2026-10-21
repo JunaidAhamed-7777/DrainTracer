@@ -33,6 +33,7 @@ from .report import (
     REPORT_SCHEMA,
     iso_timestamp,
     new_report_id,
+    report_directory,
     snapshot_to_dict,
     write_json_report,
 )
@@ -485,7 +486,7 @@ class MonitorSession:
     # ------------------------------------------------------------------
 
     def export_log(self) -> Path:
-        """Write ``leak_report_<uuid>.json`` and its HTML companion.
+        """Write a JSON/HTML pair under its target filename and creation date.
 
         Every export gets a fresh UUID so repeated exports never overwrite
         an earlier report. Returns the JSON path. The HTML report is best
@@ -493,13 +494,14 @@ class MonitorSession:
         stands and the failure is logged.
         """
         report = self.build_report()
-        path = write_json_report(report, self.report_dir)
+        directory = report_directory(report, self.report_dir)
+        path = write_json_report(report, directory)
         self._last_report = path
         self._last_report_id = report["report_id"]
         self._last_report_data = report
         self._last_html_report = None
         try:
-            self._last_html_report = write_html_report(report, self.report_dir)
+            self._last_html_report = write_html_report(report, directory)
         except Exception as exc:  # never lose the JSON report to a rendering bug
             self._append_event(f"HTML report failed: {exc}", "error")
         return path

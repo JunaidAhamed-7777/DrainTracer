@@ -9,7 +9,7 @@
 
 sample_interval = "500ms"
 windows = ["10s", "30s", "60s"]
-report_dir = "leak_reports"   # relative to this file
+report_dir = "leak_reports/reports"   # relative to this file
 
 # Sample this long before leak detection starts, so startup growth
 # (loading, cache warming, JIT) is not reported.
