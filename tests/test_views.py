@@ -150,6 +150,154 @@ class NavigationTests(unittest.TestCase):
         self.assertIn("Monitor: sampling cadence", output)
 
 
+class ProcessesViewTests(ViewRenderingMixin, unittest.TestCase):
+    VIEW_KEY = "2"
+
+    def _app(self, width: int = 120, height: int = 40) -> DashboardApp:
+        app = _app(width, height)
+        growing_session(app)
+        app._handle_key("2")
+        return app
+
+    def _pids(self, app: DashboardApp) -> list[int]:
+        return [row.pid for row in app._inspector_rows()]
+
+    def _selected(self, app: DashboardApp) -> int:
+        return app._selected_row(app._inspector_rows()).pid
+
+    def test_lists_live_then_exited_and_details_the_first(self) -> None:
+        app = self._app()
+        self.assertEqual(self._pids(app), [100, 2, 7, 1])
+        output = render_text(app)
+        self.assertIn("PROCESSES 3 live", output)
+        self.assertIn("1 exited", output)
+        self.assertIn("parent.exe  PID 100", output)
+        self.assertIn("Tree", output)
+        self.assertIn("kill whole tree", output.splitlines()[-1])
+
+    def test_growth_ranking_follows_the_interval(self) -> None:
+        app = self._app()
+        app._handle_key("s")
+        self.assertEqual(app._proc_order, "private_bytes")
+        self.assertEqual(self._pids(app)[0], 2)  # the growing worker leads
+        app._handle_key(DOWN)
+        app._handle_key(DOWN)
+        row = app._selected_row(app._inspector_rows())
+        self.assertIsNone(row.growth.get("private_bytes"))  # denied: no measured history
+        app._proc_selected = (2, 2.0)
+        output = " ".join(render_text(app).split())
+        self.assertIn("Growth 10s private +80.0 MB (+8.0 MB/s)", output)
+        app._handle_key("right")
+        app._handle_key("right")
+        app._handle_key("right")
+        self.assertEqual(app._proc_interval_label(), "lifetime")
+        self.assertIn("Growth lifetime private +96.0 MB", " ".join(render_text(app).split()))
+        self.assertEqual(app.view, "processes")
+        self.assertEqual(app._sort_mode, "tree")  # S here does not touch the overview sort
+
+    def test_selection_follows_identity_across_refreshes_and_exits(self) -> None:
+        app = _app(120, 40)
+        root = replace(make_process(100, ppid=1, name="parent.exe"), create_time=1.0)
+        sample_trees(app, [[root, _worker(1), _worker(2)]] * 3)
+        app._handle_key("2")
+        app._handle_key(DOWN)
+        self.assertEqual(self._selected(app), 1)
+        # PID 1 exits and a new process takes the slot before it in the list.
+        sample_trees(app, [[root, _worker(2), _worker(3)]], start=3)
+        row = app._selected_row(app._inspector_rows())
+        self.assertEqual(row.identity, (1, 1.0))
+        self.assertTrue(row.exited)
+        output = render_text(app)
+        self.assertIn("EXITED", output)
+        self.assertIn("exited", output)
+        # A reused PID with another creation time is a different process.
+        sample_trees(app, [[root, _worker(2), replace(_worker(9), pid=1, create_time=50.0)]],
+                     start=4)
+        rows = app._inspector_rows()
+        self.assertTrue(app._selected_row(rows).exited)
+
+    def test_a_selection_that_left_every_list_says_so(self) -> None:
+        app = self._app(80, 24)
+        app._proc_selected = (555, 5.0)
+        output = render_text(app)
+        self.assertIn("PID 555 is no longer tracked", " ".join(output.split()))
+        self.assert_fills(output, 80, 24)
+        app._handle_key(DOWN)
+        self.assertEqual(self._selected(app), 100)
+
+    def test_search_filters_and_captures_letters(self) -> None:
+        app = self._app()
+        app._handle_key("/")
+        for key in "work":
+            app._handle_key(key)
+        self.assertEqual(self._pids(app), [2, 1])
+        app._handle_key("q")  # typed into the filter, not a quit
+        self.assertFalse(app._quit_requested)
+        self.assertEqual(self._pids(app), [])
+        self.assertIn("No process matches 'workq'", render_text(app))
+        app._handle_key("backspace")
+        app._handle_key("enter")
+        self.assertEqual(self._pids(app), [2, 1])
+        app._handle_key("7")  # back to normal keys: 7 is not a view
+        self.assertEqual(app.view, "processes")
+        app._handle_key(ESCAPE)  # clears the filter first
+        self.assertEqual(app.view, "processes")
+        self.assertEqual(len(self._pids(app)), 4)
+        app._handle_key(ESCAPE)
+        self.assertEqual(app.view, "overview")
+
+    def test_pid_prefix_search(self) -> None:
+        app = self._app()
+        app._proc_query = "10"
+        self.assertEqual(self._pids(app), [100])
+
+    def test_kill_always_targets_the_whole_tree(self) -> None:
+        app = self._app()
+        app._handle_key(DOWN)
+        self.assertEqual(self._selected(app), 2)
+        app.manager._tracked_pids = {100, 2}
+        calls = []
+        app.manager.kill = lambda *args, **kwargs: calls.append((args, kwargs))
+        app._handle_key("k")
+        self.assertEqual(calls, [((), {})])  # the tree-wide kill, no PID argument
+
+    def test_detail_focus_scrolls_and_enter_expands(self) -> None:
+        app = self._app(80, 24)
+        app._handle_key("tab")
+        self.assertEqual(app._proc_focus, "detail")
+        app._handle_key(DOWN)
+        self.assertEqual(self._selected(app), 100)  # the list did not move
+        app._handle_key("tab")
+        app._handle_key("enter")
+        output = render_text(app)
+        self.assertTrue(app._proc_expanded)
+        self.assertNotIn("PROCESSES 3 live", output)
+        self.assertIn("SELECTED PROCESS", output)
+        self.assert_fills(output, 80, 24)
+
+    def test_denied_and_long_names_render(self) -> None:
+        app = _app(80, 24, LEGACY)
+        long_name = "a-very-long-process-name-" * 4 + ".exe"
+        sample_trees(app, [[make_process(100, ppid=1, name=long_name), make_denied(7, ppid=100)]] * 3)
+        app._handle_key("2")
+        app._handle_key("end")
+        output = render_text(app)
+        output.encode(LEGACY)
+        self.assert_fills(output, 80, 24)
+        self.assertIn("access denied", " ".join(output.split()))
+
+    def test_long_lists_scroll_to_keep_the_selection_visible(self) -> None:
+        app = _app(80, 24)
+        root = make_process(100, ppid=1, name="parent.exe")
+        workers = [_worker(1000 + n) for n in range(30)]
+        sample_trees(app, [[root, *workers]] * 2)
+        app._handle_key("2")
+        app._handle_key("end")
+        output = render_text(app)
+        self.assertIn("1029", output)
+        self.assertIn("of 31", output)
+
+
 class MonitorViewTests(ViewRenderingMixin, unittest.TestCase):
     VIEW_KEY = "5"
 

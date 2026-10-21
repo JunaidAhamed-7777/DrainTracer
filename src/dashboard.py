@@ -46,6 +46,7 @@ from .session import MonitorSession
 from .theme import PALETTE
 from .units import format_duration
 from .view_monitor import MonitorViewMixin
+from .view_processes import ProcessesViewMixin
 from .widgets import LegacySafe, Lines, Sized, Sparkline
 
 
@@ -57,6 +58,7 @@ SORT_MODES = ("tree", "memory", "handles", "cpu")
 # Numbered views: the key selects the view, the label names its tab.
 VIEWS = {
     "1": ("overview", "OVERVIEW", "OVR"),
+    "2": ("processes", "PROCESSES", "PROC"),
     "5": ("monitor", "MONITOR", "MON"),
 }
 VIEW_NAMES = tuple(name for name, _label, _short in VIEWS.values())
@@ -64,7 +66,7 @@ VIEW_NAMES = tuple(name for name, _label, _short in VIEWS.values())
 HELP_SCROLL = {UP: -1, DOWN: 1, PAGE_UP: -10, PAGE_DOWN: 10, HOME: -10**6, END: 10**6}
 
 
-class DashboardApp(MonitorViewMixin, MonitorSession):
+class DashboardApp(ProcessesViewMixin, MonitorViewMixin, MonitorSession):
     """Render a monitor session live in the terminal and handle its controls.
 
     The overview shows everything at a glance; numbered views focus on one
@@ -112,6 +114,7 @@ class DashboardApp(MonitorViewMixin, MonitorSession):
         self._cpu_cores = psutil.cpu_count(logical=True) or 1
         self._keys = KeyReader()
         self._view = "overview"
+        self._init_processes_view()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -354,6 +357,7 @@ class DashboardApp(MonitorViewMixin, MonitorSession):
     VIEW_EVENT_ROWS = 36
     VIEW_HELP = {
         "overview": "resource cards, process tree, leak health and events",
+        "processes": "select, search and rank processes by growth; exited ones stay listed",
         "monitor": "sampling cadence and cost, coverage, freshness, monitor footprint",
     }
 
@@ -600,19 +604,27 @@ class DashboardApp(MonitorViewMixin, MonitorSession):
             padding=(0, 1),
         )
 
-    def _scrolled(self, content: RenderableType, width: int, height: int | None) -> RenderableType:
-        """The help content from ``_help_offset``, clamped, with a note when more follows."""
+    def _scrolled(
+        self,
+        content: RenderableType,
+        width: int,
+        height: int | None,
+        offset_attr: str = "_help_offset",
+        end_note: str = "end of help",
+    ) -> RenderableType:
+        """``content`` from the offset in ``offset_attr``, clamped, noting what follows."""
         options = self.console.options.update(width=width, height=None)
         lines = self.console.render_lines(content, options, pad=False)
         if height is None or len(lines) <= height:
-            self._help_offset = 0
+            setattr(self, offset_attr, 0)
             return Lines(lines)
-        self._help_offset = min(self._help_offset, len(lines) - height + 1)
-        shown = lines[self._help_offset : self._help_offset + height - 1]
-        below = len(lines) - self._help_offset - len(shown)
+        offset = min(getattr(self, offset_attr), len(lines) - height + 1)
+        setattr(self, offset_attr, offset)
+        shown = lines[offset : offset + height - 1]
+        below = len(lines) - offset - len(shown)
         note = Text(
             f"{self.glyphs.down} {below} more line{'s' if below != 1 else ''}"
-            if below > 0 else "end of help",
+            if below > 0 else end_note,
             style=self.palette.muted,
         )
         return Group(Lines(shown), note)
@@ -1054,7 +1066,13 @@ class DashboardApp(MonitorViewMixin, MonitorSession):
         roots: list[ProcessMetrics] = []
         for proc in snapshot.processes:
             parent = proc.ppid
-            if parent is not None and parent != proc.pid and parent in by_pid:
+            # The root stays a root even if a descendant reused its parent's PID.
+            if (
+                proc.pid != snapshot.root_pid
+                and parent is not None
+                and parent != proc.pid
+                and parent in by_pid
+            ):
                 children.setdefault(parent, []).append(proc)
             else:
                 # The root, or an orphan whose parent already exited.
@@ -1080,6 +1098,8 @@ class DashboardApp(MonitorViewMixin, MonitorSession):
                 branch = glyphs.tree_last if last else glyphs.tree_mid
                 below = " " * len(glyphs.tree_last) if last else glyphs.tree_pipe
                 stack.append((kids[index], prefix + branch, prefix + below))
+        # Parent links that loop (reused PIDs) reach no root; list them flat.
+        ordered += [(proc, "") for proc in snapshot.processes if proc.pid not in visited]
         return ordered
 
     def _process_status_style(self, status: str) -> str:

@@ -140,10 +140,9 @@ class Lines:
     def __rich_console__(
         self, console: Console, options: ConsoleOptions
     ) -> RenderResult:
-        for index, line in enumerate(self.lines):
+        for line in self.lines:
             yield from line
-            if index < len(self.lines) - 1:
-                yield Segment.line()
+            yield Segment.line()
 
 
 class Sized:

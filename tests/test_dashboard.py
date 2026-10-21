@@ -45,6 +45,16 @@ class TreeOrderTests(unittest.TestCase):
         )
         self.assertEqual([proc.pid for proc, _ in app._tree_order(snapshot)], [100, 500])
 
+    def test_parent_links_that_loop_through_reused_pids_keep_every_process(self) -> None:
+        app = _app()
+        # The root's recorded parent PID was reused by its own child.
+        snapshot = make_snapshot(
+            processes=(make_process(100, ppid=1), make_process(1, ppid=100),
+                       make_process(7, ppid=8), make_process(8, ppid=7)),
+            root_pid=100,
+        )
+        self.assertEqual([proc.pid for proc, _ in app._tree_order(snapshot)], [100, 1, 7, 8])
+
 
 class SignalTransitionTests(unittest.TestCase):
     def _messages(self, app: DashboardApp) -> list[str]:
@@ -345,7 +355,8 @@ class HelpAndSortTests(unittest.TestCase):
         self.assertIn("READING A SIGNAL", output)
         self.assertIn("built-in defaults", output)
         self.assertIn("MEMORY COUNTERS", output)
-        self.assertIn("RSS (working set)", output)
+        app._handle_key("end")  # the help scrolls once it is taller than the terminal
+        self.assertIn("RSS (working set)", self._render(app))
         app._handle_key("\x1b")
         self.assertNotIn("READING A SIGNAL", self._render(app))
         app._handle_key("H")
