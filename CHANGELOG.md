@@ -1,0 +1,38 @@
+# Changelog
+
+This log starts with the open source documentation and branding work. Earlier
+feature milestones remain in [future-plan.md](future-plan.md), and the complete
+commit history records earlier changes. Versions follow the repository rule:
+each focused change advances the runtime version by exactly `0.1`.
+
+## v2.3 — 2026-10-21
+
+- Rebuilt the README with the new identity, a real dashboard capture, a source
+  setup path, concise workflows, and links to the full documentation.
+- Added this changelog. Runtime behavior is unchanged by this documentation work.
+
+## v2.2 — 2026-10-21
+
+- Added the illustrated README masthead and its generation brief.
+- Documented the visual identity, palette, typography, asset formats, and usage.
+
+## v2.1 — 2026-10-21
+
+- Expanded the existing working-principle reference and added a developer guide.
+- Clarified bounded report history, warm-up peaks, and configuration details.
+- Preserved delivered roadmap milestones and added discussion topics.
+
+## v2.0 — 2026-10-21
+
+- Introduced the pipe, droplet, and tracing-reticle identity.
+- Added editable SVG and PNG marks, light/dark wordmarks, avatars, and a social card.
+
+## v1.9 — 2026-10-21
+
+- Added dedicated usage, configuration, and report/comparison guides.
+- Documented process ownership, output handling, headless outcomes, and limitations.
+
+## v1.8 — 2026-10-21
+
+- Added contribution, support, security, and conduct documentation.
+- Added GitHub bug/feature forms and a pull request template.
