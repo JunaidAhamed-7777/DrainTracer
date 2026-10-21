@@ -124,6 +124,21 @@ class NavigationTests(unittest.TestCase):
             self.assertEqual(len(output.splitlines()), 24)
             self.assertTrue(all(len(line) <= 80 for line in output.splitlines()))
 
+    def test_every_view_survives_resizing(self) -> None:
+        app = _app(120, 40)
+        growing_session(app)
+        for key in "12345":
+            app._handle_key(key)
+            for width, height in ((200, 60), (80, 24), (50, 20), (66, 24), (120, 40)):
+                with self.subTest(view=app.view, width=width, height=height):
+                    app.console.size = (width, height)
+                    lines = render_text(app).splitlines()
+                    self.assertEqual(len(lines), height)
+                    self.assertTrue(all(len(line) <= width for line in lines))
+                    app._handle_key("?")
+                    self.assertEqual(len(render_text(app).splitlines()), height)
+                    app._handle_key("?")
+
     def test_m_adds_a_marker_from_any_view(self) -> None:
         app = _app()
         growing_session(app, 3)
