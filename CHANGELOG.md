@@ -5,6 +5,11 @@ feature milestones remain in [future-plan.md](future-plan.md), and the complete
 commit history records earlier changes. Versions follow the repository rule:
 each focused change advances the runtime version by exactly `0.1`.
 
+## v3.2 — 2026-10-21
+
+- Added keyboard search, PID selection, paging, refresh, and clear/cancel
+  commands to the process picker, including stale-process recovery.
+
 ## v3.1 — 2026-10-21
 
 - Added name/PID filtering and bounded process-list pages with literal,
