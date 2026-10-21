@@ -5,6 +5,12 @@ feature milestones remain in [future-plan.md](future-plan.md), and the complete
 commit history records earlier changes. Versions follow the repository rule:
 each focused change advances the runtime version by exactly `0.1`.
 
+## v2.5 — 2026-10-21
+
+- Revised the README masthead to show blue water escaping from a crack in a
+  straight pipe, matching the compact identity.
+- Updated the banner edit brief, accessible description, and license badge color.
+
 ## v2.4 — 2026-10-21
 
 - Revised every compact logo, avatar, wordmark, and social card to show a

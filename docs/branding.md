@@ -79,8 +79,9 @@ and Python 3.10+.
 
 ## Sources, exports, and license
 
-The illustrated masthead was created with the built-in image generation tool;
-the exact generation brief is saved in [hero-prompt.txt](assets/brand/hero-prompt.txt).
+The illustrated masthead was created and revised with the built-in image
+generation tool; the current edit brief is saved in
+[hero-prompt.txt](assets/brand/hero-prompt.txt).
 The compact marks, wordmarks, and social card are editable SVG artwork. Their
 PNG exports were rendered from those SVGs in Chromium with transparent
 backgrounds preserved.

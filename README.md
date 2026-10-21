@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="docs/assets/hero.png" alt="DrainTracer. See what keeps growing. A leaking teal pipe and an amber droplet inside a tracing reticle." width="100%">
+  <img src="docs/assets/hero.png" alt="DrainTracer. See what keeps growing. Blue liquid leaks from a crack in a straight horizontal pipe into a tracing reticle." width="100%">
 </p>
 
 <p align="center">
   <a href="docs/usage.md"><img src="https://img.shields.io/badge/platform-Windows_10%20%2F%2011-101820?style=flat-square&labelColor=196F69" alt="Windows 10 and 11"></a>
   <a href="requirements.txt"><img src="https://img.shields.io/badge/python-3.10%2B-101820?style=flat-square&labelColor=196F69" alt="Python 3.10 or newer"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-101820?style=flat-square&labelColor=936011" alt="MIT license"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-101820?style=flat-square&labelColor=0069B8" alt="MIT license"></a>
 </p>
 
 <h1 align="center">DrainTracer</h1>
