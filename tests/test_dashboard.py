@@ -627,5 +627,70 @@ class OpenReportTests(unittest.TestCase):
         self.assertIn("open report", capture.get())
 
 
+def _sampled(app: DashboardApp, trees: list, start: int = 0) -> None:
+    """Run the app's own detector over process lists, 0.5 s apart, and accept each."""
+    from unittest import mock
+
+    app.detector.classifier = mock.Mock(available=False)
+    for index, processes in enumerate(trees, start):
+        with mock.patch.object(app.detector, "_sample_processes", return_value=list(processes)), \
+                mock.patch("src.leak_detector.time.time", return_value=1000.0 + index * 0.5), \
+                mock.patch("src.leak_detector.time.monotonic", return_value=50.0 + index * 0.5):
+            app._accept_snapshot(app.detector._collect_snapshot())
+
+
+class EvidenceDisplayTests(unittest.TestCase):
+    def _render(self, app: DashboardApp) -> str:
+        with app.console.capture() as capture:
+            app.console.print(app._render())
+        return capture.get()
+
+    def test_healthy_short_and_inaccessible_runs_look_different(self) -> None:
+        from helpers import make_denied
+
+        healthy = _app()
+        _sampled(healthy, [[make_process(100)]] * 25)
+        short = _app()
+        _sampled(short, [[make_process(100)]] * 13)
+        blocked = _app()
+        _sampled(blocked, [[make_denied(100)]] * 25)
+
+        healthy_out, short_out, blocked_out = map(self._render, (healthy, short, blocked))
+        self.assertIn("NO SUSTAINED GROWTH (10s window)", healthy_out)
+        self.assertIn("STEADY", healthy_out)
+        self.assertIn("session worst NONE", healthy_out)
+        self.assertIn("COLLECTING EVIDENCE 6s/8.5s", short_out)
+        self.assertIn("13 samples · 6s/8.5s", short_out)
+        self.assertIn("session worst NOT JUDGED", short_out)
+        self.assertIn("UNAVAILABLE", blocked_out)
+        self.assertIn("no readable process", blocked_out)
+        for output in (healthy_out, short_out, blocked_out):
+            self.assertNotIn("NO ACTIVE LEAK SIGNALS", output)
+            self.assertNotIn("CLEAR", output)
+
+    def test_partial_coverage_is_shown_in_the_panel_and_summary(self) -> None:
+        from helpers import make_denied
+
+        app = _app()
+        _sampled(app, [[make_process(100), make_denied(200, ppid=100)]] * 25)
+        output = self._render(app)
+        self.assertIn("PARTIAL: 1 process unreadable", output)
+        self.assertIn("partial 1/2", output)
+        with app.console.capture() as capture:
+            app.console.print(app.render_summary())
+        summary = " ".join(capture.get().split())
+        self.assertIn("partial coverage: 1 process unreadable (PID 200)", summary)
+
+    def test_collecting_evidence_fits_every_breakpoint_on_legacy_consoles(self) -> None:
+        for width, height in LayoutTests.SIZES:
+            with self.subTest(width=width, height=height):
+                app = _app(width, height, encoding="cp1252")
+                _sampled(app, [[make_process(100)]] * 5)
+                output = self._render(app)
+                output.encode("cp1252")
+                self.assertEqual(len(output.splitlines()), height)
+                self.assertIn("COLLECT", output)
+
+
 if __name__ == "__main__":
     unittest.main()

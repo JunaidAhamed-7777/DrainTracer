@@ -21,11 +21,13 @@ from rich.table import Table
 from rich.text import Text
 
 from .events import (
+    EvidenceState,
     LeakAlert,
     LeakResource,
     LeakSeverity,
     MetricsSnapshot,
     ProcessMetrics,
+    ResourceEvidence,
     severity_rank,
 )
 from .config import MonitorSettings
@@ -398,7 +400,10 @@ class DashboardApp(MonitorSession):
             "and at most 15% of samples below the running peak. Severity rises with "
             "the amount and rate of growth relative to the thresholds below. Signals "
             "are heuristics that point at growth worth investigating, not proof of a "
-            "leak.",
+            "leak. Without a signal, COLLECT means the shortest window is still filling "
+            "and STEADY that a window was judged with no sustained growth. PARTIAL means "
+            "some processes could not be read: totals leave them out, and a change in "
+            "which ones restarts the windows.",
         )
 
         session = grid()
@@ -909,24 +914,28 @@ class DashboardApp(MonitorSession):
                 style=f"bold {palette.ink} on {palette.accent}",
             )
         elif severity == LeakSeverity.NONE:
-            banner = Text(f" {glyphs.ok} NO ACTIVE LEAK SIGNALS ", style=f"bold {palette.ink} on {color}")
+            banner = self._evidence_banner(snapshot)
         else:
             banner = Text(
                 f" {glyphs.warn} {severity.value.upper()} LEAK SIGNAL ",
                 style=f"bold {palette.ink} on {color}",
             )
+        # The banner is the current sample; this is the whole session so far.
+        if self._worst_severity != LeakSeverity.NONE:
+            worst_label, worst_color = self._worst_severity.value.upper(), self._severity_color(
+                self._worst_severity
+            )
+        elif self.conclusive:
+            worst_label, worst_color = "NONE", palette.ok
+        else:
+            worst_label, worst_color = "NOT JUDGED", palette.muted
         worst = Text.assemble(
-            ("session worst ", palette.muted),
-            (
-                self._worst_severity.value.upper()
-                if self._worst_severity != LeakSeverity.NONE
-                else "CLEAR",
-                f"bold {self._severity_color(self._worst_severity)}",
-            ),
+            ("session worst ", palette.muted), (worst_label, f"bold {worst_color}")
         )
         top = Table.grid(expand=True)
         top.add_column(no_wrap=True)
-        if width >= banner.cell_len + worst.cell_len + 2:
+        worst_beside = width >= banner.cell_len + worst.cell_len + 2
+        if worst_beside:
             top.add_column(justify="right", ratio=1, no_wrap=True)
             top.add_row(banner, worst)
         else:
@@ -941,7 +950,10 @@ class DashboardApp(MonitorSession):
         rows.add_column(min_width=8, no_wrap=True)
         rows.add_column(ratio=1, no_wrap=True, overflow="ellipsis")
         for resource in (LeakResource.MEMORY, LeakResource.HANDLES, LeakResource.THREADS):
-            name, meter, label, detail = self._health_row(resource, alerts.get(resource), warming)
+            evidence = snapshot.evidence_for(resource) if snapshot else None
+            name, meter, label, detail = self._health_row(
+                resource, alerts.get(resource), warming, evidence
+            )
             if show_meter:
                 rows.add_row(name, meter, label, detail)
             else:
@@ -949,19 +961,81 @@ class DashboardApp(MonitorSession):
 
         windows = "/".join(format_duration(window) for window in self.detector.window_seconds)
         profile = f"profile {self.settings.profile} {glyphs.sep} " if self.settings.profile else ""
-        footnote = Text(
-            f"{profile}windows {windows} {glyphs.sep} "
-            f"every {self.detector.sample_interval_ms} ms",
+        footnote = Text(no_wrap=True, overflow="ellipsis")
+        if not worst_beside:
+            # Keep the session-wide result visible without taking another line.
+            footnote.append_text(worst)
+            footnote.append(f" {glyphs.sep} ", style=palette.muted)
+        coverage = self._coverage_note(snapshot)
+        if coverage:
+            # Coverage comes first so a narrow panel truncates the settings instead.
+            footnote.append(coverage, style=f"bold {palette.warn}")
+            footnote.append(f" {glyphs.sep} ", style=palette.muted)
+        footnote.append(
+            f"{profile}windows {windows} {glyphs.sep} every {self.detector.sample_interval_ms} ms",
             style=palette.muted,
-            no_wrap=True,
-            overflow="ellipsis",
         )
         if self._health_spacious:
             return Group(top, Text(""), rows, Text(""), footnote)
         return Group(top, rows, footnote)
 
+    def _evidence_banner(self, snapshot: MetricsSnapshot | None) -> Text:
+        """The banner when no signal is active: say how much has been judged.
+
+        "No signal" only means "no growth" once a window was evaluated, so
+        collecting, unavailable, and paused evidence each get their own text.
+        """
+        palette, glyphs = self.palette, self.glyphs
+        evidence = snapshot.evidence if snapshot else ()
+        states = {item.state for item in evidence}
+
+        def banner(text: str, color: str) -> Text:
+            return Text(f" {text} ", style=f"bold {palette.ink} on {color}")
+
+        if not evidence:
+            return banner(f"{glyphs.dot} AWAITING SAMPLES", palette.accent)
+        if states == {EvidenceState.UNAVAILABLE}:
+            return banner(f"{glyphs.error} UNAVAILABLE {glyphs.sep} no readable process", palette.danger)
+        if EvidenceState.STALE in states:
+            return banner(f"{glyphs.dot} PAUSED {glyphs.sep} evidence on hold", palette.warn)
+        collecting = [item for item in evidence if item.state == EvidenceState.COLLECTING]
+        if collecting:
+            least = min(collecting, key=lambda item: item.elapsed_seconds)
+            return banner(
+                f"{glyphs.dot} COLLECTING EVIDENCE {format_duration(least.elapsed_seconds)}"
+                f"/{format_duration(least.needed_seconds)}",
+                palette.accent,
+            )
+        judged = [
+            item.evaluated_window_seconds
+            for item in evidence
+            if item.state == EvidenceState.NO_GROWTH and item.evaluated_window_seconds
+        ]
+        if not judged:
+            return banner(f"{glyphs.dot} AWAITING SAMPLES", palette.accent)
+        return banner(
+            f"{glyphs.ok} NO SUSTAINED GROWTH ({format_duration(min(judged))} window)", palette.ok
+        )
+
+    def _coverage_note(self, snapshot: MetricsSnapshot | None) -> str:
+        """``PARTIAL: 1 process unreadable`` when the totals leave processes out."""
+        if snapshot is None or not snapshot.coverage:
+            return ""
+        unreadable = len(snapshot.unmeasured_pids)
+        if not unreadable:
+            return ""
+        live = max(item.total for item in snapshot.coverage.values())
+        noun = "process" if unreadable == 1 else "processes"
+        if unreadable >= live:
+            return f"UNAVAILABLE: {unreadable} {noun} unreadable"
+        return f"PARTIAL: {unreadable} {noun} unreadable"
+
     def _health_row(
-        self, resource: LeakResource, alert: LeakAlert | None, warming: bool = False
+        self,
+        resource: LeakResource,
+        alert: LeakAlert | None,
+        warming: bool = False,
+        evidence: ResourceEvidence | None = None,
     ) -> tuple[RenderableType, ...]:
         palette, glyphs = self.palette, self.glyphs
         severity = alert.severity if alert else LeakSeverity.NONE
@@ -975,12 +1049,50 @@ class DashboardApp(MonitorSession):
         if warming:
             label = Text("WAIT", style=f"bold {palette.accent}")
             return name, meter, label, Text("sampling during warm-up", style=palette.muted)
-        label = Text("CLEAR" if alert is None else severity.value.upper(), style=f"bold {color}")
-        if alert is None:
-            detail = Text("no sustained growth", style=palette.muted)
-        else:
-            detail = Text(self._health_detail(alert), style=color)
-        return name, meter, label, detail
+        if alert is not None:
+            label = Text(severity.value.upper(), style=f"bold {color}")
+            return name, meter, label, Text(self._health_detail(alert), style=color)
+        label_text, label_color, detail = self._evidence_row(evidence)
+        if evidence is not None and evidence.partial and evidence.coverage is not None:
+            # First, so a narrow panel cuts the explanation rather than the caveat.
+            covered = f"partial {evidence.coverage.measured}/{evidence.coverage.total}"
+            detail = f"{covered} {glyphs.sep} {detail}"
+        return (
+            name,
+            meter,
+            Text(label_text, style=f"bold {label_color}"),
+            Text(detail, style=palette.muted),
+        )
+
+    def _evidence_row(self, evidence: ResourceEvidence | None) -> tuple[str, str, str]:
+        """Label, label colour, and detail for a resource without an active signal."""
+        palette, sep = self.palette, self.glyphs.sep
+        if evidence is None:
+            return "-", palette.muted, "no evidence yet"
+        state = evidence.state
+        if state == EvidenceState.NO_GROWTH:
+            window = format_duration(evidence.evaluated_window_seconds or 0.0)
+            return "STEADY", palette.ok, f"no sustained growth in {window} window"
+        if state == EvidenceState.COLLECTING:
+            # Once enough samples exist only the elapsed time is still short.
+            samples = (
+                f"{evidence.valid_samples} samples"
+                if evidence.valid_samples >= evidence.needed_samples
+                else f"{evidence.valid_samples}/{evidence.needed_samples} samples"
+            )
+            return (
+                "COLLECT",
+                palette.accent,
+                f"{samples} {sep} {format_duration(evidence.elapsed_seconds)}/"
+                f"{format_duration(evidence.needed_seconds)}",
+            )
+        if state == EvidenceState.UNAVAILABLE:
+            return "N/A", palette.danger, "no readable process"
+        if state == EvidenceState.STALE:
+            return "PAUSED", palette.warn, "evidence on hold while paused"
+        if state == EvidenceState.WARMING_UP:
+            return "WAIT", palette.accent, "sampling during warm-up"
+        return "-", palette.muted, "no evidence yet"
 
     def _health_detail(self, alert: LeakAlert) -> str:
         """Compact alert summary that keeps the growing handle type visible.
@@ -1104,6 +1216,10 @@ class DashboardApp(MonitorSession):
             verdict = Text("no leak signals observed", style=f"bold {palette.ok}")
         else:
             verdict = Text(f"inconclusive: {self.inconclusive_reason()}", style=f"bold {palette.warn}")
+        coverage = self.coverage_text()
+        if coverage:
+            # A clean result on partial totals may miss growth in what was unreadable.
+            verdict.append(f" (partial coverage: {coverage})", style=f"bold {palette.warn}")
         grid.add_row("Verdict", verdict)
         if self._last_report:
             report = Text.assemble(
