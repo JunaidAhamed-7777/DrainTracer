@@ -13,7 +13,9 @@ from unittest import mock
 from helpers import make_console
 
 from src import main as cli
+from src import process_picker
 from src.events import LeakSeverity
+from src.running_processes import RunningProcess
 
 
 def _parse_error(argv: list[str]) -> str:
@@ -233,7 +235,12 @@ class StartupDispatchTests(unittest.TestCase):
     def test_hook_uses_the_pid_and_preserves_settings_without_a_file_picker(self) -> None:
         console = make_console()
         with (
-            mock.patch("builtins.input", side_effect=["2", "4242"]),
+            mock.patch("builtins.input", side_effect=["2", "EDITOR", "4242"]),
+            mock.patch.object(process_picker, "list_running_processes", return_value=[
+                RunningProcess(4242, "editor.exe", 10.0),
+                RunningProcess(52, "worker.exe", 12.0),
+            ]),
+            mock.patch.object(process_picker, "is_process_current", return_value=True),
             mock.patch.object(cli, "select_target_file") as picker,
             mock.patch.object(cli, "DashboardApp") as app,
         ):
@@ -248,12 +255,15 @@ class StartupDispatchTests(unittest.TestCase):
         self.assertEqual(kwargs["report_dir"], "out")
         self.assertIs(kwargs["console"], console)
         self.assertIsNone(kwargs["settings"].source)
+        self.assertIn("Search: EDITOR", console.file.getvalue())
+        self.assertIn("Hooking to editor.exe (PID 4242)", console.file.getvalue())
 
     def test_cancellation_or_eof_never_constructs_a_session(self) -> None:
         for answers in (["q"], ["2", "q"], [EOFError()], ["2", EOFError()]):
             with (
                 self.subTest(answers=answers),
                 mock.patch("builtins.input", side_effect=answers),
+                mock.patch.object(process_picker, "list_running_processes", return_value=[]),
                 mock.patch.object(cli, "select_target_file") as picker,
                 mock.patch.object(cli, "DashboardApp") as app,
             ):
@@ -272,6 +282,20 @@ class StartupDispatchTests(unittest.TestCase):
         self.assertIn("only apply to launched targets", error)
         read.assert_called_once_with()
         app.assert_not_called()
+
+    def test_explicit_targets_and_headless_bypass_the_process_picker(self) -> None:
+        with (
+            mock.patch.object(cli, "select_running_process", side_effect=AssertionError("unexpected picker")) as picker,
+            mock.patch.object(cli, "DashboardApp") as dashboard,
+            mock.patch.object(cli, "HeadlessRunner") as headless,
+        ):
+            dashboard.return_value.run.return_value = 0
+            headless.return_value.run.return_value = 0
+            for arguments in (["--target", "app.exe"], ["--pid", "4242"],
+                              ["--headless", "--pid", "4242"]):
+                with self.subTest(arguments=arguments):
+                    self.assertEqual(cli._main(make_console(), [*arguments, "--no-config"]), 0)
+        picker.assert_not_called()
 
 
 class LoggingTests(unittest.TestCase):

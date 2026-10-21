@@ -5,6 +5,12 @@ feature milestones remain in [future-plan.md](future-plan.md), and the complete
 commit history records earlier changes. Versions follow the repository rule:
 each focused change advances the runtime version by exactly `0.1`.
 
+## v3.3 — 2026-10-21
+
+- Replaced Hook's manual PID prompt with the searchable program list and
+  documented search, paging, refresh, and selection behavior.
+- Kept direct CLI/headless commands and safe detach behavior unchanged.
+
 ## v3.2 — 2026-10-21
 
 - Added keyboard search, PID selection, paging, refresh, and clear/cancel

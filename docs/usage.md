@@ -15,10 +15,26 @@ python src/main.py
 ```
 
 Enter `1` for **Open a program**, which opens the native Windows file picker,
-or `2` for **Hook to a running program**, which asks for a positive process
-ID. Find that PID in Task Manager's **Details** tab. Type `Q` at either
-terminal prompt to cancel; Ctrl+C exits with code `130`. Closing the file
-picker also cancels without starting a target.
+or `2` for **Hook to a running program**, which shows a paged list of
+running program names and PIDs. Type a name to filter it, then enter a
+listed PID to select that process. Names are matched without case sensitivity;
+programs with the same name keep their separate PIDs.
+
+- `/search TEXT`: filter names or PIDs, including partial numeric searches
+  such as `/search 424`. Bare digits select an exact listed PID.
+- `/next` and `/prev`: move between pages.
+- `/refresh`: reload running programs while keeping the search.
+- `/clear`: remove the search and return to the first page.
+- `Q` or `/quit`: cancel the picker. Use `/search q` to search a reserved name.
+
+The list omits DrainTracer itself and the idle PID. An exited or changed
+selection refreshes the list. Processes whose identity cannot be read are
+labeled; use explicit `--pid` if you intend to attempt direct attachment
+to one of those processes. Enumeration failures offer refresh instead of
+appearing as an empty successful list.
+
+Type `Q` at the startup menu to cancel. Ctrl+C exits with code `130`;
+closing the file picker also cancels without starting a target.
 
 The hook choice uses the same attachment behavior as `--pid`: it leaves the
 program running when you quit. Arguments after `--` apply only to **Open a

@@ -25,7 +25,10 @@ There is currently no package build step or installed console entry point.
 
 - [main.py](../src/main.py): argument parsing, settings resolution,
   startup artwork from `TITLE.txt`, and launch/attach dispatch.
-- [startup.py](../src/startup.py): keyboard startup choices and PID entry.
+- [startup.py](../src/startup.py): keyboard startup choices.
+- [process_picker.py](../src/process_picker.py) and
+  [running_processes.py](../src/running_processes.py): searchable, paged
+  process selection, read-only discovery, and selection identity checks.
 - [config.py](../src/config.py) and [units.py](../src/units.py): TOML
   discovery, profile layering, validation, and unit parsing/formatting.
 - [process_runner.py](../src/process_runner.py): launch and attach,

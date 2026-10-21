@@ -34,9 +34,10 @@ from src.diff_command import run_diff
 from src.events import LeakSeverity
 from src.file_picker import select_target_file
 from src.headless import EXIT_ERROR, HeadlessRunner
+from src.process_picker import select_running_process
 from src.process_runner import ProcessManagerError
 from src.report import DEFAULT_REPORT_DIR
-from src.startup import choose_startup_action, prompt_process_id
+from src.startup import choose_startup_action
 from src.theme import PALETTE, blend
 from src.units import parse_duration
 
@@ -407,7 +408,7 @@ def _main(console: Console, argv: list[str] | None) -> int:
                     "arguments after '--' only apply to launched targets, "
                     "not Hook to a running program"
                 )
-            attach_pid = prompt_process_id(console)
+            attach_pid = select_running_process(console)
             if attach_pid is None:
                 console.print("[yellow]Selection canceled. Nothing to monitor.[/yellow]")
                 return 0

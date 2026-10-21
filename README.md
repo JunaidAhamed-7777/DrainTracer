@@ -72,8 +72,10 @@ The last command offers two startup choices:
 
 - **1 — Open a program:** select an executable, Python script, or Windows
   batch file in the native file picker.
-- **2 — Hook to a running program:** enter its PID from Task Manager's
-  **Details** tab. Quitting detaches and leaves the program running.
+- **2 — Hook to a running program:** browse names and PIDs, type a name to
+  search, then enter a listed PID to select it. Use `/next` and `/prev` for
+  pages, `/refresh` to reload, and `/clear` to reset the search. Quitting
+  detaches and leaves the program running.
 
 Type `Q` to cancel either startup prompt. Supplying `--target` or `--pid`
 skips the menu. Calling the virtual environment's Python directly avoids
