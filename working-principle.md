@@ -25,6 +25,21 @@ to update session state and render the dashboard or print headless output.
 Sampling does not wait for UI drawing. When a queue is full, its oldest
 queued item is discarded to allow newer telemetry through.
 
+Alongside the totals, the detector thread keeps a bounded per-process
+history (`process_history.py`) used for growth attribution, lifecycle
+events, and the process inspector, and emits each detection window's checks
+as immutable evidence data. The session keeps exact, fixed-size facts about
+every sample (`session_facts.py`) independently of the thinned chart
+history. Dashboard views (`view_*.py`) only render this data; none of them
+re-evaluates detection, and switching views never pauses sampling.
+
+Every snapshot also carries monitor diagnostics: the requested and achieved
+cadence (mean of the last 20 collected samples), the time collection took,
+handle-classification age and cost, failed samples, snapshots dropped from
+a full queue, and DrainTracer's own CPU (percent of one core), RSS, and
+private bytes. These describe how trustworthy the recording is; they are not
+inputs to detection.
+
 `analysis.py` supplies common report summaries to the HTML exporter and
 report comparison. `report.py` serializes snapshots and writes JSON;
 `html_report.py` renders the same report data as an offline page. The
@@ -82,9 +97,15 @@ total_vms_bytes     = sum(process.vms_bytes)
 total_private_bytes = sum(process.private_bytes)
 ```
 
-The dashboard displays RSS as its main memory usage value. The memory leak
-heuristic uses the aggregated private-byte series because private bytes more
-closely represent memory owned by the monitored process tree.
+The memory leak heuristic uses the aggregated private-byte series because
+private bytes (committed memory the process alone owns) more closely
+represent memory owned by the monitored process tree. RSS is the working
+set: the pages currently resident in physical memory, which Windows can trim
+or grow without the program allocating anything. The dashboard therefore
+charts private bytes in the memory card, compact strip, and process tables
+(kept even in narrow tables), with RSS shown as context; memory alerts name
+`private_bytes` as their `metric`. Neither counter alone proves an
+application-level allocation leak.
 
 Access-denied or unavailable processes keep `0` in their metric fields for
 compatibility, but list those counters in `unmeasured`, so the value is
@@ -311,6 +332,15 @@ alert's severity and window), `unavailable` (nothing readable), or `stale`
 (paused). The dashboard and headless output render these states; they do
 not re-derive them.
 
+Each evidence entry also holds one evaluation per configured window: its
+point count and covered span, baseline and current value, slope,
+monotonic and drop ratios, score, severity, and a verdict: `qualified`, or
+the first check it failed (`too_few_samples`, `short_span`,
+`no_upward_trend`, `not_monotonic`, `too_many_drops`, or
+`below_thresholds`). The dashboard's evidence view (key `3`) shows these values as the
+detector computed them, next to the thresholds in force. They stay in
+memory and are not exported to reports.
+
 Pausing the monitor does not append another sample and does not clear the last
 alert. The paused snapshot repeats the last process totals so the dashboard
 does not fall to zero while sampling is stopped.
@@ -333,6 +363,36 @@ Separately, the detector notes when its shortest window first holds four
 samples covering 85% of its length: before that no signal can be raised at
 all. Reports record this as `detection_ran`; a headless run that ends clean
 without it is `INCONCLUSIVE`, and its HTML report says so.
+
+### Process attribution and lifecycle
+
+Detection still judges the tree totals. Once an alert is chosen, the
+detector asks its per-process history which processes changed the alerted
+metric over that alert's own window. Processes are identified by PID and
+creation time, so a reused PID is a different process. For each process:
+
+- one that was running when the window began contributes its last value
+  minus its first;
+- one started inside the window contributes its whole value, since it added
+  to the total by arriving;
+- one that exited contributes minus its first value, since its resources
+  left the total.
+
+Up to five positive contributors are ranked with their share of the positive
+growth, and the growth is split into `growth_within_existing` and
+`growth_from_new_processes`. The alert message gains "mostly NAME PID N
+(+amount)" when one process holds over half, "largest: ..." otherwise, or
+"mostly new worker processes (N started in the window)" when new processes
+account for most of it. Attribution never changes the alert's severity:
+growth from added workers is described as such, but is still raised and can
+still fail a headless run.
+
+The history is bounded: point histories for up to 256 processes, 1,024
+points each (also trimmed to 1.5x the longest window), summaries of the 64
+most recent exited processes, and 64 lifecycle events per snapshot. A start
+whose name and parent match a process that exited within the previous ten
+seconds is reported as a restart. Snapshots carry `lifecycle` events and
+`process_counts`; reports keep live and exited process summaries.
 
 ## Process identity and cleanup
 
@@ -419,7 +479,12 @@ a clean run. Startup failures and usage errors also return `2`. Two
 optional policies, off by default, turn otherwise passing runs into
 failures: `--fail-on-target-error` returns `4` when a launched root exited
 by itself with a non-zero code, and `--fail-on-inconclusive` returns `3`
-when no detection window was judged. Because the
+when no detection window was judged. With a budget
+(`--budget-private`, `--budget-handles`, `--budget-threads`, or the matching
+settings), a whole-run peak above it returns `5` even without a leak
+signal, since stable usage can still be excessive. When several apply, a
+leak signal wins, then an interruption, then a monitor or export error,
+then a budget, then the target-error and inconclusive policies. Because the
 verdict uses the strongest signal seen at any point, a signal that later
 clears still fails the run. An unexpected error still stops or releases the
 target and exports what was collected before the run exits.
@@ -499,8 +564,20 @@ asset fails HTML export without discarding the completed JSON report.
   `timeout_seconds`. Reports from runs with different settings are not
   directly comparable.
 - `headless` — present for `--headless` runs: the `fail_on` severity,
-  whether it was `breached`, and the `fail_on_inconclusive` and
-  `fail_on_target_error` policies.
+  whether it was `breached`, the `fail_on_inconclusive` and
+  `fail_on_target_error` policies, and the checked `budgets`.
+- `experiment` — optional labels (`workload_id`, `build`, `operations`,
+  `note`), mode, duration, sampling settings, budgets, `arguments` reduced
+  to a `count` and a 16-character SHA-256 `fingerprint`, and the machine
+  (OS, architecture, CPU count, total memory, Python and DrainTracer
+  versions). Host and user names and environment variables are never
+  recorded, and secret-looking label values become `<redacted>`.
+- `processes` — final `counts` (live, started, exited, restarted) and
+  bounded `live` and `exited` per-process summaries: identity, name,
+  parent, first and last seen, exit time, sample count, and first, last,
+  peak, and growth of private bytes, handles, and threads.
+- `markers` — markers added with `M`: `index`, `label`, `timestamp`,
+  `time`, and `elapsed_seconds`.
 - `coverage` — session coverage of the signal metrics: `samples` with live
   processes, whether coverage was ever `partial`, per-metric
   `partial_samples` and `unavailable_samples`, `unreadable_pids` (bounded),
@@ -572,6 +649,13 @@ Each item in `snapshots` contains:
 - `evidence` — per resource: `state`, `severity`, `valid_samples`,
   `elapsed_seconds`, and `evaluated_window_seconds` (see
   [evidence states](#measurement-gaps-and-evidence-states)).
+- `lifecycle` — process `started`, `exited`, and `restarted` events seen in
+  this sample, with PID, name, creation time, parent, and the PID a restart
+  replaces.
+- `process_counts` — live processes and cumulative starts, exits, and
+  restarts.
+- `diagnostics` — the monitor diagnostics described under
+  [runtime architecture](#runtime-architecture).
 
 ### Per-process fields
 
@@ -593,9 +677,11 @@ access_denied
 ppid
 handle_types
 unmeasured
+create_time
 ```
 
-`unmeasured` lists the metric names that could not be read for the process;
+`create_time` is the process creation time; with `pid` it identifies one
+process. `unmeasured` lists the metric names that could not be read for the process;
 their fields hold `0` but are unknown. `ppid` is the parent PID recorded while walking the tree; it is `null` for
 the root and for processes whose parent was never tracked. `handle_types`
 holds the process's handle counts per category on classified samples and is
@@ -622,6 +708,7 @@ Each active alert contains:
 
 ```text
 resource
+metric
 severity
 message
 slope_per_second
@@ -629,11 +716,19 @@ window_seconds
 current_value
 baseline_value
 growth_by_type
+contributors
+growth_from_new_processes
+growth_within_existing
+mostly_new_processes
 ```
 
-`growth_by_type` is set on handle alerts when handles were classified
-during the window (change per category, for example `{"socket": 171}`) and
-is `null` otherwise.
+`metric` names the series behind the alert: `private_bytes`, `handles`, or
+`threads`. `growth_by_type` is set on handle alerts when handles were
+classified during the window (change per category, for example
+`{"socket": 171}`) and is `null` otherwise. `contributors` lists up to five
+processes (`pid`, `create_time`, `name`, `delta`, `share`, `new_process`,
+`exited`) ranked as described under
+[process attribution](#process-attribution-and-lifecycle).
 
 Enum values are exported as lowercase strings so reports can be consumed by
 simple JSON tooling without importing DrainTracer's Python classes.
@@ -664,8 +759,18 @@ file, so both always describe the same samples.
   clearing are not marked. Paused and failed samples neither raise nor
   split a signal.
 - **Tables.** One row per continuous signal (strongest severity, start,
-  duration, and the alert message when it peaked), the event log, and the
-  processes from the last sample that still had live processes.
+  duration, and the alert message when it peaked; the table says when it
+  lists fewer episodes than `session_facts` counted), the event log, the
+  processes from the last sample that still had live processes, and a
+  ranking of growing processes by private-byte growth that keeps exited
+  ones.
+- **Provenance and diagnostics.** The masthead shows the experiment labels,
+  redacted argument count, machine, budgets, evaluated time, whether the
+  chart was thinned ("chart thinned 1:N"), and whether the summary facts are
+  exact. A Monitor diagnostics panel shows cadence, collection cost, the
+  monitor's own CPU and memory, handle-classification cost and age, and
+  failed and dropped samples. Sections whose data an older report lacks are
+  left out.
 
 The page is a single file with no external requests. Styles, the chart
 script, and the data are inline; every value is HTML-escaped, the embedded
@@ -705,9 +810,31 @@ others regressed, `IMPROVED` or `REGRESSED` when only one direction
 occurred, and `UNCHANGED` otherwise. `--fail-on-regression` exits `1` for
 `REGRESSED` and `MIXED`.
 
-**Warnings.** The comparison warns when the reports name different
-targets, when their recorded settings (windows, sample interval, warm-up,
-thresholds) differ, when one run is less than half as long as the other,
-and when a run never filled a detection window. Reports written before
-v1.3 have no settings block and before v1.4 no `detection_ran` field; they
-are compared on what they contain.
+**Caveats and strict mode.** Every reason the runs may not be equivalent
+experiments is a caveat with a kind and, when it is serious enough, the
+strict verdict it forces:
+
+| Caveat | Strict verdict |
+| --- | --- |
+| different targets, workload IDs, launch-argument fingerprints, or detector settings | `NOT COMPARABLE` |
+| operation counts more than 10% apart, or recorded by only one run | `NOT COMPARABLE` |
+| one run less than half as long as the other | `NOT COMPARABLE` |
+| a run that never filled a detection window, or had partial coverage | `INSUFFICIENT COVERAGE` |
+| different machines, or a thinned report without exact facts | qualifies only |
+
+Without `--strict`, any caveat qualifies the measured verdict, for example
+`IMPROVED (QUALIFIED)`, so a shorter or lighter run cannot earn a clean
+result. With `--strict`, a blocking caveat replaces the verdict and the
+command exits `3`. The JSON keeps the measured direction in
+`measured_verdict` either way.
+
+**Peaks, budgets, and work.** Each resource also shows its whole-run peak
+(warm-up included, exact when `session_facts` exists), so stable but
+excessive usage is visible without a signal. Budget flags check the later
+run's peaks and exit `4` when one is exceeded. When both runs recorded
+`--operations`, growth per operation is shown as well.
+
+Reports written before v1.3 have no settings block, before v1.4 no
+`detection_ran` field, and before schema 3 no coverage; earlier schema-3
+reports may also lack `experiment` and `session_facts`. They are compared
+on what they contain.
