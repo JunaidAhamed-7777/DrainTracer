@@ -424,7 +424,7 @@ asset fails HTML export without discarding the completed JSON report.
   "session_started_at": "2026-10-13T07:25:15.621+05:30",
   "session_ended_at": null,
   "app": "DRAINTRACER",
-  "version": "vX.Y",
+  "version": "vX.Y.Z",
   "target_path": "C:\\path\\to\\target.exe",
   "root_pid": 1234,
   "mode": "launch",
@@ -447,7 +447,9 @@ asset fails HTML export without discarding the completed JSON report.
 - `session_ended_at` — ISO 8601 time monitoring stopped, or `null` when the
   report was exported from a session that is still running (dashboard `E`).
 - `app` — application name.
-- `version` — runtime application version.
+- `version` — exact runtime application version. Releases from `v5.0.0`
+  use `vMAJOR.MINOR.PATCH`; historical reports retain their original version
+  strings.
 - `target_path` — absolute selected target path.
 - `root_pid` — root PID; kept after cleanup releases the process.
 - `mode` — `launch` or `attach`.

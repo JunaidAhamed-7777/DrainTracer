@@ -89,8 +89,9 @@ backgrounds preserved.
 To refresh a PNG, render the corresponding SVG at its declared dimensions in
 a browser or vector editor, inspect the result, and keep both formats together.
 Check the light and dark variants, lettering, reticle gaps, and small-size
-legibility before committing. Follow the repository's versioning rule for
-asset changes.
+legibility before committing. Follow the [release versioning policy](../AGENTS.md)
+when publishing updated assets; individual artwork commits do not trigger
+version increments.
 
 The documentation and artwork are distributed under the repository's existing
 [MIT license](../LICENSE). Include the applicable copyright and license notice

@@ -52,6 +52,19 @@ become evidence of a leak.
 
 ## Validate a change
 
+Before and after every change, compare the committed
+[`runtime-manifest.json`](runtime-manifest.json) with the current required
+runtime file structure. Update its inventory only for intentional runtime
+file additions, moves, or removals. Exclude documentation, generated reports,
+caches, environments, and user settings. Do not rebuild the snapshot from an
+incomplete checkout to accept missing files.
+
+Run the snapshot check before and after the change:
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests -p test_installation.py
+```
+
 Run the following with the virtual environment's Python:
 
 ```powershell
@@ -82,12 +95,25 @@ inspect its ASCII fallback. Run editor diagnostics on edited files
 
 ## Version and documentation
 
-Read `DashboardApp.VERSION` in `src/dashboard.py` before editing. Every
-repository change, including documentation and branding changes, advances
-that canonical version by exactly `0.1`, as required by `AGENTS.md`.
-Use one increment for a focused change; coordinate the final value with the
-maintainer if another change lands first. Keep regenerated reports consistent
-with the runtime version.
+DrainTracer uses Semantic Versioning, `MAJOR.MINOR.PATCH`, beginning with
+`v5.0.0`. Read the canonical `DashboardApp.VERSION` in `src/dashboard.py`
+before editing. Increment PATCH for backward-compatible fixes and MINOR for
+backward-compatible features, resetting PATCH to zero for a new minor release.
+A MAJOR bump is reserved for incompatible changes and requires the repository
+owner's explicit approval; reset MINOR and PATCH to zero with that bump.
+
+Choose one version for each published release, which may contain many focused
+commits. Commits, pushes, and merges do not automatically advance the version.
+Coordinate release preparation with the maintainer rather than bumping for
+each change.
+
+The runtime version and newest entry in [RELEASES.md](RELEASES.md) must match
+exactly. The README shows the release series as `MAJOR.MINOR.0`; patch releases
+leave that label unchanged. For example, runtime `v5.0.1` belongs to README
+series `v5.0.0`. Update the README label when MAJOR or MINOR changes. Any
+release tag must match the full runtime version and release entry.
+Keep regenerated reports consistent with
+the runtime version, and preserve historical release records.
 
 Update the README and relevant guides when behavior, configuration, or
 controls change. Preserve existing reference documents instead of replacing

@@ -2,8 +2,11 @@
 
 This log starts with the open source documentation and branding work. Earlier
 feature milestones remain in [future-plan.md](future-plan.md), and the complete
-commit history records earlier changes. Versions follow the repository rule:
-each focused change advances the runtime version by exactly `0.1`.
+commit history records earlier changes. Versions before `v5.0.0` followed
+the historical per-change version rule. Starting with `v5.0.0`, versions
+follow Semantic Versioning once per published release, with major bumps
+reserved for the repository owner. See [RELEASES.md](RELEASES.md) for the
+current release and [AGENTS.md](AGENTS.md) for the release policy.
 
 ## v4.8 — 2026-10-21
 

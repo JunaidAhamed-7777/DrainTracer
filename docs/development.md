@@ -27,9 +27,10 @@ There is currently no package build step or installed console entry point.
   opt-in Git recovery before dependency imports, argument parsing,
   settings resolution, title artwork, and launch/attach dispatch.
 - [runtime-manifest.json](../runtime-manifest.json): committed inventory of
-  required runtime modules and assets. Update it when adding, moving, or
-  removing runtime files; do not include generated reports or caches. The
-  installation tests verify its coverage of the source modules.
+  required runtime modules and assets. Update it only when intentionally
+  adding, moving, or removing runtime files; exclude documentation, generated
+  reports, and caches. The installation tests verify its coverage of the
+  source modules.
 - [startup.py](../src/startup.py): keyboard startup choices.
 - [process_picker.py](../src/process_picker.py) and
   [running_processes.py](../src/running_processes.py): searchable, paged
@@ -90,6 +91,21 @@ tests rather than relying on wall-clock delays.
 
 ## Run checks
 
+Before and after every change, compare the committed
+[`runtime-manifest.json`](../runtime-manifest.json) with the current required
+runtime file structure. Update the inventory only for intentional runtime
+additions, moves, or removals; documentation, generated output, caches,
+environments, and user settings are not runtime requirements. Do not regenerate
+the snapshot from an incomplete installation to hide missing files.
+
+Run this snapshot check both before and after editing:
+
+```powershell
+python -m unittest discover -s tests -p test_installation.py
+```
+
+Then complete the usual verification:
+
 ```powershell
 python -m compileall -q src
 python -m unittest discover -s tests -v
@@ -129,10 +145,20 @@ report retention, and the auditable executable fixture source.
 
 The canonical runtime version is `DashboardApp.VERSION` in
 [src/dashboard.py](../src/dashboard.py). Read its current value before
-editing and advance it by exactly `0.1` for each repository change, as
-required by [AGENTS.md](../AGENTS.md). Headless banners and generated
-reports derive their version from that value. Historical roadmap versions
-describe past changes and should remain historical.
+editing. Starting at `v5.0.0`, use Semantic Versioning (`MAJOR.MINOR.PATCH`):
+PATCH for backward-compatible fixes, MINOR for backward-compatible features,
+and MAJOR for incompatible changes only with the repository owner's explicit
+approval. Reset lower components when incrementing MINOR or MAJOR.
+
+Advance the version once per published release, which may collect multiple
+commits. A commit, push, or merge is not itself a release and does not require
+an automatic bump. Prepare the runtime version and a matching newest entry in
+[RELEASES.md](../RELEASES.md) together. The README identifies the release
+series as `MAJOR.MINOR.0`, so patch releases keep that label unchanged; update
+it when MAJOR or MINOR changes. Any release tag must use the exact
+runtime/release-entry version.
+Headless banners and generated reports derive their full version from the
+runtime value. Preserve historical changelog and roadmap versions.
 
 Update user-facing docs alongside behavior changes, including controls,
 configuration, report fields, and process ownership. `TITLE.txt` remains

@@ -416,8 +416,9 @@ security review.
    isolation, retention, and recovery in that slice's completion criteria.
 4. Close an item only with linked implementation, tests or recorded manual
    verification, updated usage/troubleshooting docs, and evidence for its
-   stated completion criteria. Apply the repository's version rule to each
-   focused change; do not assign speculative release versions here.
+   stated completion criteria. Apply the repository's SemVer policy when
+   publishing a release; commits, pushes, and merges do not automatically
+   advance the version. Do not assign speculative release versions here.
 5. Review priorities after each phase and pilot. Favor fixes that reduce
    inconclusive checks, false alarms, failed cleanup, and setup friction over
    adding integrations without demonstrated use. Keep deferred items
