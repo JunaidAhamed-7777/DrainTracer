@@ -8,8 +8,7 @@ dates. See the [README](README.md) for the current feature overview,
 changes, and [CONTRIBUTING.md](CONTRIBUTING.md) to propose or help with a
 change.
 
-**Reconciled 2026-10-22** against release v5.1.1 and the work on `main`
-listed under "Unreleased" in the changelog. The prioritized assessment in
+**Reconciled 2026-10-22** against release v5.2.0. The prioritized assessment in
 [Immediate additions.md](Immediate%20additions.md) is folded in here: its
 implemented items are marked delivered below, and its remaining items are
 tracked in this file rather than in a separate list.
@@ -64,8 +63,7 @@ tracked in this file rather than in a separate list.
       compiles, runs the unit suite, builds and verifies the wheel in a clean
       environment, and publishes with Trusted Publishing.
 
-12. **Trustworthy, attributable, verifiable evidence** — on `main`,
-    unreleased (see the changelog's "Unreleased" section)
+12. **Trustworthy, attributable, verifiable evidence** — done in v5.2.0
     - *Validity and evidence states:* unreadable counters are unknown, not
       zero; per-metric coverage; per-resource collecting / no sustained
       growth / growth / unavailable / stale states; separate target,

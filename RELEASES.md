@@ -1,9 +1,36 @@
-# Current version: v5.1.1
+# Current version: v5.2.0
 
 Published releases are listed newest first. The exact version here matches
 `DashboardApp.VERSION` in [src/dashboard.py](src/dashboard.py). The README
 shows the release series as `vMAJOR.MINOR.0`; for example, `v5.0.1` still
 belongs to series `v5.0.0`.
+
+## v5.2.0 — 2026-10-22
+
+- Kept unknown measurements apart from real zeros. Unreadable counters are
+  marked unmeasured, snapshots record per-metric coverage, and gaining or
+  losing access restarts detection windows instead of passing for growth.
+- Showed evidence states in leak health: collecting, no sustained growth,
+  growth detected, partial coverage, and unavailable, with the session worst
+  shown separately. Reports separate target, measurement, and monitor-error
+  outcomes (report schema 3); older reports still load.
+- Named private bytes as the memory metric behind alerts. The memory card
+  charts it with RSS (working set) as context, and narrow tables keep it.
+- Attributed growth to processes by PID and creation time. Alerts rank the
+  processes that grew over the alert window, separate growth from newly
+  started workers, and reports keep live and exited process summaries.
+- Exported exact session facts (peaks with timestamps, worst severity,
+  episode counts, evaluated time, coverage) that survive chart thinning,
+  and measured the monitor's own cadence, collection time, and cost.
+- Made fix verification defensible: optional `--workload-id`, `--build`,
+  `--operations`, and `--note` labels with redacted arguments, qualified
+  comparison verdicts, `diff --strict` (exit 3 when runs are not
+  comparable), and optional resource budgets for diffs and headless runs.
+- Added focused dashboard views on keys `1`-`5`: overview, process
+  inspector, signal evidence, timeline with markers (`M`) and a view-only
+  freeze (`F`), and monitor diagnostics, with arrow-key navigation.
+- Added optional `--fail-on-inconclusive` and `--fail-on-target-error`
+  headless policies. Default exit codes and behavior are unchanged.
 
 ## v5.1.1 — 2026-10-22
 

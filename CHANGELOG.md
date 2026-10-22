@@ -8,7 +8,7 @@ follow Semantic Versioning once per published release, with major bumps
 reserved for the repository owner. See [RELEASES.md](RELEASES.md) for the
 current release and [AGENTS.md](AGENTS.md) for the release policy.
 
-## Unreleased
+## v5.2.0 — 2026-10-22
 
 ### Added
 

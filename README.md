@@ -11,7 +11,7 @@
 <h1 align="center">DrainTracer</h1>
 
 <p align="center">
-  <strong>Release series: v5.1.0</strong> ·
+  <strong>Release series: v5.2.0</strong> ·
   <a href="RELEASES.md">Current version and release notes</a>
 </p>
 

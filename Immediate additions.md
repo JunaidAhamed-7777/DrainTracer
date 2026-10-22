@@ -1,7 +1,7 @@
 # Immediate additions
 
 > **Status, 2026-10-22.** This assessment is preserved as written. Since
-> then, `main` has implemented (unreleased; see [CHANGELOG.md](CHANGELOG.md)):
+> then, release v5.2.0 implements (see [RELEASES.md](RELEASES.md)):
 > both P0 items (measurement validity, evidence states, and optional headless
 > policies; private bytes as the named memory metric), P1 process
 > attribution and lifecycle, P1 defensible comparisons (experiment

@@ -58,11 +58,20 @@ tree. Use warm-up settings and project profiles to account for startup or
 legitimate workload growth. Press `E` to export JSON and an offline
 interactive HTML report; press `O` to open the latest report.
 
+Leak health says whether evidence is still being collected, whether a
+window showed no sustained growth, and whether any process could not be
+measured. Memory alerts are based on private bytes, shown alongside RSS
+(working set). Alerts name the processes that grew. Number keys open a
+process inspector, the evidence behind each signal, an annotated
+timeline, and monitor diagnostics.
+
 Headless mode supports bounded checks, severity-based exit codes, and
 GitHub Actions annotations and summaries. Compare saved evidence with
-`draintracer diff before.json after.json`. Reports default to
-`leak_reports/reports` under the working directory. Review local paths and
-process details before sharing exports.
+`draintracer diff before.json after.json`; add `--strict` to refuse
+verdicts for runs that are not comparable, and record `--workload-id`,
+`--build`, and `--operations` to make comparisons defensible. Reports
+default to `leak_reports/reports` under the working directory. Review local
+paths and process details before sharing exports.
 
 ## Documentation and contributions
 
