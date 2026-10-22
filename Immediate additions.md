@@ -1,5 +1,17 @@
 # Immediate additions
 
+> **Status, 2026-10-22.** This assessment is preserved as written. Since
+> then, `main` has implemented (unreleased; see [CHANGELOG.md](CHANGELOG.md)):
+> both P0 items (measurement validity, evidence states, and optional headless
+> policies; private bytes as the named memory metric), P1 process
+> attribution and lifecycle, P1 defensible comparisons (experiment
+> provenance, qualified and strict verdicts, budgets), P1 exact session
+> facts, the instrumentation half of P1 observer cost, the improved
+> overview, and Views 1, 2, 3, and 5. The validation set and overhead
+> budgets, repeated-run variability, View 4, host context, P2 guidance, the
+> specialized Windows views, and the pilot-user study remain open and are
+> tracked in [future-plan.md](future-plan.md), the single roadmap.
+
 An honest product assessment and a practical development order for DrainTracer.
 
 Reviewed against **v5.1.1**, on **22 October 2026**. This assessment comes from the source, tests, documentation, and the Windows documentation linked below. It is not a usability study or a new performance benchmark. The gaps described as observed are visible in the implementation; customer demand and the proposed improvements still need real-world validation.

@@ -72,6 +72,12 @@ current release and [AGENTS.md](AGENTS.md) for the release policy.
 - Said "no live process" instead of "no readable process" once the monitored
   tree has exited, so an ended run no longer looks like an access problem.
 
+### Documentation
+
+- Brought the README and working principles up to date with the changes
+  above, and reconciled [future-plan.md](future-plan.md) with shipped
+  releases so it holds the remaining items from the product assessment.
+
 ## v5.1.1 — 2026-10-22
 
 - Fixed the PyPI package description's image and documentation links.
