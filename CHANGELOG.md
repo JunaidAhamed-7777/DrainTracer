@@ -8,6 +8,12 @@ follow Semantic Versioning once per published release, with major bumps
 reserved for the repository owner. See [RELEASES.md](RELEASES.md) for the
 current release and [AGENTS.md](AGENTS.md) for the release policy.
 
+## v5.2.1 — 2026-10-23
+
+- Replaced the PyPI description's dashboard screenshot with GIF excerpts
+  for install-and-launch commands, live growth detection, and HTML reports.
+  Captions clarify the recorded version and the source-only demo workload.
+
 ## v5.2.0 — 2026-10-22
 
 ### Added

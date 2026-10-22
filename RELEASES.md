@@ -1,9 +1,18 @@
-# Current version: v5.2.0
+# Current version: v5.2.1
 
 Published releases are listed newest first. The exact version here matches
 `DashboardApp.VERSION` in [src/dashboard.py](src/dashboard.py). The README
 shows the release series as `vMAJOR.MINOR.0`; for example, `v5.0.1` still
 belongs to series `v5.0.0`.
+
+## v5.2.1 — 2026-10-23
+
+- Replaced the PyPI description's dashboard screenshot with looping GIF
+  excerpts showing install-and-launch commands, sustained memory growth,
+  and the exported HTML report. Image URLs are public and absolute, and
+  captions identify the recorded version and source-only demo workload.
+- Published the description update as a patch release; application behavior
+  is unchanged.
 
 ## v5.2.0 — 2026-10-22
 

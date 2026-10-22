@@ -47,7 +47,7 @@ created under `dist`:
 
 ```powershell
 python -m venv C:\temp\draintracer-wheel-test
-C:\temp\draintracer-wheel-test\Scripts\python.exe -m pip install .\dist\draintracer-5.2.0-py3-none-any.whl
+C:\temp\draintracer-wheel-test\Scripts\python.exe -m pip install .\dist\draintracer-5.2.1-py3-none-any.whl
 Set-Location C:\temp
 .\draintracer-wheel-test\Scripts\draintracer.exe --help
 .\draintracer-wheel-test\Scripts\python.exe -m draintracer --help

@@ -49,14 +49,22 @@ Python explicitly and put the script after `--`:
 draintracer --target "C:\work\app\.venv\Scripts\python.exe" -- "C:\work\app\worker.py"
 ```
 
+![Demo commands: pip install draintracer, then draintracer --target .\torture\memory_leak.py](https://raw.githubusercontent.com/JunaidAhamed-7777/DrainTracer/main/docs/assets/install-and-launch.gif)
+
+*Install-and-launch commands from the recorded demo. The bounded `torture`
+workload requires a [source checkout](https://github.com/JunaidAhamed-7777/DrainTracer#try-an-included-workload);
+it is not included in the PyPI package.*
+
 ## Inspect and save evidence
 
-![DrainTracer dashboard monitoring the bounded memory-growth workload](https://raw.githubusercontent.com/JunaidAhamed-7777/DrainTracer/main/docs/assets/dashboard.png)
+![Private memory grows in a child process while DrainTracer collects evidence, then raises a HIGH leak signal](https://raw.githubusercontent.com/JunaidAhamed-7777/DrainTracer/main/docs/assets/live-growth.gif)
+
+*A real session monitoring the bounded memory-growth workload, sped up 1.5×.
+The GIF excerpts were recorded with v5.1.1; values and process IDs vary by run.*
 
 Track CPU, memory, handles, threads, and I/O across the discovered process
 tree. Use warm-up settings and project profiles to account for startup or
-legitimate workload growth. Press `E` to export JSON and an offline
-interactive HTML report; press `O` to open the latest report.
+legitimate workload growth.
 
 Leak health says whether evidence is still being collected, whether a
 window showed no sustained growth, and whether any process could not be
@@ -64,6 +72,14 @@ measured. Memory alerts are based on private bytes, shown alongside RSS
 (working set). Alerts name the processes that grew. Number keys open a
 process inspector, the evidence behind each signal, an annotated
 timeline, and monitor diagnostics.
+
+Press `E` to export JSON and an offline interactive HTML report; press `O`
+to open the latest report.
+
+![The exported HTML report shows the HIGH memory signal, resource trend charts, recorded events, and growing processes](https://raw.githubusercontent.com/JunaidAhamed-7777/DrainTracer/main/docs/assets/html-report.gif)
+
+*The offline HTML report from the same demo session: inspect the summary,
+resource trends, events, and process growth after recording.*
 
 Headless mode supports bounded checks, severity-based exit codes, and
 GitHub Actions annotations and summaries. Compare saved evidence with
