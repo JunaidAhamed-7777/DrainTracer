@@ -29,8 +29,8 @@
 </p>
 
 <p align="center">
-  <a href="docs/assets/draintracer-demo.mp4"><strong>▶ Watch the 30-second demo</strong></a><br>
-  <sub>A real dashboard session and its HTML report · silent MP4 · 6.7 MB</sub>
+  <a href="docs/assets/draintracer-demo.mp4"><strong>▶ Full 30-second demo (MP4)</strong></a><br>
+  <sub>GIF excerpts below · recorded with v5.1.1 · silent MP4 · 6.7 MB</sub>
 </p>
 
 DrainTracer is a Python CLI/TUI that watches an executable or script and its
@@ -47,10 +47,11 @@ allocation sites. Short runs can be inconclusive.
 
 ## See the process behind the growth
 
-![DrainTracer dashboard showing resource cards, the process tree, leak health, and events during the bounded memory-growth fixture](docs/assets/dashboard.png)
+![Private memory grows in a child process while DrainTracer collects evidence, then raises a HIGH leak signal](docs/assets/live-growth.gif)
 
-*Captured from the real dashboard while monitoring the included bounded
-memory-growth workload. Values and process IDs vary by run.*
+*A real dashboard session monitoring the included bounded memory-growth
+workload, from evidence collection to a HIGH signal. Footage is sped up 1.5×;
+values and process IDs vary by run.*
 
 - **Follow the whole tree.** Observe a target and its discovered descendants,
   including children that outlive their root.
@@ -163,6 +164,11 @@ This fixture deliberately grows memory within a fixed bound. Press `E` to
 export evidence and `O` to open the HTML report. Try
 `.\torture\steady.py` for a stable baseline. The [torture guide](torture/README.md)
 explains all fixtures and their limits.
+
+![Demo commands: pip install draintracer, then draintracer --target .\torture\memory_leak.py](docs/assets/install-and-launch.gif)
+
+*Install-and-launch commands from the demo. The `torture` workload shown here
+requires a source checkout; it is not included in the PyPI package.*
 
 ### Monitor your program
 
@@ -304,8 +310,14 @@ generated reports are ignored by Git.
 
 The HTML report works offline, with interactive charts, signal episodes,
 events, a process list, a ranking of growing processes that keeps ones that
-exited, run provenance, and monitor diagnostics. JSON supports scripts and
-report comparisons:
+exited, run provenance, and monitor diagnostics.
+
+![The exported HTML report shows the HIGH memory signal, resource trend charts, recorded events, and growing processes](docs/assets/html-report.gif)
+
+*The offline HTML report from the same demo session: inspect the summary,
+resource trends, events, and process growth after recording.*
+
+Use the JSON reports for scripts and comparisons:
 
 ```powershell
 draintracer diff .\before.json .\after.json
