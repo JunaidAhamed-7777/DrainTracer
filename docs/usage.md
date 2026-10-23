@@ -42,8 +42,13 @@ Start without arguments to choose how to monitor a program:
 python src/main.py
 ```
 
-Enter `1` for **Open a program**, which opens the native Windows file picker,
-or `2` for **Hook to a running program**, which shows a paged list of
+Use **Up/Down** to highlight **Open a program** or **Hook to a running
+program**, then press **Spacebar** (or Enter) to select. Navigation help is
+below and outside the Get Started box. Press **Q** or **Escape** to cancel.
+Redirected or non-terminal input keeps the numbered `1`/`2` prompt.
+
+**Open a program** opens the native Windows file picker.
+**Hook to a running program** shows a paged list of
 running program names and PIDs, with at most **15 programs per page**
 (fewer in a short terminal). In an interactive Windows terminal, use
 **Up/Down** to move the `>` highlight, then **Enter** to select that program.
