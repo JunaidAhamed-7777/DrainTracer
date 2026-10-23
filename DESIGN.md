@@ -3,6 +3,7 @@ version: alpha
 name: DrainTracer terminal UI
 description: A compact instrument panel for inspecting Windows resource growth.
 colors:
+  primary: "#7aa2f7"
   accent: "#7aa2f7"
   muted: "#737aa2"
   border: "#3b4261"
@@ -33,7 +34,8 @@ The maintained product and workflow references are README.md and docs/usage.md.
 
 src/theme.py remains the canonical palette. Its PALETTE instance feeds
 startup.py, process_picker.py, and dashboard.py directly; this document mirrors
-the accepted values above. Selected rows combine accent text with a surface
+the accepted values above; primary maps to PALETTE.accent. Selected rows
+combine accent text with a surface
 background and a literal `>` marker. Color always accompanies readable text.
 The requested update notice uses Rich's named red, green, and blue colors for
 the availability label, pip command, and repository link respectively.

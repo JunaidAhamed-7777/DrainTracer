@@ -6,6 +6,7 @@ import json
 import re
 from http.client import HTTPException
 from threading import Event, Thread
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 PYPI_URL = "https://pypi.org/pypi/draintracer/json"
@@ -51,6 +52,8 @@ def check_for_update(current_version: str, *, timeout: float = CHECK_TIMEOUT) ->
             latest = _release_version(info.get("version"))
             if latest is not None:
                 result[0] = latest > current
+        except HTTPError as exc:
+            exc.close()
         except (OSError, ValueError, HTTPException):
             # Offline, TLS, HTTP, and malformed-response failures are expected.
             pass
