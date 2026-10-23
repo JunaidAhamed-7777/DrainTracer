@@ -1,9 +1,21 @@
-# Current version: v5.2.1
+# Current version: v5.3.0
 
 Published releases are listed newest first. The exact version here matches
 `DashboardApp.VERSION` in [src/dashboard.py](src/dashboard.py). The README
 shows the release series as `vMAJOR.MINOR.0`; for example, `v5.0.1` still
 belongs to series `v5.0.0`.
+
+## v5.3.0 — 2026-10-23
+
+- Added a bounded PyPI update check below the startup version. New stable
+  releases show a red availability notice and green pip upgrade command;
+  current versions show a blue contribution link. Failed or offline checks
+  are shown as unavailable. Headless runs, help, version-only commands, and
+  redirected output do not contact PyPI.
+- Replaced numbered startup selection in interactive Windows terminals with
+  an Up/Down highlight and Spacebar or Enter selection. Navigation help sits
+  below the Get Started box; Q and Escape cancel. Redirected input retains
+  the numbered prompt.
 
 ## v5.2.1 — 2026-10-23
 
