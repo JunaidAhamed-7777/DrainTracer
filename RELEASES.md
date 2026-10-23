@@ -1,9 +1,19 @@
-# Current version: v5.3.0
+# Current version: v5.3.1
 
 Published releases are listed newest first. The exact version here matches
 `DashboardApp.VERSION` in [src/dashboard.py](src/dashboard.py). The README
 shows the release series as `vMAJOR.MINOR.0`; for example, `v5.0.1` still
 belongs to series `v5.0.0`.
+
+## v5.3.1 — 2026-10-23
+
+- Allowed up to three seconds for asynchronous Windows forced termination
+  and checked process-handle exit state so terminated processes with retained
+  handles no longer remain tracked. Failed or access-denied stops retain live
+  processes for cleanup, and PID-reuse protection is preserved.
+- Made pause/detach tests wait for Windows suspension and resume to become
+  observable, and tested dashboard redraw cadence with a deterministic clock
+  instead of a timer that could expire during startup.
 
 ## v5.3.0 — 2026-10-23
 
