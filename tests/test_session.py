@@ -287,24 +287,41 @@ class SessionLifecycleTests(unittest.TestCase):
                 self.assertTrue(session.stopped_target)
 
     def test_the_dashboard_redraws_only_when_something_changes(self) -> None:
-        import threading
+        from contextlib import nullcontext
+        from unittest import mock
 
         from src.dashboard import DashboardApp
 
         app = DashboardApp(
             str(self._script("import time\ntime.sleep(60)\n")), console=make_console()
         )
-        renders: list[int] = []
-        original = app._render
-        app._render = lambda: (renders.append(1), original())[1]  # type: ignore[method-assign]
-        timer = threading.Timer(1.6, setattr, args=(app, "_quit_requested", True))
-        timer.start()
-        self.addCleanup(timer.cancel)
-        self.assertEqual(app.run(), 0)
-        # 16 frames passed; snapshots arrive twice a second plus a clock tick.
-        self.assertGreaterEqual(len(renders), 3)
-        self.assertLessEqual(len(renders), 9)
-        self.assertFalse(app.manager.has_tracked_processes)
+        clock = [0.0]
+        renders: list[float] = []
+
+        def render():
+            renders.append(clock[0])
+            return "frame"
+
+        def advance(seconds):
+            clock[0] = round(clock[0] + seconds, 3)
+
+        # Exercise an update, an idle clock tick, and Q independently of the
+        # machine's startup/sample/render speed. No background timer races start().
+        with (
+            mock.patch.object(app, "start"),
+            mock.patch.object(app, "shutdown") as shutdown,
+            mock.patch.object(app, "poll", side_effect=lambda: clock[0] == 0.3) as poll,
+            mock.patch.object(app, "_read_key", side_effect=lambda: "q" if clock[0] >= 1.6 else None),
+            mock.patch.object(app, "_render", side_effect=render),
+            mock.patch.object(app.console, "status", return_value=nullcontext()),
+            mock.patch("src.dashboard.Live"),
+            mock.patch("src.dashboard.time.monotonic", side_effect=lambda: clock[0]),
+            mock.patch("src.dashboard.time.sleep", side_effect=advance),
+        ):
+            self.assertEqual(app.run(), 0)
+        self.assertEqual(renders, [0.0, 0.3, 1.3, 1.6])
+        self.assertEqual(poll.call_count, 17)
+        shutdown.assert_called_once_with()
 
     def test_a_display_bug_does_not_end_the_session(self) -> None:
         import threading
