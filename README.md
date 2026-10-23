@@ -137,18 +137,30 @@ files with exit code `2` without prompting or pulling. Installed packages
 check their bundled runtime files and assets instead; an incomplete
 installation gives pip reinstall guidance and never attempts Git recovery.
 
-Once the check passes, `draintracer` offers two startup choices:
+Interactive startup checks PyPI for a newer stable release, waiting at most one
+second. Below the version subtitle it shows **New Version Available!** in red
+with `pip install --upgrade draintracer` in green, or **No new updates.** with a
+blue contribution link. Offline or failed checks show **Update check
+unavailable.** instead. Headless runs, help, version-only commands, and
+redirected output do not contact PyPI.
 
-- **1 — Open a program:** select an executable, Python script, or Windows
+Once the installation check passes, `draintracer` offers two startup choices:
+
+- **Open a program:** select an executable, Python script, or Windows
   batch file in the native file picker.
-- **2 — Hook to a running program:** browse up to 15 names and PIDs at a
+- **Hook to a running program:** browse up to 15 names and PIDs at a
   time. Use **Up/Down** to highlight a program and **Enter** to select it,
   or type a listed PID and press Enter. The list filters as you type a
   name or PID; Backspace updates it immediately. Use `/next` and `/prev`
   for pages, `/refresh` to reload, and
   `/clear` to reset the search. Quitting detaches and leaves the program running.
 
-Type `Q` to cancel either startup prompt. Supplying `--target` or `--pid`
+Use **Up/Down** to highlight a startup choice, then **Spacebar** (or Enter)
+to select it. Navigation help appears below the Get Started box. Redirected
+or non-terminal input keeps the numbered `1`/`2` prompt.
+
+Press `Q` to cancel either startup prompt, or Escape in the keyboard menu.
+Supplying `--target` or `--pid`
 skips the menu. All installed-command examples also work with
 `python -m draintracer`; checkout users can use `python src/main.py`.
 

@@ -316,6 +316,7 @@ try:
     from .startup import choose_startup_action
     from .theme import PALETTE, blend
     from .units import parse_count, parse_duration
+    from .updates import check_for_update
 except ModuleNotFoundError as _dependency_error:
     if (__name__ != "__main__"
             or (_dependency_error.name or "").split(".")[0] not in {"rich", "psutil", "tomli"}):
@@ -359,7 +360,26 @@ def _display_title(console: Console) -> None:
     console.print(art, end="")
     console.print(
         f"[{PALETTE.muted}]Resource leak monitor for Windows process trees[/] "
-        f"[bold {PALETTE.accent}]{DashboardApp.VERSION}[/]\n"
+        f"[bold {PALETTE.accent}]{DashboardApp.VERSION}[/]"
+    )
+    status = check_for_update(DashboardApp.VERSION) if console.is_terminal else None
+    console.print(_update_notice(status))
+    console.print()
+
+
+def _update_notice(status: bool | None) -> Text:
+    """Show only confirmed updates; keep unavailable checks distinct."""
+    if status is True:
+        return Text.assemble(
+            ("New Version Available!", "red"),
+            " Update using ",
+            ("pip install --upgrade draintracer", "green"),
+        )
+    prefix = "No new updates." if status is False else "Update check unavailable."
+    return Text.assemble(
+        f"{prefix} Contribute at ",
+        ("github.com/JunaidAhamed-7777/DrainTracer",
+         "blue link https://github.com/JunaidAhamed-7777/DrainTracer"),
     )
 
 

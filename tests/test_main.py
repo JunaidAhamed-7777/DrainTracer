@@ -217,6 +217,49 @@ class DispatchTests(unittest.TestCase):
 
 
 class StartupDispatchTests(unittest.TestCase):
+    def test_title_shows_each_update_result_below_the_version(self) -> None:
+        from rich.console import Console
+
+        for status, expected in (
+            (True, "New Version Available! Update using pip install --upgrade draintracer"),
+            (False, "No new updates. Contribute at github.com/JunaidAhamed-7777/DrainTracer"),
+            (None, "Update check unavailable. Contribute at github.com/JunaidAhamed-7777/DrainTracer"),
+        ):
+            with self.subTest(status=status):
+                output = io.StringIO()
+                console = Console(file=output, width=140, force_terminal=True, color_system=None)
+                with mock.patch.object(cli, "check_for_update", return_value=status) as check:
+                    cli._display_title(console)
+                check.assert_called_once_with(cli.DashboardApp.VERSION)
+                lines = output.getvalue().splitlines()
+                subtitle = next(i for i, line in enumerate(lines) if "Resource leak monitor" in line)
+                self.assertIn(cli.DashboardApp.VERSION, lines[subtitle])
+                self.assertEqual(lines[subtitle + 1], expected)
+                if status is not True:
+                    self.assertNotIn("New Version Available!", output.getvalue())
+
+    def test_update_notice_colors_match_the_requested_labels(self) -> None:
+        notice = cli._update_notice(True)
+        self.assertEqual(notice.spans[0].style, "red")
+        self.assertEqual(notice.spans[1].style, "green")
+        self.assertTrue(str(cli._update_notice(False).spans[0].style).startswith("blue"))
+
+    def test_headless_help_version_and_redirected_output_do_not_check_updates(self) -> None:
+        with (
+            mock.patch.object(cli, "check_for_update") as check,
+            mock.patch.object(cli, "HeadlessRunner") as runner,
+            mock.patch.object(cli, "_run_dashboard", return_value=0),
+        ):
+            runner.return_value.run.return_value = 0
+            self.assertEqual(cli._main(make_console(), ["--headless", "--pid", "4242", "--no-config"]), 0)
+            self.assertEqual(cli._main(make_console(), ["--pid", "4242", "--no-config"]), 0)
+            for flag in ("--help", "--version"):
+                with self.subTest(flag=flag), contextlib.redirect_stdout(io.StringIO()):
+                    with self.assertRaises(SystemExit) as exit_:
+                        cli._main(make_console(), [flag])
+                    self.assertEqual(exit_.exception.code, 0)
+        check.assert_not_called()
+
     def test_open_uses_the_file_picker_and_preserves_target_arguments(self) -> None:
         console = make_console()
         with (
