@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import logging
 import os
 import subprocess
@@ -10,11 +11,51 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 import psutil
 
 logger = logging.getLogger(__name__)
+
+
+@lru_cache(maxsize=1)
+def _windows_process_api() -> ctypes.CDLL:
+    """Bind pointer-sized process handles once, including on 64-bit Windows."""
+    from ctypes import wintypes
+
+    api = ctypes.WinDLL("kernel32", use_last_error=True)
+    api.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    api.OpenProcess.restype = wintypes.HANDLE
+    api.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    api.WaitForSingleObject.restype = wintypes.DWORD
+    api.CloseHandle.argtypes = [wintypes.HANDLE]
+    api.CloseHandle.restype = wintypes.BOOL
+    return api
+
+
+def _windows_process_exited(pid: int) -> bool:
+    """Check exit without waiting or relying on a PID disappearing.
+
+    Windows can expose a terminated process while another owner holds its
+    handle. Creation time and psutil.is_running() can still succeed then.
+    """
+    api = _windows_process_api()
+    handle = api.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE only
+    if not handle:
+        error = ctypes.get_last_error()
+        if error == 87:  # ERROR_INVALID_PARAMETER: PID no longer exists
+            return True
+        raise ctypes.WinError(error)
+    try:
+        result = api.WaitForSingleObject(handle, 0)
+        if result == 0:  # WAIT_OBJECT_0: the process has exited
+            return True
+        if result == 0x00000102:  # WAIT_TIMEOUT: still running
+            return False
+        raise ctypes.WinError(ctypes.get_last_error())
+    finally:
+        api.CloseHandle(handle)
 
 
 def _parent_pid_map() -> dict[int, int]:
@@ -159,6 +200,8 @@ class ProcessManager:
 
     # How long an exited member's PID is still searched for orphans.
     DEPARTED_SECONDS = 10.0
+    # TerminateProcess is asynchronous; allow the tree to finish kernel cleanup.
+    KILL_WAIT_SECONDS = 3.0
 
     def __init__(
         self,
@@ -448,7 +491,7 @@ class ProcessManager:
             if remaining:
                 for pid in self._termination_order(remaining):
                     self._terminate_pid(pid, graceful=False)
-                remaining = self._wait_for_pids(remaining, 0.5)
+                remaining = self._wait_for_pids(remaining, self.KILL_WAIT_SECONDS)
 
             self._poll_launched()
             self._process = None
@@ -487,7 +530,7 @@ class ProcessManager:
                 except OSError:
                     pass
 
-            remaining = self._wait_for_pids(targets, 0.5)
+            remaining = self._wait_for_pids(targets, self.KILL_WAIT_SECONDS)
             self._poll_launched()
             self._process = None
             if remaining:
@@ -715,10 +758,8 @@ class ProcessManager:
             self._identities.pop(pid, None)
             return None
 
-        # Windows has no zombies, and psutil already rejects exited processes
-        # when opening them; status() would cost a system-wide process
-        # enumeration per call, so the check is POSIX-only. Reused PIDs are
-        # caught by the creation-time comparison below on every platform.
+        # POSIX zombies still have a PID. Windows liveness is checked below
+        # using a process handle, avoiding a system-wide status enumeration.
         if sys.platform != "win32":
             try:
                 if not proc.is_running() or proc.status() == psutil.STATUS_ZOMBIE:
@@ -740,15 +781,22 @@ class ProcessManager:
             self._identities.pop(pid, None)
             return None
 
-        if expected is None:
-            self._identities[pid] = created
-            return proc
-        if abs(created - expected) > _SAME_START:
+        if expected is not None and abs(created - expected) > _SAME_START:
             self._identities.pop(pid, None)
             self._depths.pop(pid, None)
             self._parents.pop(pid, None)
             self._last_error = f"PID {pid} was reused; the new process was left untouched"
             return None
+        if sys.platform == "win32":
+            try:
+                if _windows_process_exited(pid):
+                    self._identities.pop(pid, None)
+                    return None
+            except OSError:
+                # An unreadable exit state must not silently drop a live PID.
+                pass
+        if expected is None:
+            self._identities[pid] = created
         return proc
 
     def _any_tracked_alive(self) -> bool:

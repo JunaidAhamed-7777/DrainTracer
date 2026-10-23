@@ -211,6 +211,8 @@ and its tracked tree. An attached target keeps running when you quit.
 `Space` pauses the target as well as sampling; `K` terminates it and requires
 a second press within three seconds when attached. Protected ancestor trees
 disable pause and kill to keep DrainTracer's own terminal usable.
+Forced stops allow up to three seconds for cleanup before reporting any
+processes that could not be stopped.
 
 Launched targets have stdin, stdout, and stderr redirected to the null device.
 They cannot accept interactive input, and their console logs are not captured.

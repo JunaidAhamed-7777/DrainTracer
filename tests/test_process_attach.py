@@ -7,10 +7,12 @@ import subprocess
 import sys
 import time
 import unittest
+from unittest import mock
 
 import helpers  # noqa: F401  (adds the repository root to sys.path)
 import psutil
 
+from src import process_runner
 from src.process_runner import ProcessManager, ProcessManagerError, ProcessNotFoundError
 
 # A virtual environment's python.exe on Windows is a redirector that starts
@@ -90,6 +92,19 @@ class AttachTests(unittest.TestCase):
         self.assertFalse(manager.has_tracked_processes)
         self.assertTrue(_wait_for(lambda: not any(psutil.pid_exists(p) for p in tracked)))
 
+    def test_failed_kill_keeps_live_processes_tracked(self) -> None:
+        manager = ProcessManager(None)
+        manager.attach(self.target.pid)
+        self.addCleanup(manager.detach)
+        with (
+            mock.patch.object(manager, "_terminate_pid"),
+            mock.patch.object(manager, "KILL_WAIT_SECONDS", 0),
+        ):
+            manager.kill()
+        self.assertTrue(manager.has_tracked_processes)
+        self.assertIn("remaining PIDs", manager.last_error)
+        self.assertIsNone(self.target.poll())
+
     def test_a_tree_that_contains_draintracer_is_never_paused_or_killed(self) -> None:
         from unittest import mock
 
@@ -113,6 +128,60 @@ class AttachTests(unittest.TestCase):
         self.assertIn("left running", manager.last_error)
         self.assertIsNone(self.target.poll())
         self.assertTrue(child.is_running())
+
+
+@unittest.skipUnless(sys.platform == "win32", "Windows process-handle liveness")
+class WindowsLivenessTests(unittest.TestCase):
+    def test_an_exited_process_is_rejected_while_its_handle_is_still_open(self) -> None:
+        target = subprocess.Popen([_PYTHON, "-c", "pass"])
+        self.addCleanup(target.wait, 10)
+        self.addCleanup(target.kill)
+        manager = ProcessManager(None)
+        manager._root_pid = target.pid
+        manager._remember_identity(target.pid)
+        manager._root_created = manager.created_at(target.pid)
+        target.wait(timeout=10)
+        # Popen retains the Windows handle even after wait() returns.
+        self.assertIsNone(manager._open_tracked(target.pid))
+        self.assertFalse(manager._pid_is_alive(target.pid))
+
+    def test_access_denied_keeps_the_live_process_tracked(self) -> None:
+        manager = ProcessManager(None)
+        manager._root_pid = os.getpid()
+        manager._remember_identity(os.getpid())
+        with mock.patch.object(process_runner, "_windows_process_exited", side_effect=PermissionError):
+            self.assertIsNotNone(manager._open_tracked(os.getpid()))
+
+    def test_exit_checks_are_nonblocking_and_always_close_the_handle(self) -> None:
+        api = mock.Mock()
+        api.OpenProcess.return_value = 123
+        with mock.patch.object(process_runner, "_windows_process_api", return_value=api):
+            for result, expected in ((0, True), (0x102, False)):
+                with self.subTest(result=result):
+                    api.reset_mock()
+                    api.WaitForSingleObject.return_value = result
+                    self.assertIs(process_runner._windows_process_exited(42), expected)
+                    api.WaitForSingleObject.assert_called_once_with(123, 0)
+                    api.CloseHandle.assert_called_once_with(123)
+            api.reset_mock()
+            api.WaitForSingleObject.return_value = 0xFFFFFFFF
+            with self.assertRaises(OSError):
+                process_runner._windows_process_exited(42)
+            api.CloseHandle.assert_called_once_with(123)
+
+    def test_missing_and_inaccessible_pids_have_distinct_results(self) -> None:
+        api = mock.Mock()
+        api.OpenProcess.return_value = None
+        with (
+            mock.patch.object(process_runner, "_windows_process_api", return_value=api),
+            mock.patch.object(process_runner.ctypes, "get_last_error", return_value=87) as error,
+        ):
+            self.assertTrue(process_runner._windows_process_exited(42))
+            error.return_value = 5
+            with self.assertRaises(OSError):
+                process_runner._windows_process_exited(42)
+        api.WaitForSingleObject.assert_not_called()
+        api.CloseHandle.assert_not_called()
 
 
 class PidReuseTests(unittest.TestCase):
