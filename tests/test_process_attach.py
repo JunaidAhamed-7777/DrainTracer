@@ -71,10 +71,16 @@ class AttachTests(unittest.TestCase):
     def test_detach_resumes_a_paused_target(self) -> None:
         manager = ProcessManager(None)
         manager.attach(self.target.pid)
+        self.addCleanup(manager.detach)
         self.assertTrue(manager.pause())
-        self.assertEqual(psutil.Process(self.target.pid).status(), psutil.STATUS_STOPPED)
+        # Windows reports thread suspension asynchronously after NtSuspendProcess.
+        self.assertTrue(_wait_for(
+            lambda: psutil.Process(self.target.pid).status() == psutil.STATUS_STOPPED,
+        ), "target did not become suspended")
         manager.detach()
-        self.assertNotEqual(psutil.Process(self.target.pid).status(), psutil.STATUS_STOPPED)
+        self.assertTrue(_wait_for(
+            lambda: psutil.Process(self.target.pid).status() != psutil.STATUS_STOPPED,
+        ), "detach did not resume the target")
 
     def test_explicit_kill_ends_the_attached_tree(self) -> None:
         manager = ProcessManager(None)
