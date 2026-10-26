@@ -71,10 +71,11 @@ are rejected before a process is launched or attached.
   comparisons show growth per operation when both runs set it. CLI:
   `--operations N`.
 - `budget_private`, `budget_handles`, `budget_threads`: absolute peak
-  ceilings, a size such as `"500MB"` for private bytes and counts otherwise.
-  A headless run whose whole-run peak exceeds one exits `5`. CLI:
-  `--budget-private SIZE`, `--budget-handles N`, `--budget-threads N`, which
-  require `--headless`.
+  ceilings, a size such as `"500MB"` for private bytes and a whole-number
+  count such as `2000` for handles and threads; `1.5` is rejected, while a
+  whole-valued float such as `2000.0` is accepted. A headless run whose
+  whole-run peak exceeds one exits `5`. CLI: `--budget-private SIZE`,
+  `--budget-handles N`, `--budget-threads N`, which require `--headless`.
 - `report_dir`: output root; default `"leak_reports/reports"`. Each export
   goes into a program-filename/date folder beneath it. A file's
   relative value is relative to that file. A relative CLI override is

@@ -99,7 +99,7 @@ def build_diff_parser() -> argparse.ArgumentParser:
         ),
     )
     for metric, option in BUDGET_OPTIONS.items():
-        what = "a size such as 500MB" if metric == "private_bytes" else "a count"
+        what = "a size such as 500MB" if metric == "private_bytes" else "a whole count"
         parser.add_argument(
             f"--{option.replace('_', '-')}",
             type=_budget(metric),

@@ -432,6 +432,10 @@ class ExperimentFlagTests(unittest.TestCase):
         self.assertIn("--budget-handles only applies with --headless", message)
         self.assertIn("greater than zero", _parse_error(["--budget-handles", "0"]))
 
+    def test_handle_and_thread_budget_flags_need_whole_numbers(self) -> None:
+        self.assertIn("whole number", _parse_error(["--budget-handles", "1.5"]))
+        self.assertIn("whole number", _parse_error(["--budget-threads", "2.25"]))
+
     def test_operations_must_be_positive(self) -> None:
         self.assertIn("greater than zero", _parse_error(["--operations", "0", "--target", "x"]))
         self.assertIn("non-negative", _parse_error(["--operations", "-4", "--target", "x"]))

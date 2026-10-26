@@ -17,6 +17,17 @@ class BudgetTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 parse_budget(metric, value)
 
+    def test_handle_and_thread_budgets_must_be_whole_numbers(self) -> None:
+        for metric in ("handles", "threads"):
+            for value in ("1.5", 2.25, "0.5"):
+                with self.subTest(metric=metric, value=value):
+                    with self.assertRaisesRegex(ValueError, "whole number"):
+                        parse_budget(metric, value)
+            # A whole-valued float, as TOML writes 64.0, is still a count.
+            self.assertEqual(parse_budget(metric, 64.0), 64)
+            self.assertEqual(parse_budget(metric, "64"), 64)
+        self.assertEqual(parse_budget("private_bytes", "1.5MB"), 1.5 * MB)
+
     def test_stable_but_excessive_peaks_exceed_their_budget(self) -> None:
         checks = check_budgets(
             {"private_bytes": 500 * MB, "handles": 2000, "threads": 50},
