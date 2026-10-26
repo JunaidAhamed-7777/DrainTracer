@@ -15,7 +15,7 @@ redacted by default:
   still be confirmed by hashing guesses, so it is not encryption);
 * environment variables are never read or stored;
 * the host name and user name are left out;
-* free-text labels have ``password=...``-style values and bearer tokens
+* free-text labels have ``password=...``-style values and Basic/Bearer credentials
   replaced with ``<redacted>``.
 """
 
@@ -27,6 +27,7 @@ import math
 import os
 import platform
 import re
+from base64 import b64decode
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -52,7 +53,21 @@ _SECRET_FLAG = re.compile(
     r"access[_-]?key|credential)s?)(\s+)(?!-)(\"[^\"]*\"|'[^']*'|[^\s,;&]+)"
 )
 _BEARER = re.compile(r"(?i)\b(bearer|basic)(\s+)[A-Za-z0-9._~+/=-]{8,}")
+# A Basic user:password shorter than eight encoded characters fits in one
+# four-character Base64 group. Keep sentence punctuation outside that group.
+_SHORT_BASIC = re.compile(
+    r"\b((?i:basic))(\s+)([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)"
+    r"(?![A-Za-z0-9+/=])"
+)
 _URL_CREDENTIALS = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)[^/\s:@]+:[^/\s@]+@")
+
+
+def _redact_short_basic(match: re.Match[str]) -> str:
+    # The pattern guarantees valid Base64 syntax. A colon distinguishes a
+    # credential from ordinary short words in labels such as "basic test".
+    if b":" not in b64decode(match.group(3), validate=True):
+        return match.group(0)
+    return f"{match.group(1)}{match.group(2)}{REDACTED}"
 
 
 @dataclass(frozen=True)
@@ -82,6 +97,7 @@ def redact_text(value: str) -> str:
     )
     text = _SECRET_FLAG.sub(lambda match: f"{match.group(1)}{match.group(2)}{REDACTED}", text)
     text = _BEARER.sub(lambda match: f"{match.group(1)}{match.group(2)}{REDACTED}", text)
+    text = _SHORT_BASIC.sub(_redact_short_basic, text)
     return text
 
 

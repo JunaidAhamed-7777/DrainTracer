@@ -89,6 +89,34 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual((record["sample_interval_ms"], record["windows_seconds"]), (100, [4.0]))
         self.assertIsNone(record["profile"])
 
+    def test_short_basic_credentials_never_reach_json_or_html_exports(self) -> None:
+        import json
+
+        from src.config import MonitorSettings
+
+        settings = MonitorSettings(
+            workload_id="Authorization: Basic dTpw",
+            build="basic dTo=",
+            note="Basic Og==. basic test",
+        )
+        with tempfile.TemporaryDirectory() as root:
+            session = _Session("C:/targets/worker.exe", console=make_console(),
+                               settings=settings, report_dir=root)
+            json_path = session.export_log()
+            json_text = json_path.read_text(encoding="utf-8")
+            experiment = json.loads(json_text)["experiment"]
+            self.assertEqual(experiment["workload_id"], "Authorization: Basic <redacted>")
+            self.assertEqual(experiment["build"], "basic <redacted>")
+            self.assertEqual(experiment["note"], "Basic <redacted>. basic test")
+            self.assertIsNotNone(session._last_html_report)
+            html_text = session._last_html_report.read_text(encoding="utf-8")
+            for token in ("dTpw", "dTo=", "Og=="):
+                with self.subTest(token=token):
+                    self.assertNotIn(token, json_text)
+                    self.assertNotIn(token, html_text)
+            self.assertIn("&lt;redacted&gt;", html_text)
+            self.assertIn("basic test", html_text)
+
 
 class WarmupEventTests(unittest.TestCase):
     def _session(self, warmup: float) -> _Session:

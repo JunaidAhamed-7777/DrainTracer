@@ -344,7 +344,9 @@ Label each run so comparisons can tell equivalent experiments apart:
 and `--note` are recorded in the report's `experiment` section with the
 sampling settings and machine details. Target arguments are only counted and
 fingerprinted, environment variables are never recorded, and
-`password=...`-style values in labels are redacted. Any comparability caveat
+`password=...`-style values and Basic/Bearer credentials in labels are redacted.
+Short valid Basic credentials are covered too; review reports before sharing.
+Any comparability caveat
 qualifies the verdict, for example `IMPROVED (QUALIFIED)`, so a shorter or
 lighter run cannot earn a clean result. `--strict` instead reports
 `NOT COMPARABLE` (different targets, workloads, arguments, settings, operation

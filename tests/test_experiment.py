@@ -39,6 +39,7 @@ class RedactionTests(unittest.TestCase):
         self.assertEqual(redact_text("API_KEY: 'abc def'"), f"API_KEY: {REDACTED}")
         self.assertEqual(redact_text("x client_secret=s3cr3t;y"), f"x client_secret={REDACTED};y")
         self.assertEqual(redact_text("Bearer abcdefghijk123"), f"Bearer {REDACTED}")
+        self.assertEqual(redact_text("Basic dXNlcjpwYXNz"), f"Basic {REDACTED}")
         self.assertEqual(
             redact_text("https://user:pa55@host/db"), f"https://{REDACTED}@host/db"
         )
@@ -53,6 +54,27 @@ class RedactionTests(unittest.TestCase):
         # A following option is not a value, and plain words are left alone.
         self.assertEqual(redact_text("--token --verbose"), "--token --verbose")
         self.assertEqual(redact_text("token bucket sizing"), "token bucket sizing")
+
+    def test_short_basic_credentials_are_redacted(self) -> None:
+        cases = (
+            ("Authorization: Basic dTpw", f"Authorization: Basic {REDACTED}"),
+            ("basic dTo=", f"basic {REDACTED}"),
+            ("BASIC Og==", f"BASIC {REDACTED}"),
+            ("bAsIc\tOnA=; next", f"bAsIc\t{REDACTED}; next"),
+            ("Basic dTpw.", f"Basic {REDACTED}."),
+        )
+        for text, expected in cases:
+            with self.subTest(text=text):
+                self.assertEqual(redact_text(text), expected)
+                self.assertEqual(clean_label(text), " ".join(expected.split()))
+
+    def test_short_auth_matching_preserves_ordinary_labels(self) -> None:
+        for text in (
+            "basic test", "basic sort", "basic setup",
+            "Bearer dTpw", "Bearer short", "Basic dTpwX", "Basic dTpw==",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(redact_text(text), text)
 
     def test_labels_are_trimmed_and_blank_ones_dropped(self) -> None:
         self.assertIsNone(clean_label("   "))

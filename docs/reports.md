@@ -138,7 +138,7 @@ The `experiment` section records the optional labels (`workload_id`,
 budgets, and the environment: OS name, release and version, architecture,
 CPU count, total memory, Python version, and DrainTracer version. Host and
 user names and environment variables are not recorded, and secret-looking
-label values (`password=`, `token:`, `api_key=`, bearer tokens, URL
+label values (`password=`, `token:`, `api_key=`, Basic/Bearer credentials, URL
 credentials) become `<redacted>`. The fingerprint lets comparisons notice
 different arguments; a short, guessable argument can still be confirmed by
 hashing guesses, so it is not encryption. Headless reports add the checked
