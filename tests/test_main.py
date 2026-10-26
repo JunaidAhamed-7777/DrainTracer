@@ -408,6 +408,11 @@ class PolicyFlagTests(unittest.TestCase):
 
 
 class ExperimentFlagTests(unittest.TestCase):
+    def test_count_budget_flags_reject_fractional_limits(self) -> None:
+        for flag in ("--budget-handles", "--budget-threads"):
+            with self.subTest(flag=flag):
+                self.assertIn("whole number", _parse_error([flag, "1.5"]))
+
     def test_experiment_labels_reach_the_settings(self) -> None:
         with mock.patch.object(cli, "HeadlessRunner") as runner:
             runner.return_value.run.return_value = 0
