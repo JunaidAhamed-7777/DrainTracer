@@ -1,9 +1,18 @@
-# Current version: v5.3.1
+# Current version: v5.3.2
 
 Published releases are listed newest first. The exact version here matches
 `DashboardApp.VERSION` in [src/dashboard.py](src/dashboard.py). The README
 shows the release series as `vMAJOR.MINOR.0`; for example, `v5.0.1` still
 belongs to series `v5.0.0`.
+
+## v5.3.2 — 2026-10-26
+
+- Redacted short valid HTTP Basic credentials in experiment labels before
+  saving JSON and HTML reports, including padded values and credentials
+  followed by sentence punctuation. Ordinary short labels and existing
+  Bearer-token handling retain their behavior.
+- Added regression coverage for credential formats and persisted report
+  exports across workload, build, and note labels.
 
 ## v5.3.1 — 2026-10-23
 

@@ -8,6 +8,13 @@ follow Semantic Versioning once per published release, with major bumps
 reserved for the repository owner. See [RELEASES.md](RELEASES.md) for the
 current release and [AGENTS.md](AGENTS.md) for the release policy.
 
+## v5.3.2 — 2026-10-26
+
+- Fixed short HTTP Basic credentials being retained in experiment labels
+  in exported JSON and HTML. Added regression tests for padded values,
+  punctuation, ordinary text, and persisted exports. See
+  [RELEASES.md](RELEASES.md) for the release record.
+
 ## v5.2.1 — 2026-10-23
 
 - Replaced the PyPI description's dashboard screenshot with GIF excerpts
