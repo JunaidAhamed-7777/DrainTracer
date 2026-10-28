@@ -18,19 +18,33 @@ class BudgetTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 parse_budget(metric, value)
 
+    def test_handle_and_thread_budgets_must_be_whole_numbers(self) -> None:
+        for metric in ("handles", "threads"):
+            for value in ("1.5", 2.25, "0.5"):
+                with (
+                    self.subTest(metric=metric, value=value),
+                    self.assertRaisesRegex(ValueError, "whole number"),
+                ):
+                    parse_budget(metric, value)
+            # A whole-valued float, as TOML writes 64.0, is still a count.
+            self.assertEqual(parse_budget(metric, 64.0), 64)
+            self.assertEqual(parse_budget(metric, "64"), 64)
+        self.assertEqual(parse_budget("private_bytes", "1.5MB"), 1.5 * MB)
+
     def test_count_budgets_require_positive_whole_numbers(self) -> None:
         for metric in ("handles", "threads"):
             for value in (1, 2.0, "3", "4.0"):
                 with self.subTest(metric=metric, value=value):
                     self.assertEqual(parse_budget(metric, value), float(value))
             for value in (1.5, "2.25", ".5"):
-                with self.subTest(metric=metric, value=value):
-                    with self.assertRaisesRegex(ValueError, "whole number"):
-                        parse_budget(metric, value)
+                with (
+                    self.subTest(metric=metric, value=value),
+                    self.assertRaisesRegex(ValueError, "whole number"),
+                ):
+                    parse_budget(metric, value)
             for value in (0, -1, -1.5, True, float("inf"), float("nan")):
-                with self.subTest(metric=metric, value=value):
-                    with self.assertRaises(ValueError):
-                        parse_budget(metric, value)
+                with self.subTest(metric=metric, value=value), self.assertRaises(ValueError):
+                    parse_budget(metric, value)
 
     def test_stable_but_excessive_peaks_exceed_their_budget(self) -> None:
         checks = check_budgets(

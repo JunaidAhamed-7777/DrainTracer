@@ -64,10 +64,10 @@ class BudgetCheck:
 
 
 def parse_budget(metric: str, value: str | int | float) -> float:
-    """A budget limit: a size such as ``500MB`` for private bytes, else a count.
+    """A budget limit: a size such as ``500MB`` for private bytes, else a whole count.
 
-    Raises ``ValueError`` for anything that is not a positive amount.
-    Handle and thread budgets must also be whole numbers.
+    Raises ``ValueError`` for anything that is not a positive amount, and for
+    a handle or thread count with a fractional part.
     """
     amount = parse_size(value) if metric == "private_bytes" else parse_count(value)
     if not amount > 0:

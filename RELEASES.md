@@ -13,6 +13,9 @@ belongs to series `v5.0.0`.
   behavior.
 - Documented whole-count budgets and added regression coverage for the
   shared parser, both command-line entry points, and configuration files.
+- Combined the complementary budget regressions from PRs #67 and #68,
+  including a configuration check that fractional handle-growth rates
+  remain valid alongside whole-valued thread budgets.
 
 ## v5.3.2 — 2026-10-26
 

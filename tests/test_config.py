@@ -306,6 +306,21 @@ class ExperimentSettingsTests(ConfigTestCase):
         self.write(".drainrc", "workload_id = 3\n")
         self.assertConfigError("workload_id must be a non-empty string")
 
+    def test_handle_and_thread_budgets_are_whole_counts(self) -> None:
+        self.write(".drainrc", "budget_handles = 1.5\n")
+        self.assertConfigError("whole number")
+        self.write(".drainrc", 'budget_threads = "2.25"\n')
+        self.assertConfigError("budget_threads: ")
+        # Whole-valued floats are counts, and rate thresholds stay fractional.
+        self.write(".drainrc", """
+            budget_threads = 64.0
+            [thresholds.handles]
+            critical_slope = "1.5/s"
+        """)
+        settings = self.resolve()
+        self.assertEqual(dict(settings.budgets), {"threads": 64})
+        self.assertEqual(settings.thresholds[LeakResource.HANDLES].critical_slope, 1.5)
+
 
 if __name__ == "__main__":
     unittest.main()
