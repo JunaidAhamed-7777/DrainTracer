@@ -89,6 +89,24 @@ verdicts for runs that are not comparable, and record `--workload-id`,
 default to `leak_reports/reports` under the working directory. Review local
 paths and process details before sharing exports.
 
+## Privacy and terms
+
+Monitoring and reports stay local unless you or your environment share them.
+Interactive startup automatically checks PyPI for updates, sending the
+DrainTracer version in its user-agent and exposing the connecting IP address
+to PyPI. The check does not upload process data or install an update.
+Headless runs, help, version-only commands, report comparisons, and redirected
+startup output skip it. There is no dedicated interactive opt-out flag.
+
+Reports and optional diagnostic logs can contain sensitive paths and process
+details. They have no built-in expiry or encryption; existing label redaction
+does not sanitize the entire JSON or HTML report. Read the
+[privacy policy](https://github.com/JunaidAhamed-7777/DrainTracer/blob/main/PRIVACY.md),
+[terms of use](https://github.com/JunaidAhamed-7777/DrainTracer/blob/main/TERMS.md),
+and [safe sharing guide](https://github.com/JunaidAhamed-7777/DrainTracer/blob/main/docs/privacy.md).
+The terms preserve the MIT software license. The project operates no hosted
+monitoring or report-storage service.
+
 ## Documentation and contributions
 
 - [Usage and troubleshooting](https://github.com/JunaidAhamed-7777/DrainTracer/blob/main/docs/usage.md)
@@ -98,5 +116,7 @@ paths and process details before sharing exports.
 - [Release notes](https://github.com/JunaidAhamed-7777/DrainTracer/blob/main/RELEASES.md)
 - [Source and contributions](https://github.com/JunaidAhamed-7777/DrainTracer)
 - [Report a bug](https://github.com/JunaidAhamed-7777/DrainTracer/issues/new/choose)
+- [Legal and policy index](https://github.com/JunaidAhamed-7777/DrainTracer/blob/main/LEGAL.md)
+- [Third-party notices](https://github.com/JunaidAhamed-7777/DrainTracer/blob/main/THIRD_PARTY_NOTICES.md)
 
 Released under the [MIT license](https://github.com/JunaidAhamed-7777/DrainTracer/blob/main/LICENSE).

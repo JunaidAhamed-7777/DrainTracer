@@ -6,3 +6,6 @@ contact_links:
   - name: Security reporting
     url: https://github.com/JunaidAhamed-7777/DrainTracer/blob/main/SECURITY.md
     about: Follow the private reporting route for suspected vulnerabilities.
+  - name: Privacy, legal, or licensing request
+    url: https://github.com/JunaidAhamed-7777/DrainTracer/blob/main/LEGAL.md#contact
+    about: Find the private contact route; do not put sensitive information in a public issue.

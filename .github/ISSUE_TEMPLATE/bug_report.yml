@@ -6,6 +6,7 @@ body:
     attributes:
       value: |
         Search existing issues first. For vulnerabilities, follow [SECURITY.md](https://github.com/JunaidAhamed-7777/DrainTracer/blob/main/SECURITY.md) instead of sharing exploit details here. Review all evidence for secrets and identifying information.
+        This issue and its attachments are public. Follow the [safe sharing guide](https://github.com/JunaidAhamed-7777/DrainTracer/blob/main/docs/privacy.md); built-in label redaction does not sanitize whole reports. Reports are optional.
   - type: textarea
     id: problem
     attributes:

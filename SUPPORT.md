@@ -39,6 +39,25 @@ Review screenshots, reports, and logs before posting. Remove identifying
 paths, process details, secrets, and unrelated data. Reports are optional;
 share the smallest evidence needed to reproduce the issue.
 
+Follow the [safe sharing guide](docs/privacy.md#before-sharing-evidence).
+Editing JSON does not update an already exported HTML companion, and
+filenames and CI logs can reveal details independently. Public issues and
+attachments are public evidence; do not post private reports to request help.
+
+## Privacy, legal, and licensing requests
+
+Read the [privacy policy](PRIVACY.md), [terms of use](TERMS.md), and
+[legal index](LEGAL.md). Use a private contact method published on
+[the maintainer's GitHub profile](https://github.com/JunaidAhamed-7777).
+If none is available, open an issue titled **Private contact requested**
+asking only for a private channel. Do not include personal information or
+confidential evidence. The request itself and your GitHub identity are public.
+
+The maintainer cannot access or delete reports stored only on your machine.
+For information controlled by GitHub or your organization, use their own
+request channels. For evidence sent to the maintainer, identify the relevant
+post or correspondence through the private route.
+
 ## Understand the result
 
 An alert means sustained resource growth matched a heuristic; it does not

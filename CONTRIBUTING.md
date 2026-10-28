@@ -15,6 +15,11 @@ Use [SUPPORT.md](SUPPORT.md) for usage questions and
 [SECURITY.md](SECURITY.md) for vulnerability reports. Participation follows
 the [code of conduct](CODE_OF_CONDUCT.md).
 
+The [legal index](LEGAL.md) links the privacy policy, terms, and dependency
+notices. Submit only material you have the right to share. Review report
+attachments with the [safe sharing guide](docs/privacy.md); issues, pull
+requests, commits, and their author metadata can be public.
+
 ## Set up a development checkout
 
 Use Windows 10 or 11 with Python 3.10 or newer. Run these commands from your
@@ -120,6 +125,12 @@ controls change. Preserve existing reference documents instead of replacing
 them with an incomplete summary. Do not commit generated caches, virtual
 environments, logs, or leak reports.
 
+Update [PRIVACY.md](PRIVACY.md) and [docs/privacy.md](docs/privacy.md) when
+changing network requests, collected fields, logging, export, or retention.
+Review [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) when dependencies or
+bundled assets change. Describe implemented behavior accurately; a policy
+must not promise a privacy control that the code does not provide.
+
 ## Open a pull request
 
 Describe the problem, what changes for the user, and the checks you ran.
@@ -127,7 +138,11 @@ Include a small reproduction or regression test when it helps demonstrate a
 behavioral fix. For terminal layout changes, include screenshots at relevant
 sizes. Review your diff for unrelated edits and sensitive paths or data.
 
-Keep commits focused with descriptive messages. Contributions are made under
-the repository's existing [MIT license](LICENSE). Maintainer review and
-availability determine when a change can be merged; there is no guaranteed
-review or release schedule.
+Keep commits focused with descriptive messages. Material intentionally
+submitted for inclusion is offered under the repository's existing
+[MIT license](LICENSE), unless a different compatible arrangement is agreed
+before inclusion. Contributors retain their copyright; no copyright
+assignment is required. Identify third-party material and preserve its
+required notices. See [the contribution terms](TERMS.md#7-contributions-and-public-participation).
+Maintainer review and availability determine when a change can be merged;
+there is no guaranteed review or release schedule.

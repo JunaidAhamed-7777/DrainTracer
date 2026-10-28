@@ -2,6 +2,12 @@
 
 [README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md) · [Report schema](../working-principle.md#7-leak-report-structure)
 
+Reports can contain sensitive paths, process identities, timestamps, and
+free text. Review both JSON and the HTML's embedded data before sharing;
+label redaction is not whole-report sanitization. See
+[Privacy and safe sharing](privacy.md) and the [privacy policy](../PRIVACY.md)
+for storage, network behavior, retention, and deletion.
+
 ## Export a session
 
 Press `E` in the dashboard to export the samples collected so far. Each

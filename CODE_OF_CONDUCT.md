@@ -34,6 +34,12 @@ Maintainers should handle reports discreetly and share information only as
 needed to investigate or address the concern. Confidentiality cannot be
 guaranteed on a public platform.
 
+The [privacy policy](PRIVACY.md#5-information-you-send-to-the-project) describes
+how voluntarily submitted information is handled. The
+[legal contact guide](LEGAL.md#contact) also covers privacy and rights
+requests. Report only the information needed to explain a concern; a public
+request for a private channel should not identify affected people.
+
 ## Enforcement
 
 Maintainers may edit or remove inappropriate content, give a warning,

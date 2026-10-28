@@ -25,7 +25,8 @@
   <a href="docs/usage.md">Usage</a> ·
   <a href="working-principle.md">How it works</a> ·
   <a href="CONTRIBUTING.md">Contribute</a> ·
-  <a href="docs/branding.md">Brand kit</a>
+  <a href="docs/branding.md">Brand kit</a> ·
+  <a href="LEGAL.md">Privacy and terms</a>
 </p>
 
 <p align="center">
@@ -143,6 +144,11 @@ with `pip install --upgrade draintracer` in green, or **No new updates.** with a
 blue contribution link. Offline or failed checks show **Update check
 unavailable.** instead. Headless runs, help, version-only commands, and
 redirected output do not contact PyPI.
+
+The check sends the DrainTracer version in its user-agent, and PyPI sees the
+connecting IP address. Process reports are not uploaded. Read the
+[privacy policy](PRIVACY.md) for the request details, modes that skip it, and
+local data handling.
 
 Once the installation check passes, `draintracer` offers two startup choices:
 
@@ -401,6 +407,25 @@ The real-process suite takes roughly 90 seconds. See
 [Get help](SUPPORT.md) ·
 [Report a bug](https://github.com/JunaidAhamed-7777/DrainTracer/issues/new/choose) ·
 [Security policy](SECURITY.md) · [Code of conduct](CODE_OF_CONDUCT.md)
+
+## Privacy and terms
+
+Monitoring and report generation run locally. Interactive startup makes the
+PyPI update request described above; the application has no automatic report
+upload, account system, or usage analytics. Reports and optional diagnostic
+logs can contain identifying paths, process details, and free text. They have
+no built-in expiry or encryption, and label redaction does not sanitize the
+whole report. Review both JSON and embedded HTML data before sharing.
+
+- [Privacy policy](PRIVACY.md) — local data, network requests, voluntary
+  submissions, retention, and privacy requests.
+- [Terms of use](TERMS.md) — authorized monitoring, process-control risks,
+  contributions, support limits, and the MIT license's priority.
+- [Privacy and safe sharing](docs/privacy.md) — practical report review,
+  storage, logging, CI visibility, and deletion.
+- [Legal and policy index](LEGAL.md) — all policies and private contact routes.
+- [Third-party notices](THIRD_PARTY_NOTICES.md) — dependency licenses and
+  redistribution responsibilities.
 
 ## License
 

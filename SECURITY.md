@@ -43,3 +43,31 @@ people as untrusted files and review their origin before opening HTML.
 
 An access-denied metric or a heuristic false positive belongs in the normal
 bug tracker unless it demonstrates a security impact.
+
+## Reports, network access, and disclosure
+
+The application has no automatic report or crash upload. Interactive startup
+does make a PyPI release-metadata request; [PRIVACY.md](PRIVACY.md) describes
+its fields and the modes that skip it. Reports have no application-level
+encryption, expiry, or access-control service. Filesystem and CI permissions
+remain the operator's responsibility. A target's own network and file access
+are separate from DrainTracer's behavior.
+
+Limited label cleaning and argument fingerprints do not make a report
+anonymous. The [safe sharing guide](docs/privacy.md) explains how identifiers
+can recur in JSON, embedded HTML data, logs, and filenames. For an accidental
+credential disclosure, revoke or rotate the credential with its issuer;
+removing an attachment may not remove historical or copied versions.
+
+Test only systems and workloads you are authorized to test. Keep reproductions
+bounded, avoid real personal data, and do not disrupt other users or access
+their information to demonstrate an issue. Coordinate publication of details
+with the maintainer where possible so users can receive a fix or mitigation.
+Reporting a vulnerability does not itself authorize further access to any
+system or promise immunity from third parties' claims.
+
+This project has no standing paid bug-bounty program or guaranteed reward.
+Recognition and disclosure timing can be discussed privately. Necessary
+details may be shared with people involved in remediation; confidentiality
+cannot be guaranteed. [The privacy policy](PRIVACY.md#5-information-you-send-to-the-project)
+also applies to information voluntarily sent in a report.
