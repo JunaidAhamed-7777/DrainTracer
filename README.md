@@ -281,6 +281,10 @@ result, rather than forwarding the target's exit code:
   even with no leak signal, because stable usage can still be excessive.
 - `130` — interrupted with Ctrl+C before a failing signal.
 
+Handle and thread budgets must be positive whole numbers, both in flags
+and settings files. Fractional private-byte sizes such as `1.5MB` and
+fractional growth-rate thresholds remain supported.
+
 The summary and report keep the target outcome, the measurement outcome
 (conclusive, partial coverage, or inconclusive), and monitor errors apart.
 The default failure threshold is `high`. Allow enough time after warm-up for

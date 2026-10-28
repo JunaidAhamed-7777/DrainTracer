@@ -72,6 +72,8 @@ are rejected before a process is launched or attached.
   `--operations N`.
 - `budget_private`, `budget_handles`, `budget_threads`: absolute peak
   ceilings, a size such as `"500MB"` for private bytes and counts otherwise.
+  Handle and thread budgets must be positive whole numbers; whole-valued
+  TOML floats such as `40.0` are accepted, but fractional counts are rejected.
   A headless run whose whole-run peak exceeds one exits `5`. CLI:
   `--budget-private SIZE`, `--budget-handles N`, `--budget-threads N`, which
   require `--headless`.
