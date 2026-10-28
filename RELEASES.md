@@ -1,9 +1,18 @@
-# Current version: v5.3.2
+# Current version: v5.3.3
 
 Published releases are listed newest first. The exact version here matches
 `DashboardApp.VERSION` in [src/dashboard.py](src/dashboard.py). The README
 shows the release series as `vMAJOR.MINOR.0`; for example, `v5.0.1` still
 belongs to series `v5.0.0`.
+
+## v5.3.3 — 2026-10-28
+
+- Rejected fractional handle and thread budgets in the main CLI, report-diff
+  flags, and TOML settings. Positive whole-valued floats remain valid, while
+  fractional private-byte sizes and growth-rate thresholds retain their
+  behavior.
+- Documented whole-count budgets and added regression coverage for the
+  shared parser, both command-line entry points, and configuration files.
 
 ## v5.3.2 — 2026-10-26
 
