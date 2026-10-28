@@ -69,14 +69,11 @@ def parse_budget(metric: str, value: str | int | float) -> float:
     Raises ``ValueError`` for anything that is not a positive amount, and for
     a handle or thread count with a fractional part.
     """
-    if metric == "private_bytes":
-        amount = parse_size(value)
-    else:
-        amount = parse_count(value)
-        if not amount.is_integer():
-            raise ValueError(f"a {metric} budget must be a whole number, got {value!r}")
+    amount = parse_size(value) if metric == "private_bytes" else parse_count(value)
     if not amount > 0:
         raise ValueError(f"a budget must be greater than zero, got {value!r}")
+    if metric != "private_bytes" and not amount.is_integer():
+        raise ValueError(f"the {metric} budget must be a whole number, got {value!r}")
     return amount
 
 

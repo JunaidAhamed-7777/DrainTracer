@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import tempfile
 import unittest
@@ -17,12 +19,22 @@ from src.diff_command import (
     EXIT_OK,
     EXIT_OVER_BUDGET,
     EXIT_REGRESSION,
+    build_diff_parser,
     run_diff,
 )
 from src.events import LeakSeverity
 
 
 class DiffCommandTests(unittest.TestCase):
+    def test_count_budget_flags_reject_fractional_limits(self) -> None:
+        for flag in ("--budget-handles", "--budget-threads"):
+            with self.subTest(flag=flag):
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit) as caught:
+                    build_diff_parser().parse_args(["before.json", "after.json", flag, "2.25"])
+                self.assertEqual(caught.exception.code, EXIT_ERROR)
+                self.assertIn("whole number", stderr.getvalue())
+
     def setUp(self) -> None:
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)

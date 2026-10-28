@@ -264,6 +264,20 @@ class PolicySettingsTests(ConfigTestCase):
 
 
 class ExperimentSettingsTests(ConfigTestCase):
+    def test_count_budgets_reject_fractions_in_settings_files(self) -> None:
+        for key in ("budget_handles", "budget_threads"):
+            for value in ("1.5", '"2.25"'):
+                with self.subTest(key=key, value=value):
+                    self.write(".drainrc", f"{key} = {value}\n")
+                    with self.assertRaises(ConfigError) as caught:
+                        self.resolve()
+                    self.assertIn(key, str(caught.exception))
+                    self.assertIn("whole number", str(caught.exception))
+
+    def test_count_budgets_accept_whole_valued_settings(self) -> None:
+        self.write(".drainrc", "budget_handles = 2000\nbudget_threads = 40.0\n")
+        self.assertEqual(dict(self.resolve().budgets), {"handles": 2000, "threads": 40})
+
     def test_labels_and_budgets_come_from_files_and_profiles(self) -> None:
         self.write(".drainrc", """
             workload_id = "import-1k"

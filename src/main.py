@@ -618,7 +618,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Exit 4 when a launched target exits by itself with a non-zero code.",
     )
     for metric, option in BUDGET_OPTIONS.items():
-        what = "a size such as 500MB" if metric == "private_bytes" else "a whole count"
+        what = "a size such as 500MB" if metric == "private_bytes" else "a positive whole count"
         headless.add_argument(
             f"--{option.replace('_', '-')}",
             type=_budget(metric),
