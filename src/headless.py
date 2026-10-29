@@ -75,9 +75,11 @@ class HeadlessRunner(MonitorSession):
         settings: MonitorSettings | None = None,
         fail_on_inconclusive: bool = False,
         fail_on_target_error: bool = False,
+        quiet: bool = False,
     ) -> None:
         if fail_on == LeakSeverity.NONE:
             raise ValueError("fail_on must be a leak severity, not NONE")
+        self.quiet = quiet
         super().__init__(
             target_path,
             args=args,
@@ -270,6 +272,8 @@ class HeadlessRunner(MonitorSession):
 
     def _print_line(self, level: str, message: str | Text) -> None:
         tag, color = _LEVEL_TAGS.get(level, _LEVEL_TAGS["info"])
+        if self.quiet and tag in {"OK", "INFO", "STAT"}:
+            return
         line = Text.assemble(
             (self._format_duration(self._uptime()), PALETTE.muted),
             "  ",
@@ -280,6 +284,10 @@ class HeadlessRunner(MonitorSession):
         self.console.print(line, soft_wrap=True)
 
     def _print_banner(self) -> None:
+        if self.quiet:
+            for warning in replace(self.settings, timeout=self.timeout).warnings():
+                self._print_line("warn", warning)
+            return
         sep = self.glyphs.sep
         if self.attached:
             action = f"attaching to PID {self.attach_pid}"

@@ -161,6 +161,24 @@ class ExitStatusTests(unittest.TestCase):
 
 
 class OutputTests(unittest.TestCase):
+    def test_quiet_hides_routine_output_but_keeps_evidence_and_failures(self) -> None:
+        runner = HeadlessRunner("worker.exe", console=make_console(), quiet=True)
+        runner._print_banner()
+        runner._append_event("routine event", "info")
+        runner._print_progress()
+        self.assertEqual(_output(runner), "")
+        runner._append_event("partial coverage warning", "warn")
+        runner._append_event("export error", "error")
+        runner._accept_snapshot(make_snapshot(alerts=(make_alert(severity=LeakSeverity.HIGH),)))
+        runner._print_summary()
+        output = _output(runner)
+        self.assertIn("partial coverage warning", output)
+        self.assertIn("export error", output)
+        self.assertIn("RESULT", output)
+        self.assertIn("HIGH", output)
+        self.assertEqual(runner.exit_status(), EXIT_LEAK)
+        self.assertTrue(any("routine event" in event[1] for event in runner._events))
+
     def test_events_print_as_tagged_lines(self) -> None:
         runner = HeadlessRunner("C:/targets/worker.exe", console=make_console())
         runner._accept_snapshot(make_snapshot(alerts=(make_alert(severity=LeakSeverity.MEDIUM),)))

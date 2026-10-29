@@ -7,6 +7,13 @@ from dataclasses import dataclass
 from rich.console import Console
 
 
+def plain_console(console: Console) -> Console:
+    """Reuse the output destination while disabling styles and terminal control."""
+    return Console(file=console.file, width=console.width, color_system=None,
+                   force_terminal=False, no_color=True, markup=False,
+                   highlight=False, emoji=False)
+
+
 @dataclass(frozen=True)
 class Palette:
     """Night-friendly accent palette; plain text keeps the terminal default."""

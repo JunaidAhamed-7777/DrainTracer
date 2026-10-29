@@ -314,7 +314,7 @@ try:
     from .report import DEFAULT_REPORT_DIR
     from .resources import resource_path
     from .startup import choose_startup_action
-    from .theme import PALETTE, blend
+    from .theme import PALETTE, blend, plain_console
     from .units import parse_count, parse_duration
     from .updates import check_for_update
 except ModuleNotFoundError as _dependency_error:
@@ -471,6 +471,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--version", action="version", version=f"DrainTracer {DashboardApp.VERSION}")
     parser.add_argument("--no-color", action="store_true", help="Disable terminal colors, including forced color.")
+    parser.add_argument("--plain", action="store_true", help="Use static, unstyled headless text output.")
+    parser.add_argument("--quiet", action="store_true", help="Use headless output with warnings, signals, errors, and the final summary only.")
     target = parser.add_argument_group("target")
     source = target.add_mutually_exclusive_group()
     source.add_argument(
@@ -762,6 +764,9 @@ def _main(console: Console, argv: list[str] | None) -> int:
     args = parser.parse_args(arguments)
     if args.no_color:
         console.no_color = True
+    if args.plain:
+        console = plain_console(console)
+    args.headless = args.headless or args.plain or args.quiet
 
     forwarded_args = list(args.target_args or [])
     if forwarded_args[:1] == ["--"]:
@@ -898,6 +903,7 @@ def _run_headless(
         settings=settings,
         fail_on_inconclusive=settings.fail_on_inconclusive,
         fail_on_target_error=settings.fail_on_target_error,
+        quiet=args.quiet,
     )
     try:
         return runner.run()

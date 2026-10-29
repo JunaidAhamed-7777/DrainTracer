@@ -64,6 +64,31 @@ class ParserTests(unittest.TestCase):
 
 
 class DispatchTests(unittest.TestCase):
+    def test_plain_routes_to_static_headless_output_with_no_terminal_sequences(self) -> None:
+        from rich.console import Console
+        from rich.text import Text
+
+        output = io.StringIO()
+        console = Console(file=output, force_terminal=True, color_system="truecolor", width=40)
+        with mock.patch.object(cli, "HeadlessRunner") as runner, \
+                mock.patch.object(cli, "DashboardApp") as dashboard:
+            runner.return_value.run.side_effect = lambda: runner.call_args.kwargs["console"].print(
+                Text("INCONCLUSIVE: handles unavailable", style="bold red on blue")
+            ) or 0
+            code = cli._main(console, ["--plain", "--target", "worker.exe", "--no-config"])
+        self.assertEqual(code, 0)
+        dashboard.assert_not_called()
+        self.assertNotIn("\x1b", output.getvalue())
+        self.assertIn("INCONCLUSIVE: handles unavailable", output.getvalue())
+
+    def test_quiet_implies_headless_and_preserves_target_arguments(self) -> None:
+        with mock.patch.object(cli, "HeadlessRunner") as runner:
+            runner.return_value.run.return_value = 0
+            cli._main(make_console(), ["--quiet", "--target", "worker.exe", "--no-config",
+                                       "--", "--plain", "--quiet"])
+        self.assertTrue(runner.call_args.kwargs["quiet"])
+        self.assertEqual(runner.call_args.kwargs["args"], ["--plain", "--quiet"])
+
     def test_no_color_reaches_normal_and_headless_shared_console(self) -> None:
         from rich.ansi import AnsiDecoder
         from rich.console import Console
