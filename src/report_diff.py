@@ -510,7 +510,7 @@ def comparability_caveats(before: LoadedReport, after: LoadedReport) -> list[Cav
         partial = report.partial_resources
         if partial:
             samples = max(report.summary.resources[r].partial_samples for r in partial)
-            measured = max(report.summary.resources[r].measured_samples for r in partial)
+            measured = max(report.summary.resources[r].coverage_samples for r in partial)
             add("partial coverage",
                 f"report {label} could not read every process ({', '.join(partial)} totals "
                 f"partial in {samples:,} of {measured:,} samples), so its totals are lower "
