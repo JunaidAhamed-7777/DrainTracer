@@ -45,6 +45,8 @@ jobs:
         run: python -m unittest discover -s tests -p test_installation.py
       - name: Compile source
         run: python -m compileall -q src
+      - name: Validate report JavaScript
+        run: node --check leak_reports/frames/report.js
       - name: Run regression tests
         run: python -m unittest discover -s tests
       - name: Run bounded Linux workloads
@@ -95,6 +97,8 @@ jobs:
         run: python -m unittest discover -s tests -p test_installation.py
       - name: Compile source
         run: python -m compileall -q src
+      - name: Validate report JavaScript
+        run: node --check leak_reports/frames/report.js
       - name: Run regression tests
         run: python -m unittest discover -s tests
       - name: Build wheel and source distribution
