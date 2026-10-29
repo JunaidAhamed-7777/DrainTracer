@@ -83,3 +83,7 @@ help, and version-only commands stay free of update checks.
 - Confirm choices explicitly; arrow movement alone never launches or attaches.
 - Render UI on the main thread and keep monitoring independent of network work.
 - Verify keyboard cancellation, narrow widths, redirected input, and legacy output.
+
+Dashboard help owns keyboard input while open: scrolling, closing help, and view
+selection remain active. Its footer shows those actions only. Target controls and
+session actions require closing help first.

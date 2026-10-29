@@ -279,6 +279,8 @@ Use the target's own file logging when needed. See the
 - `O` — open the latest HTML export.
 - `M` — add a numbered marker (`marker N`) to the event log, timeline, and report.
 - `?` / `H` — show help and active settings; arrows scroll it, `Esc` closes it.
+  While help is open, only scrolling, closing help, and view selection are active.
+  Close it before using target controls, exporting, or quitting.
 - `K` — terminate the monitored tree (never only a selected process); confirm
   with a second press when attached.
 - `Q` — quit, cleaning up a launched tree or detaching from an attached tree.
