@@ -42,6 +42,11 @@ these from `requirements.txt`. tkinter is optional: desktop selection can
 use it, while servers and WSL can use the typed-path fallback, `--target`,
 or `--pid` without a display.
 
+Linux CI runs Python 3.10 with those minimum runtime dependencies and
+Python 3.14 with current dependencies. Both run regression tests, bounded
+workloads, builds, and clean wheel installation; publishing also requires
+the Windows checks.
+
 ## Build and verify distributions
 
 Install the build frontend and create both a wheel and source archive:
