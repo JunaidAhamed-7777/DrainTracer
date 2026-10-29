@@ -92,9 +92,10 @@ def describe_pid(pid: int) -> str:
 
 # Creation times tell a process apart from a later one that reuses its PID.
 # Windows reports them exactly, so a process started even a few
-# milliseconds later is a different one; elsewhere they are derived from
-# boot time and clock ticks and may differ slightly between readings.
-_SAME_START = 0.01 if sys.platform == "win32" else 1.0
+# milliseconds later is a different one. Linux derives them from boot time
+# and clock ticks, but repeated reads still identify the same start tick;
+# a one-second tolerance could mistake a quickly reused PID for its owner.
+_SAME_START = 0.01 if sys.platform == "win32" else 0.001
 
 
 @dataclass(frozen=True)
@@ -238,6 +239,9 @@ class ProcessManager:
         self._root_created: float | None = None
         # Members that exited lately, still walked for the orphans they left.
         self._departed: dict[int, _Departed] = {}
+        # A launched Linux tree gets its own session. Unlike parent PIDs,
+        # that session survives reparenting when a short-lived root exits.
+        self._linux_session_id: int | None = None
 
     @property
     def root_pid(self) -> int | None:
@@ -347,6 +351,8 @@ class ProcessManager:
             }
             if sys.platform == "win32":
                 popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            elif sys.platform.startswith("linux"):
+                popen_kwargs["start_new_session"] = True
 
             try:
                 self._process = subprocess.Popen(command, **popen_kwargs)
@@ -360,6 +366,9 @@ class ProcessManager:
                 raise ProcessManagerError(f"Failed to start process: {exc}") from exc
 
             self._root_pid = self._process.pid
+            self._linux_session_id = (
+                self._root_pid if sys.platform.startswith("linux") else None
+            )
             self._tracked_pids = {self._root_pid}
             self._identities.clear()
             self._depths = {self._root_pid: 0}
@@ -400,6 +409,7 @@ class ProcessManager:
                 pass
 
             self._process = None
+            self._linux_session_id = None
             self._root_pid = pid
             self._tracked_pids = {pid}
             self._identities.clear()
@@ -430,13 +440,16 @@ class ProcessManager:
             self._parents.clear()
             self._departed.clear()
             self._root_pid = None
+            self._linux_session_id = None
             self._paused = False
 
     def pause(self) -> bool:
         """Suspend the root process and all tracked descendants."""
         with self._lock:
             if not self.is_running:
-                return False
+                self._refresh_tracked_pids()
+                if not self._tracked_pids:
+                    return False
             if self._paused:
                 return True
             if self.contains_monitor:
@@ -483,6 +496,9 @@ class ProcessManager:
                 return
 
             self._refresh_tracked_pids()
+            if self._paused:
+                # POSIX defers SIGTERM while stopped; let its handler run.
+                self.resume()
             targets = set(self._tracked_pids)
             for pid in self._termination_order(targets):
                 self._terminate_pid(pid, graceful=True)
@@ -509,6 +525,7 @@ class ProcessManager:
                 self._parents.clear()
                 self._departed.clear()
                 self._root_pid = None
+                self._linux_session_id = None
 
     def kill(self) -> None:
         """Force-kill the process tree."""
@@ -541,6 +558,7 @@ class ProcessManager:
                 )
             else:
                 self._root_pid = None
+                self._linux_session_id = None
                 self._tracked_pids.clear()
                 self._identities.clear()
                 self._depths.clear()
@@ -580,6 +598,11 @@ class ProcessManager:
             comspec = os.environ.get("COMSPEC") or "cmd.exe"
             inner = " ".join(_quote_for_cmd(part) for part in (str(path), *self.args))
             return f'"{comspec}" /d /e:on /v:off /s /c "{inner}"'
+        if suffix in {".bat", ".cmd"}:
+            raise ProcessManagerError(
+                "Windows batch files require Windows; choose a Linux executable, "
+                "Python script, or executable script with a shebang"
+            )
         return [str(path), *self.args]
 
     def _start_poll_thread(self) -> None:
@@ -656,14 +679,21 @@ class ProcessManager:
         process enumeration each time; one map serves the whole refresh
         and also records each child's parent for the dashboard tree view.
         """
+        parents = _parent_pid_map()
         children_of: dict[int, list[int]] = {}
-        for pid, ppid in _parent_pid_map().items():
+        for pid, ppid in parents.items():
             if pid != ppid:
                 children_of.setdefault(ppid, []).append(pid)
 
         members = set(alive)
+        session_members = self._linux_session_members(parents)
+        # Seed only surviving roots, then walk their parent links normally
+        # so descendant depths (and child-first cleanup) remain accurate.
+        members.update(
+            pid for pid in session_members if parents.get(pid) not in session_members
+        )
         # Departed parents first, while their PIDs still mean them.
-        queue: deque[int] = deque([*self._departed, *sorted(alive)])
+        queue: deque[int] = deque([*self._departed, *sorted(members)])
         while queue:
             parent_pid = queue.popleft()
             gone = self._departed.get(parent_pid)
@@ -714,6 +744,43 @@ class ProcessManager:
                 self._depths[child_pid] = depth + 1
                 self._parents[child_pid] = parent_pid
                 queue.append(child_pid)
+        return members
+
+    def _linux_session_members(self, parents: dict[int, int]) -> set[int]:
+        """Recover launched descendants that Linux has reparented to init.
+
+        Session IDs remain reserved while any member lives. If the leader's
+        PID has since been reused, the old session is gone: never adopt a
+        different program's new session. Attached programs keep their own
+        sessions, which may include unrelated processes, so only launches
+        use this fallback.
+        """
+        session_id = self._linux_session_id
+        if session_id is None:
+            return set()
+        if _reused_since(session_id, self._root_created) is not None:
+            self._linux_session_id = None
+            return set()
+        members: set[int] = set()
+        for pid, parent_pid in parents.items():
+            try:
+                if os.getsid(pid) != session_id:
+                    continue
+            except OSError:
+                continue  # exited or inaccessible between enumeration and lookup
+            proc = self._open_tracked(pid)
+            if proc is None:
+                continue
+            created = self._identities.get(pid)
+            if (
+                self._root_created is not None
+                and created is not None
+                and created < self._root_created - _SAME_START
+            ):
+                continue
+            members.add(pid)
+            self._parents.setdefault(pid, None if pid == self._root_pid else parent_pid)
+            self._depths.setdefault(pid, 0 if pid == self._root_pid else 1)
         return members
 
     def _refuse_to_end_monitor(self) -> bool:
@@ -815,8 +882,6 @@ class ProcessManager:
         return {pid for pid in remaining if self._pid_is_alive(pid)}
 
     def _suspend_pid(self, pid: int) -> bool:
-        if sys.platform != "win32":
-            return True
         proc = self._open_tracked(pid)
         if proc is None:
             return False
@@ -828,8 +893,6 @@ class ProcessManager:
             return False
 
     def _resume_pid(self, pid: int) -> bool:
-        if sys.platform != "win32":
-            return True
         proc = self._open_tracked(pid)
         if proc is None:
             return False

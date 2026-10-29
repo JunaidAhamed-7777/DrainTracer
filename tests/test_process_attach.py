@@ -90,7 +90,15 @@ class AttachTests(unittest.TestCase):
         tracked = manager.refresh_process_tree()
         manager.kill()
         self.assertFalse(manager.has_tracked_processes)
-        self.assertTrue(_wait_for(lambda: not any(psutil.pid_exists(p) for p in tracked)))
+        # Linux retains exited PIDs as zombies until their parent reaps
+        # them. They no longer run and must not count as failed cleanup.
+        self.target.wait(timeout=10)
+        def alive(pid: int) -> bool:
+            try:
+                return psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
+            except psutil.NoSuchProcess:
+                return False
+        self.assertTrue(_wait_for(lambda: not any(alive(p) for p in tracked)))
 
     def test_failed_kill_keeps_live_processes_tracked(self) -> None:
         manager = ProcessManager(None)
