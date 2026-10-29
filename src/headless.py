@@ -17,7 +17,7 @@ from .config import FAIL_ON_CHOICES, MonitorSettings
 from .analysis import RESOURCES, summarize
 from .budgets import BudgetCheck, check_budgets
 from .dashboard import DashboardApp
-from .events import EvidenceState, LeakSeverity, severity_rank, unavailable_reason
+from .events import EvidenceState, LeakResource, LeakSeverity, severity_rank, unavailable_reason
 from .report import DEFAULT_REPORT_DIR
 from .report_diff import format_amount, format_drift
 from .session import MonitorSession
@@ -100,6 +100,7 @@ class HeadlessRunner(MonitorSession):
         # The first sample is taken before the launch is logged; its breaches
         # wait so the log does not report a budget before the target started.
         self._start_logged = False
+        self._judged_resources: set[LeakResource] = set()
 
     @property
     def breached(self) -> bool:
@@ -116,8 +117,30 @@ class HeadlessRunner(MonitorSession):
 
     def _accept_snapshot(self, snapshot) -> None:
         super()._accept_snapshot(snapshot)
+        if not snapshot.monitoring_paused and not snapshot.metadata.get("sampling_error"):
+            self._judged_resources.update(
+                item.resource for item in snapshot.evidence
+                if item.state in (EvidenceState.NO_GROWTH, EvidenceState.GROWTH)
+            )
         if self._start_logged:
             self._log_budget_breaches()
+
+    def _signal_label(self, resource: LeakResource) -> str:
+        if self.worst_severity_for(resource) != LeakSeverity.NONE:
+            return super()._signal_label(resource)
+        if resource in self._judged_resources:
+            return "clear"
+        snapshot = self.snapshot
+        evidence = snapshot.evidence_for(resource) if snapshot is not None else None
+        if evidence is not None and evidence.state == EvidenceState.UNAVAILABLE:
+            return "unavailable"
+        if (snapshot is not None and snapshot.warming_up) or (
+            self.detector.warmup_seconds and self.detector.warmup_completed_at is None
+        ):
+            return "inconclusive (warming up)"
+        if evidence is None and self.conclusive:
+            return "clear"  # Compatibility for snapshots without per-resource evidence.
+        return "inconclusive (collecting)"
 
     def _log_start(self) -> None:
         super()._log_start()
@@ -483,7 +506,7 @@ class HeadlessRunner(MonitorSession):
             ]
             for resource in RESOURCES:
                 stats = summary.resources[resource]
-                signal = stats.worst.upper() if stats.worst != "none" else "clear"
+                signal = self._signal_label(LeakResource(resource))
                 if stats.worst != "none":
                     signal = f"**{signal}**"
                 lines.append(

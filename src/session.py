@@ -303,13 +303,17 @@ class MonitorSession:
         parts = []
         for resource in LeakResource:
             worst = self.worst_severity_for(resource)
-            part = f"{resource.value} {worst.value.upper() if worst != LeakSeverity.NONE else 'clear'}"
+            part = f"{resource.value} {self._signal_label(resource)}"
             alert = self._last_alert_by_resource.get(resource)
             growth = describe_type_growth(alert.growth_by_type or {}, limit=1) if alert else ""
             if worst != LeakSeverity.NONE and growth:
                 part += f" ({growth.removeprefix('by type: ')})"
             parts.append(part)
         return f" {self.glyphs.sep} ".join(parts)
+
+    def _signal_label(self, resource: LeakResource) -> str:
+        worst = self.worst_severity_for(resource)
+        return worst.value.upper() if worst != LeakSeverity.NONE else "clear"
 
     def warmup_text(self) -> str | None:
         """Warm-up length and when it finished, or ``None`` without one."""

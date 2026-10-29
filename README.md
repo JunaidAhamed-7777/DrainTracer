@@ -348,6 +348,8 @@ fractional growth-rate thresholds remain supported.
 
 The summary and report keep the target outcome, the measurement outcome
 (conclusive, partial coverage, or inconclusive), and monitor errors apart.
+Headless signal rows label each unjudged resource as inconclusive or unavailable;
+`clear` means a window was judged, and earlier signals remain visible.
 The default failure threshold is `high`. Allow enough time after warm-up for
 a detection window to fill, and inspect the verdict as well as the exit code.
 The [headless guide](docs/usage.md#run-without-a-dashboard) covers outcome

@@ -211,7 +211,7 @@ class StepSummaryTests(unittest.TestCase):
         self.assertEqual(markdown.count("### DrainTracer leak check: FAIL"), 2)
         self.assertIn("**a\\|b\\*.exe**", markdown)
         self.assertIn("| memory | **HIGH** |", markdown)
-        self.assertIn("| handles | clear |", markdown)
+        self.assertIn("| handles | inconclusive (collecting) |", markdown)
         self.assertIn("Worst leak signal HIGH.", markdown)
         self.assertIn("leak_report_x.json` (HTML alongside)", markdown)
 
@@ -273,6 +273,30 @@ class ConclusivenessTests(unittest.TestCase):
         output = _output(runner)
         self.assertIn("the 30s warm-up never finished", output)
         self.assertIn("warm-up   30s | did not finish", output.replace("·", "|"))
+        self.assertIn("memory inconclusive (warming up)", output)
+
+    def test_signal_rows_distinguish_collecting_unavailable_and_judged(self) -> None:
+        from dataclasses import replace
+
+        from src.events import EvidenceState, LeakResource, ResourceEvidence
+
+        runner = self._runner()
+        snapshot = replace(make_snapshot(), evidence=(
+            ResourceEvidence(LeakResource.MEMORY, EvidenceState.NO_GROWTH),
+            ResourceEvidence(LeakResource.HANDLES, EvidenceState.COLLECTING),
+            ResourceEvidence(LeakResource.THREADS, EvidenceState.UNAVAILABLE),
+        ))
+        runner._accept_snapshot(snapshot)
+        self.assertEqual(runner.signals_text(),
+                         "memory clear · handles inconclusive (collecting) · threads unavailable")
+        runner._accept_snapshot(replace(snapshot, evidence=tuple(
+            replace(item, state=EvidenceState.UNAVAILABLE) for item in snapshot.evidence
+        )))
+        self.assertTrue(runner.signals_text().startswith("memory clear"))
+        runner._accept_snapshot(make_snapshot(alerts=(make_alert(),)))
+        runner._accept_snapshot(snapshot)
+        self.assertIn("memory HIGH", runner.signals_text())
+        self.assertEqual(runner.exit_status(), EXIT_LEAK)
 
     def test_a_judged_clean_run_passes(self) -> None:
         runner = self._runner()
