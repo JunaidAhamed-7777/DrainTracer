@@ -609,13 +609,26 @@ class ProcessesViewMixin:
             return None
         totals = snapshot.totals
         private = totals.get("private_bytes", 0.0)
+
+        def total(metric: str) -> str:
+            coverage = (snapshot.coverage or {}).get(metric)
+            if coverage is not None and coverage.measured == 0:
+                return "n/a"
+            value = totals.get(metric, 0.0)
+            text = format_bytes(value) if metric == "private_bytes" else f"{value:,.0f}"
+            if coverage is not None and coverage.partial:
+                text += " (partial lower bound)"
+            return text
+
         text = (
-            f"{len(snapshot.processes)} processes{sep}private {format_bytes(private)}{sep}"
-            f"handles {totals.get('handles', 0.0):,.0f}{sep}threads {totals.get('threads', 0.0):,.0f}"
+            f"{len(snapshot.processes)} processes{sep}private {total('private_bytes')}{sep}"
+            f"handles {total('handles')}{sep}threads {total('threads')}"
         )
         process = row.process
         if process is not None and private > 0 and process.measured("private_bytes"):
-            text += f"{sep}this process {process.private_bytes / private:.0%} of private"
+            coverage = (snapshot.coverage or {}).get("private_bytes")
+            measured = "measured " if coverage is not None and coverage.partial else ""
+            text += f"{sep}this process {process.private_bytes / private:.0%} of {measured}private"
         return text
 
 

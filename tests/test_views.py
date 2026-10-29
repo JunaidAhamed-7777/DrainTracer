@@ -377,6 +377,37 @@ class EvidenceViewTests(ViewRenderingMixin, unittest.TestCase):
         self.assertIn(f"{window.score:.2f}", output)
         self.assertIn(f"{window.monotonic_ratio:.0%}", output)
 
+    def test_current_totals_preserve_unknown_zero_and_partial_coverage(self) -> None:
+        from src.events import LeakResource
+
+        zero = replace(make_process(100, private=0, handles=0, threads=0), rss_bytes=0)
+        cases = (
+            ([make_denied(100)], ("n/a", "n/a", "n/a")),
+            ([zero], ("0.0 B", "0", "0")),
+            ([zero, make_denied(200)], ("0.0 B (partial lower bound)",
+                                      "0 (partial lower bound)", "0 (partial lower bound)")),
+        )
+        for processes, expected in cases:
+            with self.subTest(expected=expected):
+                app = _app(140, 60)
+                sample_trees(app, [processes] * 2)
+                for resource, quantity in zip(LeakResource, expected):
+                    facts = app._evidence_facts(resource, app.snapshot.evidence_for(resource), None)
+                    with app.console.capture() as capture:
+                        app.console.print(facts)
+                    self.assertIn("Current " + quantity, " ".join(capture.get().split()))
+                row = app._inspector_rows()[0]
+                tree = app._tree_context(row, " | ")
+                for label, quantity in zip(("private", "handles", "threads"), expected):
+                    self.assertIn(f"{label} {quantity}", tree)
+
+    def test_process_share_uses_the_measured_partial_total(self) -> None:
+        app = _app()
+        sample_trees(app, [[make_process(100, private=MB), make_denied(200)]] * 2)
+        tree = app._tree_context(app._inspector_rows()[0], " | ")
+        self.assertIn("private 1.0 MB (partial lower bound)", tree)
+        self.assertIn("this process 100% of measured private", tree)
+
     def test_steady_resources_explain_which_check_failed(self) -> None:
         app = self._app()
         app._handle_key("right")
