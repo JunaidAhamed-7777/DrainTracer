@@ -88,6 +88,15 @@ class PrivacyTests(unittest.TestCase):
         self.assertNotEqual(first["create_time"], second["create_time"])
         self.assertEqual(transformed["session_started_at"], "2000-01-01T00:00:00+00:00")
 
+    def test_fact_only_reports_still_remove_original_wall_clock_dates(self) -> None:
+        report = private_fixture()
+        report["snapshots"] = []
+        report["event_log"] = None
+        transformed = redact_report(report)
+        self.assertEqual(transformed["session_facts"]["first_sample_at"], 946684800)
+        self.assertEqual(transformed["session_started_at"], "2000-01-01T00:00:00+00:00")
+        self.assertNotIn("1700001000", json.dumps(transformed))
+
     def test_json_html_and_preview_are_all_redacted(self) -> None:
         report = private_fixture()
         for profile in ("share", "minimal"):

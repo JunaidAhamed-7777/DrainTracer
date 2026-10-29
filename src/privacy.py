@@ -19,7 +19,7 @@ _TIMES = {"timestamp", "worst_at", "first_seen", "last_seen", "exited_at", "firs
           "last_sample_at", "first_evaluated_at"}
 _ISO_TIMES = {"created_at", "session_started_at", "session_ended_at", "time"}
 _FREE_TEXT = {"message", "label", "description", "reason", "sampling_error", "monitor_errors"}
-_CATEGORIES = {"file", "socket", "registry", "event", "thread", "process", "section", "other"}
+_CATEGORIES = {"file", "socket", "registry", "event", "thread", "process", "mutex", "semaphore", "section", "other"}
 _SAFE_TEXT = {*METRIC_UNITS, *SEVERITIES, *_CATEGORIES, "DrainTracer", "memory", "launch", "attach",
               "running", "sleeping", "disk-sleep", "stopped", "tracing-stop", "zombie", "dead",
               "wake-kill", "waking", "idle", "locked", "waiting", "parked", "unknown",
@@ -53,6 +53,14 @@ _KEYS = {
 }
 
 
+def _iso_stamp(value: Any) -> float | None:
+    try:
+        parsed = datetime.fromisoformat(value)
+        return (parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)).timestamp()
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
+
+
 def redact_report(report: dict[str, Any], profile: str = "share") -> dict[str, Any]:
     """Return an allowlisted copy with pseudonymous identities and relative timing.
 
@@ -63,10 +71,25 @@ def redact_report(report: dict[str, Any], profile: str = "share") -> dict[str, A
     validate_report(report)
     if profile not in PROFILES:
         raise ValueError(f"unknown privacy profile; choose {', '.join(PROFILES)}")
-    stamps = [sample["timestamp"] for sample in report["snapshots"]]
-    events = report.get("event_log")
-    stamps += [event["timestamp"] for event in (events if isinstance(events, list) else ())
-               if isinstance(event, dict) and type(event.get("timestamp")) in (int, float)]
+    stamps = []
+    pending = [report]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, dict):
+            for key, child in item.items():
+                if key not in _KEYS:
+                    continue
+                if key in _TIMES or key == "handle_types_at":
+                    if type(child) in (int, float):
+                        stamps.append(child)
+                elif key in _ISO_TIMES:
+                    stamp = _iso_stamp(child)
+                    if stamp is not None:
+                        stamps.append(stamp)
+                if isinstance(child, (dict, list)):
+                    pending.append(child)
+        elif isinstance(item, list):
+            pending.extend(item)
     origin = min(stamps, default=0.0)
     pids: dict[int, int] = {}
     identities: dict[tuple[Any, Any], float] = {}
@@ -79,7 +102,10 @@ def redact_report(report: dict[str, Any], profile: str = "share") -> dict[str, A
         return pids[value]
 
     def shifted(value: Any) -> float | None:
-        return _EPOCH + value - origin if type(value) in (int, float) else None
+        try:
+            return _EPOCH + (value - origin) if type(value) in (int, float) else None
+        except OverflowError:
+            return None
 
     def copy(value: Any, key: str = "") -> Any:
         if isinstance(value, dict):
@@ -104,9 +130,7 @@ def redact_report(report: dict[str, Any], profile: str = "share") -> dict[str, A
                         result[child_key] = identities[identity]
                 elif child_key in _ISO_TIMES:
                     try:
-                        parsed = datetime.fromisoformat(child)
-                        stamp = (parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)).timestamp()
-                        result[child_key] = datetime.fromtimestamp(shifted(stamp), timezone.utc).isoformat()
+                        result[child_key] = datetime.fromtimestamp(shifted(_iso_stamp(child)), timezone.utc).isoformat()
                     except (TypeError, ValueError, OverflowError, OSError):
                         result[child_key] = None
                 elif child_key == "name":
