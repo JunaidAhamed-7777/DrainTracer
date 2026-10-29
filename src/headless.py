@@ -140,10 +140,15 @@ class HeadlessRunner(MonitorSession):
         try:
             self.start()
         except Exception as exc:
+            self._startup_state = "failed"
+            self._startup_error = str(exc) or type(exc).__name__
+            self._run_error = f"startup failed: {self._startup_error}"
             self._print_line("error", f"Could not start monitoring: {exc}")
             hint = self.startup_hint(exc)
             if hint:
                 self._print_line("info", hint)
+            self._export()
+            self._print_summary()
             return EXIT_ERROR
 
         try:
@@ -154,7 +159,13 @@ class HeadlessRunner(MonitorSession):
         except Exception as exc:
             self._fail("Monitoring", exc)
         finally:
-            self.shutdown()
+            try:
+                self.shutdown()
+            except KeyboardInterrupt:
+                self._interrupted = True
+                self._append_event("Cleanup interrupted; exporting available evidence", "warn")
+            except Exception as exc:  # noqa: BLE001 - export evidence after any cleanup failure
+                self._fail("Cleanup", exc)
         try:
             self.poll()
         except Exception as exc:
@@ -213,6 +224,7 @@ class HeadlessRunner(MonitorSession):
             "breached": self.breached,
             "fail_on_inconclusive": self.fail_on_inconclusive,
             "fail_on_target_error": self.fail_on_target_error,
+            "exit_code": self.exit_status(),
             "budgets": [check.to_dict() for check in self.budget_checks()],
         }
         if self._run_error is not None:
@@ -226,6 +238,8 @@ class HeadlessRunner(MonitorSession):
         error, then an exceeded budget; the optional policies only apply to
         runs that are otherwise a pass.
         """
+        if self._startup_state == "failed":
+            return EXIT_ERROR
         if self.breached:
             return EXIT_LEAK
         if self._interrupted:

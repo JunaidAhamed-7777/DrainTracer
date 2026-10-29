@@ -172,6 +172,11 @@ class MonitorSession:
         self._unreadable_pids: dict[int, str] = {}
         self._current_unreadable: set[int] = set()
         self._monitor_errors: list[str] = []
+        self._startup_state = "not_started"
+        self._startup_error: str | None = None
+        self._cleanup_state = "not_attempted"
+        self._cleanup_actions = {"detach": 0, "terminate": 0, "kill": 0}
+        self._cleanup_errors: list[str] = []
         self._timeline: deque[TimelineMark] = deque(maxlen=self.TIMELINE_LIMIT)
         self._lifecycle_history: deque[LifecycleEvent] = deque(maxlen=self.LIFECYCLE_LIMIT)
         self._markers: list[TimelineMark] = []
@@ -287,6 +292,10 @@ class MonitorSession:
 
     def outcome_text(self) -> str:
         """How the session left the target: running, exited, or stopped."""
+        if self._cleanup_state == "incomplete":
+            return f"{'attached' if self.attached else 'launched'}, cleanup incomplete"
+        if self._startup_state == "failed":
+            return f"{'attach' if self.attached else 'launch'}, startup failed"
         if self.attached:
             return "attached, " + ("left running" if self._left_running else "no longer running")
         if self.stopped_target:
@@ -353,8 +362,14 @@ class MonitorSession:
             self._accept_snapshot(self.detector.sample_once())
             self.detector.start()
             self._log_start()
-        except BaseException:
-            self._abort_start()
+            self._startup_state = "started"
+        except BaseException as exc:
+            self._startup_state = "failed"
+            self._startup_error = str(exc) or type(exc).__name__
+            try:
+                self._abort_start()
+            except Exception as cleanup_error:  # noqa: BLE001 - preserve the original startup failure
+                self._note_monitor_error(f"startup cleanup failed: {cleanup_error}")
             raise
 
     def _log_start(self) -> None:
@@ -415,11 +430,49 @@ class MonitorSession:
         return None
 
     def _abort_start(self) -> None:
-        self.detector.stop()
-        if self.attached:
-            self.manager.detach()
-        elif self.manager.has_tracked_processes:
-            self.manager.kill()
+        try:
+            self.detector.stop()
+        finally:
+            if self.attached:
+                self._attempt_cleanup("detach")
+            elif self.manager.has_tracked_processes:
+                self._mark_stopping()
+                self._attempt_cleanup("kill")
+            else:
+                self._cleanup_state = "complete"
+
+    def _attempt_cleanup(self, action: str) -> None:
+        """Record ownership actions and failures without changing their policy."""
+        self._cleanup_actions[action] += 1
+        try:
+            getattr(self.manager, action)()
+        except BaseException as exc:
+            error = f"{action}: {str(exc) or type(exc).__name__}"
+            if error not in self._cleanup_errors and len(self._cleanup_errors) < MONITOR_ERROR_LIMIT:
+                self._cleanup_errors.append(error)
+            raise
+        finally:
+            self._cleanup_state = "incomplete" if self.manager.has_tracked_processes else "complete"
+            if self._cleanup_state == "incomplete" and self.manager.last_error:
+                error = f"{action}: {self.manager.last_error}"
+                if error not in self._cleanup_errors and len(self._cleanup_errors) < MONITOR_ERROR_LIMIT:
+                    self._cleanup_errors.append(error)
+
+    def _cleanup_record(self) -> dict[str, Any]:
+        pids = sorted(self.manager.tracked_pids)
+        retained = pids[:50]
+        return {
+            "state": self._cleanup_state,
+            "ownership": "attached" if self.attached else "launched",
+            "attempted_actions": dict(self._cleanup_actions),
+            "remaining_count": len(pids),
+            "remaining_processes": [
+                {"pid": pid, "create_time": self.manager.created_at(pid)} for pid in retained
+            ],
+            "omitted_processes": len(pids) - len(retained),
+            "resume_required": self.manager.is_paused,
+            "errors": list(self._cleanup_errors),
+        }
 
     def shutdown(self) -> None:
         """Stop sampling; terminate launched targets, release attached ones.
@@ -435,13 +488,21 @@ class MonitorSession:
             self.detector.stop()
             if self.attached:
                 self._left_running = self.manager.is_running
-                self.manager.detach()
+                self._attempt_cleanup("detach")
             elif self.manager.is_running or self.manager.has_tracked_processes:
                 self._mark_stopping()
-                self.manager.terminate()
+                self._attempt_cleanup("terminate")
+            else:
+                self._cleanup_state = "complete"
         except BaseException:
             self._force_cleanup()
             raise
+        finally:
+            if self._cleanup_state == "incomplete":
+                self._append_event(
+                    "Cleanup incomplete; tracked processes remain. Inspect outcome.cleanup "
+                    "in the report before considering cleanup complete.", "warn",
+                )
 
     def _mark_stopping(self) -> None:
         """Before ending a tree, note whether that stops the root or only its leftovers.
@@ -468,10 +529,12 @@ class MonitorSession:
                 # Release or kill the target even if the sampler will not stop.
                 if self.attached:
                     self._left_running = self._left_running or self.manager.is_running
-                    self.manager.detach()
+                    self._attempt_cleanup("detach")
                 elif self.manager.is_running or self.manager.has_tracked_processes:
                     self._mark_stopping()
-                    self.manager.kill()
+                    self._attempt_cleanup("kill")
+                else:
+                    self._cleanup_state = "complete"
         except KeyboardInterrupt:
             pass  # A third Ctrl+C: stop trying rather than loop.
 
@@ -789,8 +852,12 @@ class MonitorSession:
 
     def _outcome_record(self) -> dict[str, Any]:
         """Target, measurement, and monitor outcomes, kept apart for scripts."""
-        if self.attached:
+        if self._startup_state == "failed" and self._started_at is None:
+            state = "unknown"
+        elif self.attached:
             state = "left_running" if self._left_running else "exited"
+        elif self._cleanup_state == "incomplete" and self.manager.is_running:
+            state = "running"
         elif self._stopped_target:
             state = "stopped"
         elif self.manager.exit_code is not None:
@@ -798,6 +865,8 @@ class MonitorSession:
         else:
             state = "running" if self.manager.is_running else "unknown"
         return {
+            "startup": {"state": self._startup_state, "error": self._startup_error},
+            "cleanup": self._cleanup_record(),
             "target": {
                 "state": state,
                 "exit_code": None if self._stopped_target else self.manager.exit_code,

@@ -97,7 +97,7 @@ class ExitStatusTests(unittest.TestCase):
         self.assertEqual(
             runner.build_report()["headless"],
             {"fail_on": "medium", "breached": True, "fail_on_inconclusive": False,
-             "fail_on_target_error": False, "budgets": []},
+             "fail_on_target_error": False, "exit_code": EXIT_LEAK, "budgets": []},
         )
 
     def test_a_budget_exceeded_by_the_first_sample_is_logged_after_the_launch(self) -> None:
@@ -348,10 +348,45 @@ class EndToEndTests(unittest.TestCase):
 
     def test_missing_target_is_an_error(self) -> None:
         runner = HeadlessRunner(
-            str(self.root / "missing.exe"), console=make_console(), report_dir=self.root
+            str(self.root / "missing.exe"), console=make_console(), report_dir=self.root / "reports"
         )
         self.assertEqual(runner.run(), EXIT_ERROR)
         self.assertIn("Could not start monitoring", _output(runner))
+        outcome = self._report()["outcome"]
+        self.assertEqual(outcome["startup"]["state"], "failed")
+        self.assertEqual(outcome["cleanup"]["state"], "complete")
+        self.assertEqual(self._report()["headless"]["exit_code"], EXIT_ERROR)
+
+    def test_cleanup_exception_still_exports_available_evidence(self) -> None:
+        from src.process_runner import ProcessManagerError
+
+        runner = HeadlessRunner(str(self.root / "worker.exe"), console=make_console(),
+                                report_dir=self.root / "reports")
+        with (
+            mock.patch.object(runner, "start"),
+            mock.patch.object(runner, "_monitor"),
+            mock.patch.object(runner, "shutdown", side_effect=ProcessManagerError("resume denied")),
+            self.assertLogs("src.headless", "ERROR"),
+        ):
+            self.assertEqual(runner.run(), EXIT_ERROR)
+        self.assertIn("cleanup failed: resume denied", self._report()["outcome"]["monitor_errors"])
+
+    def test_nonthrowing_cleanup_survivors_preserve_the_default_exit_policy(self) -> None:
+        runner = HeadlessRunner(str(self.root / "worker.exe"), console=make_console(),
+                                report_dir=self.root / "reports")
+        runner.manager._tracked_pids = {4242}
+        runner.manager._identities = {4242: 10.0}
+        with (
+            mock.patch.object(runner, "start"),
+            mock.patch.object(runner, "_monitor"),
+            mock.patch.object(runner.manager, "terminate"),
+        ):
+            self.assertEqual(runner.run(), EXIT_PASS)
+        cleanup = self._report()["outcome"]["cleanup"]
+        self.assertEqual(cleanup["state"], "incomplete")
+        self.assertEqual(cleanup["attempted_actions"]["terminate"], 1)
+        self.assertEqual(cleanup["remaining_processes"], [{"pid": 4242, "create_time": 10.0}])
+        self.assertIn("Cleanup incomplete", _output(runner))
 
 
 class PolicyTests(unittest.TestCase):
