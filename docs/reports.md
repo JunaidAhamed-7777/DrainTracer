@@ -58,6 +58,9 @@ The report includes:
 
 - A verdict and each resource's strongest observed signal, net growth,
   drift, and peak. `INCONCLUSIVE` means no detection window ever filled.
+  `PARTIAL` qualifies signal-free results when readings are missing;
+  `UNAVAILABLE` identifies resources with no readable live-process samples.
+  Observed signal severity remains visible alongside coverage qualifications.
 - Memory, handles, handle categories, threads, and CPU charts. Hover for
   values, drag to zoom, and use legend entries to toggle series.
 - Markers where signals appeared or escalated, warm-up and pause bands,

@@ -54,14 +54,14 @@ def render_html_report(report: Mapping[str, Any]) -> str:
     target = str(report.get("target_path") or "unknown target")
     name = target_filename(target) or target
     version = str(report.get("version") or "")
-    title = f"DrainTracer · {name} · {summary.worst.upper() if summary.worst != 'none' else 'CLEAR'}"
+    title = f"DrainTracer · {name} · {_verdict_label(report, summary)}"
 
     body = "\n".join(
         (
             _masthead(report, summary, name, target, version),
             '<main>',
             _verdict(report, summary),
-            _cards(summary, _sample_count(report, summary)),
+            _cards(report, summary, _sample_count(report, summary)),
             _charts_panel(),
             _episodes_panel(summary, start),
             _events_panel(report, start),
@@ -214,48 +214,98 @@ def _recorded_budgets(report: Mapping[str, Any]) -> dict[str, float]:
     return budgets
 
 
+def _measurement(report: Mapping[str, Any]) -> Mapping[str, Any]:
+    outcome = report.get("outcome")
+    measurement = outcome.get("measurement") if isinstance(outcome, Mapping) else None
+    return measurement if isinstance(measurement, Mapping) else {}
+
+
+def _partial_coverage(report: Mapping[str, Any], summary: ReportSummary) -> bool:
+    coverage = report.get("coverage")
+    measurement = _measurement(report)
+    return (summary.partial_coverage
+            or isinstance(coverage, Mapping) and coverage.get("partial") is True
+            or measurement.get("partial_coverage") is True
+            or measurement.get("result") == "partial")
+
+
+def _verdict_label(report: Mapping[str, Any], summary: ReportSummary) -> str:
+    if summary.worst != "none":
+        return summary.worst.upper()
+    if all(item.coverage_samples > 0 and item.unavailable_samples == item.coverage_samples
+           for item in summary.resources.values()):
+        return "UNAVAILABLE"
+    if report.get("detection_ran", _measurement(report).get("detection_ran")) is False:
+        return "INCONCLUSIVE"
+    return "PARTIAL" if _partial_coverage(report, summary) else "CLEAR"
+
+
 def _verdict(report: Mapping[str, Any], summary: ReportSummary) -> str:
     worst = summary.worst
-    if worst == "none" and report.get("detection_ran") is False:
+    badge = _verdict_label(report, summary)
+    partial = _partial_coverage(report, summary)
+    if badge in ("INCONCLUSIVE", "UNAVAILABLE"):
         # Older reports lack the field; only an explicit False is inconclusive.
+        headline = "No resource measurements were available" if badge == "UNAVAILABLE" else (
+            "No leak window was judged"
+        )
+        if badge == "UNAVAILABLE":
+            detail = ("Live processes supplied no readable resource counters. Check target "
+                      "permissions and measurement coverage before running again.")
+        else:
+            detail = _inconclusive_reason(report)
+            if partial:
+                detail += " Coverage was partial or unavailable."
+            detail += " A clean result here says nothing about leaks; monitor for longer."
         return (
             '<section class="verdict sev-low" aria-label="Verdict">'
-            '<span class="badge sev-low">INCONCLUSIVE</span>'
-            "<div><h2>No leak window was judged</h2>"
-            f"<p>{_e(_inconclusive_reason(report))} A clean result here says nothing "
-            "about leaks; monitor for longer.</p></div>"
+            f'<span class="badge sev-low">{badge}</span>'
+            f"<div><h2>{headline}</h2>"
+            f"<p>{_e(detail)}</p></div>"
             "</section>"
         )
     if worst == "none":
-        headline = "No leak signals"
+        headline = "No leak signals in the measured subset" if partial else "No leak signals"
         detail = (
-            "Memory, handles, and threads never showed sustained growth that met the "
-            "detector's criteria. That is not proof the program is leak-free."
+            "No measured resource showed sustained growth that met the detector's criteria. "
+            "That is not proof the program is leak-free."
         )
     else:
         headline = f"{worst.upper()} leak signal observed"
         parts = []
         for resource in RESOURCES:
             stats = summary.resources[resource]
-            if stats.worst == "none":
+            if stats.worst == "none" and stats.unavailable_samples == stats.coverage_samples > 0:
+                parts.append(f"{resource} was unavailable")
+            elif stats.worst == "none":
                 parts.append(f"{resource} stayed clear")
             else:
                 parts.append(f"{resource} reached {stats.worst.upper()}")
         detail = "; ".join(parts) + "."
-    badge = "CLEAR" if worst == "none" else worst.upper()
+    if partial:
+        detail += " Coverage was partial or unavailable; unreadable processes may hide growth."
+    tone = "low" if badge == "PARTIAL" else worst
     return (
-        f'<section class="verdict sev-{_e(worst)}" aria-label="Verdict">'
-        f'<span class="badge sev-{_e(worst)}">{_e(badge)}</span>'
+        f'<section class="verdict sev-{_e(tone)}" aria-label="Verdict">'
+        f'<span class="badge sev-{_e(tone)}">{_e(badge)}</span>'
         f"<div><h2>{_e(headline)}</h2><p>{_e(detail)}</p></div>"
         "</section>"
     )
 
 
-def _cards(summary: ReportSummary, sample_count: int) -> str:
+def _cards(report: Mapping[str, Any], summary: ReportSummary, sample_count: int) -> str:
     cards = []
     for resource in RESOURCES:
         stats = summary.resources[resource]
         badge = "CLEAR" if stats.worst == "none" else stats.worst.upper()
+        if stats.worst == "none":
+            if stats.unavailable_samples == stats.coverage_samples > 0:
+                badge = "UNAVAILABLE"
+            elif stats.partial:
+                badge = "PARTIAL"
+            elif stats.measured_samples == 0 or _verdict_label(report, summary) == "INCONCLUSIVE":
+                badge = "INCONCLUSIVE"
+        tone = "low" if badge in ("PARTIAL", "UNAVAILABLE", "INCONCLUSIVE") else stats.worst
         if stats.first is None or stats.last is None:
             big, line, drift = "—", "no measurements", ""
         else:
@@ -269,10 +319,13 @@ def _cards(summary: ReportSummary, sample_count: int) -> str:
         episodes = f"{stats.episodes} signal episode{'s' if stats.episodes != 1 else ''}"
         if stats.signal_seconds:
             episodes += f", {format_clock(stats.signal_seconds)} signalled"
+        if stats.partial:
+            episodes += (f" · partial coverage in {stats.partial_samples:,} of "
+                         f"{stats.coverage_samples:,} samples; {stats.unavailable_samples:,} unavailable")
         types = _handle_type_line(summary) if resource == "handles" else ""
         cards.append(
             f'<article class="card"><h3>{_e(_RESOURCE_TITLES[resource])}'
-            f'<span class="badge sev-{_e(stats.worst)}">{_e(badge)}</span></h3>'
+            f'<span class="badge sev-{_e(tone)}">{_e(badge)}</span></h3>'
             f'<div class="big">{_e(big)}</div>'
             f'<div class="sub">{_e(line)}</div>'
             f'<div class="sub">{_e(" · ".join(part for part in (drift, episodes) if part))}</div>'
