@@ -30,7 +30,7 @@ from .analysis import (
 from .budgets import BUDGET_METRICS, check_budgets
 from .experiment import load_experiment
 from .handle_types import describe_type_growth
-from .report import report_filename, write_text_atomic
+from .report import report_filename, target_filename, write_text_atomic
 from .resources import resource_path
 from .units import format_bytes, format_clock, format_duration
 
@@ -52,7 +52,7 @@ def render_html_report(report: Mapping[str, Any]) -> str:
     start = payload["start"]
 
     target = str(report.get("target_path") or "unknown target")
-    name = Path(target).name or target
+    name = target_filename(target) or target
     version = str(report.get("version") or "")
     title = f"DrainTracer · {name} · {summary.worst.upper() if summary.worst != 'none' else 'CLEAR'}"
 
@@ -178,6 +178,10 @@ def _experiment_facts(report: Mapping[str, Any], summary: ReportSummary) -> list
         facts.append(("Arguments", f"{experiment.argument_count} (redacted, "
                                    f"fingerprint {experiment.argument_fingerprint})"))
     environment = experiment.environment or {}
+    if environment.get("private_memory_metric") == "uss":
+        facts.append(("Private bytes", "USS: private resident memory"))
+    if environment.get("handle_metric") == "file_descriptors":
+        facts.append(("Handles", "Open file descriptors (files, sockets, pipes, and other descriptors)"))
     machine = [
         " ".join(str(part) for part in (environment.get("os"), environment.get("os_release"))
                  if part)

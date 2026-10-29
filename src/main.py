@@ -683,6 +683,18 @@ def _run_dashboard(app: DashboardApp, console: Console) -> int:
         return _report_crash(console, 1)
 
 
+def _prompt_target_path(console: Console) -> str | None:
+    """Keep file selection usable on Linux without Tk or a desktop display."""
+    console.print(Text("Enter an executable or script path. Blank input or Q cancels.", style=PALETTE.muted))
+    try:
+        value = input("Target path: ").strip()
+    except EOFError:
+        return None
+    if not value or value.lower() == "q":
+        return None
+    return str(Path(value).expanduser())
+
+
 def _report_crash(console: Console, code: int) -> int:
     """Show an unexpected error; the session has already cleaned up its target."""
     console.print_exception(show_locals=False)
@@ -825,10 +837,14 @@ def _main(console: Console, argv: list[str] | None) -> int:
         return _run_dashboard(app, console)
 
     if target_path is None:
+        supported = (
+            ".exe  .bat  .cmd  .py" if sys.platform == "win32" else
+            "Linux executables, executable #! scripts, and .py files"
+        )
         console.print(
             Panel(
                 "[bold]Select a target executable or script[/bold]\n"
-                f"[{PALETTE.muted}]Supported: .exe  .bat  .cmd  .py[/]",
+                f"[{PALETTE.muted}]Supported: {supported}[/]",
                 title=f"[bold {PALETTE.accent}] CHOOSE TARGET [/]",
                 title_align="left",
                 border_style=PALETTE.border,
@@ -840,13 +856,12 @@ def _main(console: Console, argv: list[str] | None) -> int:
         hint = ("\nPass the program with --target PATH instead.", "dim")
         try:
             target_path = select_target_file()
-        except FileNotFoundError as exc:
-            console.print(Text.assemble(("File picker unavailable: ", "bold red"), str(exc), hint))
-            return 1
         except OSError as exc:
             reason = f"{exc}: {exc.__cause__}" if exc.__cause__ else str(exc)
             console.print(Text.assemble(("File picker failed: ", "bold red"), reason, hint))
-            return 1
+            if not sys.platform.startswith("linux"):
+                return 1
+            target_path = _prompt_target_path(console)
 
     if not target_path:
         console.print("[yellow]Selection canceled. Nothing to monitor.[/yellow]")

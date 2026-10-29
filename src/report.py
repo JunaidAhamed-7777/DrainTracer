@@ -9,7 +9,7 @@ import uuid
 from collections.abc import Mapping
 from dataclasses import asdict, replace
 from datetime import datetime, timezone
-from pathlib import Path, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 from .events import LifecycleEvent, MetricCoverage, MetricsSnapshot, ProcessSummary
@@ -43,6 +43,12 @@ def report_filename(report_id: str, suffix: str = ".json") -> str:
     return f"leak_report_{report_id}{suffix}"
 
 
+def target_filename(target: str) -> str:
+    """Read a recorded absolute Windows or Linux path on either platform."""
+    parser = PurePosixPath if target.startswith("/") else PureWindowsPath
+    return parser(target).name
+
+
 def report_directory(report: Mapping[str, Any], root: str | Path) -> Path:
     """Group exports by the actual target filename and recorded local date."""
     target = report.get("target_path")
@@ -55,7 +61,7 @@ def report_directory(report: Mapping[str, Any], root: str | Path) -> Path:
         raise ValueError("report created_at is not a valid ISO 8601 timestamp") from exc
     if moment is None or moment.tzinfo is None:
         raise ValueError("report created_at must include a UTC offset")
-    filename = PureWindowsPath(target).name
+    filename = target_filename(target)
     safe = "".join(
         character if character.isprintable() and character not in '<>:"/\\|?*' else "_"
         for character in filename

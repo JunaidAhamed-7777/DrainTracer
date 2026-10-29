@@ -238,6 +238,9 @@ class KeyReader:
         stream = sys.stdin
         try:
             if stream is None or not stream.isatty():
+                # On Linux a hung-up PTY stops reporting itself as a TTY
+                # before read() can return EOF. Do not strand its input loop.
+                self.eof = self._terminal is not None
                 return []
             ready, _, _ = select.select([stream], [], [], 0)
             data = os.read(stream.fileno(), 4096) if ready else None

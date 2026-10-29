@@ -59,6 +59,16 @@ def _data_block(document: str) -> str:
 
 
 class RenderTests(unittest.TestCase):
+    def test_linux_counter_definitions_and_paths_render_on_either_platform(self) -> None:
+        report = _report(target_path="/opt/worker\\name")
+        report["experiment"] = {"environment": {
+            "os": "Linux", "private_memory_metric": "uss", "handle_metric": "file_descriptors",
+        }}
+        document = render_html_report(report)
+        self.assertIn("<h1>worker\\name</h1>", document)
+        self.assertIn("USS: private resident memory", document)
+        self.assertIn("Open file descriptors", document)
+
     def test_summary_sections_render(self) -> None:
         document = render_html_report(_report())
         self.assertTrue(document.startswith("<!DOCTYPE html>"))

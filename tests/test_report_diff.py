@@ -251,6 +251,7 @@ class EquivalenceTests(unittest.TestCase):
         self.assertIn("platform Windows vs Linux", result.caveats[0].message)
         self.assertIn("private memory counter", result.caveats[0].message)
         self.assertIn("handle counter", result.caveats[0].message)
+        self.assertEqual(self._compare(before, after, strict=True).verdict, NOT_COMPARABLE)
 
     def test_a_shorter_lighter_run_cannot_earn_an_unqualified_improvement(self) -> None:
         before = _run(4.0, severity=LeakSeverity.HIGH, samples=41,

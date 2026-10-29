@@ -42,6 +42,7 @@ from .budgets import BudgetCheck, check_budgets
 from .events import METRIC_LABELS
 from .experiment import ExperimentData, load_experiment
 from .handle_types import CATEGORIES as HANDLE_CATEGORIES
+from .report import target_filename
 from .units import format_bytes, format_duration
 
 # Drift changes smaller than this (per second) are noise: 1 KiB/s of memory
@@ -77,7 +78,7 @@ class LoadedReport:
     @property
     def name(self) -> str:
         target = str(self.data.get("target_path") or "")
-        return Path(target).name or "unknown target"
+        return target_filename(target) or "unknown target"
 
     @property
     def experiment(self) -> ExperimentData | None:
@@ -531,9 +532,16 @@ def comparability_caveats(before: LoadedReport, after: LoadedReport) -> list[Cav
             "less certain and long windows may not have filled", NOT_COMPARABLE)
     machine = _environment_differences(before.experiment, after.experiment)
     if machine:
+        old = (before.experiment.environment if before.experiment else None) or {}
+        new = (after.experiment.environment if after.experiment else None) or {}
+        counters_differ = any(
+            old.get(key) is not None and new.get(key) is not None and old[key] != new[key]
+            for key in ("os", "private_memory_metric", "handle_metric")
+        )
         add("environment",
             "the runs measured different environments (" + "; ".join(machine) + "), "
-            "so absolute peaks may differ for reasons other than the change")
+            "so absolute peaks may differ for reasons other than the change",
+            NOT_COMPARABLE if counters_differ else None)
     return caveats
 
 

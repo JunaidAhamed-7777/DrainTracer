@@ -134,11 +134,13 @@ class LayeringTests(ConfigTestCase):
         self.assertEqual(self.resolve(config_path=path, profile="x").timeout, 60.0)
 
     def test_report_dir_is_relative_to_the_settings_file(self) -> None:
-        self.write(".drainrc", 'report_dir = "reports"\n[profiles.abs]\nreport_dir = "D:/x"\n')
+        absolute = self.root / "absolute-reports"
+        self.write(".drainrc", 'report_dir = "reports"\n[profiles.abs]\n'
+                   f'report_dir = "{absolute.as_posix()}"\n')
         nested = self.root / "a" / "b"
         nested.mkdir(parents=True)
         self.assertEqual(Path(self.resolve(start=nested).report_dir), self.root / "reports")
-        self.assertEqual(Path(self.resolve(profile="abs").report_dir), Path("D:/x"))
+        self.assertEqual(Path(self.resolve(profile="abs").report_dir), absolute)
         flag = self.resolve(overrides={"report_dir": "here"})
         self.assertEqual(flag.report_dir, "here")  # flags stay relative to the working directory
 

@@ -188,6 +188,7 @@ class DispatchTests(unittest.TestCase):
         run.assert_called_once()
         self.assertIn("Use --headless for logs and CI", console.file.getvalue())
 
+    @mock.patch("src.main.sys.platform", "win32")
     def test_picker_failures_suggest_target_and_cancel_exits_cleanly(self) -> None:
         failure = OSError("All Windows file picker implementations failed")
         failure.__cause__ = RuntimeError("no display")
@@ -208,6 +209,34 @@ class DispatchTests(unittest.TestCase):
         ):
             self.assertEqual(cli._main(console, ["--no-config"]), 0)
         self.assertIn("Selection canceled", console.file.getvalue())
+
+    @mock.patch("src.main.sys.platform", "linux")
+    def test_linux_without_a_desktop_prompts_for_a_literal_target_path(self) -> None:
+        console = make_console()
+        with (
+            mock.patch.object(cli, "choose_startup_action", return_value="open"),
+            mock.patch.object(cli, "select_target_file", side_effect=OSError("no display")),
+            mock.patch("builtins.input", return_value="/opt/My App/worker.py"),
+            mock.patch.object(cli, "_run_dashboard", return_value=0) as run,
+        ):
+            self.assertEqual(cli._main(console, ["--no-config", "--", "two words"]), 0)
+        app = run.call_args.args[0]
+        self.assertEqual(app.target_path, str(Path("/opt/My App/worker.py").resolve()))
+        self.assertEqual(app.manager.args, ["two words"])
+        self.assertIn("Linux executables", console.file.getvalue())
+
+    @mock.patch("src.main.sys.platform", "linux")
+    def test_linux_typed_path_cancel_and_eof_do_not_launch(self) -> None:
+        for value in ("", "q", EOFError()):
+            with (
+                self.subTest(value=value),
+                mock.patch.object(cli, "choose_startup_action", return_value="open"),
+                mock.patch.object(cli, "select_target_file", side_effect=OSError("no display")),
+                mock.patch("builtins.input", side_effect=[value]),
+                mock.patch.object(cli, "DashboardApp") as app,
+            ):
+                self.assertEqual(cli._main(make_console(), ["--no-config"]), 0)
+                app.assert_not_called()
 
     def test_ctrl_c_exits_130(self) -> None:
         with mock.patch.object(cli, "_main", side_effect=KeyboardInterrupt), \
