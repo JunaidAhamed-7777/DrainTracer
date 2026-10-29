@@ -322,6 +322,13 @@ readable fallback when it cannot be displayed.
 
 ## Run a leak check in CI
 
+Use `draintracer doctor --target PATH` to validate the current settings and
+target/report paths before monitoring. It shows configuration origins and
+duration/permission problems without starting or controlling the target.
+`doctor --json` provides a structured diagnostic result. The output-directory
+check writes and removes a temporary probe in the nearest existing directory.
+See [Preflight](docs/preflight.md) for the command and initialization contracts.
+
 Use `--no-color` to disable terminal colors in normal or headless runs, or
 `draintracer diff BEFORE.json AFTER.json --no-color` for comparisons. This
 overrides forced color; otherwise Rich follows its normal `NO_COLOR`,

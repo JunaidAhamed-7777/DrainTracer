@@ -13,6 +13,11 @@ profile, or command line. It checks the selected target/interpreter, current
 PID readability when requested, report-directory access, and whether the
 duration leaves enough evidence after warm-up.
 
+Intervals are milliseconds; windows, warm-up, and timeouts are seconds.
+Private-memory thresholds use bytes and bytes/second; handle/thread thresholds
+use counts and counts/second. Budget origins and threshold origins are tracked
+per resource, so an inherited value is not attributed to a later partial override.
+
 The output-directory check creates and removes one temporary probe in the
 directory, or its nearest existing parent when the directory does not yet
 exist. It does not create the report directory. Readability checks describe
