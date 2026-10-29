@@ -332,10 +332,10 @@ result, rather than forwarding the target's exit code:
 - `0` — no observed signal reached the selected threshold. This includes
   `INCONCLUSIVE` runs that never filled a detection window.
 - `1` — a signal reached the threshold at any point, even if it later cleared.
-- `2` — a usage, startup, monitoring, or report error, unless a higher-priority
-  failing signal or interruption applies.
-- `3` / `4` — only with `--fail-on-inconclusive` (no window judged) or
-  `--fail-on-target-error` (the launched target exited non-zero).
+- `2` — a usage or startup error; after successful startup, a monitoring or
+  report error unless a failing signal or interruption takes precedence.
+- `3` — opted-in inconclusive measurement or incomplete coverage.
+- `4` — only with `--fail-on-target-error`: the launched target exited non-zero.
 - `5` — only with a budget such as `--budget-private 500MB`,
   `--budget-handles 2000`, or `--budget-threads 64`: a peak exceeded it,
   even with no leak signal, because stable usage can still be excessive.
@@ -349,6 +349,12 @@ The summary and report keep the target outcome, the measurement outcome
 (conclusive, partial coverage, or inconclusive), and monitor errors apart.
 The default failure threshold is `high`. Allow enough time after warm-up for
 a detection window to fill, and inspect the verdict as well as the exit code.
+Use `--require-full-coverage` with `--headless` to exit `3` when any live
+sample lacks full private-byte, handle, or thread coverage, including missing
+coverage records or failed samples. Paused samples are excluded; combine it
+with `--fail-on-inconclusive` to also require a judged detection window.
+Reports include structured startup and cleanup results in `outcome`, and
+headless startup or cleanup failures attempt to export available evidence.
 The [headless guide](docs/usage.md#run-without-a-dashboard) covers outcome
 priority and GitHub Actions integration.
 

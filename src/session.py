@@ -167,6 +167,9 @@ class MonitorSession:
         # with live processes, ones missing any (partial, which includes
         # unavailable), and ones with nothing readable (unavailable).
         self._coverage_samples = 0
+        self._measured_samples = 0
+        self._fully_covered_samples = 0
+        self._full_coverage = False
         self._partial_samples = {metric: 0 for metric in SIGNAL_METRICS}
         self._unavailable_samples = {metric: 0 for metric in SIGNAL_METRICS}
         self._unreadable_pids: dict[int, str] = {}
@@ -247,6 +250,11 @@ class MonitorSession:
     def partial_coverage(self) -> bool:
         """Whether a signal metric missed some live processes on any sample."""
         return any(self._partial_samples.values())
+
+    @property
+    def full_coverage(self) -> bool:
+        """Every collected live sample measured all signal metrics, with no failed samples."""
+        return self._full_coverage
 
     @property
     def measurement_outcome(self) -> str:
@@ -583,6 +591,9 @@ class MonitorSession:
         self._last_alert_by_resource = state["latest_alerts"]
         self._judged_resources = state["judged_resources"]
         self._coverage_samples = state["coverage_samples"]
+        self._measured_samples = state["measured_samples"]
+        self._fully_covered_samples = state["fully_covered_samples"]
+        self._full_coverage = state["full_coverage"]
         self._partial_samples = state["partial_samples"]
         self._unavailable_samples = state["unavailable_samples"]
         self._unreadable_pids = state["unreadable_pids"]
@@ -840,6 +851,9 @@ class MonitorSession:
         return {
             "samples": self._coverage_samples,
             "partial": self.partial_coverage,
+            "full": self.full_coverage,
+            "measured_samples": self._measured_samples,
+            "fully_measured_samples": self._fully_covered_samples,
             "metrics": {
                 metric: {
                     "partial_samples": self._partial_samples[metric],
@@ -878,6 +892,7 @@ class MonitorSession:
                 "result": self.measurement_outcome,
                 "detection_ran": self.conclusive,
                 "partial_coverage": self.partial_coverage,
+                "full_coverage": self.full_coverage,
                 "reason": None if self.conclusive else self.inconclusive_reason(),
                 "coverage": self.coverage_text(),
             },
@@ -1111,6 +1126,9 @@ class MonitorSession:
             record = self._facts.to_dict()
         record["coverage"] = {
             "samples": self._coverage_samples,
+            "full": self.full_coverage,
+            "measured_samples": self._measured_samples,
+            "fully_measured_samples": self._fully_covered_samples,
             "partial_samples": {m: self._partial_samples[m] for m in SIGNAL_METRICS},
             "unavailable_samples": {m: self._unavailable_samples[m] for m in SIGNAL_METRICS},
         }

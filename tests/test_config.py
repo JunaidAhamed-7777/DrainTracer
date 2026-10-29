@@ -251,18 +251,23 @@ class ExampleFileTests(unittest.TestCase):
 class PolicySettingsTests(ConfigTestCase):
     def test_policies_come_from_files_and_default_off(self) -> None:
         self.assertFalse(self.resolve(discover=False).fail_on_inconclusive)
+        self.assertFalse(self.resolve(discover=False).require_full_coverage)
         self.write(".drainrc", """
             fail_on_inconclusive = true
             [profiles.ci]
             fail_on_target_error = true
+            require_full_coverage = true
         """)
         settings = self.resolve(profile="ci")
         self.assertTrue(settings.fail_on_inconclusive)
         self.assertTrue(settings.fail_on_target_error)
+        self.assertTrue(settings.require_full_coverage)
 
     def test_policies_must_be_booleans(self) -> None:
-        self.write(".drainrc", 'fail_on_target_error = "yes"\n')
-        self.assertConfigError("fail_on_target_error must be true or false")
+        for key in ("fail_on_target_error", "require_full_coverage"):
+            with self.subTest(key=key):
+                self.write(".drainrc", f'{key} = "yes"\n')
+                self.assertConfigError(f"{key} must be true or false")
 
 
 class ExperimentSettingsTests(ConfigTestCase):
