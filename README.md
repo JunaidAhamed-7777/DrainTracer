@@ -316,7 +316,7 @@ totals as lower bounds; measured zero counters remain zero.
 
 The layout adapts to terminal size and uses ASCII fallbacks for legacy Windows
 encodings. Startup artwork still comes from [TITLE.txt](TITLE.txt), with a
-readable fallback when it cannot be displayed.
+readable fallback when it cannot be read as UTF-8 or displayed.
 
 ## Run a leak check in CI
 
