@@ -65,6 +65,12 @@ TORTURE_ROOT = Path(__file__).resolve().parent
 EXAMPLE_SETTINGS = REPOSITORY_ROOT / "examples" / "drainrc.toml"
 CASES = (
     TortureCase(
+        name="python-process-tree",
+        target=TORTURE_ROOT / "process_tree.py",
+        args=("--duration", "30", "--depth", "2", "--fanout", "2", "--memory-mb", "1"),
+        min_processes=4,
+    ),
+    TortureCase(
         name="steady-python",
         target=TORTURE_ROOT / "steady.py",
         args=("--duration", "30"),
@@ -182,6 +188,13 @@ CASES = (
         fail_on="low",
     ),
 )
+
+if sys.platform != "win32":
+    CASES = tuple(case for case in CASES if case.target.suffix.lower() not in {".exe", ".bat", ".cmd"})
+if sys.platform.startswith("linux"):
+    CASES += (TortureCase(
+        name="linux-executable", target=Path("/bin/sleep"), args=("30",), expect_no_alerts=True,
+    ),)
 
 
 def _monitor_seconds(value: str) -> float:
