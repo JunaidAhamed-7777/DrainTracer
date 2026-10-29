@@ -147,8 +147,13 @@ def _bounded_values(data: Any) -> None:
             pending.extend((child, depth + 1) for child in value.values())
         elif isinstance(value, list):
             pending.extend((child, depth + 1) for child in value)
-        elif isinstance(value, float) and not math.isfinite(value):
-            raise ReportContractError("report contains a non-finite number")
+        elif type(value) in (int, float):
+            try:
+                representable = math.isfinite(value)
+            except OverflowError:
+                representable = False
+            if not representable:
+                raise ReportContractError("report contains a non-finite or unrepresentable number")
 
 
 def validate_report(data: Any) -> dict[str, Any]:

@@ -74,6 +74,18 @@ class CompatibilityTests(unittest.TestCase):
 
 
 class IngestionTests(unittest.TestCase):
+    def test_huge_integers_fail_before_analysis_without_echoing_the_payload(self) -> None:
+        payload = 10**1000
+        report = {"snapshots": [], "opaque": {"identifier": payload}}
+        with self.assertRaisesRegex(ReportContractError, "unrepresentable number") as caught:
+            validate_report(report)
+        self.assertLess(len(str(caught.exception)), 100)
+        self.assertNotIn(str(payload), str(caught.exception))
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "huge.json"
+            path.write_text(json.dumps(report))
+            with self.assertRaisesRegex(ReportContractError, "unrepresentable number"):
+                read_report(path)
     def test_unsupported_versions_and_malformed_shapes_are_rejected(self) -> None:
         for version in (0, 4, True, "3"):
             with self.subTest(version=version), self.assertRaisesRegex(ReportContractError, "unsupported report_schema"):
