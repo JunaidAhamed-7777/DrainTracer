@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 
 from rich import box
 from rich.console import Console, Group, RenderableType
@@ -14,6 +15,13 @@ from rich.text import Text
 from .analysis import severity_rank
 from .budgets import BUDGET_OPTIONS, parse_budget
 from .events import METRIC_LABELS
+from .repeat_comparison import (
+    MAX_GROUP_BYTES,
+    MAX_GROUP_RUNS,
+    RULE,
+    RepeatedComparison,
+    compare_repeated_reports,
+)
 from .report_diff import (
     COMPARABLE,
     IMPROVED,
@@ -81,6 +89,11 @@ def build_diff_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-color", action="store_true", help="Disable terminal colors, including forced color.")
     parser.add_argument("--plain", action="store_true", help="Print unstyled text without panel or table borders.")
     parser.add_argument("--quiet", action="store_true", help="Print only the verdict, caveats, and budget checks.")
+
+    parser.add_argument("--before-run", action="append", default=[], metavar="REPORT",
+                        help="Add an earlier run; grouped comparisons require 2-20 runs on each side.")
+    parser.add_argument("--after-run", action="append", default=[], metavar="REPORT",
+                        help="Add a later run; grouped comparisons always enforce strict comparability.")
     parser.add_argument(
         "--json",
         action="store_true",
@@ -133,6 +146,9 @@ def run_diff(argv: list[str], console: Console) -> int:
         console.no_color = True
     if args.plain:
         console = plain_console(console)
+
+    if args.before_run or args.after_run:
+        return _run_repeated_diff(args, console)
     try:
         before = load_report(args.before)
         after = load_report(args.after)
@@ -198,6 +214,53 @@ def _plain_comparison(comparison: ReportComparison, *, quiet: bool = False) -> T
             lines.append(f"Handle type {kind}: {amount('handles', before)} to {amount('handles', after)}")
     lines.extend(f"Budget: {check.describe()}" for check in comparison.budgets)
     return Text("\n".join(lines))
+
+def _run_repeated_diff(args, console: Console) -> int:
+    try:
+        if not 2 <= 1 + len(args.before_run) <= MAX_GROUP_RUNS or not 2 <= 1 + len(args.after_run) <= MAX_GROUP_RUNS:
+            raise DiffError("Supply 2-20 reports on each side using --before-run and --after-run.")
+        paths = [args.before, *args.before_run, args.after, *args.after_run]
+        if sum(Path(path).stat().st_size for path in paths) > MAX_GROUP_BYTES:
+            raise DiffError("Repeated inputs exceed the combined 128 MiB JSON limit; use smaller reports or fewer runs.")
+        before = [load_report(path) for path in [args.before, *args.before_run]]
+        after = [load_report(path) for path in [args.after, *args.after_run]]
+        budgets = {metric: getattr(args, option) for metric, option in BUDGET_OPTIONS.items()
+                   if getattr(args, option) is not None}
+        comparison = compare_repeated_reports(before, after, budgets=budgets)
+    except (DiffError, OSError, ValueError, TypeError) as exc:
+        console.print(Text(f"Diff error: {exc}", style="bold red"))
+        return EXIT_ERROR
+    if args.json:
+        console.print(json.dumps(comparison.to_dict(), indent=2, allow_nan=False), markup=False,
+                      highlight=False, soft_wrap=True)
+    else:
+        console.print(render_repeated_comparison(comparison))
+    if comparison.blocked:
+        return EXIT_NOT_COMPARABLE
+    if comparison.over_budget:
+        return EXIT_OVER_BUDGET
+    return EXIT_REGRESSION if args.fail_on_regression and comparison.verdict in {REGRESSED, MIXED} else EXIT_OK
+
+
+def render_repeated_comparison(comparison: RepeatedComparison) -> RenderableType:
+    parts: list[RenderableType] = [Text("REPEATED RUN COMPARISON", style=f"bold {PALETTE.accent}"),
+                                  Text(f"A: {len(comparison.before)} runs; B: {len(comparison.after)} runs"),
+                                  Text(f"COMPARABILITY: {comparison.comparability.upper()}", style="bold")]
+    parts += [Text(f"{item['before']} / {item['after']}: {item['message']}", style=PALETTE.warn)
+              for item in comparison.caveats]
+    parts.append(Text(RULE, style=PALETTE.muted))
+    for item in comparison.resources:
+        def spread(resource, values, drift: bool = False) -> str:
+            show = format_drift if drift else format_amount
+            return (f"median {show(resource, values.median)} "
+                    f"[{show(resource, values.minimum)} .. {show(resource, values.maximum)}]")
+        parts += [Text(f"{item.resource.upper()}: {item.verdict}", style="bold"),
+                  Text(f"drift A {spread(item.resource, item.drift_before, True)}; B {spread(item.resource, item.drift_after, True)}"),
+                  Text(f"peaks A {spread(item.resource, item.peaks_before)}; B {spread(item.resource, item.peaks_after)}")]
+    parts += [Text(check.describe(), style=PALETTE.warn if check.exceeded else PALETTE.muted)
+              for check in comparison.budgets]
+    parts.append(Text(f"VERDICT: {comparison.verdict_label.upper()}", style="bold"))
+    return Panel(Group(*parts), border_style=PALETTE.border)
 
 
 # Below this many columns the per-resource table no longer fits.
