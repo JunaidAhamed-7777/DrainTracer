@@ -211,8 +211,8 @@ class LeakDetector:
         self._pause_event = threading.Event()
         self._lifecycle_lock = threading.Lock()
         self._thread: threading.Thread | None = None
-        self._cpu_baselines: dict[int, tuple[float, float]] = {}
-        self._io_baselines: dict[int, tuple[float, int, int]] = {}
+        self._cpu_baselines: dict[int, tuple[float, float, float]] = {}
+        self._io_baselines: dict[int, tuple[float, float, int, int]] = {}
 
         self._memory_series = _ResourceSeries("memory", LeakResource.MEMORY, deque())
         self._handle_series = _ResourceSeries("handles", LeakResource.HANDLES, deque())
@@ -879,39 +879,43 @@ class LeakDetector:
         psutil's ``cpu_percent(interval=None)`` keeps its baseline on the
         ``Process`` object, and tracked processes are reopened for every
         sample, so it would always report zero. Keep a CPU-time baseline
-        per PID instead; like psutil, the result can exceed 100% when a
+        per process identity instead; like psutil, the result can exceed 100% when a
         process uses several cores. Returns ``None`` when the CPU times
         cannot be read.
         """
         try:
+            created = proc.create_time()
             times = proc.cpu_times()
             used = float(times.user) + float(times.system)
         except (psutil.Error, OSError, AttributeError):
+            self._cpu_baselines.pop(proc.pid, None)
             return None
         stamp = time.monotonic()
         baseline = self._cpu_baselines.get(proc.pid)
-        self._cpu_baselines[proc.pid] = (stamp, used)
-        if baseline is None:
+        self._cpu_baselines[proc.pid] = (created, stamp, used)
+        if baseline is None or baseline[0] != created:
             return 0.0
-        elapsed = stamp - baseline[0]
+        elapsed = stamp - baseline[1]
         if elapsed <= 0:
             return 0.0
-        return max(0.0, (used - baseline[1]) / elapsed * 100.0)
+        return max(0.0, (used - baseline[2]) / elapsed * 100.0)
 
     def _sample_io_rates(self, proc: psutil.Process) -> tuple[float, float] | None:
         """Read and write rates since the previous sample, or ``None`` when unreadable."""
         try:
+            created = proc.create_time()
             counters = proc.io_counters()
             read_bytes = int(counters.read_bytes)
             write_bytes = int(counters.write_bytes)
         except (psutil.Error, OSError, AttributeError):
+            self._io_baselines.pop(proc.pid, None)
             return None
         stamp = time.monotonic()
         baseline = self._io_baselines.get(proc.pid)
-        self._io_baselines[proc.pid] = (stamp, read_bytes, write_bytes)
-        if baseline is None:
+        self._io_baselines[proc.pid] = (created, stamp, read_bytes, write_bytes)
+        if baseline is None or baseline[0] != created:
             return 0.0, 0.0
-        last_time, last_read, last_write = baseline
+        _created, last_time, last_read, last_write = baseline
         elapsed = stamp - last_time
         if elapsed <= 0:
             return 0.0, 0.0

@@ -42,17 +42,27 @@ jobs:
       - name: Install application and build tools
         run: python -m pip install . build
       - name: Verify runtime snapshot
-        run: python -m unittest discover -s tests -p test_installation.py
+        run: python .github/run_check.py snapshot python -m unittest discover -s tests -p test_installation.py
       - name: Compile source
-        run: python -m compileall -q src
+        run: python .github/run_check.py compilation python -m compileall -q src
+      - name: Validate report JavaScript
+        run: python .github/run_check.py javascript node --check leak_reports/frames/report.js
       - name: Run regression tests
-        run: python -m unittest discover -s tests
+        run: python .github/run_check.py regression python -m unittest discover -s tests
       - name: Run bounded Linux workloads
-        run: python torture/verify_suite.py
+        run: python .github/run_check.py workloads python torture/verify_suite.py
       - name: Build distributions
         run: python -m build
       - name: Verify wheel in a clean environment
         run: python tests/verify_distribution.py dist/*.whl
+      - name: Upload bounded failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: failure-linux-${{ matrix.python }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/draintracer-checks/*.log
+          if-no-files-found: warn
+          retention-days: 3
 
   build:
     name: Verify and build on Windows
@@ -92,11 +102,13 @@ jobs:
           print(f'Building DrainTracer {DashboardApp.VERSION}')
           '@ | python
       - name: Verify runtime snapshot
-        run: python -m unittest discover -s tests -p test_installation.py
+        run: python .github/run_check.py snapshot python -m unittest discover -s tests -p test_installation.py
       - name: Compile source
-        run: python -m compileall -q src
+        run: python .github/run_check.py compilation python -m compileall -q src
+      - name: Validate report JavaScript
+        run: python .github/run_check.py javascript node --check leak_reports/frames/report.js
       - name: Run regression tests
-        run: python -m unittest discover -s tests
+        run: python .github/run_check.py regression python -m unittest discover -s tests
       - name: Build wheel and source distribution
         run: python -m build
       - name: Validate package metadata
@@ -110,6 +122,14 @@ jobs:
           path: dist/*
           if-no-files-found: error
           retention-days: 7
+      - name: Upload bounded failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: failure-windows-${{ github.run_id }}
+          path: ${{ runner.temp }}/draintracer-checks/*.log
+          if-no-files-found: warn
+          retention-days: 3
 
   publish:
     name: Publish verified distributions

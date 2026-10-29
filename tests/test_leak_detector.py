@@ -109,6 +109,7 @@ class CpuSamplingTests(unittest.TestCase):
 
         detector = _detector()
         proc = mock.Mock(pid=42)
+        proc.create_time.return_value = 1.0
         proc.cpu_times.side_effect = [
             SimpleNamespace(user=1.0, system=0.5),
             SimpleNamespace(user=1.6, system=0.9),
@@ -119,14 +120,58 @@ class CpuSamplingTests(unittest.TestCase):
             self.assertAlmostEqual(detector._sample_cpu_percent(proc), 100.0)
             self.assertAlmostEqual(detector._sample_cpu_percent(proc), 300.0)  # three cores
 
+    def test_rate_baselines_restart_when_a_pid_changes_identity(self) -> None:
+        from types import SimpleNamespace
+        from unittest import mock
+
+        detector = _detector()
+        proc = mock.Mock(pid=42)
+        proc.create_time.return_value = 1.0
+        proc.cpu_times.return_value = SimpleNamespace(user=1.0, system=0.0)
+        proc.io_counters.return_value = SimpleNamespace(read_bytes=100, write_bytes=50)
+        with mock.patch("src.leak_detector.time.monotonic", side_effect=[10, 10, 11, 11, 12, 12]):
+            self.assertEqual(detector._sample_cpu_percent(proc), 0.0)
+            self.assertEqual(detector._sample_io_rates(proc), (0.0, 0.0))
+            proc.create_time.return_value = 2.0
+            proc.cpu_times.return_value = SimpleNamespace(user=6.0, system=0.0)
+            proc.io_counters.return_value = SimpleNamespace(read_bytes=1_000_100, write_bytes=500_050)
+            self.assertEqual(detector._sample_cpu_percent(proc), 0.0)
+            self.assertEqual(detector._sample_io_rates(proc), (0.0, 0.0))
+            proc.cpu_times.return_value = SimpleNamespace(user=7.0, system=0.0)
+            proc.io_counters.return_value = SimpleNamespace(read_bytes=1_000_200, write_bytes=500_100)
+            self.assertEqual(detector._sample_cpu_percent(proc), 100.0)
+            self.assertEqual(detector._sample_io_rates(proc), (100.0, 50.0))
+
+    def test_unreadable_identity_discards_both_rate_baselines(self) -> None:
+        from types import SimpleNamespace
+        from unittest import mock
+
+        import psutil
+
+        detector = _detector()
+        proc = mock.Mock(pid=42)
+        proc.create_time.return_value = 1.0
+        proc.cpu_times.return_value = SimpleNamespace(user=1.0, system=0.0)
+        proc.io_counters.return_value = SimpleNamespace(read_bytes=100, write_bytes=50)
+        detector._sample_cpu_percent(proc)
+        detector._sample_io_rates(proc)
+        proc.create_time.side_effect = psutil.AccessDenied(42)
+        self.assertIsNone(detector._sample_cpu_percent(proc))
+        self.assertIsNone(detector._sample_io_rates(proc))
+        self.assertNotIn(42, detector._cpu_baselines)
+        self.assertNotIn(42, detector._io_baselines)
+        proc.create_time.side_effect = None
+        self.assertEqual(detector._sample_cpu_percent(proc), 0.0)
+        self.assertEqual(detector._sample_io_rates(proc), (0.0, 0.0))
+
     def test_baselines_of_departed_processes_are_dropped(self) -> None:
         from unittest import mock
 
         from helpers import make_process
 
         detector = _detector()
-        detector._cpu_baselines = {1: (0.0, 0.0), 2: (0.0, 0.0)}
-        detector._io_baselines = {1: (0.0, 0, 0), 2: (0.0, 0, 0)}
+        detector._cpu_baselines = {1: (1.0, 0.0, 0.0), 2: (2.0, 0.0, 0.0)}
+        detector._io_baselines = {1: (1.0, 0.0, 0, 0), 2: (2.0, 0.0, 0, 0)}
         with mock.patch.object(
             detector.process_manager, "iter_psutil_processes", return_value=[mock.Mock(pid=2)]
         ), mock.patch.object(detector, "_sample_process", return_value=make_process(2)):
