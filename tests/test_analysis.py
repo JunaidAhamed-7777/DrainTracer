@@ -259,6 +259,10 @@ class CoverageAnalysisTests(unittest.TestCase):
         self.assertFalse(samples[1].measured_metric("private_bytes"))
         self.assertEqual(chart_payload(report)["series"]["private"][1], None)
         self.assertEqual(summarize(report).resources["memory"].measured_samples, 2)
+        memory = summarize(report).resources["memory"]
+        self.assertEqual(memory.coverage_samples, 3)
+        self.assertEqual(memory.partial_samples, 1)
+        self.assertEqual(memory.unavailable_samples, 1)
 
     def test_partial_totals_give_way_to_complete_ones(self) -> None:
         from helpers import make_denied

@@ -510,7 +510,7 @@ def comparability_caveats(before: LoadedReport, after: LoadedReport) -> list[Cav
         partial = report.partial_resources
         if partial:
             samples = max(report.summary.resources[r].partial_samples for r in partial)
-            measured = max(report.summary.resources[r].measured_samples for r in partial)
+            measured = max(report.summary.resources[r].coverage_samples for r in partial)
             add("partial coverage",
                 f"report {label} could not read every process ({', '.join(partial)} totals "
                 f"partial in {samples:,} of {measured:,} samples), so its totals are lower "
@@ -578,6 +578,14 @@ def _experiment_caveats(
             "arguments",
             f"the targets were launched with different arguments ({old.argument_count} and "
             f"{new.argument_count}, fingerprints differ)",
+            NOT_COMPARABLE,
+        ))
+    elif (old.argument_count is None) != (new.argument_count is None):
+        which = "A" if old.argument_count is not None else "B"
+        caveats.append(Caveat(
+            "arguments",
+            f"only report {which} records target arguments, so the arguments cannot be "
+            "shown to match",
             NOT_COMPARABLE,
         ))
     if old.operations is not None and new.operations is not None:

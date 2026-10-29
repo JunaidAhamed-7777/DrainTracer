@@ -142,6 +142,55 @@ class ProcessCleanupTests(unittest.TestCase):
             self.assertEqual(manager._wait_for_pids({101}, 0.2, kill_new=True), set())
         kill.assert_called_once_with(102, graceful=False)
 
+    def test_cleanup_does_not_adopt_a_replacement_after_refresh_retires_its_pid(self) -> None:
+        for action in ("terminate", "kill"):
+            with self.subTest(action=action):
+                manager = self._manager()
+                manager._tracked_pids = {102}
+                manager._identities[102] = 100.0
+                replacement = mock.Mock(pid=102)
+                replacement.is_running.return_value = True
+                replacement.status.return_value = psutil.STATUS_RUNNING
+                replacement.create_time.return_value = 101.0
+                refresh = manager._refresh_tracked_pids
+                refresh_calls = 0
+
+                def refresh_after_control(refresh=refresh):
+                    nonlocal refresh_calls
+                    refresh_calls += 1
+                    # The PID changes identity after cleanup's initial refresh.
+                    if refresh_calls > 1:
+                        refresh()
+
+                with (
+                    mock.patch.object(manager, "_refresh_tracked_pids", side_effect=refresh_after_control),
+                    mock.patch.object(manager, "_walk_tree", side_effect=lambda alive: alive),
+                    mock.patch.object(process_runner.psutil, "Process", return_value=replacement),
+                    mock.patch.object(process_runner, "_windows_process_exited", return_value=False),
+                ):
+                    if action == "terminate":
+                        manager.terminate(timeout=0)
+                    else:
+                        manager.kill()
+                replacement.terminate.assert_not_called()
+                replacement.kill.assert_not_called()
+                self.assertFalse(manager.has_tracked_processes)
+
+    def test_retired_descendants_require_validated_discovery_before_reopening(self) -> None:
+        manager = self._manager()
+        manager._tracked_pids.clear()
+        replacement = mock.Mock(pid=102)
+        replacement.is_running.return_value = True
+        replacement.status.return_value = psutil.STATUS_RUNNING
+        replacement.create_time.return_value = 101.0
+        with (
+            mock.patch.object(process_runner.psutil, "Process", return_value=replacement) as process,
+            mock.patch.object(process_runner, "_windows_process_exited", return_value=False),
+        ):
+            self.assertIsNone(manager._open_tracked(102))
+            process.assert_not_called()
+            self.assertIs(manager._open_tracked(102, discovering=True), replacement)
+
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux process integration")
 class LinuxProcessTests(unittest.TestCase):
@@ -303,6 +352,7 @@ class LinuxProcessTests(unittest.TestCase):
 
     def test_pid_reuse_within_one_second_is_rejected(self) -> None:
         manager = ProcessManager(None)
+        manager._tracked_pids = {123}
         manager._identities[123] = 100.0
         proc = mock.Mock()
         proc.is_running.return_value = True
