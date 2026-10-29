@@ -145,6 +145,7 @@ class ProcessHistory:
         self._departed: deque[_Track] = deque(maxlen=max_exited)
         self._exited: deque[ProcessSummary] = deque(maxlen=max_exited)
         self._exited_view: tuple[ProcessSummary, ...] = ()
+        self._matched_exits: set[tuple[int, float | None]] = set()
         self._observed = False
         self._started = 0
         self._exited_count = 0
@@ -191,8 +192,15 @@ class ProcessHistory:
             for pid in [pid for pid in self._live if pid not in seen]:
                 exits.append(self._retire(self._live[pid], now))
             self._prune_departed(now)
-            replaced: set[tuple[int, float | None]] = set()
-            events = exits + [self._start_event(now, process, replaced) for process in starts]
+            recent_exits = {
+                summary.identity for summary in self._exited
+                if summary.exited_at is not None
+                and now - summary.exited_at <= RESTART_SECONDS
+            }
+            self._matched_exits.intersection_update(recent_exits)
+            events = exits + [
+                self._start_event(now, process, self._matched_exits) for process in starts
+            ]
             return tuple(events[:MAX_EVENTS_PER_SAMPLE])
 
     def _new_track(self, now: float, process: ProcessMetrics) -> _Track:
@@ -250,7 +258,7 @@ class ProcessHistory:
     ) -> ProcessSummary | None:
         """The latest same-named sibling that exited within ``RESTART_SECONDS``.
 
-        ``used`` holds exits already matched to another start this sample.
+        ``used`` holds retained exits already matched in this or an earlier sample.
         """
         if not name:
             return None

@@ -54,6 +54,45 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(history.exited()[0].create_time, 50.0)
         self.assertEqual(history.summaries()[0].create_time, 60.0)
 
+    def test_an_exit_can_replace_only_one_worker_across_samples(self) -> None:
+        history = ProcessHistory(90.0)
+        history.observe(0.0, [_worker(1, 10)])
+        history.observe(1.0, [])
+        first = history.observe(2.0, [_worker(2, 10)])
+        second = history.observe(3.0, [_worker(2, 10), _worker(3, 10)])
+        self.assertEqual(first[0].replaces_pid, 1)
+        self.assertEqual(second[0].kind, LifecycleKind.STARTED)
+        self.assertIsNone(second[0].replaces_pid)
+        self.assertEqual(history.counts.restarted, 1)
+
+    def test_same_named_exits_match_distinct_arrivals_in_a_burst(self) -> None:
+        history = ProcessHistory(90.0)
+        history.observe(0.0, [_worker(1, 10), _worker(2, 10)])
+        history.observe(1.0, [])
+        events = history.observe(2.0, [_worker(3, 10), _worker(4, 10), _worker(5, 10)])
+        self.assertEqual({e.replaces_pid for e in events[:2]}, {1, 2})
+        self.assertEqual(events[2].kind, LifecycleKind.STARTED)
+
+    def test_matched_exits_expire_and_do_not_accumulate(self) -> None:
+        history = ProcessHistory(90.0, max_exited=1)
+        history.observe(0.0, [_worker(1, 10)])
+        history.observe(1.0, [])
+        history.observe(2.0, [_worker(2, 10)])
+        self.assertEqual(len(history._matched_exits), 1)
+        history.observe(3.0, [])
+        self.assertEqual(history._matched_exits, set())
+        history.observe(4.0, [_worker(3, 10)])
+        history.observe(14.0, [_worker(3, 10), _worker(4, 10)])
+        self.assertEqual(history._matched_exits, set())
+        self.assertEqual(history.counts.restarted, 2)
+
+    def test_an_unmatched_exit_outside_the_restart_window_is_not_reused(self) -> None:
+        history = ProcessHistory(90.0)
+        history.observe(0.0, [_worker(1, 10)])
+        history.observe(1.0, [])
+        events = history.observe(12.0, [_worker(2, 10)])
+        self.assertEqual(events[0].kind, LifecycleKind.STARTED)
+
     def test_dead_processes_have_exited_and_unreadable_ones_keep_their_name(self) -> None:
         history = ProcessHistory(90.0)
         history.observe(0.0, [_parent(), _worker(1, 10)])
