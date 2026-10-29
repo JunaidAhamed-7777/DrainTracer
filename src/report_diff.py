@@ -492,6 +492,9 @@ def comparability_caveats(before: LoadedReport, after: LoadedReport) -> list[Cav
             NOT_COMPARABLE)
     caveats.extend(_experiment_caveats(before.experiment, after.experiment))
     for label, report in (("A", before), ("B", after)):
+        if isinstance(report.data.get("privacy"), Mapping):
+            add("privacy", f"report {label} was privacy transformed; original target and workload "
+                "identities cannot be shown equivalent", NOT_COMPARABLE)
         if not report.detection_ran:
             add("inconclusive",
                 f"report {label} never filled a detection window, so its lack of "

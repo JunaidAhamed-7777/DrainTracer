@@ -418,6 +418,12 @@ resource trends, events, and process growth after recording.*
 
 Use the JSON reports for scripts and comparisons:
 
+Preview an explicit privacy transformation locally with
+`draintracer-report redact run.json --profile share`; add
+`--output-dir shared` to write the same transformed data as JSON and HTML.
+The `minimal` profile also removes event and attribution detail. Review both
+files before sharing; see the [privacy guide](docs/privacy.md).
+
 `draintracer-report validate run.json` checks the public report contract;
 `draintracer-report summary run.json` emits a versioned JSON summary without
 loading the terminal UI. See the [schemas and machine-output contract](docs/report-contract.md)

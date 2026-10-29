@@ -58,6 +58,13 @@ and `summary_schema()` return the published schemas as dictionaries.
 These names form the supported report-consumer API; they do not expose
 monitor lifecycle control.
 
+`redact INPUT --profile share|minimal` previews a privacy-transformed report
+as JSON. `--output-dir DIRECTORY` writes a transformed JSON/HTML pair and
+returns their paths as JSON. These explicit exports may import report
+rendering dependencies; validate/summary/schema remain standard-library-only.
+Export I/O failures use error code `export_failed`. See the
+[privacy guide](privacy.md) for the transformations and review limits.
+
 ## Summary version 1
 
 The [session-summary JSON Schema](../schemas/session-summary.json) defines

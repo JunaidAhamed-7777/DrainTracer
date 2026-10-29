@@ -28,6 +28,42 @@ control. A local path is not necessarily private storage.
 
 ## What a report can reveal
 
+### Previewable privacy exports
+
+Reports remain detailed by default. To inspect an explicit transformation
+without writing files:
+
+```powershell
+draintracer-report redact .\run.json --profile share
+draintracer-report redact .\run.json --profile minimal
+```
+
+`share` removes paths, free text, argument fingerprints, configuration
+origins, host identifiers, unknown fields, and captured logs. It replaces
+process IDs/names/creation identities with local pseudonyms and shifts all
+recorded wall-clock dates to a fixed origin while preserving intervals.
+Numeric resource evidence, coverage, and signal windows remain available.
+`minimal` also removes event/marker detail and per-process resource
+attribution. Per-process counters removed intentionally are marked unknown;
+the aggregate measurements retain their original coverage semantics.
+
+Add `--output-dir .\shared` to explicitly write a JSON/HTML pair. Both
+formats are rendered from one transformed dictionary and identify the
+profile; no original JSON or embedded HTML data is copied alongside them.
+Each export receives a fresh report ID. Unknown future fields are omitted
+instead of guessed safe. Privacy-transformed reports always carry a
+comparison caveat: pseudonyms cannot establish original target/workload
+equivalence, so strict comparison refuses them.
+
+Preview and export run locally without an account, upload, or telemetry.
+The command does not transmit evidence. Saving into a synchronized/shared
+folder can still send files through that service under your control.
+Review both outputs before sharing: retained resource values and timing
+patterns can identify a workload, so a transformed report is not a promise
+of anonymity. Keep the original private report separately when needed.
+
+### Detailed reports
+
 Review all of these, even if you used a harmless workload label:
 
 - `target_path`, `root_pid`, process names, parent IDs, creation times, and
