@@ -65,6 +65,13 @@ class CompatibilityTests(unittest.TestCase):
         report = {"snapshots": [], "future_optional": {"known": False}}
         self.assertIs(validate_report(report), report)
 
+    def test_observed_count_includes_paused_and_failed_samples(self) -> None:
+        counts = {"collected": 5, "paused": 3, "failed": 2}
+        for fields in (counts, {**counts, "taken": 10}):
+            with self.subTest(fields=fields):
+                report = {"snapshots": [], "session_facts": {"samples": fields}}
+                self.assertEqual(session_summary(report)["counts"]["observed_samples"], 10)
+
 
 class IngestionTests(unittest.TestCase):
     def test_unsupported_versions_and_malformed_shapes_are_rejected(self) -> None:
@@ -103,6 +110,15 @@ class IngestionTests(unittest.TestCase):
         with mock.patch("src.report_contract.MAX_REPORT_VALUES", 3), \
                 self.assertRaisesRegex(ReportContractError, "value-count"):
             validate_report({"snapshots": [], "unknown": [1, 2, 3]})
+
+    def test_oversize_decoded_containers_are_rejected_before_expansion(self) -> None:
+        class UnexpandableList(list):
+            def __iter__(self):
+                raise AssertionError("over-limit container was expanded")
+
+        with mock.patch("src.report_contract.MAX_REPORT_VALUES", 3), \
+                self.assertRaisesRegex(ReportContractError, "value-count"):
+            validate_report(UnexpandableList([0, 0, 0, 0]))
 
     def test_token_count_is_bounded_before_decoding_and_duplicate_keys_fail(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

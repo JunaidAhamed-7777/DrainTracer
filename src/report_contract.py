@@ -141,6 +141,8 @@ def _bounded_values(data: Any) -> None:
         count += 1
         if count > MAX_REPORT_VALUES or depth > MAX_REPORT_DEPTH:
             raise ReportContractError("report exceeds the value-count or nesting-depth limit")
+        if isinstance(value, (dict, list)) and count + len(pending) + len(value) > MAX_REPORT_VALUES:
+            raise ReportContractError("report exceeds the value-count limit")
         if isinstance(value, dict):
             pending.extend((child, depth + 1) for child in value.values())
         elif isinstance(value, list):
@@ -260,8 +262,11 @@ def session_summary(report: dict[str, Any]) -> dict[str, Any]:
     severities += [sample.get("severity") for sample in report["snapshots"]]
     known = [severity for severity in severities if severity in SEVERITIES]
     counts = _object(facts.get("samples"))
-    observed = (counts["collected"] + counts.get("failed", 0)
-                if type(counts.get("collected")) is int and type(counts.get("failed", 0)) is int else None)
+    observed = counts.get("taken")
+    if type(observed) is not int:
+        observed = (sum(counts.get(key, 0) for key in ("collected", "failed", "paused"))
+                    if type(counts.get("collected")) is int
+                    and all(type(counts.get(key, 0)) is int for key in ("failed", "paused")) else None)
     summary = {
         "summary_schema": 1, "report_schema": report.get("report_schema", 1),
         "report_id": report.get("report_id"), "version": report.get("version"),

@@ -79,7 +79,8 @@ values are `null`:
 - `worst_severity`: strongest recorded severity, or `null` when no severity
   was recorded. It describes a heuristic resource-growth signal, not proof
   of an allocation leak.
-- `counts`: retained snapshot count, exact observed count when available,
+- `counts`: retained snapshot count, exact observed count including paused
+  and failed observations when available,
   and chart stride when recorded. Retained count is never substituted for
   an unknown whole-session count.
 
