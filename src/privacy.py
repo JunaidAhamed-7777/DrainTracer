@@ -17,7 +17,7 @@ _CATEGORIES = {"file", "socket", "registry", "event", "thread", "process", "mute
 _RESOURCES = {"memory", "handles", "threads"}
 _STATUS = {"running", "sleeping", "disk-sleep", "stopped", "tracing-stop", "zombie", "dead",
            "wake-kill", "waking", "idle", "locked", "waiting", "parked", "unknown"}
-_EVIDENCE = {"collecting", "no_growth", "growth", "unavailable", "partial", "stale"}
+_EVIDENCE = {"warming_up", "collecting", "no_growth", "growth", "unavailable", "partial", "stale"}
 _MISSING = object()
 
 

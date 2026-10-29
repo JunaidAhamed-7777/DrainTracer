@@ -46,6 +46,15 @@ def private_fixture() -> dict:
 
 
 class PrivacyTests(unittest.TestCase):
+    def test_all_current_evidence_states_survive_the_typed_profile(self) -> None:
+        from src.events import EvidenceState
+
+        for state in EvidenceState:
+            with self.subTest(state=state.value):
+                report = private_fixture()
+                report["snapshots"][0]["evidence"] = {"memory": {"state": state.value}}
+                self.assertEqual(redact_report(report)["snapshots"][0]["evidence"]["memory"]["state"],
+                                 state.value)
     def test_numeric_identifiers_in_opaque_and_free_text_contexts_are_removed(self) -> None:
         from src.investigation import investigation_summary
 
