@@ -789,7 +789,7 @@ class ProcessManager:
                     continue
             except OSError:
                 continue  # exited or inaccessible between enumeration and lookup
-            proc = self._open_tracked(pid)
+            proc = self._open_tracked(pid, discovering=True)
             if proc is None:
                 continue
             created = self._identities.get(pid)
@@ -834,12 +834,18 @@ class ProcessManager:
         except (psutil.Error, OSError):
             return
 
-    def _open_tracked(self, pid: int) -> psutil.Process | None:
+    def _open_tracked(self, pid: int, *, discovering: bool = False) -> psutil.Process | None:
         """Return the original process for a PID, rejecting reused PID values."""
         with self._lock:
-            return self._open_tracked_unlocked(pid)
+            return self._open_tracked_unlocked(pid, discovering=discovering)
 
-    def _open_tracked_unlocked(self, pid: int) -> psutil.Process | None:
+    def _open_tracked_unlocked(
+        self, pid: int, *, discovering: bool = False
+    ) -> psutil.Process | None:
+        # Refresh can retire a PID while a caller still holds an earlier PID
+        # set. Only validated discovery may open an untracked descendant.
+        if not discovering and pid not in self._tracked_pids and pid != self._root_pid:
+            return None
         try:
             proc = psutil.Process(pid)
         except (psutil.NoSuchProcess, psutil.ZombieProcess):

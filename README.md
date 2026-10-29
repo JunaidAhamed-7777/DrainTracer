@@ -281,12 +281,16 @@ Use the target's own file logging when needed. See the
 - `?` / `H` — show help and active settings; arrows scroll it, `Esc` closes it.
   While help is open, only scrolling, closing help, and view selection are active.
   Close it before using target controls, exporting, or quitting.
+
 - `K` — terminate the monitored tree (never only a selected process); confirm
   with a second press when attached.
 - `Q` — quit, cleaning up a launched tree or detaching from an attached tree.
 
 Number keys open focused views; `Esc` returns to the overview. Views change
 only what is shown: sampling and the target continue unaffected.
+
+In the process inspector, a search can hide the selected process. Its detail
+panel says so; `Esc` clears the filter and restores the retained selection.
 
 | Key | View | Its own keys |
 | --- | --- | --- |
@@ -307,6 +311,8 @@ once one was judged clean, a severity when growth is detected, and
 `UNAVAILABLE` or `PARTIAL` when processes cannot be read. Unreadable counters
 count as unknown, never zero, and access changes restart detection windows.
 Process names, including bracketed text in parent labels, are displayed literally.
+Evidence and inspector tree totals show `n/a` when unavailable and label partial
+totals as lower bounds; measured zero counters remain zero.
 
 The layout adapts to terminal size and uses ASCII fallbacks for legacy Windows
 encodings. Startup artwork still comes from [TITLE.txt](TITLE.txt), with a
@@ -402,7 +408,8 @@ Label each run so comparisons can tell equivalent experiments apart:
 `--workload-id`, `--build`, `--operations N` (shows growth per operation),
 and `--note` are recorded in the report's `experiment` section with the
 sampling settings and machine details. Target arguments are only counted and
-fingerprinted, environment variables are never recorded, and
+fingerprinted; one-sided argument records qualify comparisons, including
+known zero arguments versus unknown arguments. Environment variables are never recorded, and
 `password=...`-style values and Basic/Bearer credentials in labels are redacted.
 Short valid Basic credentials are covered too; review reports before sharing.
 Any comparability caveat
@@ -411,7 +418,8 @@ lighter run cannot earn a clean result. `--strict` instead reports
 `NOT COMPARABLE` (different targets, workloads, arguments, settings, operation
 counts, or lengths over 2x apart) or `INSUFFICIENT COVERAGE` (an unjudged run
 or partial coverage) and exits `3`; a diff budget exceeded by the later run
-exits `4`. Coverage caveats use recorded whole-session counts when available,
+exits `4`. Detection windows are compared by their numeric values, even when
+rounded duration labels look identical. Coverage caveats use recorded whole-session counts when available,
 including wholly unreadable samples, even after chart history is thinned.
 
 Use comparable workloads, durations, warm-ups, and settings. Long sessions
