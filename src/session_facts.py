@@ -252,20 +252,28 @@ class SessionFacts:
     def session_state(self) -> dict[str, Any]:
         """A bounded copy of the authoritative fields used by front ends."""
         with self._lock:
-            return {
-                "samples": self.collected,
-                "peaks": {key: value for key, (value, _stamp) in self._peaks.items()},
-                "worst": self.worst,
-                "worst_by_resource": {resource: signal.worst for resource, signal in self._signals.items()},
-                "latest_alerts": dict(self._latest_alerts),
-                "judged_resources": set(self._judged_resources),
-                "coverage_samples": self._coverage_samples,
-                "partial_samples": dict(self._partial_samples),
-                "unavailable_samples": dict(self._unavailable_samples),
-                "unreadable_pids": dict(self._unreadable_pids),
-                "errors": tuple(self._errors),
-                "dropped": self.dropped,
-            }
+            return self._session_state()
+
+    def _session_state(self) -> dict[str, Any]:
+        return {
+            "samples": self.collected,
+            "peaks": {key: value for key, (value, _stamp) in self._peaks.items()},
+            "worst": self.worst,
+            "worst_by_resource": {resource: signal.worst for resource, signal in self._signals.items()},
+            "latest_alerts": dict(self._latest_alerts),
+            "judged_resources": set(self._judged_resources),
+            "coverage_samples": self._coverage_samples,
+            "partial_samples": dict(self._partial_samples),
+            "unavailable_samples": dict(self._unavailable_samples),
+            "unreadable_pids": dict(self._unreadable_pids),
+            "errors": tuple(self._errors),
+            "dropped": self.dropped,
+        }
+
+    def capture(self) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Capture matching bounded UI state and report facts under one lock."""
+        with self._lock:
+            return self._session_state(), self._to_dict()
 
     def to_dict(self) -> dict[str, Any]:
         """JSON primitives; episodes still open count up to the last sample."""

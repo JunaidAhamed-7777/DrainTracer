@@ -508,9 +508,10 @@ class MonitorSession:
     # Snapshot intake and the event log
     # ------------------------------------------------------------------
 
-    def _sync_facts(self) -> None:
+    def _sync_facts(self, state: dict[str, Any] | None = None) -> None:
         """Copy publisher-owned totals; queue retention affects only detail."""
-        state = self._facts.session_state()
+        if state is None:
+            state = self._facts.session_state()
         self._sample_count = state["samples"]
         for key in HISTORY_KEYS:
             self._peaks[key] = state["peaks"].get(key, 0.0)
@@ -915,7 +916,8 @@ class MonitorSession:
 
     def build_report(self) -> dict[str, Any]:
         """Assemble the report dictionary for the session so far."""
-        self._sync_facts()
+        state, facts = self._facts.capture()
+        self._sync_facts(state)
         return {
             "report_id": new_report_id(),
             "report_schema": REPORT_SCHEMA,
@@ -948,7 +950,7 @@ class MonitorSession:
             "coverage": self._coverage_record(),
             "outcome": self._outcome_record(),
             "processes": self._processes_record(),
-            "session_facts": self._facts_record(),
+            "session_facts": self._facts_record(facts),
             # User markers: when the user said something happened (timing only).
             "markers": self._markers_record(),
             # Samples taken, and how many the snapshot list skips between
@@ -1034,9 +1036,10 @@ class MonitorSession:
         """How many samples each stored chart point stands for (1: none thinned)."""
         return self._snapshot_history.stride
 
-    def _facts_record(self) -> dict[str, Any]:
+    def _facts_record(self, record: dict[str, Any] | None = None) -> dict[str, Any]:
         """Session facts plus coverage and how much the stored chart was thinned."""
-        record = self._facts.to_dict()
+        if record is None:
+            record = self._facts.to_dict()
         record["coverage"] = {
             "samples": self._coverage_samples,
             "partial_samples": {m: self._partial_samples[m] for m in SIGNAL_METRICS},
