@@ -146,7 +146,7 @@ class SessionFacts:
     def _observe_peaks(self, snapshot: MetricsSnapshot, live: list) -> None:
         """Peaks only from totals that measured at least one live process."""
         for key in METRIC_KEYS:
-            if not any(process.measured(key) for process in live):
+            if not any(not process.access_denied and process.measured(key) for process in live):
                 continue
             value = snapshot.totals.get(key)
             if value is None:
