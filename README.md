@@ -313,6 +313,8 @@ count as unknown, never zero, and access changes restart detection windows.
 Process names, including bracketed text in parent labels, are displayed literally.
 Evidence and inspector tree totals show `n/a` when unavailable and label partial
 totals as lower bounds; measured zero counters remain zero.
+The frozen timeline distinguishes newer samples collected since freezing from
+older samples outside the retained dashboard history. Exported charts may be thinned.
 
 The layout adapts to terminal size and uses ASCII fallbacks for legacy Windows
 encodings. Startup artwork still comes from [TITLE.txt](TITLE.txt), with a
