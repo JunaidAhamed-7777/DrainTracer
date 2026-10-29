@@ -307,6 +307,51 @@ class RenderTests(unittest.TestCase):
 
 
 class SessionFactsRenderingTests(unittest.TestCase):
+    def test_empty_signal_details_do_not_erase_exact_recorded_episodes(self) -> None:
+        from helpers import make_console
+
+        from src.session import MonitorSession
+
+        class SmallSession(MonitorSession):
+            VERSION = "v5.4.0"
+            SNAPSHOT_LIMIT = 8
+
+        session = SmallSession("worker.exe", console=make_console())
+        for index in range(100):
+            session._accept_snapshot(make_snapshot(timestamp=1000 + index, paused=index == 1,
+                                    alerts=(make_alert(),) if index == 5 else ()))
+        document = render_html_report(session.build_report())
+        panel = document.split('aria-label="Leak signals"', 1)[1].split("</section>", 1)[0]
+        self.assertIn("0 of the 1 episodes counted", panel)
+        self.assertIn("Signal episodes were recorded", panel)
+        self.assertNotIn("No leak signals were raised", panel)
+
+    def test_signal_free_session_keeps_its_empty_state(self) -> None:
+        report = _report(snapshots=[snapshot_to_dict(make_snapshot(timestamp=1000))])
+        document = render_html_report(report)
+        self.assertIn("No leak signals were raised during this session.", document)
+        self.assertNotIn("Signal episodes were recorded", document)
+
+    def test_exact_severity_without_episode_count_keeps_known_signal(self) -> None:
+        report = _report(snapshots=[snapshot_to_dict(make_snapshot(timestamp=1000))],
+                         session_facts={"schema": 1, "signals": {"memory": {"worst": "high"}}})
+        document = render_html_report(report)
+        panel = document.split('aria-label="Leak signals"', 1)[1].split("</section>", 1)[0]
+        self.assertIn("A HIGH signal was recorded", panel)
+        self.assertIn("no episode details are available", panel)
+        self.assertNotIn("No leak signals were raised", panel)
+        self.assertNotIn("0 of the", panel)
+
+    def test_explicit_signal_free_facts_keep_no_signal_empty_state(self) -> None:
+        report = _report(snapshots=[snapshot_to_dict(make_snapshot(timestamp=1000))],
+                         session_facts={"schema": 1, "signals": {
+                             resource: {"worst": "none", "episodes": 0}
+                             for resource in ("memory", "handles", "threads")}})
+        document = render_html_report(report)
+        panel = document.split('aria-label="Leak signals"', 1)[1].split("</section>", 1)[0]
+        self.assertIn("No leak signals were raised during this session.", panel)
+        self.assertNotIn("signal was recorded", panel)
+
     def test_thinned_reports_say_so_and_show_exact_facts(self) -> None:
         import json as _json
 

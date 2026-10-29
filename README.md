@@ -403,7 +403,9 @@ exited, run provenance, and monitor diagnostics. Verdicts and resource cards
 identify partial or unavailable coverage and preserve any observed signal.
 Unreadable process counters show `n/a`; measured zero counters remain zero.
 After chart thinning, resource cards label their sample-based values as
-`retained peak`.
+`retained peak`. If thinning removes signal details, the report preserves
+and explains the recorded episode count. Reports with recorded severity but
+no episode counts still identify the signal and qualify the missing detail.
 
 ![The exported HTML report shows the HIGH memory signal, resource trend charts, recorded events, and growing processes](docs/assets/html-report.gif)
 
