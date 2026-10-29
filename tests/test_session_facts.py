@@ -215,6 +215,36 @@ class QueueOverflowTests(unittest.TestCase):
         self.assertEqual(runner.snapshot.diagnostics.dropped_snapshots, 1)
         self.assertEqual(runner.facts.to_dict()["monitor"]["dropped_snapshots"], 1)
 
+    def test_live_report_uses_one_atomic_capture_despite_a_new_publication(self) -> None:
+        from unittest import mock
+
+        from helpers import make_denied
+
+        runner = self._runner()
+        self._publish(runner, make_snapshot(timestamp=0, measured_coverage=True))
+        runner.poll()
+        capture = runner.facts.capture
+
+        def publish_after_capture():
+            result = capture()
+            self._publish(runner, make_snapshot(
+                timestamp=1, processes=(make_denied(200),), measured_coverage=True,
+            ))
+            return result
+
+        with mock.patch.object(runner.facts, "capture", side_effect=publish_after_capture) as captured:
+            report = runner.build_report()
+        captured.assert_called_once_with()
+        self.assertEqual(report["sample_count"], 1)
+        self.assertEqual(report["coverage"]["samples"], 1)
+        self.assertFalse(report["coverage"]["partial"])
+        self.assertEqual(report["session_facts"]["samples"]["taken"], 1)
+        self.assertEqual(report["session_facts"]["coverage"]["samples"], 1)
+        self.assertEqual(runner.facts.to_dict()["samples"]["taken"], 2)
+        next_report = runner.build_report()
+        self.assertEqual(next_report["sample_count"], 2)
+        self.assertTrue(next_report["coverage"]["partial"])
+
     def test_direct_and_queued_samples_are_counted_once_each(self) -> None:
         runner = self._runner()
         runner._accept_snapshot(make_snapshot(timestamp=0))
