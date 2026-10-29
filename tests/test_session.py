@@ -27,6 +27,36 @@ def _wait_for(predicate, timeout: float = 15.0) -> bool:
 
 
 class SettingsTests(unittest.TestCase):
+    def test_selected_identity_reaches_the_manager_before_sampling(self) -> None:
+        from helpers import make_snapshot
+
+        from src.dashboard import DashboardApp
+
+        session = DashboardApp(None, attach_pid=4242, attach_create_time=10.0,
+                               console=make_console())
+        with (
+            mock.patch.object(session.manager, "attach") as attach,
+            mock.patch.object(session.detector, "sample_once", return_value=make_snapshot()),
+            mock.patch.object(session.detector, "start"),
+        ):
+            session.start()
+        attach.assert_called_once_with(4242, expected_create_time=10.0)
+
+    def test_rejected_selection_never_starts_sampling(self) -> None:
+        from src.process_runner import ProcessNotFoundError
+
+        session = _Session(None, attach_pid=4242, attach_create_time=10.0,
+                           console=make_console())
+        with (
+            mock.patch.object(session.manager, "attach", side_effect=ProcessNotFoundError("changed")),
+            mock.patch.object(session.detector, "sample_once") as sample,
+            mock.patch.object(session.detector, "start") as start,
+            self.assertRaises(ProcessNotFoundError),
+        ):
+            session.start()
+        sample.assert_not_called()
+        start.assert_not_called()
+
     def test_settings_configure_the_detector_and_reach_reports(self) -> None:
         from dataclasses import replace
 
