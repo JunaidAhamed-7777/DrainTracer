@@ -238,8 +238,11 @@ views never pauses sampling or changes the target.
   and the target continue, and `TIMELINE FROZEN` stays visible.
 - `5` Monitor: requested and actual cadence, collection time, sample counts,
   dropped snapshots, unreadable processes, evidence and handle-type
-  freshness, and DrainTracer's own CPU and memory. Host CPU and memory are
-  not collected yet.
+  freshness, and DrainTracer's own CPU and memory. Host CPU and available
+  physical memory are sampled every five seconds, with age and collection
+  cost; these are host context rather than target usage. Unknown readings
+  stay `n/a`, and CPU needs a second refresh to establish its baseline.
+  Use arrows, paging keys, Home or End to reach all sections in a small terminal.
 
 Pausing keeps the last totals and alert visible without adding trend
 samples. CPU is summed across the tree relative to one core, so it can
