@@ -332,7 +332,9 @@ CPU interval. Repeat this benchmark on deployment hardware, especially large
 hosts; do not infer Linux costs from this Windows measurement.
 
 Host CPU is percent of total host capacity and is unknown until its second
-refresh. Available/total memory is physical bytes, not Windows commit. Failed
+refresh on the same sampling thread. The first background refresh primes its
+own baseline after startup's main-thread sample. Available/total memory is
+physical bytes, not Windows commit. Failed
 reads remain unknown. Snapshot diagnostics and `session_facts.monitor.host_context`
 record age at publication; the live view adds elapsed wall time. The HTML report
 labels that saved age at the final sample. Host collection cost is recorded

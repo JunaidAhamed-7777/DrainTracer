@@ -243,6 +243,7 @@ class LeakDetector:
         self._host_reading: HostPressure | None = None
         self._host_sampled_at: float | None = None
         self._host_cpu_primed = False
+        self._host_cpu_thread: int | None = None
 
         # Warm-up: sampling runs but leak heuristics wait until this much
         # active (unpaused) sampling time has passed.
@@ -532,11 +533,15 @@ class LeakDetector:
             cpu = available = total = None
             try:
                 value = float(psutil.cpu_percent(interval=None))
-                if self._host_cpu_primed and math.isfinite(value) and 0 <= value <= 100:
+                thread = threading.get_ident()
+                if (self._host_cpu_primed and self._host_cpu_thread == thread
+                        and math.isfinite(value) and 0 <= value <= 100):
                     cpu = value
                 self._host_cpu_primed = True
+                self._host_cpu_thread = thread
             except (psutil.Error, OSError, AttributeError, ValueError):
                 self._host_cpu_primed = False
+                self._host_cpu_thread = None
             try:
                 memory = psutil.virtual_memory()
                 available, total = int(memory.available), int(memory.total)

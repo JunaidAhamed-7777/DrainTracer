@@ -665,6 +665,27 @@ class MonitorDiagnosticsTests(unittest.TestCase):
             detector._sample_host(refresh=False)
             self.assertEqual(cpu.call_count, 1)
 
+    def test_host_cpu_primes_again_after_main_to_detector_thread_handoff(self) -> None:
+        import threading
+        from unittest import mock
+
+        detector = _detector()
+        readings = []
+
+        def background_refreshes():
+            for clock in (5, 10):
+                with mock.patch("src.leak_detector.time.monotonic", return_value=clock):
+                    readings.append(detector._sample_host().cpu_percent)
+
+        with mock.patch("src.leak_detector.psutil.cpu_percent", side_effect=[20.0, 0.0, 12.0]), \
+                mock.patch("src.leak_detector.time.monotonic", return_value=0):
+            self.assertIsNone(detector._sample_host().cpu_percent)
+            worker = threading.Thread(target=background_refreshes)
+            worker.start()
+            worker.join(timeout=3)
+            self.assertFalse(worker.is_alive())
+        self.assertEqual(readings, [None, 12.0])
+
     def _collect(self, detector: LeakDetector, clocks: list[float]):
         from unittest import mock
 
