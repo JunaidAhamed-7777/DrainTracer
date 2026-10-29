@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from helpers import make_alert, make_process, make_snapshot
@@ -171,7 +172,9 @@ class LoadTests(unittest.TestCase):
                 "list.json": ("[1, 2]", "not a DrainTracer report"),
                 "empty.json": ('{"snapshots": []}', "has no snapshots"),
                 "binary.json": (b"\xff\xfe\x00", "not a UTF-8 JSON report"),
-                "deep.json": ("[" * 100_000 + "]" * 100_000, "nested too deeply"),
+                # Some Python JSON decoders accept deep arrays, while others
+                # raise RecursionError. Both must reject this non-report clearly.
+                "deep.json": ("[" * 100_000 + "]" * 100_000, "report"),
             }
             for name, (content, message) in cases.items():
                 with self.subTest(name=name):
@@ -183,6 +186,14 @@ class LoadTests(unittest.TestCase):
                     with self.assertRaises(DiffError) as caught:
                         load_report(path)
                     self.assertIn(message, str(caught.exception))
+
+    def test_json_decoder_recursion_errors_have_a_clear_message(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "deep.json"
+            path.write_text("{}", encoding="utf-8")
+            with mock.patch("src.report_diff.json.loads", side_effect=RecursionError):
+                with self.assertRaisesRegex(DiffError, "JSON nested too deeply to be a report"):
+                    load_report(path)
 
 
 class FormatTests(unittest.TestCase):

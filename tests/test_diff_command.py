@@ -53,7 +53,7 @@ class DiffCommandTests(unittest.TestCase):
     def test_narrow_consoles_get_one_block_per_resource(self) -> None:
         code, output = self._run(str(self.leaky), str(self.fixed), width=80)
         self.assertEqual(code, EXIT_OK)
-        self.assertIn("MEMORY   HIGH → clear  resolved", output)
+        self.assertRegex(output, r"MEMORY\s+HIGH → clear\s+resolved")
         self.assertIn("drift  +8.0 MB/s →", output)
         self.assertIn("VERDICT  IMPROVED", output)
         self.assertTrue(all(len(line) <= 80 for line in output.splitlines()))
