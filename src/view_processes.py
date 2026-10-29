@@ -477,6 +477,18 @@ class ProcessesViewMixin:
         if row is None:
             if self._proc_selected is not None:
                 pid = self._proc_selected[0]
+                snapshot = self.snapshot
+                retained = (
+                    (*snapshot.processes, *snapshot.exited_processes) if snapshot else ()
+                )
+                if self._proc_query and any(
+                    _same(item.identity, self._proc_selected) for item in retained
+                ):
+                    return Text(
+                        f"Selected PID {pid} is hidden by the search filter. "
+                        "Press Esc to clear the filter, or Up or Down to select a match.",
+                        style=palette.muted,
+                    )
                 return Text(
                     f"PID {pid} is no longer tracked: it exited and its summary was dropped "
                     "(the inspector keeps the most recent exited processes). Press Up or "
