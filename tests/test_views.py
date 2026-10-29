@@ -290,6 +290,24 @@ class ProcessesViewTests(ViewRenderingMixin, unittest.TestCase):
         app._proc_query = "10"
         self.assertEqual(self._pids(app), [100])
 
+    def test_filter_hides_a_retained_selection_without_claiming_it_exited(self) -> None:
+        for identity in ((100, 1.0), (1, 1.0)):
+            with self.subTest(identity=identity):
+                app = self._app(80, 24)
+                app._proc_selected = identity  # A live parent or retained exited worker.
+                app._proc_query = "no-match"
+                text = " ".join(render_text(app).split())
+                self.assertIn(f"Selected PID {identity[0]} is hidden by the search filter", text)
+                self.assertNotIn("no longer tracked", text)
+                app._handle_key(ESCAPE)
+                self.assertEqual(app._selected_row(app._inspector_rows()).identity, identity)
+
+    def test_filter_does_not_hide_the_explanation_for_a_dropped_identity(self) -> None:
+        app = self._app()
+        app._proc_selected = (555, 5.0)
+        app._proc_query = "no-match"
+        self.assertIn("PID 555 is no longer tracked", " ".join(render_text(app).split()))
+
     def test_kill_always_targets_the_whole_tree(self) -> None:
         app = self._app()
         app._handle_key(DOWN)

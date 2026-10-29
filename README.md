@@ -281,12 +281,16 @@ Use the target's own file logging when needed. See the
 - `?` / `H` — show help and active settings; arrows scroll it, `Esc` closes it.
   While help is open, only scrolling, closing help, and view selection are active.
   Close it before using target controls, exporting, or quitting.
+
 - `K` — terminate the monitored tree (never only a selected process); confirm
   with a second press when attached.
 - `Q` — quit, cleaning up a launched tree or detaching from an attached tree.
 
 Number keys open focused views; `Esc` returns to the overview. Views change
 only what is shown: sampling and the target continue unaffected.
+
+In the process inspector, a search can hide the selected process. Its detail
+panel says so; `Esc` clears the filter and restores the retained selection.
 
 | Key | View | Its own keys |
 | --- | --- | --- |
