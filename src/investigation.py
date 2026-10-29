@@ -91,6 +91,19 @@ def investigation_summary(report: dict[str, Any], *, profile: str = "share",
         origin = min((sample["timestamp"] for sample in safe["snapshots"]), default=0)
     lines = [f"DrainTracer investigation - privacy profile: {profile}",
              f"Resource: {resource}; metric: {metric}; strongest recorded signal: {severity.upper()}."]
+    recovery = _object(safe.get("recovery"))
+    if recovery.get("partial") is True:
+        lines.append("Recovered prefix: partial checkpoint evidence through the recorded cutoff; "
+                     "the final target and monitoring outcomes are unconfirmed.")
+    outcome = _object(safe.get("outcome"))
+    startup, cleanup = _object(outcome.get("startup")), _object(outcome.get("cleanup"))
+    if startup.get("state") == "failed":
+        lines.append("Startup outcome: failed; this is separate from a resource-growth signal.")
+    if cleanup.get("state") == "incomplete":
+        lines.append(f"Cleanup outcome: incomplete; {cleanup.get('remaining_count', 'unknown')} "
+                     "processes remained unresolved. "
+                     + ("Known processes still require resume." if cleanup.get("resume_required") else
+                        "Consult the private cleanup outcome before further process control."))
     if selected:
         stamp, alert = selected[0]
         window = _number(alert.get("window_seconds"))
@@ -127,8 +140,10 @@ def investigation_summary(report: dict[str, Any], *, profile: str = "share",
         label = "partial" if partial_state is True else "complete" if partial_state is False else "unknown"
         lines.append(f"Coverage: {label}; per-resource whole-session counts were not recorded.")
     measurement = summary["measurement"]
+    judged = ("yes" if measurement["detection_ran"] is True else
+              "no" if measurement["detection_ran"] is False else "unknown")
     lines.append(f"Measurement outcome: {measurement['result'] or 'unknown'}; "
-                 f"detection window judged: {measurement['detection_ran']}.")
+                 f"detection window judged: {judged}.")
     peak = summary["peaks"][metric]
     lines.append(f"Peak {metric}: {_amount(metric, peak['value'])}; basis: {peak['basis']}.")
     lines.append("Limits: sustained resource growth is a heuristic signal, not proof of an allocation "

@@ -20,6 +20,9 @@ and free-text messages. The summary retains the metric, strongest severity,
 reported growth window, numeric change/slope, leading pseudonymous process
 where attribution survives, coverage counts, and peak provenance. Missing
 attribution, unknown coverage, and details lost to thinning remain explicit.
+Recovered-prefix evidence remains labeled partial with final outcomes
+unconfirmed. Startup failure and incomplete cleanup are stated separately
+from resource signals, without copying private diagnostic text.
 The output describes heuristic resource growth and cannot establish an
 allocation source or source-code root cause.
 

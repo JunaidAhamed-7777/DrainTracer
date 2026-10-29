@@ -60,8 +60,24 @@ class InvestigationTests(unittest.TestCase):
         legacy = {"snapshots": [{"timestamp": 1, "processes": [{"pid": 123}], "totals": {}}]}
         text = investigation_summary(legacy)["text"]
         self.assertIn("Coverage: unknown", text)
-        self.assertIn("detection window judged: None", text)
+        self.assertIn("detection window judged: unknown", text)
         self.assertNotIn("CLEAR", text)
+
+    def test_recovery_and_incomplete_cleanup_qualifications_survive_copying(self) -> None:
+        report = private_fixture()
+        report["recovery"] = {"partial": True, "final_outcome_confirmed": False, "exact_through_cutoff": True}
+        report["outcome"]["startup"] = {"state": "failed", "error": SECRET}
+        report["outcome"]["cleanup"] = {"state": "incomplete", "remaining_count": 2, "resume_required": True,
+                                         "errors": [SECRET]}
+        for profile in ("share", "minimal"):
+            with self.subTest(profile=profile):
+                text = investigation_summary(report, profile=profile)["text"]
+                self.assertIn("Recovered prefix: partial checkpoint evidence", text)
+                self.assertIn("final target and monitoring outcomes are unconfirmed", text)
+                self.assertIn("Startup outcome: failed", text)
+                self.assertIn("Cleanup outcome: incomplete; 2 processes remained unresolved", text)
+                self.assertIn("still require resume", text)
+                self.assertNotIn(SECRET, text)
 
     def test_fractional_count_slopes_are_not_rounded_to_zero(self) -> None:
         report = private_fixture()
