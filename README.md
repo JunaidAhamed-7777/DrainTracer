@@ -401,7 +401,8 @@ Label each run so comparisons can tell equivalent experiments apart:
 `--workload-id`, `--build`, `--operations N` (shows growth per operation),
 and `--note` are recorded in the report's `experiment` section with the
 sampling settings and machine details. Target arguments are only counted and
-fingerprinted, environment variables are never recorded, and
+fingerprinted; one-sided argument records qualify comparisons, including
+known zero arguments versus unknown arguments. Environment variables are never recorded, and
 `password=...`-style values and Basic/Bearer credentials in labels are redacted.
 Short valid Basic credentials are covered too; review reports before sharing.
 Any comparability caveat

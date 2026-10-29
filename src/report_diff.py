@@ -580,6 +580,14 @@ def _experiment_caveats(
             f"{new.argument_count}, fingerprints differ)",
             NOT_COMPARABLE,
         ))
+    elif (old.argument_count is None) != (new.argument_count is None):
+        which = "A" if old.argument_count is not None else "B"
+        caveats.append(Caveat(
+            "arguments",
+            f"only report {which} records target arguments, so the arguments cannot be "
+            "shown to match",
+            NOT_COMPARABLE,
+        ))
     if old.operations is not None and new.operations is not None:
         larger = max(old.operations, new.operations)
         if abs(old.operations - new.operations) > OPERATIONS_TOLERANCE * larger:
