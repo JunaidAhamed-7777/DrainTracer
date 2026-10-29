@@ -325,6 +325,21 @@ class SessionFactsRenderingTests(unittest.TestCase):
         self.assertIn("8.5 ms mean · 13.0 ms max", text)
         self.assertIn("Detection evaluated", text)
         _json.loads(_data_block(document))
+        memory_card = re.search(r'<article class="card"><h3>Memory.*?</article>',
+                                text, re.DOTALL).group(0)
+        self.assertIn("retained peak 100.3 MB", memory_card)
+        self.assertNotIn("peak 600.0 MB", memory_card)
+
+    def test_retained_card_peak_keeps_its_post_warmup_scope(self) -> None:
+        snapshots = [snapshot_to_dict(make_snapshot(timestamp=1000 + index,
+                     processes=(make_process(100, private=private),)))
+                     for index, private in enumerate((600 * 1024**2, 10 * 1024**2, 12 * 1024**2))]
+        snapshots[0]["warming_up"] = True
+        report = _report(snapshots=snapshots, snapshot_stride=8)
+        text = html.unescape(render_html_report(report))
+        card = re.search(r'<article class="card"><h3>Memory.*?</article>', text, re.DOTALL).group(0)
+        self.assertIn("since warm-up · retained peak 12.0 MB", card)
+        self.assertNotIn("600.0 MB", card)
 
     def test_thinned_reports_without_facts_are_marked_approximate(self) -> None:
         report = _report(snapshot_stride=8)

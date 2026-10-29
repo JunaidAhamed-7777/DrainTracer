@@ -72,7 +72,9 @@ The report includes:
 
 Growth is the last measured value minus the first. Drift is a regression
 slope over measured samples. With a warm-up, growth, drift, and resource
-card peaks use post-warm-up samples; charts and the overall RSS/CPU peaks
+card peaks use post-warm-up samples. Thinned resource cards say `retained
+peak` because their stored samples can miss a short spike; exact whole-run
+peaks remain in the Session card and JSON session facts. Charts and the overall RSS/CPU peaks
 include startup. Charts break across missing readings rather than
 interpreting a paused or failed sample as a measured zero.
 

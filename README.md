@@ -401,8 +401,9 @@ The HTML report works offline, with interactive charts, signal episodes,
 events, a process list, a ranking of growing processes that keeps ones that
 exited, run provenance, and monitor diagnostics. Verdicts and resource cards
 identify partial or unavailable coverage and preserve any observed signal.
-Unreadable process counters
-show `n/a`; measured zero counters remain zero.
+Unreadable process counters show `n/a`; measured zero counters remain zero.
+After chart thinning, resource cards label their sample-based values as
+`retained peak`.
 
 ![The exported HTML report shows the HIGH memory signal, resource trend charts, recorded events, and growing processes](docs/assets/html-report.gif)
 
