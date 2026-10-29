@@ -161,9 +161,17 @@ history, so it can be smaller than `samples.taken` after queue loss.
 
 The top-level `markers` list holds the markers added with `M` during a
 dashboard session: `index`, `label` (`marker N`), `timestamp`, `time`, and
+
+The top-level `markers` list holds the markers added with `M` or `N` during a
+dashboard session: `index`, `label` (`marker N` or an entered label), `timestamp`, `time`, and
 `elapsed_seconds` since monitoring started. Markers record when the user
 noted something; they do not establish cause. Reports without the field
 have no markers.
+HTML charts draw the same named timing annotations, and a separate marker
+table preserves their full labels and elapsed times without requiring hover.
+Activating a row with Enter or Space inspects its interval. Marker labels are
+limited to 80 characters in the dashboard and chart payload; the payload retains
+at most 500 user markers independently of chart thinning.
 
 ### Startup and cleanup outcomes
 
