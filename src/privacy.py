@@ -28,7 +28,7 @@ _SAFE_TEXT = {*METRIC_UNITS, *SEVERITIES, *_CATEGORIES, "DrainTracer", "memory",
               "left_running", "Windows", "Linux", "uss", "file_descriptors", "private_bytes"}
 _KEYS = {
     "schema", "report_schema", "sample_count", "snapshot_stride", "snapshots", "processes", "totals",
-    "alerts", "severity", "resource", "metric", "message", "slope_per_second", "window_seconds",
+    "alerts", "severity", "resource", "memory", "metric", "message", "slope_per_second", "window_seconds",
     "current_value", "baseline_value", "growth_by_type", "contributors", "delta", "share", "new_process",
     "growth_from_new_processes", "growth_within_existing", "mostly_new_processes", "name", "status",
     "create_time", "access_denied", "unmeasured", "process_alive", "monitoring_paused", "warming_up",

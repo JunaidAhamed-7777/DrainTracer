@@ -63,6 +63,7 @@ class PrivacyTests(unittest.TestCase):
                                  transformed["snapshots"][1]["processes"][0]["create_time"])
                 summary = session_summary(transformed)
                 self.assertEqual(summary["worst_severity"], "high")
+                self.assertEqual(transformed["session_facts"]["signals"]["memory"]["worst"], "high")
                 self.assertEqual(summary["peaks"]["private_bytes"]["value"], 11 * 1024**2)
                 self.assertEqual(summary["measurement"]["partial_coverage"], False)
         self.assertEqual(report, original)
