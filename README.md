@@ -75,6 +75,8 @@ values and process IDs vary by run.*
   collecting evidence, judged clean, growing, or unreadable, and how fresh the
   last sample is ("sample 0.4s ago · 12 ms · cadence 502 ms"), amber when
   samples go stale; reports add coverage and the monitor's own CPU and memory.
+  The Monitor view also shows host CPU and available physical memory, sampled
+  every five seconds with age and cost. These are host context, not target usage.
 - **Ask why.** Focused views rank growing processes, show each detection
   window's checks behind a verdict, annotate a timeline with your markers, and
   report monitor health, without pausing sampling.

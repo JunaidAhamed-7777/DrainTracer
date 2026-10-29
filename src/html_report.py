@@ -539,6 +539,19 @@ def _monitor_panel(summary: ReportSummary) -> str:
                 f"{format_clock(facts.after_warmup_seconds or 0.0)} after warm-up",
             )
         )
+    host = monitor.get("host_context")
+    if isinstance(host, Mapping):
+        cpu = finite(host.get("cpu_percent"))
+        available = finite(host.get("available_memory_bytes"))
+        age = finite(host.get("age_seconds"))
+        cost = finite(host.get("collection_ms"))
+        rows += [
+            ("Host CPU context", f"{cpu:.1f}% of host capacity" if cpu is not None else "n/a"),
+            ("Host available physical memory", format_bytes(available) if available is not None else "n/a"),
+            ("Host sampling", (f"{age:.1f}s old at final sample" if age is not None else "age n/a")
+             + (f" · {cost:.2f} ms pass" if cost is not None else " · cost n/a")
+             + " · every 5s; whole host context, not target usage or cause"),
+        ]
     body = _table(
         ("Measure", "Value"),
         [f"<tr><td>{_e(label)}</td><td>{_e(value)}</td></tr>" for label, value in rows],

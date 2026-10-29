@@ -128,6 +128,7 @@ class DashboardApp(
         self._init_processes_view()
         self._init_evidence_view()
         self._init_timeline_view()
+        self._init_monitor_view()
 
     # ------------------------------------------------------------------
     # Lifecycle
