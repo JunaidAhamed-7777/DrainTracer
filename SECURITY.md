@@ -16,7 +16,7 @@ before a fix can be discussed.
    "Private security contact requested". Include only a request for a private
    channel, with no reproduction, exploit, or sensitive information.
 
-In the private report, include the affected version or commit, Windows and
+In the private report, include the affected version or commit, operating system and
 Python versions, prerequisites, expected impact, and a minimal reproduction.
 Use a harmless test target and remove secrets and identifying information.
 

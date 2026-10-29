@@ -22,7 +22,7 @@ requests, commits, and their author metadata can be public.
 
 ## Set up a development checkout
 
-Use Windows 10 or 11 with Python 3.10 or newer. Run these commands from your
+Use Windows 10/11 or Linux with Python 3.10 or newer. Run these commands from your
 checkout's root. Calling the virtual environment directly avoids PowerShell
 activation-policy changes.
 
@@ -33,6 +33,13 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe src/main.py --help
 ```
+
+On Linux, use `python3 -m venv .venv`, then `.venv/bin/python -m pip install
+-r requirements.txt` and `.venv/bin/python src/main.py --help`. Run the
+installation checks, regression suite, and bounded workloads on each
+platform affected by your change. Linux CI covers Python 3.10 and 3.14;
+publishing also requires the Windows job. See [Development](docs/development.md)
+for WSL and distribution checks.
 
 For a pull request, fork the repository and create a focused branch in your
 fork. Runtime dependencies are listed in `requirements.txt`; the unit suite

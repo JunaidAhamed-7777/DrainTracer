@@ -9,7 +9,7 @@ profiles. `python src/main.py --help` lists the monitoring flags;
 
 For usage questions, open an
 [issue](https://github.com/JunaidAhamed-7777/DrainTracer/issues/new) describing
-what you are trying to measure, your Windows and Python versions, the
+what you are trying to measure, your operating system and Python versions, the
 DrainTracer version or commit, and the command you ran. Search existing
 issues first. Use the bug-report form for reproducible failures and the
 feature-request form for proposed behavior.
@@ -34,6 +34,11 @@ Remove the setting after diagnosing the issue if you no longer need it:
 ```powershell
 Remove-Item Env:DRAINTRACER_LOG -ErrorAction SilentlyContinue
 ```
+
+On Linux, set the variable for one run with
+`DRAINTRACER_LOG=drain.log python src/main.py --target ./torture/steady.py`.
+Include the distribution, kernel version, and whether you use WSL when
+reporting a Linux issue.
 
 Review screenshots, reports, and logs before posting. Remove identifying
 paths, process details, secrets, and unrelated data. Reports are optional;

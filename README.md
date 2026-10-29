@@ -162,7 +162,8 @@ optional tkinter; without Tk or a display, startup asks for a typed path.
 
 On Linux, **private bytes measure USS (private resident memory)** and
 **handles count open file descriptors**, including files, sockets, and
-pipes. `--budget-handles` therefore limits descriptor counts. Protected
+pipes. `--budget-handles` therefore checks the peak descriptor count and
+fails a headless run when it exceeds the budget. Protected
 `/proc` measurements appear as unavailable. Reports record these definitions;
 strict comparisons reject differing platforms or counter definitions.
 Compare memory and resource trends between runs on the same platform.
