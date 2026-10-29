@@ -100,7 +100,6 @@ class HeadlessRunner(MonitorSession):
         # The first sample is taken before the launch is logged; its breaches
         # wait so the log does not report a budget before the target started.
         self._start_logged = False
-        self._judged_resources: set[LeakResource] = set()
 
     @property
     def breached(self) -> bool:
@@ -115,13 +114,8 @@ class HeadlessRunner(MonitorSession):
     def over_budget(self) -> tuple[BudgetCheck, ...]:
         return tuple(check for check in self.budget_checks() if check.exceeded)
 
-    def _accept_snapshot(self, snapshot) -> None:
-        super()._accept_snapshot(snapshot)
-        if not snapshot.monitoring_paused and not snapshot.metadata.get("sampling_error"):
-            self._judged_resources.update(
-                item.resource for item in snapshot.evidence
-                if item.state in (EvidenceState.NO_GROWTH, EvidenceState.GROWTH)
-            )
+    def _accept_snapshot(self, snapshot, *, already_observed: bool = False) -> None:
+        super()._accept_snapshot(snapshot, already_observed=already_observed)
         if self._start_logged:
             self._log_budget_breaches()
 
