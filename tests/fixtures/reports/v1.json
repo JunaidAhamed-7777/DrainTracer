@@ -1,0 +1,4 @@
+{
+  "target_path": "worker.exe",
+  "snapshots": [{"timestamp": 1000, "processes": [{"pid": 100, "name": "worker.exe"}], "totals": {"handles": 0}}]
+}

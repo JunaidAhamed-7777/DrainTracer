@@ -106,6 +106,11 @@ interval and use their own timestamps.
 
 ## Use the JSON data
 
+The [public report contract](report-contract.md) supplies standalone schemas,
+bounded validation, compatibility fixtures, and a versioned machine summary.
+Use `draintracer-report validate FILE` or `draintracer-report summary FILE`
+for dependency-free local consumption.
+
 The current layout is `report_schema: 3`. The report contains identity and
 session timestamps, application version, target and mode, resolved
 settings, warm-up status, measurement coverage, separate target,
