@@ -46,7 +46,7 @@ jobs:
       - name: Compile source
         run: python .github/run_check.py compilation python -m compileall -q src
       - name: Validate report JavaScript
-        run: python .github/run_check.py javascript node --check leak_reports/frames/report.js
+        run: python .github/run_check.py javascript node --check leak_reports/frames/diagnostic-drill-missing.js
       - name: Run regression tests
         run: python .github/run_check.py regression python -m unittest discover -s tests
       - name: Run bounded Linux workloads
@@ -106,7 +106,7 @@ jobs:
       - name: Compile source
         run: python .github/run_check.py compilation python -m compileall -q src
       - name: Validate report JavaScript
-        run: python .github/run_check.py javascript node --check leak_reports/frames/report.js
+        run: python .github/run_check.py javascript node --check leak_reports/frames/diagnostic-drill-missing.js
       - name: Run regression tests
         run: python .github/run_check.py regression python -m unittest discover -s tests
       - name: Build wheel and source distribution
