@@ -311,6 +311,29 @@ settings are deliberately faster than the application defaults. See
 [torture/README.md](../torture/README.md) for bounds, expected outcomes,
 report retention, and the auditable executable fixture source.
 
+## Host-context collection budget
+
+Run `python torture/benchmark_host.py --samples 200` to measure refresh and cached
+passes without launching a target. The script sets a local refresh acceptance
+budget to twice the observed p99, rounded up to whole milliseconds with a 1 ms
+scheduler floor. This is a measured machine-local budget, not a general observer
+overhead claim or a replacement for the broader T5 stress/soak work.
+
+On Windows 11 with Python 3.14.7 on 2026-10-30, 200 passes measured a 0.131 ms
+median refresh, 0.362 ms p99, and 0.456 ms maximum; cached passes measured a
+0.0032 ms median and 0.0075 ms maximum. The derived 1 ms refresh budget occupies
+0.02% of the five-second refresh interval. Refresh timing covers the two host
+counter reads; cached timing covers age bookkeeping. Neither uses a blocking
+CPU interval. Repeat this benchmark on deployment hardware, especially large
+hosts; do not infer Linux costs from this Windows measurement.
+
+Host CPU is percent of total host capacity and is unknown until its second
+refresh. Available/total memory is physical bytes, not Windows commit. Failed
+reads remain unknown. Snapshot diagnostics and `session_facts.monitor.host_context`
+record age at publication; the live view adds elapsed wall time. The HTML report
+labels that saved age at the final sample. Host collection cost is recorded
+separately from the target-sampling collection timer.
+
 ## Versions and release preparation
 
 The canonical runtime version is `DashboardApp.VERSION` in

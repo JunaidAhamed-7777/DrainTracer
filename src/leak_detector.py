@@ -21,6 +21,7 @@ from .events import (
     RESOURCE_METRICS,
     DetectionCriteria,
     EvidenceState,
+    HostPressure,
     LeakAlert,
     LeakResource,
     LeakSeverity,
@@ -239,6 +240,9 @@ class LeakDetector:
         self._classify_cost_ms: float | None = None
         self._self_process: psutil.Process | None = None
         self._self_cpu_baseline: tuple[float, float] | None = None
+        self._host_reading: HostPressure | None = None
+        self._host_sampled_at: float | None = None
+        self._host_cpu_primed = False
 
         # Warm-up: sampling runs but leak heuristics wait until this much
         # active (unpaused) sampling time has passed.
@@ -490,8 +494,8 @@ class LeakDetector:
     def _diagnostics(self, collection_ms: float | None) -> MonitorDiagnostics:
         """The monitor's own cadence, cost and footprint for this snapshot.
 
-        Everything here is bookkeeping the detector already has, plus one
-        cheap read of its own process, so diagnostics never slow sampling.
+        Includes the monitor footprint and cached host context. Host queries
+        run at most once per five seconds and report their own collection cost.
         """
         starts = self._collect_starts
         interval = (
@@ -514,7 +518,41 @@ class LeakDetector:
             monitor_cpu_percent=cpu,
             monitor_rss_bytes=rss,
             monitor_private_bytes=private,
+            host=self._sample_host(refresh=collection_ms is not None),
         )
+
+    HOST_INTERVAL_SECONDS = 5.0
+
+    def _sample_host(self, *, refresh: bool = True) -> HostPressure | None:
+        """Bound host context collection to one nonblocking pass per five seconds."""
+        now = time.monotonic()
+        if refresh and (self._host_sampled_at is None or
+                        now - self._host_sampled_at >= self.HOST_INTERVAL_SECONDS):
+            started = time.perf_counter()
+            cpu = available = total = None
+            try:
+                value = float(psutil.cpu_percent(interval=None))
+                if self._host_cpu_primed and math.isfinite(value) and 0 <= value <= 100:
+                    cpu = value
+                self._host_cpu_primed = True
+            except (psutil.Error, OSError, AttributeError, ValueError):
+                self._host_cpu_primed = False
+            try:
+                memory = psutil.virtual_memory()
+                available, total = int(memory.available), int(memory.total)
+                if not 0 <= available <= total or total <= 0:
+                    available = total = None
+            except (psutil.Error, OSError, AttributeError, ValueError, OverflowError):
+                pass
+            self._host_reading = HostPressure(
+                sampled_at=time.time(), cpu_percent=cpu,
+                available_memory_bytes=available, total_memory_bytes=total,
+                collection_ms=max(0.0, (time.perf_counter() - started) * 1000),
+            )
+            self._host_sampled_at = now
+        if self._host_reading is None or self._host_sampled_at is None:
+            return None
+        return replace(self._host_reading, age_seconds=max(0.0, now - self._host_sampled_at))
 
     def _sample_self(self) -> tuple[float | None, int | None, int | None]:
         """DrainTracer's own CPU % of one core since the last call, RSS, and private bytes."""

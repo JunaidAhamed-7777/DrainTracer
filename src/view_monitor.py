@@ -2,8 +2,8 @@
 
 Everything shown here was measured by the detector (``MonitorDiagnostics``
 on each snapshot) or counted by the session (``SessionFacts``); the view
-only words it. Host CPU and memory pressure are not sampled yet, and the
-view says so instead of leaving the question unanswered.
+only words it. Host CPU and available physical memory are context and never
+attributed to the monitored target.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from rich.table import Table
 from rich.text import Text
 
 from .events import COVERAGE_METRICS, METRIC_LABELS, EvidenceState, unavailable_reason
+from .keys import DOWN, END, HOME, PAGE_DOWN, PAGE_UP, UP
 from .units import format_duration
 from .widgets import Sized
 
@@ -31,13 +32,29 @@ class MonitorViewMixin:
     # Wider terminals show the sections in two columns.
     MONITOR_TWO_COLUMNS = 100
 
+    def _init_monitor_view(self) -> None:
+        self._monitor_offset = 0
+
+    def _monitor_key(self, key: str) -> bool:
+        steps = {UP: -1, DOWN: 1, PAGE_UP: -10, PAGE_DOWN: 10, HOME: -10**6, END: 10**6}
+        if key in steps:
+            self._monitor_offset = max(0, self._monitor_offset + steps[key])
+            return True
+        return False
+
     def _monitor_controls(self) -> list[tuple[str, str, str]]:
-        return []
+        return [(f"{self.glyphs.up}{self.glyphs.down}", "scroll", self.palette.muted)]
+
+    def _monitor_help_keys(self) -> list[tuple[str, str]]:
+        return [("Up/Down", "Scroll monitor diagnostics (Home/End and Page Up/Down too)")]
 
     def _render_monitor_view(self) -> Panel:
         palette = self.palette
         return Panel(
-            Sized(self._monitor_body),
+            Sized(lambda width, height: self._scrolled(
+                self._monitor_body(width, None), width, height,
+                "_monitor_offset", "end of monitor diagnostics",
+            )),
             title=Text(" MONITOR DIAGNOSTICS ", style=f"bold {palette.cyan}"),
             title_align="left",
             subtitle=Text(" can this recording be trusted? ", style=palette.muted),
@@ -53,10 +70,7 @@ class MonitorViewMixin:
             ("COVERAGE", self._monitor_coverage_rows()),
             ("FRESHNESS", self._monitor_freshness_rows()),
             ("MONITOR PROCESS", self._monitor_self_rows()),
-            ("HOST", [("Context", Text(
-                "not collected: host CPU and available memory are not sampled yet",
-                style=self.palette.muted,
-            ))]),
+            ("HOST CONTEXT", self._monitor_host_rows()),
         ]
         blocks = [self._monitor_section(title, rows) for title, rows in sections]
         if width < self.MONITOR_TWO_COLUMNS:
@@ -232,6 +246,22 @@ class MonitorViewMixin:
         return [
             ("CPU", sep.join(cpu) or "not measured yet"),
             ("Memory", sep.join(memory) or "not measured yet"),
+        ]
+
+    def _monitor_host_rows(self) -> list[tuple[str, RenderableType]]:
+        host = self.diagnostics.host if self.diagnostics is not None else None
+        if host is None:
+            return [("Host", "not measured yet")]
+        cpu = "n/a" if host.cpu_percent is None else f"{host.cpu_percent:.1f}% of host capacity"
+        memory = "n/a" if host.available_memory_bytes is None else (
+            f"{self._format_bytes(host.available_memory_bytes)} available physical"
+        )
+        age = max(host.age_seconds, time.time() - host.sampled_at)
+        cost = "n/a" if host.collection_ms is None else f"{host.collection_ms:.2f} ms"
+        return [
+            ("CPU", cpu), ("Memory", memory),
+            ("Age / cost", f"{_age(age)} old; {cost} pass; every 5s"),
+            ("Meaning", "whole host context; not target usage or cause"),
         ]
 
 

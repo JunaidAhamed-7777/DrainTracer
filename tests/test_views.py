@@ -675,7 +675,7 @@ def growing_session_more(app: DashboardApp, samples: int = 5) -> None:
 class MonitorViewTests(ViewRenderingMixin, unittest.TestCase):
     VIEW_KEY = "5"
 
-    def test_shows_cadence_cost_coverage_and_missing_host_context(self) -> None:
+    def test_shows_cadence_cost_coverage_and_host_context(self) -> None:
         output = " ".join(self.rendered(120, 40).split())
         self.assertIn("MONITOR DIAGNOSTICS", output)
         self.assertIn("requested 500 ms", output)
@@ -683,7 +683,8 @@ class MonitorViewTests(ViewRenderingMixin, unittest.TestCase):
         self.assertIn("PID 7 access denied", output)
         self.assertIn("1 process unreadable (PID 7)", output)
         self.assertIn("handle types unavailable", output)
-        self.assertIn("not collected", output)
+        self.assertIn("HOST CONTEXT", output)
+        self.assertIn("not target usage or", output)
         self.assertIn("25 collected", output)
 
     def test_before_any_sample(self) -> None:
@@ -692,6 +693,37 @@ class MonitorViewTests(ViewRenderingMixin, unittest.TestCase):
         output = render_text(app)
         self.assert_fills(output, 80, 24)
         self.assertIn("none yet", output)
+
+    def test_host_values_match_report_and_remain_reachable_in_narrow_terminals(self) -> None:
+        from unittest import mock
+
+        from helpers import make_snapshot
+
+        from src.events import HostPressure, MonitorDiagnostics
+        from src.html_report import render_html_report
+
+        app = _app(80, 24, LEGACY)
+        host = HostPressure(1000, age_seconds=2, cpu_percent=0,
+                            available_memory_bytes=0, total_memory_bytes=MB, collection_ms=0.25)
+        app._accept_snapshot(replace(make_snapshot(timestamp=1002),
+                                     diagnostics=MonitorDiagnostics(500, host=host)))
+        app._handle_key("5")
+        app._handle_key("end")
+        with mock.patch("src.view_monitor.time.time", return_value=1002):
+            text = " ".join(render_text(app).split())
+        self.assertIn("0.0% of host capacity", text)
+        self.assertIn("0.0 B available physical", text)
+        self.assertIn("2.0s old; 0.25 ms", text)
+        report = app.build_report()
+        self.assertEqual(report["session_facts"]["monitor"]["host_context"]["age_seconds"], 2)
+        document = render_html_report(report)
+        self.assertIn("0.0% of host capacity", document)
+        self.assertIn("2.0s old at final sample", document)
+        self.assertIn("0.25 ms pass", document)
+        app._diagnostics = MonitorDiagnostics(500, host=HostPressure(1000))
+        rows = dict(app._monitor_host_rows())
+        self.assertEqual(rows["CPU"], "n/a")
+        self.assertEqual(rows["Memory"], "n/a")
 
 
 if __name__ == "__main__":

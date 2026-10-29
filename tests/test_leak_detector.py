@@ -628,6 +628,43 @@ class SamplingLoopTests(unittest.TestCase):
 
 
 class MonitorDiagnosticsTests(unittest.TestCase):
+    def test_host_sampling_is_nonblocking_bounded_and_primes_cpu(self) -> None:
+        from types import SimpleNamespace
+        from unittest import mock
+
+        detector = _detector()
+        with mock.patch("src.leak_detector.psutil.cpu_percent", side_effect=[10.0, 42.0]) as cpu, \
+                mock.patch("src.leak_detector.psutil.virtual_memory",
+                           return_value=SimpleNamespace(available=0, total=1024)) as memory:
+            with mock.patch("src.leak_detector.time.monotonic", return_value=10):
+                first = detector._sample_host()
+            with mock.patch("src.leak_detector.time.monotonic", return_value=12):
+                cached = detector._sample_host()
+            self.assertIsNone(first.cpu_percent)
+            self.assertEqual(cached.available_memory_bytes, 0)
+            self.assertEqual(cached.age_seconds, 2)
+            self.assertEqual(memory.call_count, 1)
+            with mock.patch("src.leak_detector.time.monotonic", return_value=15):
+                latest = detector._sample_host()
+            self.assertEqual(latest.cpu_percent, 42)
+            self.assertEqual(latest.age_seconds, 0)
+            self.assertEqual(cpu.call_args_list, [mock.call(interval=None)] * 2)
+            self.assertEqual(memory.call_count, 2)
+
+    def test_failed_host_reads_are_unknown_and_pauses_do_not_refresh(self) -> None:
+        from unittest import mock
+
+        detector = _detector()
+        with mock.patch("src.leak_detector.psutil.cpu_percent", side_effect=OSError("denied")) as cpu, \
+                mock.patch("src.leak_detector.psutil.virtual_memory", side_effect=OSError("denied")):
+            self.assertIsNone(detector._sample_host(refresh=False))
+            reading = detector._sample_host()
+            self.assertIsNone(reading.cpu_percent)
+            self.assertIsNone(reading.available_memory_bytes)
+            self.assertIsNone(reading.total_memory_bytes)
+            detector._sample_host(refresh=False)
+            self.assertEqual(cpu.call_count, 1)
+
     def _collect(self, detector: LeakDetector, clocks: list[float]):
         from unittest import mock
 
