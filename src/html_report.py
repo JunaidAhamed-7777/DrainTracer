@@ -445,7 +445,7 @@ def _handle_sample_table(payload: Mapping[str, Any]) -> str:
 
 def _episodes_panel(summary: ReportSummary, start: float | None) -> str:
     recorded = sum(item.episodes for item in summary.resources.values())
-    hint = "One row per continuous signal; click a row to zoom the charts."
+    hint = "One row per continuous signal; use its Zoom button to inspect the charts."
     if recorded > len(summary.episodes):
         # Thinning kept fewer episodes than the session counted; say so.
         hint += (
@@ -621,7 +621,7 @@ def _events_panel(report: Mapping[str, Any], start: float | None) -> str:
     return (
         '<section class="panel" aria-label="Event log">'
         '<div class="panel-head"><h2>Event log</h2>'
-        '<p class="hint">Hover a row to find it on the charts.</p></div>'
+        '<p class="hint">Elapsed time locates each event on the charts; use the range fields to inspect it.</p></div>'
         f"{body}</section>"
     )
 
