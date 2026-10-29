@@ -199,7 +199,14 @@ class EvidenceViewMixin:
                 )
             grid.add_row("Coverage", measured)
         if self.snapshot is not None:
-            grid.add_row("Current", _quantity(resource, self.snapshot.totals.get(metric, 0.0)))
+            current_coverage = (self.snapshot.coverage or {}).get(metric, coverage)
+            current = _quantity(resource, self.snapshot.totals.get(metric, 0.0))
+            if current_coverage is not None:
+                if current_coverage.measured == 0:
+                    current = "n/a"
+                elif current_coverage.partial:
+                    current += " (partial lower bound)"
+            grid.add_row("Current", current)
         if evidence.state == EvidenceState.STALE:
             grid.add_row("Note", Text("paused: these are the last evaluations before the pause",
                                       style=f"bold {palette.warn}"))
