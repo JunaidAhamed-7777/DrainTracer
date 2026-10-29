@@ -47,7 +47,7 @@ class InventoryTests(unittest.TestCase):
             result = inventory.list_running_processes()
         self.assertEqual([(row.pid, row.name) for row in result],
                          [(3, "app.exe"), (4, "App.exe"), (5, "z.exe")])
-        scan.assert_called_once_with(["pid", "name", "create_time"], ad_value=None)
+        scan.assert_called_once_with(["pid", "name", "create_time", "status"], ad_value=None)
 
     def test_unavailable_names_remain_visible_and_exited_rows_are_skipped(self) -> None:
         gone = mock.Mock()
@@ -81,7 +81,15 @@ class IdentityTests(unittest.TestCase):
             process.return_value.is_running.return_value = True
             self.assertTrue(inventory.is_process_current(inventory.RunningProcess(3, "app", 10.0)))
         self.assertEqual(process.return_value.method_calls,
-                         [mock.call.create_time(), mock.call.is_running()])
+                         [mock.call.create_time(), mock.call.is_running(), mock.call.status()])
+
+    def test_zombies_and_dead_processes_are_not_attachable(self) -> None:
+        for status in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
+            with self.subTest(status=status), mock.patch.object(inventory.psutil, "Process") as process:
+                process.return_value.create_time.return_value = 10.0
+                process.return_value.is_running.return_value = True
+                process.return_value.status.return_value = status
+                self.assertFalse(inventory.is_process_current(inventory.RunningProcess(3, "app", 10.0)))
 
     def test_reused_missing_or_inaccessible_identity_is_rejected(self) -> None:
         row = inventory.RunningProcess(3, "app", 10.0)

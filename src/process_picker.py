@@ -114,7 +114,7 @@ def select_running_process(console: Console) -> int | None:
     processes = _read_processes(console)
     keyboard = PickerKeyboard() if supports_picker_keyboard(console) else None
     display = Live(console=console, screen=True, auto_refresh=False, transient=True) if keyboard else nullcontext()
-    with display as live:
+    with keyboard if keyboard is not None else nullcontext(), display as live:
         selected = _select_process(console, processes, keyboard, live)
     if selected is None:
         return None

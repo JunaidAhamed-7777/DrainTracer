@@ -11,8 +11,10 @@ characters, so a name is always longer than one character.
 
 from __future__ import annotations
 
+import codecs
 import os
 import sys
+import time
 from collections import deque
 from collections.abc import Callable
 
@@ -102,44 +104,58 @@ def decode_windows(first: str, read_next: Callable[[], str | None]) -> str | Non
     return decode_plain(first)
 
 
-def decode_ansi(data: str) -> list[str]:
-    """Decode a chunk of POSIX terminal input into key names and characters.
-
-    A chunk holds whatever the terminal delivered at once, so an escape
-    sequence arrives whole; a lone ``\\x1b`` (or one followed by another
-    escape) is the Escape key. Unknown sequences are skipped entirely.
-    Modifier parameters (``\\x1b[1;5A``) are ignored: Ctrl+Up is still Up.
-    """
+def _decode_ansi(data: str, *, final: bool) -> tuple[list[str], str]:
+    """Decode complete keys and retain a possibly fragmented escape sequence."""
     keys: list[str] = []
     index, length = 0, len(data)
     while index < length:
         character = data[index]
         if character != "\x1b":
             decoded = decode_plain(character)
-            if decoded is not None:
+            if character in ("\x03", "\x04", "\x1a"):
+                keys.append(character)
+            elif decoded is not None:
                 keys.append(decoded)
             index += 1
             continue
-        introducer = data[index + 1] if index + 1 < length else ""
+        if index + 1 == length:
+            if not final:
+                return keys, data[index:]
+            keys.append(ESCAPE)
+            break
+        introducer = data[index + 1]
         if introducer not in ("[", "O"):
             keys.append(ESCAPE)
             index += 1
             continue
-        # Parameters are digits and separators; the final byte names the key.
         end = index + 2
-        while end < length and data[end] in "0123456789;":
+        # ECMA-48 parameter and intermediate bytes, followed by a final byte.
+        # Consume unknown sequences whole so their tail cannot trigger a key.
+        while end < length and " " <= data[end] <= "?":
             end += 1
         if end >= length:
-            break  # a truncated sequence: drop it rather than type its tail
-        final, params = data[end], data[index + 2 : end]
-        if final == "~":
-            name = _ANSI_TILDE.get(params.split(";", 1)[0])
-        else:
-            name = _ANSI_FINALS.get(final)
+            return keys, "" if final else data[index:]
+        last, params = data[end], data[index + 2 : end]
+        name = None
+        if "@" <= last <= "~":
+            if last == "~":
+                name = _ANSI_TILDE.get(params.split(";", 1)[0])
+            else:
+                name = _ANSI_FINALS.get(last)
         if name is not None:
             keys.append(name)
         index = end + 1
-    return keys
+    return keys, ""
+
+
+def decode_ansi(data: str) -> list[str]:
+    """Decode a chunk of POSIX terminal input into key names and characters.
+
+    A lone ``\\x1b`` (or one followed by another
+    escape) is the Escape key. Unknown sequences are skipped entirely.
+    Modifier parameters (``\\x1b[1;5A``) are ignored: Ctrl+Up is still Up.
+    """
+    return _decode_ansi(data, final=True)[0]
 
 
 class KeyReader:
@@ -151,6 +167,47 @@ class KeyReader:
 
     def __init__(self) -> None:
         self._pending: deque[str] = deque()
+        self._decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        self._ansi = ""
+        self._ansi_since = 0.0
+        self._terminal: tuple[int, list] | None = None
+        self.eof = False
+
+    def __enter__(self) -> KeyReader:
+        """Enable immediate, no-echo POSIX keys until the matching exit."""
+        if os.name == "nt" or self._terminal is not None:
+            return self
+        import termios
+        import tty
+
+        stream = sys.stdin
+        try:
+            terminal = stream is not None and stream.isatty()
+        except (OSError, ValueError):
+            terminal = False
+        if terminal:
+            fd = stream.fileno()
+            saved = termios.tcgetattr(fd)
+            try:
+                tty.setcbreak(fd, termios.TCSANOW)
+            except BaseException:
+                termios.tcsetattr(fd, termios.TCSANOW, saved)
+                raise
+            self._terminal = fd, saved
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        """Restore input even when monitoring or a keyboard handler fails."""
+        if self._terminal is not None:
+            import termios
+
+            fd, saved = self._terminal
+            self._terminal = None
+            try:
+                termios.tcsetattr(fd, termios.TCSANOW, saved)
+            except (OSError, termios.error):
+                # A disconnected terminal no longer has attributes to restore.
+                pass
 
     def read(self) -> str | None:
         if self._pending:
@@ -175,8 +232,7 @@ class KeyReader:
 
         return decode_windows(msvcrt.getwch(), scan_code)
 
-    @staticmethod
-    def _read_posix() -> list[str]:
+    def _read_posix(self) -> list[str]:
         import select
 
         stream = sys.stdin
@@ -184,12 +240,23 @@ class KeyReader:
             if stream is None or not stream.isatty():
                 return []
             ready, _, _ = select.select([stream], [], [], 0)
-            if not ready:
-                return []
-            data = os.read(stream.fileno(), 64)
+            data = os.read(stream.fileno(), 4096) if ready else None
         except (OSError, ValueError):
+            self.eof = True
             return []
-        return decode_ansi(data.decode("utf-8", errors="ignore"))
+        if data == b"":
+            self.eof = True
+        previous = self._ansi
+        if data:
+            self._ansi += self._decoder.decode(data)
+        # Only a bare Escape is ambiguous. Once CSI/SS3 has begun, retain it
+        # until its final byte so a delayed tail never becomes a hotkey.
+        expired = self._ansi == "\x1b" and time.monotonic() - self._ansi_since >= 0.05
+        decoded, remainder = _decode_ansi(self._ansi, final=expired and not data)
+        if remainder and (not previous or remainder != self._ansi):
+            self._ansi_since = time.monotonic()
+        self._ansi = remainder
+        return decoded
 
 
 def normalize_key(key: str) -> str:

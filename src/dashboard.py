@@ -160,7 +160,7 @@ class DashboardApp(
             return 1
 
         try:
-            with Live(
+            with self._keys, Live(
                 self._frame(),
                 console=self.console,
                 auto_refresh=False,
@@ -176,6 +176,8 @@ class DashboardApp(
                 while not self._quit_requested:
                     changed = self._guarded("Processing samples", self.poll) or False
                     key = self._read_key()
+                    if key in ("\x04", "\x1a") or self._keys.eof:
+                        self._quit_requested = True
                     if key:
                         self._guarded(f"Key {key!r}", self._handle_key, key)
                         changed = True

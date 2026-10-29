@@ -1,4 +1,4 @@
-"""Native Windows file picker for selecting a target executable or script."""
+"""Optional desktop file picker for selecting a target executable or script."""
 
 from __future__ import annotations
 
@@ -13,6 +13,11 @@ _EXECUTABLE_FILTERS: tuple[tuple[str, str], ...] = (
     ("Python Scripts", "*.py"),
     ("All Files", "*.*"),
 )
+_POSIX_FILTERS: tuple[tuple[str, str], ...] = (
+    ("Executables and Scripts", "*"),
+    ("Python Scripts", "*.py"),
+    ("Shell Scripts", "*.sh"),
+)
 
 
 def _select_with_tkinter() -> str | None:
@@ -20,17 +25,17 @@ def _select_with_tkinter() -> str | None:
     from tkinter import filedialog
 
     root = tk.Tk()
-    root.withdraw()
-    root.attributes("-topmost", True)
-
     try:
+        root.withdraw()
+        root.attributes("-topmost", True)
+        filters = _EXECUTABLE_FILTERS if sys.platform == "win32" else _POSIX_FILTERS
         selected = filedialog.askopenfilename(
             title="Select target executable or script",
             filetypes=[
                 (description, pattern.replace(";", " "))
-                for description, pattern in _EXECUTABLE_FILTERS
+                for description, pattern in filters
             ],
-            defaultextension=".exe",
+            defaultextension=".exe" if sys.platform == "win32" else "",
         )
     finally:
         root.destroy()
@@ -147,18 +152,16 @@ def _select_with_ctypes() -> str | None:
 
 def select_target_file(prefer_ctypes: bool = True) -> str | None:
     """
-    Open a native Windows file picker filtered for executables and scripts.
+    Open a desktop file picker filtered for executables and scripts.
 
     Returns the absolute path of the selected file, or None if canceled.
-    Raises FileNotFoundError if the platform is not Windows.
+    tkinter is optional on Linux; callers can fall back to a typed path when
+    it or a graphical display is unavailable.
     """
-    if sys.platform != "win32":
-        raise FileNotFoundError("Native Windows file picker is only available on Windows.")
-
     selectors = (
         (_select_with_ctypes, prefer_ctypes),
         (_select_with_tkinter, not prefer_ctypes),
-    )
+    ) if sys.platform == "win32" else ((_select_with_tkinter, True),)
 
     errors: list[Exception] = []
     for selector, _ in sorted(selectors, key=lambda item: not item[1]):
@@ -176,5 +179,5 @@ def select_target_file(prefer_ctypes: bool = True) -> str | None:
             continue
 
     if errors:
-        raise OSError("All Windows file picker implementations failed") from errors[-1]
+        raise OSError("No graphical file picker is available; enter the target path") from errors[-1]
     return None

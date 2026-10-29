@@ -46,7 +46,7 @@ class PickerKeyboardTests(unittest.TestCase):
             with self.subTest(characters=characters), self.assertRaises(EOFError):
                 keyboard(*characters).read()
 
-    def test_native_input_requires_windows_and_both_terminal_streams(self) -> None:
+    def test_native_input_requires_both_terminal_streams_on_each_platform(self) -> None:
         console = SimpleNamespace(is_terminal=True)
         stdin = mock.Mock()
         stdin.isatty.return_value = True
@@ -60,8 +60,14 @@ class PickerKeyboardTests(unittest.TestCase):
             self.assertFalse(picker_input.supports_picker_keyboard(console))
             stdin.isatty.side_effect = OSError("input unavailable")
             self.assertFalse(picker_input.supports_picker_keyboard(console))
-        with mock.patch.object(picker_input.os, "name", "posix"):
-            self.assertFalse(picker_input.supports_picker_keyboard(console))
+        for platform in ("nt", "posix"):
+            with (
+                mock.patch.object(picker_input.os, "name", platform),
+                mock.patch.object(picker_input.sys, "stdin", stdin),
+            ):
+                stdin.isatty.side_effect = None
+                stdin.isatty.return_value = True
+                self.assertTrue(picker_input.supports_picker_keyboard(console))
 
 
 if __name__ == "__main__":

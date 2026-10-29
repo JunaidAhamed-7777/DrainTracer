@@ -51,7 +51,7 @@ def choose_startup_action(console: Console) -> Literal["open", "hook"] | None:
     if supports_picker_keyboard(console):
         keyboard = PickerKeyboard()
         selected = 0
-        with Live(_startup_view(selected), console=console, auto_refresh=False) as live:
+        with keyboard, Live(_startup_view(selected), console=console, auto_refresh=False) as live:
             while True:
                 try:
                     key = keyboard.read()

@@ -165,7 +165,7 @@ class KeyboardSelectionTests(unittest.TestCase):
         self.addCleanup(current.stop)
 
     def choose(self, *keys):
-        keyboard = mock.Mock()
+        keyboard = mock.MagicMock()
         keyboard.read.side_effect = keys
         with (
             mock.patch.object(picker, "supports_picker_keyboard", return_value=True),
