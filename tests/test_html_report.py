@@ -59,6 +59,59 @@ def _data_block(document: str) -> str:
 
 
 class RenderTests(unittest.TestCase):
+    def test_partial_coverage_qualifies_verdict_and_resource_cards(self) -> None:
+        from helpers import make_denied
+
+        snapshots = [snapshot_to_dict(make_snapshot(timestamp=stamp,
+                     processes=(make_process(100), make_denied(200)), measured_coverage=True))
+                     for stamp in (1000, 1001)]
+        report = _report(snapshots=snapshots, detection_ran=True, coverage={"partial": True},
+                         outcome={"measurement": {"result": "partial", "partial_coverage": True}})
+        document = html.unescape(render_html_report(report))
+        self.assertIn("<title>DrainTracer · worker.exe · PARTIAL</title>", document)
+        self.assertIn("No leak signals in the measured subset", document)
+        self.assertIn("unreadable processes may hide growth", document)
+        self.assertEqual(document.count("partial coverage in 2 of 2 samples; 0 unavailable"), 3)
+        self.assertNotIn('>CLEAR</span>', document)
+
+    def test_wholly_unavailable_resource_is_not_clear(self) -> None:
+        from dataclasses import replace
+
+        process = replace(make_process(100), handles=0, unmeasured=("handles",))
+        snapshots = [snapshot_to_dict(make_snapshot(timestamp=stamp, processes=(process,),
+                                                    measured_coverage=True))
+                     for stamp in (1000, 1001)]
+        document = html.unescape(render_html_report(_report(snapshots=snapshots, detection_ran=True)))
+        cards = re.findall(r'<article class="card">(.*?)</article>', document, re.DOTALL)
+        self.assertIn('>UNAVAILABLE</span>', cards[1])
+        self.assertIn("2 unavailable", cards[1])
+        self.assertIn('>CLEAR</span>', cards[0])
+        self.assertIn("No leak signals in the measured subset", document)
+
+    def test_partial_measurement_preserves_observed_severity(self) -> None:
+        report = _report(outcome={"measurement": {"result": "partial"}})
+        document = render_html_report(report)
+        self.assertIn("HIGH leak signal observed", document)
+        self.assertIn('>HIGH</span>', document)
+        self.assertIn("Coverage was partial or unavailable", document)
+
+    def test_complete_and_unavailable_runs_have_distinct_verdicts(self) -> None:
+        from helpers import make_denied
+
+        for process, badge in ((make_process(100), "CLEAR"), (make_denied(100), "UNAVAILABLE")):
+            with self.subTest(badge=badge):
+                snapshots = [snapshot_to_dict(make_snapshot(timestamp=stamp, processes=(process,),
+                                                            measured_coverage=True))
+                             for stamp in (1000, 1001)]
+                report = _report(snapshots=snapshots, detection_ran=badge == "CLEAR")
+                document = render_html_report(report)
+                self.assertIn(f"<title>DrainTracer · worker.exe · {badge}</title>", document)
+                self.assertIn(f'>{badge}</span>', document)
+                if badge == "CLEAR":
+                    self.assertNotIn("Coverage was partial", document)
+                else:
+                    self.assertNotIn('>CLEAR</span>', document)
+
     def test_process_cells_distinguish_unmeasured_from_measured_zero(self) -> None:
         process = snapshot_to_dict(make_snapshot())["processes"][0]
         for unmeasured in (("handles",), ("cpu_percent",), ("private_bytes", "rss_bytes", "threads")):
