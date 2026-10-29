@@ -406,6 +406,8 @@ After chart thinning, resource cards label their sample-based values as
 `retained peak`. If thinning removes signal details, the report preserves
 and explains the recorded episode count. Reports with recorded severity but
 no episode counts still identify the signal and qualify the missing detail.
+A failed HTML companion is recorded in the retained JSON when the outcome
+update can be written.
 
 ![The exported HTML report shows the HIGH memory signal, resource trend charts, recorded events, and growing processes](docs/assets/html-report.gif)
 

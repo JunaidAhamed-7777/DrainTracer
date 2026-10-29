@@ -39,7 +39,9 @@ The event log and session summary show the actual filenames.
 
 Both formats are written through temporary sibling files followed by a
 rename. If HTML rendering or writing fails, the JSON report is retained and
-the error is logged. An in-progress dashboard export can have
+the error is logged and recorded in the JSON outcome through an atomic update.
+If that update also fails, the original JSON remains usable and the session
+logs the update failure. An in-progress dashboard export can have
 `session_ended_at: null` because monitoring has not ended yet.
 
 ## Read the HTML report

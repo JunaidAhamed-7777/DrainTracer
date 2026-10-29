@@ -26,6 +26,68 @@ def _wait_for(predicate, timeout: float = 15.0) -> bool:
     return predicate()
 
 
+class ReportExportTests(unittest.TestCase):
+    def test_html_failure_is_recorded_in_json_and_cached_report(self) -> None:
+        import json
+
+        from helpers import make_snapshot
+
+        for failure in (OSError("disk full"), RuntimeError("render failed")):
+            with self.subTest(failure=str(failure)), tempfile.TemporaryDirectory() as temp:
+                session = _Session("worker.exe", console=make_console(), report_dir=temp)
+                session._accept_snapshot(make_snapshot())
+                with mock.patch("src.session.write_html_report", side_effect=failure):
+                    path = session.export_log()
+                saved = json.loads(path.read_text(encoding="utf-8"))
+                self.assertEqual(saved["outcome"]["monitor_errors"],
+                                 [f"HTML report failed: {failure}"])
+                self.assertEqual(saved["outcome"], session._last_report_data["outcome"])
+                self.assertEqual(path.stem, f"leak_report_{session._last_report_id}")
+                self.assertIsNone(session._last_html_report)
+
+    def test_missing_html_assets_are_recorded_in_json(self) -> None:
+        import json
+
+        from src import html_report
+
+        with tempfile.TemporaryDirectory() as temp:
+            session = _Session("worker.exe", console=make_console(), report_dir=temp)
+            html_report._load_frame.cache_clear()
+            self.addCleanup(html_report._load_frame.cache_clear)
+            with mock.patch.object(html_report, "_FRAME_DIR", Path(temp) / "missing"):
+                path = session.export_log()
+            saved = json.loads(path.read_text(encoding="utf-8"))
+            self.assertTrue(any(error.startswith("HTML report failed:")
+                                for error in saved["outcome"]["monitor_errors"]))
+
+    def test_failed_atomic_update_preserves_first_json(self) -> None:
+        import json
+        import os
+
+        real_replace = os.replace
+        replacements = 0
+
+        def fail_second_replace(source, destination):
+            nonlocal replacements
+            replacements += 1
+            if replacements == 2:
+                raise OSError("disk full while updating outcome")
+            return real_replace(source, destination)
+
+        with tempfile.TemporaryDirectory() as temp:
+            session = _Session("worker.exe", console=make_console(), report_dir=temp)
+            with mock.patch("src.session.write_html_report", side_effect=OSError("no HTML")), \
+                    mock.patch("src.report.os.replace", side_effect=fail_second_replace):
+                path = session.export_log()
+            saved = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(saved["outcome"]["monitor_errors"], [])
+            self.assertIn("HTML report failed: no HTML", session.monitor_errors)
+            self.assertTrue(any(error.startswith("Could not record HTML export failure in JSON:")
+                                for error in session.monitor_errors))
+            self.assertEqual(list(Path(temp).rglob("*.tmp")), [])
+            self.assertEqual(saved["report_id"], session._last_report_id)
+
+
 class SettingsTests(unittest.TestCase):
     def test_selected_identity_reaches_the_manager_before_sampling(self) -> None:
         from helpers import make_snapshot

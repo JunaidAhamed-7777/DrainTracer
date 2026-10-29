@@ -914,6 +914,15 @@ class MonitorSession:
         except Exception as exc:  # never lose the JSON report to a rendering bug
             self._append_event(f"HTML report failed: {exc}", "error")
             self._note_monitor_error(f"HTML report failed: {exc}")
+            report["outcome"] = self._outcome_record()
+            try:
+                # Atomically replace the same report, retaining the first JSON if this fails.
+                write_json_report(report, directory)
+            except Exception as update_error:  # noqa: BLE001 - preserve the usable first JSON
+                message = f"Could not record HTML export failure in JSON: {update_error}"
+                self._append_event(message, "error")
+                self._note_monitor_error(message)
+                report["outcome"] = self._outcome_record()
         return path
 
     def build_report(self) -> dict[str, Any]:
