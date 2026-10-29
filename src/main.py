@@ -812,6 +812,7 @@ def _main(console: Console, argv: list[str] | None) -> int:
 
     target_path = args.target
     attach_pid = args.pid
+    attach_create_time = None
     if target_path is None and attach_pid is None:
         action = choose_startup_action(console)
         if action is None:
@@ -823,10 +824,11 @@ def _main(console: Console, argv: list[str] | None) -> int:
                     "arguments after '--' only apply to launched targets, "
                     "not Hook to a running program"
                 )
-            attach_pid = select_running_process(console)
-            if attach_pid is None:
+            selected = select_running_process(console)
+            if selected is None:
                 console.print("[yellow]Selection canceled. Nothing to monitor.[/yellow]")
                 return 0
+            attach_pid, attach_create_time = selected.pid, selected.create_time
 
     if attach_pid is not None:
         app = DashboardApp(
@@ -834,6 +836,7 @@ def _main(console: Console, argv: list[str] | None) -> int:
             console=console,
             report_dir=settings.report_dir,
             attach_pid=attach_pid,
+            attach_create_time=attach_create_time,
             timeout=settings.timeout,
             settings=settings,
         )
