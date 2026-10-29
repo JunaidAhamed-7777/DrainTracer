@@ -277,10 +277,11 @@ class ResourceSummary:
     drift_per_second: float | None
     worst: str
     episodes: int
-    # Judged samples whose total left out unreadable live processes. When
-    # most samples were complete, growth and drift use only those.
+    # Session-wide coverage, independent of retained growth/drift samples.
     partial_samples: int = 0
     measured_samples: int = 0
+    coverage_samples: int = 0
+    unavailable_samples: int = 0
     # From session facts when the report has them: when the worst tier was
     # first reached, and how long the signal was raised in all.
     worst_at: float | None = None
@@ -318,11 +319,45 @@ class SessionFactsData:
     chart_stored: int | None = None
     chart_seen: int | None = None
     monitor: Mapping[str, Any] | None = None
+    # metric -> (live-tree samples, partial samples, unavailable samples)
+    coverage: Mapping[str, tuple[int, int, int]] | None = None
 
 
 def _count(value: Any) -> int | None:
     number = finite(value)
     return int(number) if number is not None and number >= 0 else None
+
+
+def _session_coverage(report: Mapping[str, Any]) -> dict[str, tuple[int, int, int]]:
+    """Read exact coverage, falling back per metric to the older coverage block."""
+    facts = report.get("session_facts")
+    exact = facts.get("coverage") if isinstance(facts, Mapping) else None
+    legacy = report.get("coverage")
+    result = {}
+    for metric in SIGNAL_TOTALS.values():
+        for section, flat in ((exact, True), (legacy, False)):
+            if not isinstance(section, Mapping):
+                continue
+            samples = _count(section.get("samples"))
+            if flat:
+                partial = section.get("partial_samples")
+                unavailable = section.get("unavailable_samples")
+                partial = _count(partial.get(metric)) if isinstance(partial, Mapping) else None
+                unavailable = (
+                    _count(unavailable.get(metric)) if isinstance(unavailable, Mapping) else None
+                )
+            else:
+                metrics = section.get("metrics")
+                item = metrics.get(metric) if isinstance(metrics, Mapping) else None
+                partial = _count(item.get("partial_samples")) if isinstance(item, Mapping) else None
+                unavailable = (
+                    _count(item.get("unavailable_samples")) if isinstance(item, Mapping) else None
+                )
+            if (samples is not None and partial is not None and unavailable is not None
+                    and unavailable <= partial <= samples):
+                result[metric] = (samples, partial, unavailable)
+                break
+    return result
 
 
 def load_facts(report: Mapping[str, Any]) -> SessionFactsData | None:
@@ -374,6 +409,7 @@ def load_facts(report: Mapping[str, Any]) -> SessionFactsData | None:
         chart_stored=_count(chart.get("stored")),
         chart_seen=_count(chart.get("seen")),
         monitor=dict(monitor) if monitor else None,
+        coverage=_session_coverage(report),
     )
 
 
@@ -461,13 +497,19 @@ def summarize(report: Mapping[str, Any], samples: Sequence[Sample] | None = None
             worst_by_resource[resource] = max(worst_by_resource[resource], severity_rank(severity))
 
     resources: dict[str, ResourceSummary] = {}
+    coverage = facts.coverage if facts is not None else _session_coverage(report)
     for resource, key in SIGNAL_TOTALS.items():
         valid = [s for s in judged if key in s.totals and s.measured_metric(key)]
-        partial = sum(1 for sample in valid if sample.partial(key))
+        sampled_partial = sum(1 for sample in valid if sample.partial(key))
+        coverage_samples, partial, unavailable = (coverage or {}).get(key, (
+            len(measured),
+            sum(1 for sample in measured if sample.partial(key)),
+            sum(1 for sample in measured if not sample.measured_metric(key)),
+        ))
         complete = [sample for sample in valid if not sample.partial(key)]
         # A total that leaves processes out is a lower bound; mixing it with
         # complete totals would read access changes as growth or a drop.
-        basis = complete if partial and len(complete) >= max(2, len(valid) / 2) else valid
+        basis = complete if sampled_partial and len(complete) >= max(2, len(valid) / 2) else valid
         points = [(sample.timestamp, sample.totals[key]) for sample in basis]
         drift = (
             least_squares_slope([stamp for stamp, _ in points], [value for _, value in points])
@@ -487,6 +529,8 @@ def summarize(report: Mapping[str, Any], samples: Sequence[Sample] | None = None
             ),
             partial_samples=partial,
             measured_samples=len(valid),
+            coverage_samples=coverage_samples,
+            unavailable_samples=unavailable,
             worst_at=facts.worst.get(resource, ("none", None))[1] if facts else None,
             signal_seconds=facts.signal_seconds.get(resource) if facts else None,
         )

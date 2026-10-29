@@ -207,6 +207,10 @@ Once the installation check passes, `draintracer` offers two startup choices:
   for pages, `/refresh` to reload, and
   `/clear` to reset the search. Quitting detaches and leaves the program running.
 
+Hook selection keeps the program's PID and creation time through attachment.
+If that identity changes or cannot be verified, select the program again.
+An explicit `--pid` selects the process current when attachment begins.
+
 Use **Up/Down** to highlight a startup choice, then **Spacebar** (or Enter)
 to select it. Navigation help appears below the Get Started box. Redirected
 or non-terminal input keeps the numbered `1`/`2` prompt.
@@ -279,12 +283,22 @@ Use the target's own file logging when needed. See the
 - `O` — open the latest HTML export.
 - `M` — add a numbered marker (`marker N`) to the event log, timeline, and report.
 - `?` / `H` — show help and active settings; arrows scroll it, `Esc` closes it.
+  While help is open, only scrolling, closing help, and view selection are active.
+  Close it before using target controls, exporting, or quitting.
+
 - `K` — terminate the monitored tree (never only a selected process); confirm
   with a second press when attached.
 - `Q` — quit, cleaning up a launched tree or detaching from an attached tree.
 
+A partly successful pause is rolled back. If a process cannot be resumed,
+it remains marked as suspended; detach retries it and reports a cleanup error
+when resuming is denied. Resolve the access restriction before retrying cleanup.
+
 Number keys open focused views; `Esc` returns to the overview. Views change
 only what is shown: sampling and the target continue unaffected.
+
+In the process inspector, a search can hide the selected process. Its detail
+panel says so; `Esc` clears the filter and restores the retained selection.
 
 | Key | View | Its own keys |
 | --- | --- | --- |
@@ -304,6 +318,11 @@ Leak health shows the current evidence apart from the session's worst signal:
 once one was judged clean, a severity when growth is detected, and
 `UNAVAILABLE` or `PARTIAL` when processes cannot be read. Unreadable counters
 count as unknown, never zero, and access changes restart detection windows.
+Process names, including bracketed text in parent labels, are displayed literally.
+Evidence and inspector tree totals show `n/a` when unavailable and label partial
+totals as lower bounds; measured zero counters remain zero.
+The frozen timeline distinguishes newer samples collected since freezing from
+older samples outside the retained dashboard history. Exported charts may be thinned.
 
 The layout adapts to terminal size and uses ASCII fallbacks for legacy Windows
 encodings. Startup artwork still comes from [TITLE.txt](TITLE.txt), with a
@@ -400,7 +419,8 @@ Label each run so comparisons can tell equivalent experiments apart:
 `--workload-id`, `--build`, `--operations N` (shows growth per operation),
 and `--note` are recorded in the report's `experiment` section with the
 sampling settings and machine details. Target arguments are only counted and
-fingerprinted, environment variables are never recorded, and
+fingerprinted; one-sided argument records qualify comparisons, including
+known zero arguments versus unknown arguments. Environment variables are never recorded, and
 `password=...`-style values and Basic/Bearer credentials in labels are redacted.
 Short valid Basic credentials are covered too; review reports before sharing.
 Any comparability caveat
@@ -409,13 +429,17 @@ lighter run cannot earn a clean result. `--strict` instead reports
 `NOT COMPARABLE` (different targets, workloads, arguments, settings, operation
 counts, or lengths over 2x apart) or `INSUFFICIENT COVERAGE` (an unjudged run
 or partial coverage) and exits `3`; a diff budget exceeded by the later run
-exits `4`.
+exits `4`. Detection windows are compared by their numeric values, even when
+rounded duration labels look identical. Coverage caveats use recorded whole-session counts when available,
+including wholly unreadable samples, even after chart history is thinned.
 
 Use comparable workloads, durations, warm-ups, and settings. Long sessions
 thin the stored chart history; reports then say "chart thinned 1:N", while
 peaks with their times, worst severities, signal episode counts, evaluated
 time, and sample counts stay exact in `session_facts`. Reports include local
-paths and process details, so review them before sharing. The
+paths and process details. If a stalled consumer overflows the sample queue,
+reports count the discarded detail; peaks, signals, budgets, coverage, and
+sample counts still include every observation. Review reports before sharing. The
 [report guide](docs/reports.md) covers the schema, retention, interpretation,
 and comparison exit codes.
 

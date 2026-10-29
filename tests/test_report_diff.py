@@ -225,6 +225,56 @@ class CoverageWarningTests(unittest.TestCase):
                          ["memory", "handles", "threads"])
         self.assertEqual(comparison.to_dict()["before"]["partial_coverage"], [])
 
+    def test_exact_coverage_survives_snapshot_thinning(self) -> None:
+        from helpers import make_console, make_denied
+
+        from src.session import MonitorSession
+
+        class SmallSession(MonitorSession):
+            VERSION = "v5.4.0"
+            SNAPSHOT_LIMIT = 8
+
+        session = SmallSession("worker.exe", console=make_console())
+        for index in range(100):
+            processes = (make_process(100), make_denied(200)) if index == 5 else (
+                make_process(100), make_process(200)
+            )
+            session._accept_snapshot(make_snapshot(
+                timestamp=1000 + index, processes=processes, measured_coverage=True
+            ))
+        report = session.build_report()
+        report["detection_ran"] = True
+        self.assertGreater(report["snapshot_stride"], 1)
+        self.assertTrue(report["coverage"]["partial"])
+        comparison = self._compare(report, report)
+        self.assertTrue(comparison.qualified)
+        self.assertIn("partial in 1 of 100 samples", " | ".join(comparison.warnings))
+        strict = compare_reports(self._load("a.json", report), self._load("b.json", report),
+                                 strict=True)
+        self.assertEqual(strict.verdict, INSUFFICIENT_COVERAGE)
+        self.assertEqual(strict.before.partial_resources, ("memory", "handles", "threads"))
+
+    def test_unavailable_snapshot_counts_as_missing_coverage(self) -> None:
+        from helpers import make_denied
+
+        after = _run()
+        after["snapshots"][5] = snapshot_to_dict(make_snapshot(
+            processes=(make_denied(100),), timestamp=1002.5, measured_coverage=True
+        ))
+        comparison = self._compare(_run(), after)
+        self.assertIn("partial in 1 of 21 samples", " | ".join(comparison.warnings))
+        strict = compare_reports(self._load("a.json", _run()), self._load("b.json", after),
+                                 strict=True)
+        self.assertEqual(strict.verdict, INSUFFICIENT_COVERAGE)
+
+    def test_legacy_session_coverage_is_used_when_exact_fields_are_missing(self) -> None:
+        report = _run(coverage={"samples": 100, "partial": True, "metrics": {
+            "private_bytes": {"partial_samples": 7, "unavailable_samples": 2}
+        }}, session_facts={"coverage": {"samples": "unknown"}})
+        comparison = self._compare(_run(), report)
+        self.assertEqual(comparison.after.partial_resources, ("memory",))
+        self.assertIn("partial in 7 of 100 samples", " | ".join(comparison.warnings))
+
 
 ENVIRONMENT = {"os": "Windows", "os_release": "11", "cpu_count": 8,
                "total_memory_bytes": 16 * 1024 * MB, "machine": "AMD64"}
@@ -249,6 +299,23 @@ class EquivalenceTests(unittest.TestCase):
     def _compare(self, before: dict, after: dict, strict: bool = False):
         return compare_reports(self._load("a.json", before), self._load("b.json", after),
                                strict=strict)
+
+    def test_window_settings_compare_numeric_values_before_formatting(self) -> None:
+        for first, second in ((60.1, 60.4), (60.1000000001, 60.1000000002)):
+            with self.subTest(first=first, second=second):
+                before, after = _run(), _run()
+                before["settings"]["windows_seconds"] = [first]
+                after["settings"]["windows_seconds"] = [second]
+                ordinary = self._compare(before, after)
+                self.assertTrue(ordinary.qualified)
+                self.assertIn(f"windows {first!r}s vs {second!r}s", " | ".join(ordinary.warnings))
+                self.assertEqual(self._compare(before, after, strict=True).verdict, NOT_COMPARABLE)
+
+    def test_equivalent_numeric_windows_remain_comparable(self) -> None:
+        before, after = _run(), _run()
+        before["settings"]["windows_seconds"] = [60, 120]
+        after["settings"]["windows_seconds"] = [60.0, 120.0]
+        self.assertEqual(self._compare(before, after, strict=True).caveats, ())
 
     def test_platform_and_counter_changes_qualify_comparisons(self) -> None:
         before = _run(experiment=_experiment(environment={
@@ -336,6 +403,26 @@ class EquivalenceTests(unittest.TestCase):
         result = self._compare(_run(4.0, severity=LeakSeverity.HIGH), _run(0.0), strict=True)
         self.assertEqual((result.verdict, result.qualified), (IMPROVED, False))
         self.assertIsNone(result.to_dict()["before"]["experiment"])
+
+    def test_one_sided_argument_provenance_qualifies_and_blocks_in_either_direction(self) -> None:
+        for args in ((), ("--port", "1")):
+            for known_first in (True, False):
+                with self.subTest(args=args, known_first=known_first):
+                    known = _run(experiment=_experiment(args=args))
+                    unknown = _run()
+                    before, after = (known, unknown) if known_first else (unknown, known)
+                    ordinary = self._compare(before, after)
+                    self.assertTrue(ordinary.qualified)
+                    which = "A" if known_first else "B"
+                    self.assertIn(f"only report {which} records target arguments",
+                                  " | ".join(ordinary.warnings))
+                    self.assertEqual(self._compare(before, after, strict=True).verdict,
+                                     NOT_COMPARABLE)
+
+    def test_known_empty_arguments_match_each_other(self) -> None:
+        result = self._compare(_run(experiment=_experiment(args=())),
+                               _run(experiment=_experiment(args=())), strict=True)
+        self.assertEqual(result.caveats, ())
 
 class PeakAndBudgetTests(unittest.TestCase):
     setUp = ComparisonTests.setUp
