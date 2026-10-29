@@ -468,6 +468,7 @@ class MonitorSession:
 
     def _cleanup_record(self) -> dict[str, Any]:
         pids = sorted(self.manager.tracked_pids)
+        pending_resume = self.manager.pending_resume_pids
         retained = pids[:50]
         return {
             "state": self._cleanup_state,
@@ -475,10 +476,11 @@ class MonitorSession:
             "attempted_actions": dict(self._cleanup_actions),
             "remaining_count": len(pids),
             "remaining_processes": [
-                {"pid": pid, "create_time": self.manager.created_at(pid)} for pid in retained
+                {"pid": pid, "create_time": self.manager.created_at(pid),
+                 "resume_required": pid in pending_resume} for pid in retained
             ],
             "omitted_processes": len(pids) - len(retained),
-            "resume_required": self.manager.is_paused,
+            "resume_required": bool(pending_resume),
             "errors": list(self._cleanup_errors),
         }
 

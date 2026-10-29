@@ -157,7 +157,7 @@ even if an initial sample contained a signal.
 `incomplete`), ownership (`launched` or `attached`), and exact
 `attempted_actions` counts for `terminate`, `kill`, and `detach`. Detach
 includes resuming processes suspended by DrainTracer. `remaining_count`,
-up to 50 `remaining_processes` with PID and creation time, `omitted_processes`,
+up to 50 `remaining_processes` with PID, creation time, and `resume_required`, `omitted_processes`,
 `resume_required`, and up to 20 distinct `errors` describe partial cleanup.
 These are observed results, not proof that a PID remains current later.
 

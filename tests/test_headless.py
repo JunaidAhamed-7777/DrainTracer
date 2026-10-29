@@ -389,7 +389,8 @@ class EndToEndTests(unittest.TestCase):
         self.assertEqual(outcome["cleanup"]["state"], "incomplete")
         self.assertEqual(outcome["cleanup"]["attempted_actions"],
                          {"detach": 0, "terminate": 1, "kill": 1})
-        self.assertEqual(outcome["cleanup"]["remaining_processes"], [{"pid": 4242, "create_time": 10.0}])
+        self.assertEqual(outcome["cleanup"]["remaining_processes"],
+                         [{"pid": 4242, "create_time": 10.0, "resume_required": False}])
 
     def test_failed_start_remains_exit_two_even_after_an_initial_signal(self) -> None:
         runner = self._runner("pass")
@@ -420,8 +421,19 @@ class EndToEndTests(unittest.TestCase):
         cleanup = self._report()["outcome"]["cleanup"]
         self.assertEqual(cleanup["state"], "incomplete")
         self.assertEqual(cleanup["attempted_actions"]["terminate"], 1)
-        self.assertEqual(cleanup["remaining_processes"], [{"pid": 4242, "create_time": 10.0}])
+        self.assertEqual(cleanup["remaining_processes"],
+                         [{"pid": 4242, "create_time": 10.0, "resume_required": False}])
         self.assertIn("Cleanup incomplete", _output(runner))
+
+    def test_cleanup_records_pending_resume_even_if_pause_was_interrupted(self) -> None:
+        runner = self._runner("pass")
+        runner.manager._tracked_pids = {4242}
+        runner.manager._identities = {4242: 10.0}
+        runner.manager._suspended_pids = {4242}
+        runner.manager._paused = False  # An interruption can precede pause's final state update.
+        cleanup = runner.build_report()["outcome"]["cleanup"]
+        self.assertTrue(cleanup["resume_required"])
+        self.assertTrue(cleanup["remaining_processes"][0]["resume_required"])
 
 
 class PolicyTests(unittest.TestCase):
