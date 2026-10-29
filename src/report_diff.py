@@ -644,14 +644,27 @@ def _settings_differences(before: Mapping[str, Any], after: Mapping[str, Any]) -
         return []
     differences = []
 
-    def windows(settings: Mapping[str, Any]) -> str:
+    def windows(settings: Mapping[str, Any]) -> tuple[float | None, ...] | None:
         values = settings.get("windows_seconds")
         if not isinstance(values, Sequence) or isinstance(values, str):
-            return "?"
-        return "/".join(format_duration(finite(value) or 0.0) for value in values)
+            return None
+        return tuple(finite(value) for value in values)
 
-    if windows(old) != windows(new):
-        differences.append(f"windows {windows(old)} vs {windows(new)}")
+    def window_labels(values: tuple[float | None, ...] | None, precise: bool = False) -> str:
+        if values is None:
+            return "?"
+        return "/".join(
+            "?" if value is None else f"{value!r}s" if precise else format_duration(value)
+            for value in values
+        )
+
+    old_windows, new_windows = windows(old), windows(new)
+    if old_windows != new_windows:
+        first, second = window_labels(old_windows), window_labels(new_windows)
+        if first == second:
+            # Duration labels round; show exact seconds when they hide the difference.
+            first, second = window_labels(old_windows, True), window_labels(new_windows, True)
+        differences.append(f"windows {first} vs {second}")
     for key, label in (("sample_interval_ms", "sample interval"), ("warmup_seconds", "warm-up")):
         if old.get(key) != new.get(key):
             differences.append(f"{label} {old.get(key)} vs {new.get(key)}")
