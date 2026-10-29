@@ -424,6 +424,14 @@ exits `4`. Detection windows are compared by their numeric values, even when
 rounded duration labels look identical. Coverage caveats use recorded whole-session counts when available,
 including wholly unreadable samples, even after chart history is thinned.
 
+Compare repeated runs by adding `--before-run` and `--after-run` for each extra
+report: `draintracer diff a1.json b1.json --before-run a2.json --after-run b2.json`.
+Groups require 2–20 distinct reports per side, at most 128 MiB combined JSON,
+and always enforce strict comparability across every run pair. Output includes
+median and observed min/max drift and peaks. Overlapping noisy drift ranges
+produce an inconclusive result, rather than a favorable single-pair improvement.
+These observed ranges describe the supplied runs; they are not confidence intervals.
+
 Use comparable workloads, durations, warm-ups, and settings. Long sessions
 thin the stored chart history; reports then say "chart thinned 1:N", while
 peaks with their times, worst severities, signal episode counts, evaluated

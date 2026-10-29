@@ -30,6 +30,7 @@
     "src/process_table.py",
     "src/report.py",
     "src/report_diff.py",
+    "src/repeat_comparison.py",
     "src/resources.py",
     "src/running_processes.py",
     "src/session.py",
