@@ -87,7 +87,12 @@ class ProcessSelectionTests(unittest.TestCase):
 
     def choose(self, *answers):
         with mock.patch("builtins.input", side_effect=answers):
-            return picker.select_running_process(self.console)
+            selected = picker.select_running_process(self.console)
+            return selected.pid if selected is not None else None
+
+    def test_selection_preserves_the_verified_process_identity(self) -> None:
+        with mock.patch("builtins.input", return_value="42"):
+            self.assertIs(picker.select_running_process(self.console), self.rows[0])
 
     def test_search_then_exact_pid_selects_the_right_duplicate_name(self) -> None:
         self.assertEqual(self.choose("EDITOR", "142"), 142)
@@ -173,7 +178,8 @@ class KeyboardSelectionTests(unittest.TestCase):
             mock.patch.object(picker, "Live") as display,
         ):
             self.display = display
-            return picker.select_running_process(self.console)
+            selected = picker.select_running_process(self.console)
+            return selected.pid if selected is not None else None
 
     def frame_outputs(self) -> list[str]:
         frames = []

@@ -114,8 +114,8 @@ class HeadlessRunner(MonitorSession):
     def over_budget(self) -> tuple[BudgetCheck, ...]:
         return tuple(check for check in self.budget_checks() if check.exceeded)
 
-    def _accept_snapshot(self, snapshot) -> None:
-        super()._accept_snapshot(snapshot)
+    def _accept_snapshot(self, snapshot, *, already_observed: bool = False) -> None:
+        super()._accept_snapshot(snapshot, already_observed=already_observed)
         if self._start_logged:
             self._log_budget_breaches()
 
