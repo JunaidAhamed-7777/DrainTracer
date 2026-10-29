@@ -73,18 +73,33 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual({e.replaces_pid for e in events[:2]}, {1, 2})
         self.assertEqual(events[2].kind, LifecycleKind.STARTED)
 
-    def test_matched_exits_expire_and_do_not_accumulate(self) -> None:
+    def test_unknown_creation_time_does_not_conflate_separate_pid_exits(self) -> None:
+        worker = lambda pid: replace(_worker(pid, 10), create_time=None)
+        history = ProcessHistory(90.0)
+        history.observe(0.0, [worker(1)])
+        history.observe(1.0, [])
+        history.observe(2.0, [worker(2)])
+        history.observe(3.0, [worker(1), worker(2)])
+        history.observe(4.0, [worker(2)])
+        events = history.observe(5.0, [worker(2), worker(3)])
+        self.assertEqual(events[0].kind, LifecycleKind.RESTARTED)
+        self.assertEqual(events[0].replaces_pid, 1)
+        self.assertEqual(history.counts.restarted, 2)
+
+    def test_restart_candidates_are_consumed_bounded_and_expire(self) -> None:
         history = ProcessHistory(90.0, max_exited=1)
         history.observe(0.0, [_worker(1, 10)])
         history.observe(1.0, [])
         history.observe(2.0, [_worker(2, 10)])
-        self.assertEqual(len(history._matched_exits), 1)
+        self.assertEqual(len(history._restart_candidates), 0)
         history.observe(3.0, [])
-        self.assertEqual(history._matched_exits, set())
+        self.assertEqual(len(history._restart_candidates), 1)
         history.observe(4.0, [_worker(3, 10)])
         history.observe(14.0, [_worker(3, 10), _worker(4, 10)])
-        self.assertEqual(history._matched_exits, set())
+        self.assertEqual(len(history._restart_candidates), 0)
         self.assertEqual(history.counts.restarted, 2)
+        history.observe(15.0, [])
+        self.assertEqual(len(history._restart_candidates), 1)
 
     def test_an_unmatched_exit_outside_the_restart_window_is_not_reused(self) -> None:
         history = ProcessHistory(90.0)

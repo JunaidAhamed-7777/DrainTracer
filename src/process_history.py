@@ -145,7 +145,7 @@ class ProcessHistory:
         self._departed: deque[_Track] = deque(maxlen=max_exited)
         self._exited: deque[ProcessSummary] = deque(maxlen=max_exited)
         self._exited_view: tuple[ProcessSummary, ...] = ()
-        self._matched_exits: set[tuple[int, float | None]] = set()
+        self._restart_candidates: deque[ProcessSummary] = deque(maxlen=max_exited)
         self._observed = False
         self._started = 0
         self._exited_count = 0
@@ -192,15 +192,11 @@ class ProcessHistory:
             for pid in [pid for pid in self._live if pid not in seen]:
                 exits.append(self._retire(self._live[pid], now))
             self._prune_departed(now)
-            recent_exits = {
-                summary.identity for summary in self._exited
-                if summary.exited_at is not None
-                and now - summary.exited_at <= RESTART_SECONDS
-            }
-            self._matched_exits.intersection_update(recent_exits)
-            events = exits + [
-                self._start_event(now, process, self._matched_exits) for process in starts
-            ]
+            while self._restart_candidates and (
+                now - self._restart_candidates[0].exited_at > RESTART_SECONDS
+            ):
+                self._restart_candidates.popleft()
+            events = exits + [self._start_event(now, process) for process in starts]
             return tuple(events[:MAX_EVENTS_PER_SAMPLE])
 
     def _new_track(self, now: float, process: ProcessMetrics) -> _Track:
@@ -221,7 +217,9 @@ class ProcessHistory:
         # The process was last seen alive at ``last_seen``; it ended by ``now``.
         track.exited_at = now
         self._exited_count += 1
-        self._exited.append(track.summary())
+        summary = track.summary()
+        self._exited.append(summary)
+        self._restart_candidates.append(summary)
         self._exited_view = tuple(self._exited)
         if track.points is not None:
             self._departed.append(track)
@@ -234,15 +232,12 @@ class ProcessHistory:
             ppid=track.ppid,
         )
 
-    def _start_event(
-        self, now: float, process: ProcessMetrics, used: set[tuple[int, float | None]]
-    ) -> LifecycleEvent:
+    def _start_event(self, now: float, process: ProcessMetrics) -> LifecycleEvent:
         self._started += 1
         name = self._live[process.pid].name
-        replaced = self._replaced(now, name, process.ppid, used)
+        replaced = self._replaced(now, name, process.ppid)
         if replaced is not None:
             self._restarted += 1
-            used.add(replaced.identity)
         return LifecycleEvent(
             kind=LifecycleKind.RESTARTED if replaced is not None else LifecycleKind.STARTED,
             timestamp=now,
@@ -254,18 +249,20 @@ class ProcessHistory:
         )
 
     def _replaced(
-        self, now: float, name: str, ppid: int | None, used: set[tuple[int, float | None]]
+        self, now: float, name: str, ppid: int | None,
     ) -> ProcessSummary | None:
         """The latest same-named sibling that exited within ``RESTART_SECONDS``.
 
-        ``used`` holds retained exits already matched in this or an earlier sample.
+        Remove each matched exit occurrence so later samples cannot consume it again.
         """
         if not name:
             return None
-        for summary in reversed(self._exited):
+        for index in range(len(self._restart_candidates) - 1, -1, -1):
+            summary = self._restart_candidates[index]
             if summary.exited_at is None or now - summary.exited_at > RESTART_SECONDS:
                 break
-            if summary.name == name and summary.ppid == ppid and summary.identity not in used:
+            if summary.name == name and summary.ppid == ppid:
+                del self._restart_candidates[index]
                 return summary
         return None
 
