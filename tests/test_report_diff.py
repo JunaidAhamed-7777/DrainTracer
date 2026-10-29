@@ -337,6 +337,26 @@ class EquivalenceTests(unittest.TestCase):
         self.assertEqual((result.verdict, result.qualified), (IMPROVED, False))
         self.assertIsNone(result.to_dict()["before"]["experiment"])
 
+    def test_one_sided_argument_provenance_qualifies_and_blocks_in_either_direction(self) -> None:
+        for args in ((), ("--port", "1")):
+            for known_first in (True, False):
+                with self.subTest(args=args, known_first=known_first):
+                    known = _run(experiment=_experiment(args=args))
+                    unknown = _run()
+                    before, after = (known, unknown) if known_first else (unknown, known)
+                    ordinary = self._compare(before, after)
+                    self.assertTrue(ordinary.qualified)
+                    which = "A" if known_first else "B"
+                    self.assertIn(f"only report {which} records target arguments",
+                                  " | ".join(ordinary.warnings))
+                    self.assertEqual(self._compare(before, after, strict=True).verdict,
+                                     NOT_COMPARABLE)
+
+    def test_known_empty_arguments_match_each_other(self) -> None:
+        result = self._compare(_run(experiment=_experiment(args=())),
+                               _run(experiment=_experiment(args=())), strict=True)
+        self.assertEqual(result.caveats, ())
+
 class PeakAndBudgetTests(unittest.TestCase):
     setUp = ComparisonTests.setUp
     _load = ComparisonTests._load
