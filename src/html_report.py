@@ -501,6 +501,8 @@ def _processes_panel(report: Mapping[str, Any]) -> str:
         rows = []
         for process in processes:
             denied = bool(process.get("access_denied"))
+            raw_unmeasured = process.get("unmeasured")
+            unmeasured = raw_unmeasured if isinstance(raw_unmeasured, (list, tuple)) else ()
             cells = [
                 (str(process.get("pid", "")), "num"),
                 (str(process.get("ppid") if process.get("ppid") is not None else "—"), "num"),
@@ -511,11 +513,14 @@ def _processes_panel(report: Mapping[str, Any]) -> str:
                 cells += [("n/a", "num")] * 5 + [("n/a", "")]
             else:
                 cells += [
-                    (f"{finite(process.get('cpu_percent')) or 0.0:.1f}%", "num"),
-                    (format_bytes(finite(process.get("private_bytes")) or 0.0), "num"),
-                    (format_bytes(finite(process.get("rss_bytes")) or 0.0), "num"),
-                    (f"{_int(process.get('handles')):,}", "num"),
-                    (f"{_int(process.get('threads')):,}", "num"),
+                    ("n/a" if "cpu_percent" in unmeasured else
+                     f"{finite(process.get('cpu_percent')) or 0.0:.1f}%", "num"),
+                    ("n/a" if "private_bytes" in unmeasured else
+                     format_bytes(finite(process.get("private_bytes")) or 0.0), "num"),
+                    ("n/a" if "rss_bytes" in unmeasured else
+                     format_bytes(finite(process.get("rss_bytes")) or 0.0), "num"),
+                    ("n/a" if "handles" in unmeasured else f"{_int(process.get('handles')):,}", "num"),
+                    ("n/a" if "threads" in unmeasured else f"{_int(process.get('threads')):,}", "num"),
                     (_type_breakdown(types_by_pid.get(process.get("pid"))) or "—", ""),
                 ]
             row_class = ' class="root"' if process.get("pid") == root_pid else ""

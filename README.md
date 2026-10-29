@@ -399,7 +399,8 @@ generated reports are ignored by Git.
 
 The HTML report works offline, with interactive charts, signal episodes,
 events, a process list, a ranking of growing processes that keeps ones that
-exited, run provenance, and monitor diagnostics.
+exited, run provenance, and monitor diagnostics. Unreadable process counters
+show `n/a`; measured zero counters remain zero.
 
 ![The exported HTML report shows the HIGH memory signal, resource trend charts, recorded events, and growing processes](docs/assets/html-report.gif)
 
