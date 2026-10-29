@@ -138,6 +138,28 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(len(history.exited()), 3)
         self.assertLessEqual(len(history.points((1, None))), 2)  # older points aged out
 
+    def test_overflow_worker_starts_history_when_a_live_slot_is_freed(self) -> None:
+        history = ProcessHistory(90.0, max_processes=1)
+        history.observe(0.0, [_worker(1, 10), _worker(2, 10)])
+        self.assertEqual(history.points((2, 2.0)), ())
+        history.observe(1.0, [_worker(2, 20)])
+        history.observe(2.0, [_worker(2, 30)])
+        points = history.points((2, 2.0))
+        self.assertEqual([stamp for stamp, _values in points], [1.0, 2.0])
+        summary = history.summaries()[0]
+        self.assertEqual(summary.first["private_bytes"], 10 * MB)
+        self.assertEqual(summary.peak["private_bytes"], 30 * MB)
+        growth = next(row for row in history.growth("private_bytes", 0) if row.pid == 2)
+        self.assertEqual(growth.delta, 10 * MB)
+
+    def test_freed_slot_is_not_overallocated_to_multiple_overflow_workers(self) -> None:
+        history = ProcessHistory(90.0, max_processes=1)
+        history.observe(0.0, [_worker(pid, 10) for pid in (1, 2, 3)])
+        history.observe(1.0, [_worker(2, 20), _worker(3, 20)])
+        self.assertEqual(len(history.points((2, 2.0))), 1)
+        self.assertEqual(history.points((3, 3.0)), ())
+        self.assertEqual(history.counts.live, 2)
+
 
 class AttributionTests(unittest.TestCase):
     def test_the_growing_worker_is_the_top_contributor(self) -> None:
