@@ -225,6 +225,56 @@ class CoverageWarningTests(unittest.TestCase):
                          ["memory", "handles", "threads"])
         self.assertEqual(comparison.to_dict()["before"]["partial_coverage"], [])
 
+    def test_exact_coverage_survives_snapshot_thinning(self) -> None:
+        from helpers import make_console, make_denied
+
+        from src.session import MonitorSession
+
+        class SmallSession(MonitorSession):
+            VERSION = "v5.4.0"
+            SNAPSHOT_LIMIT = 8
+
+        session = SmallSession("worker.exe", console=make_console())
+        for index in range(100):
+            processes = (make_process(100), make_denied(200)) if index == 5 else (
+                make_process(100), make_process(200)
+            )
+            session._accept_snapshot(make_snapshot(
+                timestamp=1000 + index, processes=processes, measured_coverage=True
+            ))
+        report = session.build_report()
+        report["detection_ran"] = True
+        self.assertGreater(report["snapshot_stride"], 1)
+        self.assertTrue(report["coverage"]["partial"])
+        comparison = self._compare(report, report)
+        self.assertTrue(comparison.qualified)
+        self.assertIn("partial in 1 of 100 samples", " | ".join(comparison.warnings))
+        strict = compare_reports(self._load("a.json", report), self._load("b.json", report),
+                                 strict=True)
+        self.assertEqual(strict.verdict, INSUFFICIENT_COVERAGE)
+        self.assertEqual(strict.before.partial_resources, ("memory", "handles", "threads"))
+
+    def test_unavailable_snapshot_counts_as_missing_coverage(self) -> None:
+        from helpers import make_denied
+
+        after = _run()
+        after["snapshots"][5] = snapshot_to_dict(make_snapshot(
+            processes=(make_denied(100),), timestamp=1002.5, measured_coverage=True
+        ))
+        comparison = self._compare(_run(), after)
+        self.assertIn("partial in 1 of 21 samples", " | ".join(comparison.warnings))
+        strict = compare_reports(self._load("a.json", _run()), self._load("b.json", after),
+                                 strict=True)
+        self.assertEqual(strict.verdict, INSUFFICIENT_COVERAGE)
+
+    def test_legacy_session_coverage_is_used_when_exact_fields_are_missing(self) -> None:
+        report = _run(coverage={"samples": 100, "partial": True, "metrics": {
+            "private_bytes": {"partial_samples": 7, "unavailable_samples": 2}
+        }}, session_facts={"coverage": {"samples": "unknown"}})
+        comparison = self._compare(_run(), report)
+        self.assertEqual(comparison.after.partial_resources, ("memory",))
+        self.assertIn("partial in 7 of 100 samples", " | ".join(comparison.warnings))
+
 
 ENVIRONMENT = {"os": "Windows", "os_release": "11", "cpu_count": 8,
                "total_memory_bytes": 16 * 1024 * MB, "machine": "AMD64"}
