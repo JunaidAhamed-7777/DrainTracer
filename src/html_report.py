@@ -263,7 +263,8 @@ def _cards(summary: ReportSummary, sample_count: int) -> str:
             line = (
                 f"{_amount(resource, stats.first)} → {_amount(resource, stats.last)}"
                 + (" since warm-up" if summary.warmup else "")
-                + f" · peak {_amount(resource, stats.peak or 0.0)}"
+                + (" · retained peak " if summary.chart_thinned else " · peak ")
+                + _amount(resource, stats.peak or 0.0)
             )
             drift = "drift " + _rate(resource, stats.drift_per_second or 0.0)
         episodes = f"{stats.episodes} signal episode{'s' if stats.episodes != 1 else ''}"
