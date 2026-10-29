@@ -117,6 +117,19 @@ class RecordTests(unittest.TestCase):
     def test_environment_probes_never_raise(self) -> None:
         self.assertIn("python_version", environment_record())
 
+    def test_reports_identify_the_platform_counter_definitions(self) -> None:
+        from unittest import mock
+        from src import experiment
+
+        for platform, memory, handles in (
+            ("linux", "uss", "file_descriptors"),
+            ("win32", "private_bytes", "handles"),
+        ):
+            with self.subTest(platform=platform), mock.patch.object(experiment.sys, "platform", platform):
+                record = environment_record(f"counter-test-{platform}")
+                self.assertEqual(record["private_memory_metric"], memory)
+                self.assertEqual(record["handle_metric"], handles)
+
     def test_loading_round_trips_and_tolerates_older_or_malformed_reports(self) -> None:
         data = load_experiment({"experiment": _record()})
         self.assertEqual((data.workload_id, data.build, data.operations),

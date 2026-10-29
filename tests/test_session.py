@@ -5,6 +5,7 @@ from __future__ import annotations
 import tempfile
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from helpers import make_console
@@ -182,6 +183,7 @@ class StreamTests(unittest.TestCase):
 
 
 class StartupHintTests(unittest.TestCase):
+    @mock.patch("src.session.sys.platform", "win32")
     def test_hints_for_common_failures(self) -> None:
         from src.process_runner import (
             ProcessAccessDeniedError,
@@ -201,6 +203,28 @@ class StartupHintTests(unittest.TestCase):
         error.__cause__ = bad_image
         self.assertIn("not a Windows program", launched.startup_hint(error))
         self.assertIsNone(launched.startup_hint(ProcessManagerError("other")))
+
+    @mock.patch("src.session.sys.platform", "linux")
+    def test_linux_hints_explain_permissions_and_executable_format(self) -> None:
+        import errno
+        from src.process_runner import (
+            ProcessAccessDeniedError, ProcessManagerError, ProcessNotFoundError,
+        )
+
+        launched = _Session("/opt/worker", console=make_console())
+        attached = _Session(None, console=make_console(), attach_pid=4242)
+        self.assertIn("ps or top", attached.startup_hint(ProcessNotFoundError("gone")))
+        self.assertIn("execute permission", launched.startup_hint(ProcessAccessDeniedError("denied")))
+        error = ProcessManagerError("bad executable")
+        error.__cause__ = OSError(errno.ENOEXEC, "Exec format error")
+        self.assertIn("#! interpreter", launched.startup_hint(error))
+
+    @mock.patch("src.session.sys.platform", "linux")
+    def test_linux_counter_definitions_are_recorded_in_events(self) -> None:
+        session = _Session("/opt/worker", console=make_console())
+        session._log_start()
+        self.assertTrue(any("USS" in message and "file descriptors" in message
+                            for _stamp, message, _level in session._events))
 
     def test_dashboard_startup_panel_shows_the_hint(self) -> None:
         from src.dashboard import DashboardApp

@@ -600,7 +600,10 @@ def _environment_differences(
     new = (after.environment if after else None) or {}
     differences = []
     for key, label in (
+        ("os", "platform"),
         ("os_release", "OS"),
+        ("private_memory_metric", "private memory counter"),
+        ("handle_metric", "handle counter"),
         ("cpu_count", "CPUs"),
         ("total_memory_bytes", "memory"),
         ("machine", "architecture"),

@@ -27,6 +27,7 @@ import math
 import os
 import platform
 import re
+import sys
 from base64 import b64decode
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -154,6 +155,11 @@ def _environment(version: str | None) -> Mapping[str, Any]:
         "python_version": probe(platform.python_version) or None,
         "python_implementation": probe(platform.python_implementation) or None,
         "draintracer_version": version,
+        "private_memory_metric": (
+            "uss" if sys.platform.startswith("linux") else
+            "private_bytes" if sys.platform == "win32" else None
+        ),
+        "handle_metric": "handles" if sys.platform == "win32" else "file_descriptors",
     })
 
 

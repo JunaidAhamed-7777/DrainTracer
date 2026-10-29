@@ -5,17 +5,18 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "draintracer"
 dynamic = ["version", "dependencies"]
-description = "Resource growth monitoring for Windows process trees"
+description = "Resource growth monitoring for Windows and Linux process trees"
 readme = "docs/pypi.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{name = "Junaid Ahamed"}]
-keywords = ["windows", "memory-leak", "resource-monitor", "cli", "tui"]
+keywords = ["windows", "linux", "memory-leak", "resource-monitor", "cli", "tui"]
 classifiers = [
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.10",

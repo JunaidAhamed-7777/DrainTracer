@@ -359,7 +359,7 @@ def _display_title(console: Console) -> None:
         art.append(line + "\n", style=f"bold {shade}")
     console.print(art, end="")
     console.print(
-        f"[{PALETTE.muted}]Resource leak monitor for Windows process trees[/] "
+        f"[{PALETTE.muted}]Resource leak monitor for Windows and Linux process trees[/] "
         f"[bold {PALETTE.accent}]{DashboardApp.VERSION}[/]"
     )
     status = check_for_update(DashboardApp.VERSION) if console.is_terminal else None
@@ -465,7 +465,7 @@ examples:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="draintracer",
-        description="Monitor Windows process resources and detect likely leaks.",
+        description="Monitor Windows and Linux process resources and detect likely leaks.",
         epilog=_EXAMPLES,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

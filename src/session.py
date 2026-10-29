@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import errno
+import sys
 import time
 from collections import deque
 from dataclasses import replace
@@ -363,6 +365,12 @@ class MonitorSession:
             f"{self.glyphs.sep} PID {self.manager.root_pid}",
             "ok",
         )
+        if sys.platform.startswith("linux"):
+            self._append_event(
+                "Linux counters: private bytes measure USS (private resident memory); "
+                "handles count open file descriptors",
+                "info",
+            )
         if self.manager.contains_monitor:
             self._append_event(
                 "DrainTracer runs inside this process tree, so its own branch is "
@@ -382,16 +390,28 @@ class MonitorSession:
         cause = error.__cause__
         if isinstance(error, ProcessNotFoundError):
             if self.attached:
-                return "Check the PID in Task Manager or with tasklist; the process may have exited."
+                if sys.platform == "win32":
+                    return "Check the PID in Task Manager or with tasklist; the process may have exited."
+                return "Check the PID with ps or top; the process may have exited."
             return "Check the path, or run without --target to pick the file in a dialog."
         if isinstance(error, (ProcessAccessDeniedError, PermissionError)) or isinstance(
             cause, PermissionError
         ):
-            return "Run the terminal as administrator to start or inspect this process."
+            if sys.platform == "win32":
+                return "Run the terminal as administrator to start or inspect this process."
+            return (
+                "Check the target's execute permission and ownership. Monitoring another "
+                "user's process may require elevated privileges or different /proc permissions."
+            )
         if isinstance(cause, OSError) and getattr(cause, "winerror", None) in _NOT_A_PROGRAM:
             return (
                 "That file is not a Windows program. DrainTracer runs .exe files directly, "
                 ".py files with Python, and .bat or .cmd files with cmd.exe."
+            )
+        if isinstance(cause, OSError) and cause.errno == errno.ENOEXEC:
+            return (
+                "Use a Linux executable or a script with an executable permission and "
+                "a valid #! interpreter line. Python .py files use DrainTracer's Python."
             )
         return None
 

@@ -239,6 +239,19 @@ class EquivalenceTests(unittest.TestCase):
         return compare_reports(self._load("a.json", before), self._load("b.json", after),
                                strict=strict)
 
+    def test_platform_and_counter_changes_qualify_comparisons(self) -> None:
+        before = _run(experiment=_experiment(environment={
+            "private_memory_metric": "private_bytes", "handle_metric": "handles",
+        }))
+        after = _run(experiment=_experiment(environment={
+            "os": "Linux", "private_memory_metric": "uss", "handle_metric": "file_descriptors",
+        }))
+        result = self._compare(before, after)
+        self.assertTrue(result.qualified)
+        self.assertIn("platform Windows vs Linux", result.caveats[0].message)
+        self.assertIn("private memory counter", result.caveats[0].message)
+        self.assertIn("handle counter", result.caveats[0].message)
+
     def test_a_shorter_lighter_run_cannot_earn_an_unqualified_improvement(self) -> None:
         before = _run(4.0, severity=LeakSeverity.HIGH, samples=41,
                       experiment=_experiment(workload_id="import", operations=1000))
