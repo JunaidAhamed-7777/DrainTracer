@@ -10,14 +10,17 @@ from a JSON payload and only ever inserts text with ``textContent``.
 from __future__ import annotations
 
 import base64
+import csv
 import hashlib
 import html
+import io
 import json
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from .analysis import (
     RESOURCES,
@@ -63,6 +66,7 @@ def render_html_report(report: Mapping[str, Any]) -> str:
             _verdict(report, summary),
             _cards(report, summary, _sample_count(report, summary)),
             _charts_panel(),
+            _sample_table_panel(payload, summary.chart_stride),
             _episodes_panel(summary, start),
             _events_panel(report, start),
             _processes_panel(report),
@@ -368,6 +372,41 @@ def _charts_panel() -> str:
         '<div id="charts"><noscript><p class="empty">Charts need JavaScript; the tables '
         "below have the same findings.</p></noscript></div>"
         "</section>"
+    )
+
+
+def _sample_table_panel(payload: Mapping[str, Any], stride: int) -> str:
+    """A script-free equivalent of the retained main-chart points, plus offline CSV."""
+    times = payload.get("t", ())
+    series = payload.get("series", {})
+    columns = (("private", "Private bytes (bytes)"), ("rss", "RSS (working set, bytes)"),
+               ("handles", "Handles (count)"), ("threads", "Threads (count)"), ("cpu", "CPU (%)"))
+    headings = ["Elapsed (seconds)", *(label for _key, label in columns)]
+    output = io.StringIO(newline="")
+    writer = csv.writer(output)
+    writer.writerow(headings)
+    rows = []
+    for index, stamp in enumerate(times):
+        values = [series.get(key, ())[index] for key, _label in columns]
+        csv_values = [f"{stamp:.3f}", *("n/a" if value is None else str(value) for value in values)]
+        writer.writerow(csv_values)
+        cells = [f"{stamp:,.3f}", *("n/a" if value is None else
+                 f"{value:,.1f}" if key == "cpu" else f"{value:,.0f}"
+                 for (key, _label), value in zip(columns, values))]
+        rows.append("<tr>" + "".join(f'<td class="num">{_e(value)}</td>' for value in cells) + "</tr>")
+    body = (_table(tuple((heading, "num") for heading in headings), rows) if rows else
+            '<p class="empty">No retained chart samples were recorded.</p>')
+    thinning = f" The chart keeps 1 in {stride} observations." if stride > 1 else ""
+    download = "data:text/csv;charset=utf-8," + quote(output.getvalue(), safe="")
+    return (
+        '<details class="panel sample-data" id="sample-data">'
+        f'<summary>Retained chart sample values ({len(times):,} rows)</summary>'
+        '<p class="hint">Elapsed time starts at the first retained sample. These are the plotted '
+        f'retained samples, not a complete whole-run sample log.{_e(thinning)} '
+        'n/a means a counter was not measured, including paused, failed, or unreadable samples.</p>'
+        f'<p><a class="download" download="retained-chart-samples.csv" href="{download}">'
+        'Download retained samples as CSV</a></p>'
+        f"{body}</details>"
     )
 
 
