@@ -129,10 +129,11 @@ def blend(start: str, end: str, amount: float) -> str:
 
 __all__ = [
     "ASCII_GLYPHS",
-    "Glyphs",
     "PALETTE",
-    "Palette",
     "UNICODE_GLYPHS",
+    "Glyphs",
+    "Palette",
     "blend",
+    "plain_console",
     "select_glyphs",
 ]

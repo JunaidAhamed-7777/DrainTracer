@@ -161,6 +161,23 @@ class ExitStatusTests(unittest.TestCase):
 
 
 class OutputTests(unittest.TestCase):
+    def test_plain_interrupt_exports_readable_evidence_and_runs_cleanup(self) -> None:
+        from src.theme import plain_console
+
+        with tempfile.TemporaryDirectory() as directory:
+            runner = HeadlessRunner("worker.exe", console=plain_console(make_console()),
+                                    report_dir=directory, quiet=True)
+            with mock.patch.object(runner, "start"), \
+                    mock.patch.object(runner, "_monitor", side_effect=KeyboardInterrupt), \
+                    mock.patch.object(runner, "shutdown") as cleanup:
+                self.assertEqual(runner.run(), EXIT_INTERRUPTED)
+            cleanup.assert_called_once_with()
+            self.assertEqual(len(list(Path(directory).rglob("*.json"))), 1)
+            self.assertEqual(len(list(Path(directory).rglob("*.html"))), 1)
+            self.assertIn("INTERRUPTED", _output(runner))
+            self.assertIn("INCONCLUSIVE", _output(runner).upper())
+            self.assertNotIn("\x1b", _output(runner))
+
     def test_static_output_distinguishes_unavailable_counters_from_real_zero(self) -> None:
         from helpers import make_denied, make_process
 
