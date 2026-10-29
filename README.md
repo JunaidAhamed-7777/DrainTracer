@@ -336,6 +336,9 @@ Inspect progress and the final summary as text, use Ctrl+C or `--timeout` to
 finish, and open the automatically saved JSON/HTML reports. Launched targets
 are cleaned up; attached targets are released. Dashboard Space controls remain
 available in the ordinary interactive mode.
+For comparisons, `diff --plain` prints labeled text without panel borders;
+`diff --quiet` keeps the verdict, caveats, and budget checks. `--json` takes
+precedence over presentation flags and preserves literal report strings.
 
 From the source checkout, use the included stable workload:
 
