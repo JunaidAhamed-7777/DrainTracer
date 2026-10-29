@@ -408,7 +408,8 @@ lighter run cannot earn a clean result. `--strict` instead reports
 `NOT COMPARABLE` (different targets, workloads, arguments, settings, operation
 counts, or lengths over 2x apart) or `INSUFFICIENT COVERAGE` (an unjudged run
 or partial coverage) and exits `3`; a diff budget exceeded by the later run
-exits `4`.
+exits `4`. Detection windows are compared by their numeric values, even when
+rounded duration labels look identical.
 
 Use comparable workloads, durations, warm-ups, and settings. Long sessions
 thin the stored chart history; reports then say "chart thinned 1:N", while
