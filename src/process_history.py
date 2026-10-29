@@ -176,21 +176,28 @@ class ProcessHistory:
             self._observed = True
             exits: list[LifecycleEvent] = []
             starts: list[ProcessMetrics] = []
-            seen: set[int] = set()
+            seen = {process.pid for process in live}
+            for pid in [pid for pid in self._live if pid not in seen]:
+                exits.append(self._retire(self._live[pid], now))
+            with_points = sum(item.points is not None for item in self._live.values())
             for process in live:
-                seen.add(process.pid)
                 track = self._live.get(process.pid)
                 if track is not None and not track.same_process(process):
+                    with_points -= track.points is not None
                     exits.append(self._retire(track, now))
                     track = None
                 if track is None:
                     track = self._new_track(now, process)
                     self._live[process.pid] = track
+                    with_points += track.points is not None
                     if not first:
                         starts.append(process)
+                elif track.points is None and with_points < self.max_processes:
+                    # Overflow tracks may begin a history once a live slot is
+                    # free. Earlier observations remain summary-only.
+                    track.points = deque(maxlen=MAX_POINTS)
+                    with_points += 1
                 track.record(now, process, self.max_age_seconds)
-            for pid in [pid for pid in self._live if pid not in seen]:
-                exits.append(self._retire(self._live[pid], now))
             self._prune_departed(now)
             while self._restart_candidates and (
                 now - self._restart_candidates[0].exited_at > RESTART_SECONDS
