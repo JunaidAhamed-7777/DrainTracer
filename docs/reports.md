@@ -118,6 +118,13 @@ changes are preserved up to a bounded allowance; `snapshot_stride` records
 the thinning, and the HTML report says "chart thinned 1:N". Long reports are
 therefore not guaranteed to contain every sample or every event.
 
+`event_counts` records session event messages: `observed` is the number added
+to the event log, `retained` is the number exported, and `dropped` is the
+number evicted by its retention limit. The HTML event section shows all three.
+These counts describe event messages, independently of chart thinning and
+snapshot queue drops. Older reports without this field label retention counts
+as unavailable.
+
 The top-level `session_facts` section is computed from every sample, not
 the retained ones: `samples` (taken, collected, measured, paused, failed),
 `peaks` (value and timestamp per total), `signals` (worst severity and when

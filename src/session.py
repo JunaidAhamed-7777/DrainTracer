@@ -147,6 +147,7 @@ class MonitorSession:
         # keeps the last good snapshot on screen but still reports its count.
         self._diagnostics: MonitorDiagnostics | None = None
         self._events: deque[tuple[float, str, str]] = deque(maxlen=self.EVENT_LIMIT)
+        self._event_count = 0
         self._resource_severity: dict[LeakResource, LeakSeverity] = {}
         self._worst_by_resource: dict[LeakResource, LeakSeverity] = {}
         self._last_alert_by_resource: dict[LeakResource, LeakAlert] = {}
@@ -869,6 +870,7 @@ class MonitorSession:
                 )
 
     def _append_event(self, message: str, level: str = "info") -> None:
+        self._event_count += 1
         self._events.append((time.time(), message, level))
 
     def _alert_summary(self, alert: LeakAlert) -> str:
@@ -941,6 +943,11 @@ class MonitorSession:
                 }
                 for stamp, message, level in self._events
             ],
+            "event_counts": {
+                "observed": self._event_count,
+                "retained": len(self._events),
+                "dropped": self._event_count - len(self._events),
+            },
             "settings": self._settings_record(),
             "experiment": self._experiment_record(),
             "warmup": self._warmup_record(),

@@ -59,6 +59,21 @@ def _data_block(document: str) -> str:
 
 
 class RenderTests(unittest.TestCase):
+    def test_event_counts_name_discarded_messages_separately(self) -> None:
+        document = render_html_report(_report(event_counts={"observed": 8, "retained": 2, "dropped": 6}))
+        self.assertIn("8 observed; 2 retained; 6 discarded from this event log.", document)
+        self.assertIn("Launched worker.exe", document)
+
+    def test_legacy_or_invalid_event_counts_are_not_fabricated(self) -> None:
+        for counts in (None, {"observed": True, "retained": 2, "dropped": 0},
+                       {"observed": 2, "retained": 2, "dropped": -1},
+                       {"observed": 10, "retained": 2, "dropped": 0},
+                       {"observed": 10, "retained": 3, "dropped": 7}):
+            with self.subTest(counts=counts):
+                document = render_html_report(_report(event_counts=counts))
+                self.assertIn("Event retention counts unavailable for this report.", document)
+                self.assertIn("Launched worker.exe", document)
+
     def test_linux_counter_definitions_and_paths_render_on_either_platform(self) -> None:
         report = _report(target_path="/opt/worker\\name")
         report["experiment"] = {"environment": {
@@ -220,7 +235,7 @@ class RenderTests(unittest.TestCase):
         self.assertIn("Launched old.exe", legacy)
         self.assertIn("No leak signals", legacy)
         empty = render_html_report({})
-        self.assertIn("No events were recorded.", empty)
+        self.assertIn("No event messages are retained in this report.", empty)
         self.assertIn("No process measurements were recorded.", empty)
         self.assertNotIn("Monitor diagnostics", legacy)
 

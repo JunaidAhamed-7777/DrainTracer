@@ -425,6 +425,8 @@ rounded duration labels look identical. Coverage caveats use recorded whole-sess
 including wholly unreadable samples, even after chart history is thinned.
 
 Use comparable workloads, durations, warm-ups, and settings. Long sessions
+count evicted event messages separately as `event_counts`; the HTML event
+section shows observed, retained, and discarded totals. They also
 thin the stored chart history; reports then say "chart thinned 1:N", while
 peaks with their times, worst severities, signal episode counts, evaluated
 time, and sample counts stay exact in `session_facts`. Reports include local

@@ -479,11 +479,22 @@ def _events_panel(report: Mapping[str, Any], start: float | None) -> str:
             rows.append(f'<tr><td class="num">{_e(clock)}</td><td>{_e(message)}</td></tr>')
         body = _table((("Time", "num"), "Event"), rows)
     if not rows:
-        body = '<p class="empty">No events were recorded.</p>'
+        body = '<p class="empty">No event messages are retained in this report.</p>'
+    counts = report.get("event_counts")
+    retention = "Event retention counts unavailable for this report. "
+    if (isinstance(counts, Mapping)
+            and all(type(counts.get(key)) is int and counts[key] >= 0
+                    for key in ("observed", "retained", "dropped"))
+            and counts["observed"] == counts["retained"] + counts["dropped"]
+            and counts["retained"] == len(rows)):
+        retention = (
+            f"{counts['observed']:,} observed; {counts['retained']:,} retained; "
+            f"{counts['dropped']:,} discarded from this event log. "
+        )
     return (
         '<section class="panel" aria-label="Event log">'
         '<div class="panel-head"><h2>Event log</h2>'
-        '<p class="hint">Hover a row to find it on the charts.</p></div>'
+        f'<p class="hint">{retention}Hover a row to find it on the charts.</p></div>'
         f"{body}</section>"
     )
 
