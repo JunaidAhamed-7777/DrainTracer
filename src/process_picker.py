@@ -108,8 +108,8 @@ def _read_processes(console: Console, *, show_status: bool = True) -> list[Runni
         return None
 
 
-def select_running_process(console: Console) -> int | None:
-    """Search the inventory and explicitly select a verified PID, or cancel."""
+def select_running_process(console: Console) -> RunningProcess | None:
+    """Search and select a verified process identity, or cancel."""
     console.print(Text("Quitting detaches and leaves the program running.", style=PALETTE.muted))
     processes = _read_processes(console)
     keyboard = PickerKeyboard() if supports_picker_keyboard(console) else None
@@ -119,7 +119,7 @@ def select_running_process(console: Console) -> int | None:
     if selected is None:
         return None
     console.print(Text(f"Hooking to {_label(selected.name)} (PID {selected.pid})."))
-    return selected.pid
+    return selected
 
 
 def _select_process(

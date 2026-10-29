@@ -58,7 +58,6 @@ from .units import format_bytes, format_clock, format_duration
 HISTORY_KEYS = ("cpu_percent", "rss_bytes", "private_bytes", "handles", "threads")
 SIGNAL_METRICS = tuple(RESOURCE_METRICS.values())
 # Bounds for session-long records that grow with the target's behaviour.
-UNREADABLE_PID_LIMIT = 50
 MONITOR_ERROR_LIMIT = 20
 MEASUREMENT_CONCLUSIVE = "conclusive"
 MEASUREMENT_PARTIAL = "partial"
@@ -99,6 +98,7 @@ class MonitorSession:
         attach_pid: int | None = None,
         timeout: float | None = None,
         settings: MonitorSettings | None = None,
+        attach_create_time: float | None = None,
     ) -> None:
         if timeout is not None and not timeout > 0:
             raise ValueError("timeout must be a positive number of seconds")
@@ -108,6 +108,7 @@ class MonitorSession:
         self.timeout = timeout
         self._deadline: float | None = None
         self.attach_pid = attach_pid
+        self.attach_create_time = attach_create_time
         if attach_pid is not None:
             self.target_path = target_path or describe_pid(attach_pid)
             self.manager = ProcessManager(None)
@@ -117,12 +118,12 @@ class MonitorSession:
             self.target_path = str(Path(target_path).resolve())
             self.manager = ProcessManager(self.target_path, args=args)
         self.console = console or Console()
+        self._facts = SessionFacts()
         self.detector = LeakDetector(
             self.manager,
-            # Sampling continues while the main thread is stalled, for
-            # example on a console paused by a text selection. Keep as many
-            # snapshots as the session would, so none are dropped meanwhile.
-            stream=MetricsStream(max_queue_size=self.SNAPSHOT_LIMIT),
+            # Detail retention is bounded during a stalled main thread.
+            # Publisher-owned facts preserve exact summaries before eviction.
+            stream=MetricsStream(max_queue_size=self.SNAPSHOT_LIMIT, facts=self._facts),
             sample_interval_ms=self.settings.sample_interval_ms,
             window_seconds=self.settings.windows,
             thresholds=self.settings.thresholds,
@@ -142,7 +143,6 @@ class MonitorSession:
         self._snapshot_history = SnapshotHistory(self.SNAPSHOT_LIMIT)
         # Exact peaks, episodes and counts from every snapshot, which the
         # thinned history above cannot promise.
-        self._facts = SessionFacts()
         # Diagnostics from the newest snapshot of any kind: a failed sample
         # keeps the last good snapshot on screen but still reports its count.
         self._diagnostics: MonitorDiagnostics | None = None
@@ -153,6 +153,7 @@ class MonitorSession:
         self._handle_types: dict[str, int] | None = None
         self._last_sampling_error: str | None = None
         self._worst_severity = LeakSeverity.NONE
+        self._judged_resources: set[LeakResource] = set()
         self._sample_count = 0
         self._started_at: float | None = None
         self._ended_at: float | None = None
@@ -217,7 +218,7 @@ class MonitorSession:
     @property
     def conclusive(self) -> bool:
         """Whether a leak window was ever judged, so a clean result means something."""
-        return self.detector.detection_started
+        return self.detector.detection_started or bool(self._judged_resources)
 
     def inconclusive_reason(self) -> str:
         """Why no leak window was judged, for summaries of clean runs."""
@@ -344,7 +345,7 @@ class MonitorSession:
         """
         try:
             if self.attached:
-                self.manager.attach(self.attach_pid)
+                self.manager.attach(self.attach_pid, expected_create_time=self.attach_create_time)
             else:
                 self.manager.start()
             self._root_pid = self.manager.root_pid
@@ -479,8 +480,10 @@ class MonitorSession:
     def poll(self) -> int:
         """Apply every snapshot published since the last poll; return how many."""
         snapshots = self.detector.stream.drain()
+        already_observed = self.detector.stream.facts is self._facts
         for snapshot in snapshots:
-            self._accept_snapshot(snapshot)
+            self._accept_snapshot(snapshot, already_observed=already_observed)
+        self._sync_facts()
         return len(snapshots)
 
     def _warn_if_inaccessible(self) -> None:
@@ -507,10 +510,32 @@ class MonitorSession:
     # Snapshot intake and the event log
     # ------------------------------------------------------------------
 
-    def _accept_snapshot(self, snapshot: MetricsSnapshot) -> None:
-        self._facts.observe(snapshot)
+    def _sync_facts(self, state: dict[str, Any] | None = None) -> None:
+        """Copy publisher-owned totals; queue retention affects only detail."""
+        if state is None:
+            state = self._facts.session_state()
+        self._sample_count = state["samples"]
+        for key in HISTORY_KEYS:
+            self._peaks[key] = state["peaks"].get(key, 0.0)
+        self._worst_severity = state["worst"]
+        self._worst_by_resource = state["worst_by_resource"]
+        self._last_alert_by_resource = state["latest_alerts"]
+        self._judged_resources = state["judged_resources"]
+        self._coverage_samples = state["coverage_samples"]
+        self._partial_samples = state["partial_samples"]
+        self._unavailable_samples = state["unavailable_samples"]
+        self._unreadable_pids = state["unreadable_pids"]
+        for error in state["errors"]:
+            self._note_monitor_error(error)
+        if self._diagnostics is not None:
+            self._diagnostics = replace(self._diagnostics, dropped_snapshots=state["dropped"])
+
+    def _accept_snapshot(self, snapshot: MetricsSnapshot, *, already_observed: bool = False) -> None:
+        if not already_observed:
+            self._facts.observe(snapshot)
         if snapshot.diagnostics is not None:
             self._diagnostics = snapshot.diagnostics
+        self._sync_facts()
         # Per-process summaries describe the latest state only; keeping them
         # on every stored snapshot would multiply memory by the tree size.
         self._snapshot_history.append(
@@ -540,22 +565,12 @@ class MonitorSession:
             )
 
         if not snapshot.monitoring_paused:
-            self._sample_count += 1
             for key in HISTORY_KEYS:
                 value = float(snapshot.totals.get(key, 0.0))
                 self._history[key].append((snapshot.timestamp, value))
-                self._peaks[key] = max(self._peaks[key], value)
             if snapshot.handle_types is not None:
                 self._handle_types = dict(snapshot.handle_types)
             self._track_coverage(snapshot, first=previous is None)
-
-        if severity_rank(snapshot.severity) > severity_rank(self._worst_severity):
-            self._worst_severity = snapshot.severity
-        for alert in snapshot.alerts:
-            self._last_alert_by_resource[alert.resource] = alert
-            worst = self._worst_by_resource.get(alert.resource, LeakSeverity.NONE)
-            if severity_rank(alert.severity) > severity_rank(worst):
-                self._worst_by_resource[alert.resource] = alert.severity
 
         if previous and snapshot.process_alive is False and previous.process_alive:
             code = self.manager.exit_code
@@ -729,31 +744,18 @@ class MonitorSession:
         return f"mostly {who}" if top.share > 0.5 else f"largest {who} ({top.share:.0%})"
 
     def _track_coverage(self, snapshot: MetricsSnapshot, first: bool) -> None:
-        """Count partial samples and log processes that become (un)readable.
+        """Log processes that become (un)readable in retained snapshots.
 
-        A snapshot with no live process has nothing to measure, so it is
-        not counted as missing coverage. The first sample is not logged
-        here: the start-up messages already report what could not be read.
+        Exact coverage counts come from publisher-owned facts. The first
+        sample is not logged here: start-up already reports unreadable PIDs.
         """
         coverage = snapshot.coverage
         if not coverage:
             return
-        live = [coverage[m] for m in SIGNAL_METRICS if m in coverage and coverage[m].total > 0]
-        if live:
-            self._coverage_samples += 1
-        for item in live:
-            if item.measured < item.total:
-                self._partial_samples[item.metric] += 1
-            if item.measured == 0:
-                self._unavailable_samples[item.metric] += 1
-
         names = {process.pid: process.name for process in snapshot.processes}
         unreadable = {
             pid for m in SIGNAL_METRICS if m in coverage for pid in coverage[m].unmeasured_pids
         }
-        for pid in sorted(unreadable):
-            if pid not in self._unreadable_pids and len(self._unreadable_pids) < UNREADABLE_PID_LIMIT:
-                self._unreadable_pids[pid] = names.get(pid, "")
         if not first:
             for pid in sorted(unreadable - self._current_unreadable):
                 self._append_event(
@@ -925,6 +927,8 @@ class MonitorSession:
 
     def build_report(self) -> dict[str, Any]:
         """Assemble the report dictionary for the session so far."""
+        state, facts = self._facts.capture()
+        self._sync_facts(state)
         return {
             "report_id": new_report_id(),
             "report_schema": REPORT_SCHEMA,
@@ -953,11 +957,11 @@ class MonitorSession:
             "settings": self._settings_record(),
             "experiment": self._experiment_record(),
             "warmup": self._warmup_record(),
-            "detection_ran": self.detector.detection_started,
+            "detection_ran": self.conclusive,
             "coverage": self._coverage_record(),
             "outcome": self._outcome_record(),
             "processes": self._processes_record(),
-            "session_facts": self._facts_record(),
+            "session_facts": self._facts_record(facts),
             # User markers: when the user said something happened (timing only).
             "markers": self._markers_record(),
             # Samples taken, and how many the snapshot list skips between
@@ -1043,9 +1047,10 @@ class MonitorSession:
         """How many samples each stored chart point stands for (1: none thinned)."""
         return self._snapshot_history.stride
 
-    def _facts_record(self) -> dict[str, Any]:
+    def _facts_record(self, record: dict[str, Any] | None = None) -> dict[str, Any]:
         """Session facts plus coverage and how much the stored chart was thinned."""
-        record = self._facts.to_dict()
+        if record is None:
+            record = self._facts.to_dict()
         record["coverage"] = {
             "samples": self._coverage_samples,
             "partial_samples": {m: self._partial_samples[m] for m in SIGNAL_METRICS},

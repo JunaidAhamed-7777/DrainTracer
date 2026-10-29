@@ -300,6 +300,23 @@ class EquivalenceTests(unittest.TestCase):
         return compare_reports(self._load("a.json", before), self._load("b.json", after),
                                strict=strict)
 
+    def test_window_settings_compare_numeric_values_before_formatting(self) -> None:
+        for first, second in ((60.1, 60.4), (60.1000000001, 60.1000000002)):
+            with self.subTest(first=first, second=second):
+                before, after = _run(), _run()
+                before["settings"]["windows_seconds"] = [first]
+                after["settings"]["windows_seconds"] = [second]
+                ordinary = self._compare(before, after)
+                self.assertTrue(ordinary.qualified)
+                self.assertIn(f"windows {first!r}s vs {second!r}s", " | ".join(ordinary.warnings))
+                self.assertEqual(self._compare(before, after, strict=True).verdict, NOT_COMPARABLE)
+
+    def test_equivalent_numeric_windows_remain_comparable(self) -> None:
+        before, after = _run(), _run()
+        before["settings"]["windows_seconds"] = [60, 120]
+        after["settings"]["windows_seconds"] = [60.0, 120.0]
+        self.assertEqual(self._compare(before, after, strict=True).caveats, ())
+
     def test_platform_and_counter_changes_qualify_comparisons(self) -> None:
         before = _run(experiment=_experiment(environment={
             "private_memory_metric": "private_bytes", "handle_metric": "handles",
@@ -386,6 +403,26 @@ class EquivalenceTests(unittest.TestCase):
         result = self._compare(_run(4.0, severity=LeakSeverity.HIGH), _run(0.0), strict=True)
         self.assertEqual((result.verdict, result.qualified), (IMPROVED, False))
         self.assertIsNone(result.to_dict()["before"]["experiment"])
+
+    def test_one_sided_argument_provenance_qualifies_and_blocks_in_either_direction(self) -> None:
+        for args in ((), ("--port", "1")):
+            for known_first in (True, False):
+                with self.subTest(args=args, known_first=known_first):
+                    known = _run(experiment=_experiment(args=args))
+                    unknown = _run()
+                    before, after = (known, unknown) if known_first else (unknown, known)
+                    ordinary = self._compare(before, after)
+                    self.assertTrue(ordinary.qualified)
+                    which = "A" if known_first else "B"
+                    self.assertIn(f"only report {which} records target arguments",
+                                  " | ".join(ordinary.warnings))
+                    self.assertEqual(self._compare(before, after, strict=True).verdict,
+                                     NOT_COMPARABLE)
+
+    def test_known_empty_arguments_match_each_other(self) -> None:
+        result = self._compare(_run(experiment=_experiment(args=())),
+                               _run(experiment=_experiment(args=())), strict=True)
+        self.assertEqual(result.caveats, ())
 
 class PeakAndBudgetTests(unittest.TestCase):
     setUp = ComparisonTests.setUp

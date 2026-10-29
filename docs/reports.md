@@ -60,6 +60,9 @@ The report includes:
 
 - A verdict and each resource's strongest observed signal, net growth,
   drift, and peak. `INCONCLUSIVE` means no detection window ever filled.
+  `PARTIAL` qualifies signal-free results when readings are missing;
+  `UNAVAILABLE` identifies resources with no readable live-process samples.
+  Observed signal severity remains visible alongside coverage qualifications.
 - Memory, handles, handle categories, threads, and CPU charts. Hover for
   values, drag to zoom, and use legend entries to toggle series.
 - Markers where signals appeared or escalated, warm-up and pause bands,
@@ -71,7 +74,9 @@ The report includes:
 
 Growth is the last measured value minus the first. Drift is a regression
 slope over measured samples. With a warm-up, growth, drift, and resource
-card peaks use post-warm-up samples; charts and the overall RSS/CPU peaks
+card peaks use post-warm-up samples. Thinned resource cards say `retained
+peak` because their stored samples can miss a short spike; exact whole-run
+peaks remain in the Session card and JSON session facts. Charts and the overall RSS/CPU peaks
 include startup. Charts break across missing readings rather than
 interpreting a paused or failed sample as a measured zero.
 
@@ -133,6 +138,14 @@ counts; growth and drift still come from retained snapshots. Older reports
 without `session_facts` fall back to retained snapshots, and comparisons
 warn when such a report was thinned. The headless failure decision uses the
 strongest signal observed during the session.
+
+Exact facts are recorded before snapshots enter the bounded consumer queue.
+If that queue overflows while rendering or input is stalled, the chart and
+event transitions can lose detail; `monitor.dropped_snapshots` counts those
+discarded snapshots, including an overflow on the final publication. Peaks,
+worst signals, budget decisions, coverage, and sample counts still include
+every collected observation. `chart.seen` counts snapshots accepted into chart
+history, so it can be smaller than `samples.taken` after queue loss.
 
 The top-level `markers` list holds the markers added with `M` during a
 dashboard session: `index`, `label` (`marker N`), `timestamp`, `time`, and
