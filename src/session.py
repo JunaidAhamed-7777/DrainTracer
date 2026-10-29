@@ -99,6 +99,7 @@ class MonitorSession:
         attach_pid: int | None = None,
         timeout: float | None = None,
         settings: MonitorSettings | None = None,
+        attach_create_time: float | None = None,
     ) -> None:
         if timeout is not None and not timeout > 0:
             raise ValueError("timeout must be a positive number of seconds")
@@ -108,6 +109,7 @@ class MonitorSession:
         self.timeout = timeout
         self._deadline: float | None = None
         self.attach_pid = attach_pid
+        self.attach_create_time = attach_create_time
         if attach_pid is not None:
             self.target_path = target_path or describe_pid(attach_pid)
             self.manager = ProcessManager(None)
@@ -344,7 +346,7 @@ class MonitorSession:
         """
         try:
             if self.attached:
-                self.manager.attach(self.attach_pid)
+                self.manager.attach(self.attach_pid, expected_create_time=self.attach_create_time)
             else:
                 self.manager.start()
             self._root_pid = self.manager.root_pid

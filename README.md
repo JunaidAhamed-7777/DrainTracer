@@ -207,6 +207,10 @@ Once the installation check passes, `draintracer` offers two startup choices:
   for pages, `/refresh` to reload, and
   `/clear` to reset the search. Quitting detaches and leaves the program running.
 
+Hook selection keeps the program's PID and creation time through attachment.
+If that identity changes or cannot be verified, select the program again.
+An explicit `--pid` selects the process current when attachment begins.
+
 Use **Up/Down** to highlight a startup choice, then **Spacebar** (or Enter)
 to select it. Navigation help appears below the Get Started box. Redirected
 or non-terminal input keeps the numbered `1`/`2` prompt.

@@ -99,6 +99,7 @@ class DashboardApp(
         attach_pid: int | None = None,
         timeout: float | None = None,
         settings: MonitorSettings | None = None,
+        attach_create_time: float | None = None,
     ) -> None:
         super().__init__(
             target_path,
@@ -108,6 +109,7 @@ class DashboardApp(
             attach_pid=attach_pid,
             timeout=timeout,
             settings=settings,
+            attach_create_time=attach_create_time,
         )
         self.palette = PALETTE
         self._spark_rows = 2
