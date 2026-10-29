@@ -284,6 +284,8 @@ Use the target's own file logging when needed. See the
 - `E` — export JSON and HTML reports.
 - `O` — open the latest HTML export.
 - `M` — add a numbered marker (`marker N`) to the event log, timeline, and report.
+- `N` — enter a named marker (up to 80 characters); Enter saves and Esc cancels.
+  While editing, Space inserts a label space; outside text entry it still pauses the target.
 - `?` / `H` — show help and active settings; arrows scroll it, `Esc` closes it.
   Configured budgets appear with their units. The dashboard displays ceilings;
   headless runs and report comparisons enforce them. CLI budget flags require
@@ -328,6 +330,13 @@ Evidence and inspector tree totals show `n/a` when unavailable and label partial
 totals as lower bounds; measured zero counters remain zero.
 The frozen timeline distinguishes newer samples collected since freezing from
 older samples outside the retained dashboard history. Exported charts may be thinned.
+In the Timeline view, `P` switches between the tree and the process selected in
+view 2. Process charts cover private bytes, handles and threads by PID and creation
+time. `R` cycles the detector's window lengths and all retained history; `[` / `]`
+move the interval earlier/later within retained points. Unavailable history is
+identified rather than reconstructed. Release a frozen view before changing scope.
+Named markers appear on HTML charts and in a keyboard-accessible list, with full
+labels and elapsed times. Markers establish timing, not cause.
 
 The layout adapts to terminal size and uses ASCII fallbacks for legacy Windows
 encodings. Startup artwork still comes from [TITLE.txt](TITLE.txt), with a

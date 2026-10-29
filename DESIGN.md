@@ -88,6 +88,13 @@ The Monitor view is scrollable with Up/Down, Page Up/Down and Home/End, so all
 diagnostics remain reachable in narrow terminals. Host pressure is labeled as
 whole-host context, with unknown readings, sample age and collection cost.
 
+Named-marker input owns keyboard actions until Enter saves or Escape cancels.
+Space inserts label text only during that explicit input state; otherwise Space
+retains target pause/resume. Timeline scope uses the process inspector's selected
+PID and creation time. Range controls stay within bounded retained history; freezing
+captures the current scope and never stops sampling. HTML provides the same named
+annotations as visible chart labels and an escaped textual list.
+
 Dashboard help owns keyboard input while open: scrolling, closing help, and view
 selection remain active. Its footer shows those actions only. Target controls and
 session actions require closing help first.

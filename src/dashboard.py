@@ -34,6 +34,7 @@ from .events import (
 from .config import MonitorSettings
 from .handle_types import describe_type_growth
 from .keys import (
+    BACKSPACE,
     DOWN,
     END,
     ESCAPE,
@@ -119,6 +120,7 @@ class DashboardApp(
         self._quit_requested = False
         self._loop_errors: set[str] = set()
         self._show_help = False
+        self._marker_draft: str | None = None
         self._help_offset = 0
         self._sort_mode = SORT_MODES[0]
         self._kill_armed_until = 0.0
@@ -259,6 +261,19 @@ class DashboardApp(
         key = normalize_key(key)
         normalized = key.lower()
 
+        if self._marker_draft is not None:
+            if key == ESCAPE:
+                self._marker_draft = None
+            elif key == "enter":
+                label, self._marker_draft = self._marker_draft.strip(), None
+                if label:
+                    self.add_marker(label)
+            elif key == BACKSPACE:
+                self._marker_draft = self._marker_draft[:-1]
+            elif len(key) == 1 and key.isprintable() and len(self._marker_draft) < 80:
+                self._marker_draft += key
+            return
+
         if self._show_help and key == ESCAPE:
             self._show_help = False
             return
@@ -355,6 +370,8 @@ class DashboardApp(
         elif normalized == "m":
             # Works in every view; marks timing only, it does not touch the target.
             self.add_marker()
+        elif normalized == "n":
+            self._marker_draft = ""
         elif normalized == "q":
             self._quit_requested = True
             self._append_event("Quit requested", "info")
@@ -549,6 +566,7 @@ class DashboardApp(
             ),
             ("M", "Add a numbered marker to the event log, timeline and report "
                   "(marks timing, not cause)"),
+            ("N", "Name a marker (Enter saves; Esc cancels; up to 80 characters)"),
             ("? / H", "Show or hide this help; Esc closes it"),
             ("Q", quit_text),
         ):
@@ -734,6 +752,10 @@ class DashboardApp(
 
     def _render_footer(self) -> RenderableType:
         palette = self.palette
+        if self._marker_draft is not None:
+            room = max(1, self.console.size.width - 36)
+            return Text(f" MARKER {self._marker_draft[-room:]}_  ENTER save  ESC cancel",
+                        style=f"bold {palette.teal}", no_wrap=True, overflow="ellipsis")
         roomy = self.console.size.width >= 120
         keys = Text(no_wrap=True, overflow="ellipsis")
         quit_label = ("detach & quit" if roomy else "detach") if self.attached else "quit"

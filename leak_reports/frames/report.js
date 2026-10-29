@@ -377,6 +377,25 @@
       y2: m.top + plotHeight, class: "axis" }, svg);
 
     chart.markers = [];
+    // User annotations are independent of leak signals and survive chart thinning.
+    const markerLabelEnds = [-Infinity, -Infinity, -Infinity];
+    for (const [index, marker] of (data.user_markers || []).entries()) {
+      if (!Number.isFinite(marker.t) || marker.t < a || marker.t > b) continue;
+      const cx = x(marker.t);
+      const label = String(marker.label || "marker");
+      const description = label + " at +" + elapsed(marker.t) + " (timing, not cause)";
+      const group = svgNode("g", { role: "img", "aria-label": description }, svg);
+      svgNode("title", {}, group).textContent = description;
+      svgNode("line", { x1: cx, x2: cx, y1: m.top, y2: m.top + plotHeight,
+        class: "user-marker" }, group);
+      const row = index % 3;
+      const labelX = Math.max(m.left, Math.min(cx + 3, m.left + plotWidth - 100));
+      if (labelX > markerLabelEnds[row] + 6) {
+        svgNode("text", { x: labelX, y: m.top + 11 + row * 12, class: "user-marker-label" },
+          group).textContent = label.length > 18 ? label.slice(0, 18) + "…" : label;
+        markerLabelEnds[row] = labelX + 100;
+      }
+    }
     const signal = def.series[0];
     if (scale && def.resource && def.markers !== false && !isHidden(def, signal)) {
       for (const marker of data.markers || []) {

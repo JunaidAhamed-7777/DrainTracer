@@ -694,6 +694,12 @@ def chart_payload(
         ],
         "exits": exits,
         "events": events,
+        "user_markers": [
+            {"t": offset(stamp), "label": str(marker.get("label", "marker"))[:80],
+             "index": marker.get("index")}
+            for marker in (report.get("markers") or [])[:500]
+            if isinstance(marker, Mapping) and (stamp := finite(marker.get("timestamp"))) is not None
+        ] if isinstance(report.get("markers"), _SEQUENCES) else [],
         "warmup": [offset(summary.warmup[0]), offset(summary.warmup[1])] if summary.warmup else None,
         "handle_types": _handle_type_series(samples, offset),
     }
