@@ -45,6 +45,104 @@ class LinuxCommandTests(unittest.TestCase):
                     ProcessManager("target" + suffix)._build_command()
 
 
+class ProcessCleanupTests(unittest.TestCase):
+    """Failure paths run on Windows too, so platform skips cannot hide them."""
+
+    def _manager(self) -> ProcessManager:
+        manager = ProcessManager(None)
+        manager._root_pid = 101
+        manager._tracked_pids = {101, 102}
+        manager._depths = {101: 0, 102: 1}
+        return manager
+
+    def test_failed_pause_rollback_retains_a_resume_path(self) -> None:
+        manager = self._manager()
+        with (
+            mock.patch.object(ProcessManager, "is_running", new_callable=mock.PropertyMock,
+                              return_value=True),
+            mock.patch.object(manager, "_refresh_tracked_pids"),
+            mock.patch.object(manager, "_suspend_pid", side_effect=[True, False]),
+            mock.patch.object(manager, "_resume_pid", return_value=False),
+        ):
+            self.assertFalse(manager.pause())
+        self.assertEqual(manager._suspended_pids, {101})
+        self.assertTrue(manager.is_paused)
+        with mock.patch.object(manager, "_resume_pid", return_value=True) as resume:
+            self.assertTrue(manager.resume())
+        resume.assert_called_once_with(101)
+        self.assertFalse(manager.is_paused)
+
+    def test_failed_detach_keeps_suspended_processes_tracked_for_retry(self) -> None:
+        manager = self._manager()
+        manager._suspended_pids = {101}
+        manager._paused = True
+        with (
+            mock.patch.object(manager, "_resume_pid", return_value=False),
+            mock.patch.object(manager, "_start_poll_thread"),
+            self.assertRaisesRegex(ProcessManagerError, "Cannot detach"),
+        ):
+            manager.detach()
+        self.assertEqual(manager.tracked_pids, {101, 102})
+        self.assertEqual(manager._suspended_pids, {101})
+        with mock.patch.object(manager, "_resume_pid", return_value=True):
+            manager.detach()
+        self.assertFalse(manager.has_tracked_processes)
+        self.assertFalse(manager.is_paused)
+
+    def test_interrupt_during_pause_still_resumes_during_detach(self) -> None:
+        manager = self._manager()
+        with (
+            mock.patch.object(ProcessManager, "is_running", new_callable=mock.PropertyMock,
+                              return_value=True),
+            mock.patch.object(manager, "_refresh_tracked_pids"),
+            mock.patch.object(manager, "_suspend_pid", side_effect=KeyboardInterrupt),
+            self.assertRaises(KeyboardInterrupt),
+        ):
+            manager.pause()
+        with mock.patch.object(manager, "_resume_pid", return_value=True) as resume:
+            manager.detach()
+        resume.assert_called_once_with(101)
+
+    def test_exited_process_does_not_make_resume_fail(self) -> None:
+        manager = self._manager()
+        manager._suspended_pids = {101}
+        with mock.patch.object(manager, "_open_tracked", return_value=None):
+            self.assertTrue(manager.resume())
+        self.assertFalse(manager._suspended_pids)
+
+    def test_repeated_opens_never_adopt_a_reused_descendant_pid(self) -> None:
+        manager = self._manager()
+        manager._identities[102] = 100.0
+        proc = mock.Mock()
+        proc.is_running.return_value = True
+        proc.status.return_value = psutil.STATUS_RUNNING
+        proc.create_time.return_value = 101.0
+        with mock.patch.object(process_runner.psutil, "Process", return_value=proc):
+            self.assertIsNone(manager._open_tracked(102))
+            self.assertIsNone(manager._open_tracked(102))
+            manager._terminate_pid(102, graceful=False)
+            self.assertTrue(manager._resume_pid(102))
+        proc.kill.assert_not_called()
+        proc.resume.assert_not_called()
+        self.assertEqual(manager._identities[102], 100.0)
+
+    def test_kill_wait_discovers_and_ends_a_late_descendant(self) -> None:
+        manager = self._manager()
+        alive = {102}
+        def refresh():
+            manager._tracked_pids = set(alive)
+        def terminate(pid, graceful):
+            self.assertFalse(graceful)
+            alive.discard(pid)
+        with (
+            mock.patch.object(manager, "_refresh_tracked_pids", side_effect=refresh),
+            mock.patch.object(manager, "_pid_is_alive", side_effect=lambda pid: pid in alive),
+            mock.patch.object(manager, "_terminate_pid", side_effect=terminate) as kill,
+        ):
+            self.assertEqual(manager._wait_for_pids({101}, 0.2, kill_new=True), set())
+        kill.assert_called_once_with(102, graceful=False)
+
+
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux process integration")
 class LinuxProcessTests(unittest.TestCase):
     def _launch(self, script: Path, source: str, *, args=None, executable=False):
@@ -156,6 +254,27 @@ class LinuxProcessTests(unittest.TestCase):
         with self.assertRaises(ProcessNotFoundError):
             manager.attach(child.pid)
         self.assertIsNone(manager._open_tracked(child.pid))
+
+    def test_termination_ends_a_child_started_by_the_sigterm_handler(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            ready, child_file = folder / "ready", folder / "late-child"
+            manager = self._launch(
+                folder / "root.py",
+                "import pathlib, signal, subprocess, sys, time\n"
+                "def terminate(*_):\n"
+                "    child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+                f"    pathlib.Path({str(child_file)!r}).write_text(str(child.pid))\n"
+                "    sys.exit(0)\n"
+                "signal.signal(signal.SIGTERM, terminate)\n"
+                f"pathlib.Path({str(ready)!r}).write_text('ready')\n"
+                "while True: time.sleep(0.05)\n",
+            )
+            self.assertTrue(_wait(ready.exists))
+            manager.terminate(timeout=0.2)
+            child = int(child_file.read_text())
+            self.assertFalse(_alive(child), "the SIGTERM handler's new child escaped cleanup")
+            self.assertFalse(manager.has_tracked_processes)
 
     def test_a_reused_session_leader_is_never_adopted(self) -> None:
         manager = ProcessManager(None)

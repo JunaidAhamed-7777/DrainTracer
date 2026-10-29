@@ -229,6 +229,8 @@ class ProcessManager:
         self._poll_stop = threading.Event()
         self._poll_thread: threading.Thread | None = None
         self._paused = False
+        # Keep partial suspension state so failed rollback/detach can retry.
+        self._suspended_pids: set[int] = set()
         self._attached = False
         self._last_error: str | None = None
         self._exit_code: int | None = None
@@ -377,6 +379,7 @@ class ProcessManager:
             self._root_created = self._identities.get(self._root_pid)
             self._departed.clear()
             self._paused = False
+            self._suspended_pids.clear()
             self._attached = False
             self._last_error = None
             self._exit_code = None
@@ -420,6 +423,7 @@ class ProcessManager:
             self._departed.clear()
             self._monitor = _monitor_chain()
             self._paused = False
+            self._suspended_pids.clear()
             self._attached = True
             self._last_error = None
             self._exit_code = None
@@ -431,8 +435,13 @@ class ProcessManager:
         """Stop tracking without terminating; resume first if suspended."""
         with self._lock:
             self._stop_poll_thread()
-            if self._paused:
-                self.resume()
+            if self._suspended_pids and not self.resume():
+                self._last_error = (
+                    "Cannot detach while processes remain suspended; "
+                    f"retry resume for PIDs {sorted(self._suspended_pids)}"
+                )
+                self._start_poll_thread()
+                raise ProcessManagerError(self._last_error)
             self._process = None
             self._tracked_pids.clear()
             self._identities.clear()
@@ -442,6 +451,7 @@ class ProcessManager:
             self._root_pid = None
             self._linux_session_id = None
             self._paused = False
+            self._suspended_pids.clear()
 
     def pause(self) -> bool:
         """Suspend the root process and all tracked descendants."""
@@ -450,7 +460,7 @@ class ProcessManager:
                 self._refresh_tracked_pids()
                 if not self._tracked_pids:
                     return False
-            if self._paused:
+            if self._paused and self._tracked_pids <= self._suspended_pids:
                 return True
             if self.contains_monitor:
                 # The root may be the terminal DrainTracer draws in.
@@ -460,15 +470,21 @@ class ProcessManager:
                 )
                 return False
             self._refresh_tracked_pids()
-            suspended: list[int] = []
-            for pid in self._tracked_pids:
-                if self._suspend_pid(pid):
-                    suspended.append(pid)
+            # Stop parents first, reducing the chance of new children being
+            # created while their tree is being suspended.
+            for pid in reversed(self._termination_order(self._tracked_pids)):
+                if pid in self._suspended_pids:
                     continue
-                for suspended_pid in suspended:
-                    self._resume_pid(suspended_pid)
-                self._paused = False
+                # An interruption after the OS suspends the process must
+                # still leave a resume path during session cleanup.
+                self._suspended_pids.add(pid)
+                if self._suspend_pid(pid):
+                    continue
+                self._suspended_pids.discard(pid)
+                self.resume()
                 self._last_error = "One or more processes could not be suspended"
+                if self._suspended_pids:
+                    self._last_error += "; some remain suspended, so retry resume or detach"
                 return False
             self._paused = True
             return True
@@ -476,11 +492,13 @@ class ProcessManager:
     def resume(self) -> bool:
         """Resume a previously paused process tree."""
         with self._lock:
-            if not self._paused:
+            if not self._suspended_pids:
+                self._paused = False
                 return True
-            success = True
-            for pid in self._tracked_pids:
-                success = self._resume_pid(pid) and success
+            for pid in tuple(self._suspended_pids):
+                if self._resume_pid(pid):
+                    self._suspended_pids.discard(pid)
+            success = not self._suspended_pids
             self._paused = not success
             if not success:
                 self._last_error = "One or more processes could not be resumed"
@@ -496,7 +514,7 @@ class ProcessManager:
                 return
 
             self._refresh_tracked_pids()
-            if self._paused:
+            if self._suspended_pids:
                 # POSIX defers SIGTERM while stopped; let its handler run.
                 self.resume()
             targets = set(self._tracked_pids)
@@ -507,11 +525,12 @@ class ProcessManager:
             if remaining:
                 for pid in self._termination_order(remaining):
                     self._terminate_pid(pid, graceful=False)
-                remaining = self._wait_for_pids(remaining, self.KILL_WAIT_SECONDS)
+                remaining = self._wait_for_pids(remaining, self.KILL_WAIT_SECONDS, kill_new=True)
 
             self._poll_launched()
             self._process = None
-            self._paused = False
+            self._suspended_pids.intersection_update(remaining)
+            self._paused = bool(self._suspended_pids)
             if remaining:
                 self._tracked_pids = remaining
                 self._last_error = (
@@ -547,7 +566,7 @@ class ProcessManager:
                 except OSError:
                     pass
 
-            remaining = self._wait_for_pids(targets, self.KILL_WAIT_SECONDS)
+            remaining = self._wait_for_pids(targets, self.KILL_WAIT_SECONDS, kill_new=True)
             self._poll_launched()
             self._process = None
             if remaining:
@@ -564,7 +583,8 @@ class ProcessManager:
                 self._depths.clear()
                 self._parents.clear()
                 self._departed.clear()
-            self._paused = False
+            self._suspended_pids.intersection_update(remaining)
+            self._paused = bool(self._suspended_pids)
 
     def refresh_process_tree(self) -> set[int]:
         """Synchronously refresh and return the tracked PID set."""
@@ -661,6 +681,7 @@ class ProcessManager:
 
         members = self._walk_tree(alive)
         self._tracked_pids = members
+        self._suspended_pids.intersection_update(members)
         self._identities = {
             pid: created for pid, created in self._identities.items() if pid in members
         }
@@ -822,7 +843,7 @@ class ProcessManager:
         try:
             proc = psutil.Process(pid)
         except (psutil.NoSuchProcess, psutil.ZombieProcess):
-            self._identities.pop(pid, None)
+            self._suspended_pids.discard(pid)
             return None
 
         # POSIX zombies still have a PID. Windows liveness is checked below
@@ -830,11 +851,12 @@ class ProcessManager:
         if sys.platform != "win32":
             try:
                 if not proc.is_running() or proc.status() == psutil.STATUS_ZOMBIE:
+                    self._suspended_pids.discard(pid)
                     return None
             except psutil.AccessDenied:
                 pass
             except (psutil.NoSuchProcess, psutil.ZombieProcess):
-                self._identities.pop(pid, None)
+                self._suspended_pids.discard(pid)
                 return None
 
         expected = self._identities.get(pid)
@@ -845,19 +867,19 @@ class ProcessManager:
         except psutil.AccessDenied:
             return proc
         except (psutil.NoSuchProcess, psutil.ZombieProcess):
-            self._identities.pop(pid, None)
+            self._suspended_pids.discard(pid)
             return None
 
         if expected is not None and abs(created - expected) > _SAME_START:
-            self._identities.pop(pid, None)
-            self._depths.pop(pid, None)
-            self._parents.pop(pid, None)
+            # Retain the old identity until refresh removes it from the
+            # tree. A second open must never adopt this replacement PID.
+            self._suspended_pids.discard(pid)
             self._last_error = f"PID {pid} was reused; the new process was left untouched"
             return None
         if sys.platform == "win32":
             try:
                 if _windows_process_exited(pid):
-                    self._identities.pop(pid, None)
+                    self._suspended_pids.discard(pid)
                     return None
             except OSError:
                 # An unreadable exit state must not silently drop a live PID.
@@ -872,14 +894,26 @@ class ProcessManager:
     def _pid_is_alive(self, pid: int) -> bool:
         return self._open_tracked(pid) is not None
 
-    def _wait_for_pids(self, pids: set[int], timeout: float) -> set[int]:
+    def _wait_for_pids(
+        self, pids: set[int], timeout: float, *, kill_new: bool = False
+    ) -> set[int]:
         deadline = time.monotonic() + max(timeout, 0.0)
         remaining = set(pids)
-        while remaining and time.monotonic() < deadline:
+        signaled = set(pids)
+        while True:
+            # A SIGTERM handler can spawn a helper before it exits. Keep
+            # discovering children while cleanup runs, even after the root
+            # has gone; never clear tracking for a still-running helper.
+            self._refresh_tracked_pids()
             remaining = {pid for pid in remaining if self._pid_is_alive(pid)}
-            if remaining:
-                time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
-        return {pid for pid in remaining if self._pid_is_alive(pid)}
+            remaining.update(self._tracked_pids)
+            if kill_new:
+                for pid in self._termination_order(remaining - signaled):
+                    self._terminate_pid(pid, graceful=False)
+                signaled.update(remaining)
+            if not remaining or time.monotonic() >= deadline:
+                return {pid for pid in remaining if self._pid_is_alive(pid)}
+            time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
 
     def _suspend_pid(self, pid: int) -> bool:
         proc = self._open_tracked(pid)
@@ -895,11 +929,13 @@ class ProcessManager:
     def _resume_pid(self, pid: int) -> bool:
         proc = self._open_tracked(pid)
         if proc is None:
-            return False
+            return True  # an exited or reused process no longer needs resuming
         try:
             proc.resume()
             return True
-        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess) as exc:
+        except (psutil.NoSuchProcess, psutil.ZombieProcess):
+            return True
+        except psutil.AccessDenied as exc:
             logger.debug("Could not resume pid %s: %s", pid, exc)
             return False
 
