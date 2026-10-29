@@ -59,6 +59,23 @@ def _data_block(document: str) -> str:
 
 
 class RenderTests(unittest.TestCase):
+    def test_checkpoint_reports_never_present_a_complete_clear_verdict(self) -> None:
+        for flags in ({"recovery": {"partial": True, "exact_through_cutoff": True,
+                                     "final_outcome_confirmed": False}}, {"checkpoint": {"schema": 1}}):
+            with self.subTest(flags=flags):
+                report = _report(**flags)
+                document = render_html_report(report)
+                self.assertIn("Partial checkpoint evidence", document)
+                self.assertIn("HIGH / PARTIAL", document)
+                self.assertIn("The missing tail, final outcome, and cleanup are unknown.", document)
+                self.assertIn("unknown after checkpoint", document)
+                report["snapshots"] = []
+                report["detection_ran"] = False
+                empty = render_html_report(report)
+                self.assertIn("Partial checkpoint evidence", empty)
+                verdict = re.search(r'<section class="verdict.*?</section>', empty, re.DOTALL).group(0)
+                self.assertNotIn("CLEAR", verdict)
+
     def test_event_counts_name_discarded_messages_separately(self) -> None:
         document = render_html_report(_report(event_counts={"observed": 8, "retained": 2, "dropped": 6}))
         self.assertIn("8 observed; 2 retained; 6 discarded from this event log.", document)

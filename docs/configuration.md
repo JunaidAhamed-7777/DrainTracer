@@ -69,6 +69,12 @@ are rejected before a process is launched or attached.
   whole tree and no sample failed; default `false`. Unknown coverage fails
   this policy. Pauses are excluded, and detection judgement is controlled
   separately by `fail_on_inconclusive`. CLI: `--require-full-coverage`.
+- `checkpoint`: opt-in checkpoint file path, resolved relative to the config
+  file. Existing files are refused for a new session, even if they contain an
+  earlier checkpoint. CLI: `--checkpoint PATH`.
+- `checkpoint_interval`: duration from `"1s"` through `"1h"`, default `"30s"`.
+  It sets the cadence only; a `checkpoint` path is still required to enable
+  persistence. CLI: `--checkpoint-interval DURATION`.
 - `workload_id`, `build`, `note`: non-empty strings recorded in the report's
   `experiment` section for comparisons; secret-looking values are redacted.
   CLI: `--workload-id ID`, `--build LABEL`, `--note TEXT`.

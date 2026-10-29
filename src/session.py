@@ -193,8 +193,8 @@ class MonitorSession:
         self._checkpoint_next = 0.0
         self._checkpoint_error: str | None = None
         self._target_created: float | None = None
-        if not math.isfinite(self.settings.checkpoint_interval) or self.settings.checkpoint_interval < 1:
-            raise ValueError("checkpoint interval must be at least one second")
+        if not math.isfinite(self.settings.checkpoint_interval) or not 1 <= self.settings.checkpoint_interval <= 3600:
+            raise ValueError("checkpoint interval must be between 1s and 1h")
 
     @property
     def attached(self) -> bool:
@@ -478,8 +478,10 @@ class MonitorSession:
 
     def _maybe_checkpoint(self) -> None:
         store = self._checkpoint_store
+        if store is None:
+            return
         now = time.monotonic()
-        if store is None or now < self._checkpoint_next:
+        if now < self._checkpoint_next:
             return
         self._checkpoint_next = now + self.settings.checkpoint_interval
         try:

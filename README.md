@@ -370,6 +370,11 @@ coverage records or failed samples. Paused samples are excluded; combine it
 with `--fail-on-inconclusive` to also require a judged detection window.
 Reports include structured startup and cleanup results in `outcome`, and
 headless startup or cleanup failures attempt to export available evidence.
+For longer runs, opt in with `--checkpoint state/session.json`; the default
+cadence is 30s (`--checkpoint-interval 1s` through `1h`). Recover an interrupted
+prefix with `draintracer recover state/session.json --report-dir recovered`.
+Recovery never reattaches or controls a process, and recovered reports remain
+explicitly partial. See [checkpoint recovery](docs/reports.md#checkpoint-recovery).
 The [headless guide](docs/usage.md#run-without-a-dashboard) covers outcome
 priority and GitHub Actions integration.
 

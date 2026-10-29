@@ -110,6 +110,16 @@ root is `leak_reports/reports` relative to the working directory; settings or
 `--report-dir` can select another location. Configuration-relative paths are
 explained in the [configuration guide](docs/configuration.md).
 
+Optional `--checkpoint PATH` writes a bounded local recovery file at the chosen
+cadence. It contains report data plus a session UUID, monitor and target process
+identities, cutoff/write timestamps, and a corruption checksum. The UUID links
+checkpoints within that session; it is not an installation or user identifier.
+The current session replaces its earlier checkpoint atomically, while a new
+session refuses an existing file. Recovery creates additional explicitly partial
+JSON/HTML reports without attaching to or controlling a process. Checkpoints and
+their lock sidecars remain until you remove them; they have no automatic expiry,
+encryption, or anonymization. Review them as carefully as ordinary reports.
+
 Setting `DRAINTRACER_LOG` enables a local diagnostic file containing error
 messages, timestamps, logger/thread names, and tracebacks. These can reveal
 paths and other context. An embedding application's existing logging

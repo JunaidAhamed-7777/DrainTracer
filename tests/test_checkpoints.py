@@ -136,6 +136,7 @@ class CheckpointTests(unittest.TestCase):
             lambda data: data["checkpoint"]["target_identity"].update(pid=200),
             lambda data: data["checkpoint"]["writer_identity"].update(create_time=None),
             lambda data: data["checkpoint"].update(captured_at="yesterday"),
+            lambda data: data["checkpoint"].update(captured_at="2000-01-01T00:00:00+00:00"),
             lambda data: data["checkpoint"].update(digest="0" * 64),
         ):
             damaged = json.loads(json.dumps(original))
@@ -148,6 +149,14 @@ class CheckpointTests(unittest.TestCase):
             read_checkpoint(self.path, app_version="v5.4.0", session_id=str(uuid.uuid4()))
         with self.assertRaises(CheckpointError):
             read_checkpoint(self.path, app_version="v5.3.9")
+
+    def test_reader_enforces_the_chart_bound_before_checksum_validation(self) -> None:
+        self._write()
+        saved = json.loads(self.path.read_text(encoding="utf-8"))
+        saved["snapshots"] *= 129
+        self.path.write_text(json.dumps(saved), encoding="utf-8")
+        with self.assertRaisesRegex(CheckpointError, "too many retained"):
+            read_checkpoint(self.path, app_version="v5.4.0")
 
     def test_corruption_oversized_input_and_missing_creation_time_are_rejected(self) -> None:
         self.path.write_text('{"snapshots": [], "checkpoint":', encoding="utf-8")
@@ -252,6 +261,47 @@ class CheckpointSessionTests(unittest.TestCase):
         self.assertEqual(result["recovery_result_schema"], 1)
         self.assertTrue(Path(result["json_path"]).is_file())
         self.assertTrue(Path(result["html_path"]).is_file())
+        self.assertIn("Partial checkpoint evidence", Path(result["html_path"]).read_text(encoding="utf-8"))
+
+    def test_a_killed_monitor_leaves_recoverable_evidence_without_reattachment(self) -> None:
+        import psutil
+
+        from src.dashboard import DashboardApp
+
+        target = self.path.parent / "bounded.py"
+        target.write_text("import time\ntime.sleep(6)\n", encoding="utf-8")
+        command = [sys.executable, "src/main.py", "--headless", "--target", str(target), "--no-config",
+                   "--checkpoint", str(self.path), "--checkpoint-interval", "1s",
+                   "--report-dir", str(self.path.parent / "reports")]
+        monitor = subprocess.Popen(command, cwd=Path(__file__).resolve().parents[1],
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        identity = None
+        try:
+            deadline = time.monotonic() + 10
+            while not self.path.exists() and monitor.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.02)
+            self.assertTrue(self.path.exists(), "monitor did not persist its first checkpoint")
+            saved = read_checkpoint(self.path, app_version=DashboardApp.VERSION)
+            identity = saved["checkpoint"]["target_identity"]
+            monitor.kill()
+            monitor.wait(timeout=10)
+            with mock.patch("src.checkpoints.psutil.Process", side_effect=AssertionError("no reattachment")):
+                report = recovered_report(self.path, app_version=DashboardApp.VERSION)
+            self.assertEqual(report["session_facts"], saved["session_facts"])
+            self.assertTrue(report["recovery"]["partial"])
+            self.assertIsNone(report["headless"]["exit_code"])
+        finally:
+            if monitor.poll() is None:
+                monitor.kill()
+            monitor.communicate(timeout=10)
+            if identity is not None:
+                try:
+                    process = psutil.Process(identity["pid"])
+                    if process.create_time() == identity["create_time"]:
+                        process.kill()  # This test's bounded target, validated before cleanup.
+                        process.wait(timeout=10)
+                except psutil.NoSuchProcess:
+                    pass
 
 
 if __name__ == "__main__":

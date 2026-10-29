@@ -38,7 +38,10 @@ class CheckpointError(ValueError):
 def _version(value: Any) -> tuple[int, int, int]:
     if not isinstance(value, str) or not re.fullmatch(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", value):
         raise CheckpointError("checkpoint versions must use vMAJOR.MINOR.PATCH")
-    return tuple(int(part) for part in value[1:].split("."))
+    try:
+        return tuple(int(part) for part in value[1:].split("."))
+    except ValueError as exc:
+        raise CheckpointError("checkpoint version components are too large") from exc
 
 
 def _uuid(value: Any) -> str:
@@ -106,11 +109,17 @@ def _validate_checkpoint(report: dict[str, Any], *, app_version: str, session_id
         raise CheckpointError("checkpoint cutoff requires a UTC offset")
     if type(checkpoint.get("sample_limit")) is not int or checkpoint["sample_limit"] != CHECKPOINT_SAMPLES:
         raise CheckpointError("unsupported checkpoint sample bound")
+    if len(report["snapshots"]) > CHECKPOINT_SAMPLES:
+        raise CheckpointError("checkpoint contains too many retained chart samples")
     facts = report.get("session_facts")
     if (not isinstance(facts, dict) or type(facts.get("schema")) is not int or facts["schema"] != 1
             or not isinstance(facts.get("samples"), dict)
             or type(facts["samples"].get("taken")) is not int or facts["samples"]["taken"] < 1):
         raise CheckpointError("checkpoint requires exact session facts through its cutoff")
+    stamp = facts.get("last_sample_at")
+    if (type(stamp) not in (int, float) or not math.isfinite(stamp)
+            or abs(captured.timestamp() - stamp) > 0.0011):
+        raise CheckpointError("checkpoint cutoff disagrees with the last recorded observation")
     for sample in report["snapshots"]:
         for process in sample.get("processes", ()):
             created = process.get("create_time")
@@ -184,9 +193,13 @@ class CheckpointStore:
             raise CheckpointError("checkpoint writer and report identity disagree")
         if self.path.exists() or self.path.is_symlink():
             read_checkpoint(self.path, app_version=self.app_version, session_id=self.session_id)
+        try:
+            captured_at = iso_timestamp(report["session_facts"]["last_sample_at"])
+        except (KeyError, TypeError, ValueError, OverflowError, OSError) as exc:
+            raise CheckpointError("checkpoint needs a representable last-observation timestamp") from exc
         checkpoint = {
             "schema": CHECKPOINT_SCHEMA, "app_version": self.app_version, "session_id": self.session_id,
-            "captured_at": iso_timestamp(), "writer_identity": self.writer_identity,
+            "captured_at": captured_at, "saved_at": iso_timestamp(), "writer_identity": self.writer_identity,
             "target_identity": dict(target_identity), "sample_limit": CHECKPOINT_SAMPLES,
         }
         saved = {**report, "session_id": self.session_id, "checkpoint": checkpoint,
@@ -227,6 +240,7 @@ def recovered_report(path: str | Path, *, app_version: str, session_id: str | No
     report["recovery"] = {
         "partial": True, "exact_through_cutoff": True, "final_outcome_confirmed": False,
         "captured_at": checkpoint["captured_at"], "recovered_at": iso_timestamp(),
+        "tool_version": app_version,
         "session_id": checkpoint["session_id"], "source_report_id": report.get("report_id"),
     }
     report["report_id"] = new_report_id()

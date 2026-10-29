@@ -492,6 +492,11 @@ def comparability_caveats(before: LoadedReport, after: LoadedReport) -> list[Cav
             NOT_COMPARABLE)
     caveats.extend(_experiment_caveats(before.experiment, after.experiment))
     for label, report in (("A", before), ("B", after)):
+        recovery = report.data.get("recovery")
+        if (isinstance(recovery, Mapping) and recovery.get("partial") is True
+                or isinstance(report.data.get("checkpoint"), Mapping)):
+            add("recovered checkpoint", f"report {label} contains a saved prefix only; its missing tail, "
+                "final outcome, and cleanup are unknown", INSUFFICIENT_COVERAGE)
         if not report.detection_ran:
             add("inconclusive",
                 f"report {label} never filled a detection window, so its lack of "
