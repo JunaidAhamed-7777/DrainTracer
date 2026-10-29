@@ -9,6 +9,7 @@ import tempfile
 import time
 import unittest
 import uuid
+from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
@@ -20,6 +21,7 @@ from src.checkpoints import (
     read_checkpoint,
     recovered_report,
 )
+from src.config import MonitorSettings
 from src.session import MonitorSession
 
 
@@ -157,6 +159,99 @@ class CheckpointTests(unittest.TestCase):
             self.report["snapshots"] *= 129
             with self.assertRaisesRegex(CheckpointError, "too many"):
                 store.write(self.report, self.identity)
+
+
+class CheckpointSessionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.path = Path(temporary.name) / "session.json"
+
+    def _session(self, enabled=True):
+        settings = replace(MonitorSettings(), checkpoint=str(self.path) if enabled else None,
+                           checkpoint_interval=1.0)
+        session = _Session("worker.exe", console=make_console(), settings=settings)
+        session.manager._root_pid = 100
+        session.manager._identities[100] = 10.0
+        return session
+
+    def test_cadence_is_opt_in_and_updates_a_single_checkpoint(self) -> None:
+        session = self._session()
+        clock = [0.0]
+        with (
+            mock.patch.object(session.manager, "start"),
+            mock.patch.object(session.detector, "sample_once", return_value=make_snapshot(timestamp=1000)),
+            mock.patch.object(session.detector, "start"),
+            mock.patch("src.session.time.monotonic", side_effect=lambda: clock[0]),
+        ):
+            session.start()
+            self.addCleanup(session._close_checkpoint)
+            first = self.path.read_bytes()
+            clock[0] = 0.5
+            session.poll()
+            self.assertEqual(self.path.read_bytes(), first)
+            session.detector.stream.publish(make_snapshot(timestamp=1001))
+            clock[0] = 1.1
+            session.poll()
+            saved = read_checkpoint(self.path, app_version="v5.4.0")
+            self.assertEqual(saved["sample_count"], 2)
+            self.assertNotEqual(self.path.read_bytes(), first)
+            session.shutdown()
+        self.assertIsNone(session._checkpoint_store)
+        session = self._session(enabled=False)
+        with (mock.patch("src.session.CheckpointStore") as store,
+              mock.patch.object(session.manager, "start"),
+              mock.patch.object(session.detector, "sample_once", return_value=make_snapshot()),
+              mock.patch.object(session.detector, "start")):
+            session.start()
+        store.assert_not_called()
+
+    def test_existing_files_are_refused_before_launching_a_target(self) -> None:
+        self.path.write_text("unrelated user data", encoding="utf-8")
+        session = self._session()
+        with mock.patch.object(session.manager, "start") as launch, self.assertRaises(CheckpointError):
+            session.start()
+        launch.assert_not_called()
+        self.assertEqual(self.path.read_text(encoding="utf-8"), "unrelated user data")
+
+    def test_long_run_chart_retention_is_bounded_but_prefix_facts_remain_exact(self) -> None:
+        session = self._session(enabled=False)
+        for index in range(1000):
+            session._accept_snapshot(make_snapshot(timestamp=1000 + index, processes=(
+                make_process(100, private=(index + 1) * 1024),
+            )))
+        report = session.build_report(snapshot_limit=32)
+        self.assertEqual(len(report["snapshots"]), 32)
+        self.assertEqual(report["snapshots"][0]["timestamp"], 1000)
+        self.assertEqual(report["snapshots"][-1]["timestamp"], 1999)
+        self.assertEqual(report["sample_count"], 1000)
+        self.assertEqual(report["session_facts"]["samples"]["taken"], 1000)
+        self.assertEqual(report["session_facts"]["peaks"]["private_bytes"]["value"], 1000 * 1024)
+        with CheckpointStore(self.path, "v5.4.0") as store:
+            store.write(report, {"pid": 100, "create_time": 10.0})
+        recovered = recovered_report(self.path, app_version="v5.4.0")
+        self.assertEqual(recovered["session_facts"], report["session_facts"])
+
+    def test_recovery_command_writes_json_html_without_reopening_a_process(self) -> None:
+        from src import main as cli
+
+        session = self._session(enabled=False)
+        session._accept_snapshot(make_snapshot(timestamp=1000))
+        with CheckpointStore(self.path, "v5.4.0") as store:
+            store.write(session.build_report(), {"pid": 100, "create_time": 10.0})
+            identity = store.session_id
+        console = make_console()
+        with (mock.patch("src.checkpoints.psutil.Process") as process,
+              mock.patch.object(cli, "check_for_update") as update):
+            code = cli._main(console, ["recover", str(self.path), "--expect-session", identity,
+                                      "--report-dir", str(self.path.parent / "recovered"), "--json"])
+        self.assertEqual(code, 0)
+        process.assert_not_called()
+        update.assert_not_called()
+        result = json.loads(console.file.getvalue())
+        self.assertEqual(result["recovery_result_schema"], 1)
+        self.assertTrue(Path(result["json_path"]).is_file())
+        self.assertTrue(Path(result["html_path"]).is_file())
 
 
 if __name__ == "__main__":

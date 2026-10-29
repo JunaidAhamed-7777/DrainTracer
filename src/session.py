@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import errno
+import math
 import sys
 import time
 from collections import deque
@@ -12,6 +13,7 @@ from typing import Any
 
 from rich.console import Console
 
+from .checkpoints import CHECKPOINT_SAMPLES, CheckpointStore
 from .config import MonitorSettings
 from .events import (
     RESOURCE_METRICS,
@@ -187,6 +189,12 @@ class MonitorSession:
         self._lifecycle_history: deque[LifecycleEvent] = deque(maxlen=self.LIFECYCLE_LIMIT)
         self._markers: list[TimelineMark] = []
         self._marker_count = 0
+        self._checkpoint_store: CheckpointStore | None = None
+        self._checkpoint_next = 0.0
+        self._checkpoint_error: str | None = None
+        self._target_created: float | None = None
+        if not math.isfinite(self.settings.checkpoint_interval) or self.settings.checkpoint_interval < 1:
+            raise ValueError("checkpoint interval must be at least one second")
 
     @property
     def attached(self) -> bool:
@@ -366,11 +374,14 @@ class MonitorSession:
         an attached one released before the error propagates.
         """
         try:
+            if self.settings.checkpoint is not None:
+                self._checkpoint_store = CheckpointStore(self.settings.checkpoint, self.VERSION)
             if self.attached:
                 self.manager.attach(self.attach_pid, expected_create_time=self.attach_create_time)
             else:
                 self.manager.start()
             self._root_pid = self.manager.root_pid
+            self._target_created = self.manager.created_at(self._root_pid) if self._root_pid is not None else None
             self._started_at = time.time()
             if self.timeout is not None:
                 self._deadline = time.monotonic() + self.timeout
@@ -378,6 +389,7 @@ class MonitorSession:
             self.detector.start()
             self._log_start()
             self._startup_state = "started"
+            self._maybe_checkpoint()
         except BaseException as exc:
             self._startup_state = "failed"
             self._startup_error = str(exc) or type(exc).__name__
@@ -448,13 +460,39 @@ class MonitorSession:
         try:
             self.detector.stop()
         finally:
-            if self.attached:
-                self._attempt_cleanup("detach")
-            elif self.manager.has_tracked_processes:
-                self._mark_stopping()
-                self._attempt_cleanup("kill")
-            else:
-                self._cleanup_state = "complete"
+            try:
+                if self.attached:
+                    self._attempt_cleanup("detach")
+                elif self.manager.has_tracked_processes:
+                    self._mark_stopping()
+                    self._attempt_cleanup("kill")
+                else:
+                    self._cleanup_state = "complete"
+            finally:
+                self._close_checkpoint()
+
+    def _close_checkpoint(self) -> None:
+        if self._checkpoint_store is not None:
+            self._checkpoint_store.close()
+            self._checkpoint_store = None
+
+    def _maybe_checkpoint(self) -> None:
+        store = self._checkpoint_store
+        now = time.monotonic()
+        if store is None or now < self._checkpoint_next:
+            return
+        self._checkpoint_next = now + self.settings.checkpoint_interval
+        try:
+            report = self.build_report(snapshot_limit=CHECKPOINT_SAMPLES)
+            store.write(report, {"pid": self._root_pid, "create_time": self._target_created})
+        except (OSError, ValueError, TypeError) as exc:
+            error = f"Recovery checkpoint failed: {exc}"
+            if error != self._checkpoint_error:
+                self._append_event(error, "warn")
+                self._note_monitor_error(error)
+            self._checkpoint_error = error
+        else:
+            self._checkpoint_error = None
 
     def _attempt_cleanup(self, action: str) -> None:
         """Record ownership actions and failures without changing their policy."""
@@ -515,6 +553,7 @@ class MonitorSession:
             self._force_cleanup()
             raise
         finally:
+            self._close_checkpoint()
             if self._cleanup_state == "incomplete":
                 self._append_event(
                     "Cleanup incomplete; tracked processes remain. Inspect outcome.cleanup "
@@ -562,6 +601,7 @@ class MonitorSession:
         for snapshot in snapshots:
             self._accept_snapshot(snapshot, already_observed=already_observed)
         self._sync_facts()
+        self._maybe_checkpoint()
         return len(snapshots)
 
     def _warn_if_inaccessible(self) -> None:
@@ -1017,10 +1057,21 @@ class MonitorSession:
                 report["outcome"] = self._outcome_record()
         return path
 
-    def build_report(self) -> dict[str, Any]:
+    def build_report(self, *, snapshot_limit: int | None = None) -> dict[str, Any]:
         """Assemble the report dictionary for the session so far."""
         state, facts = self._facts.capture()
         self._sync_facts(state)
+        snapshots = tuple(self._snapshot_history)
+        stride = self._snapshot_history.stride
+        if snapshot_limit is not None:
+            if type(snapshot_limit) is not int or snapshot_limit < 2:
+                raise ValueError("report snapshot limit must be at least two")
+            if len(snapshots) > snapshot_limit:
+                stride *= math.ceil(len(snapshots) / snapshot_limit)
+                snapshots = tuple(snapshots[index * (len(snapshots) - 1) // (snapshot_limit - 1)]
+                                  for index in range(snapshot_limit))
+        facts = self._facts_record(facts)
+        facts["chart"].update(stride=stride, stored=len(snapshots))
         return {
             "report_id": new_report_id(),
             "report_schema": REPORT_SCHEMA,
@@ -1058,14 +1109,14 @@ class MonitorSession:
             "coverage": self._coverage_record(),
             "outcome": self._outcome_record(),
             "processes": self._processes_record(),
-            "session_facts": self._facts_record(facts),
+            "session_facts": facts,
             # User markers: when the user said something happened (timing only).
             "markers": self._markers_record(),
             # Samples taken, and how many the snapshot list skips between
             # entries once a long session has been thinned (1: none).
             "sample_count": self._sample_count,
-            "snapshot_stride": self._snapshot_history.stride,
-            "snapshots": [snapshot_to_dict(snapshot) for snapshot in self._snapshot_history],
+            "snapshot_stride": stride,
+            "snapshots": [snapshot_to_dict(snapshot) for snapshot in snapshots],
         }
 
     @property

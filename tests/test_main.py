@@ -52,6 +52,7 @@ class ParserTests(unittest.TestCase):
             ("--profile", "ci", "--no-config"): "--profile needs a settings file",
             ("--config", "a.toml", "--no-config"): "not allowed with argument",
             ("--interval", "10ms"): "between 100ms and 1m",
+            ("--checkpoint-interval", "500ms"): "between 1s and 1h",
             ("--window", "2h"): "at most 1h",
             ("--warmup", "2d"): "unknown duration unit",
             ("--warmup", "30h"): "at most 24h",
@@ -64,6 +65,15 @@ class ParserTests(unittest.TestCase):
 
 
 class DispatchTests(unittest.TestCase):
+    def test_checkpoint_flags_reach_the_session_settings(self) -> None:
+        with mock.patch.object(cli, "HeadlessRunner") as runner:
+            runner.return_value.run.return_value = 0
+            self.assertEqual(cli._main(make_console(), ["--headless", "--target", "worker.exe", "--no-config",
+                                                        "--checkpoint", "state.json", "--checkpoint-interval", "2s"]), 0)
+        settings = runner.call_args.kwargs["settings"]
+        self.assertEqual(settings.checkpoint, "state.json")
+        self.assertEqual(settings.checkpoint_interval, 2.0)
+
     def test_headless_builds_a_runner_from_flags(self) -> None:
         with mock.patch.object(cli, "HeadlessRunner") as runner:
             runner.return_value.run.return_value = 1
