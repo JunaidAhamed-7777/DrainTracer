@@ -138,6 +138,64 @@ class AttachTests(unittest.TestCase):
         self.assertTrue(child.is_running())
 
 
+class SelectedIdentityTests(unittest.TestCase):
+    def test_matching_selection_captures_the_verified_identity_without_reopening(self) -> None:
+        manager = ProcessManager(None)
+        process = mock.Mock(pid=4242)
+        process.is_running.return_value = True
+        process.status.return_value = psutil.STATUS_RUNNING
+        process.create_time.return_value = 10.0
+        with (
+            mock.patch.object(process_runner.psutil, "Process", return_value=process) as opened,
+            mock.patch.object(process_runner, "_monitor_chain", return_value={}),
+            mock.patch.object(manager, "_refresh_tracked_pids"),
+            mock.patch.object(manager, "_start_poll_thread"),
+        ):
+            self.assertEqual(manager.attach(4242, expected_create_time=10.0), 4242)
+        opened.assert_called_once_with(4242)
+        self.assertEqual(manager.created_at(4242), 10.0)
+
+    def test_changed_or_unreadable_selection_never_starts_tracking(self) -> None:
+        from src.process_runner import ProcessAccessDeniedError
+
+        for unreadable in (False, True):
+            with self.subTest(unreadable=unreadable):
+                manager = ProcessManager(None)
+                process = mock.Mock(pid=4242)
+                process.is_running.return_value = True
+                process.status.return_value = psutil.STATUS_RUNNING
+                process.create_time.return_value = 20.0
+                if unreadable:
+                    process.create_time.side_effect = psutil.AccessDenied(4242)
+                error = ProcessAccessDeniedError if unreadable else ProcessNotFoundError
+                with (
+                    mock.patch.object(process_runner.psutil, "Process", return_value=process),
+                    mock.patch.object(manager, "_refresh_tracked_pids") as refresh,
+                    mock.patch.object(manager, "_start_poll_thread") as start_poll,
+                    self.assertRaises(error),
+                ):
+                    manager.attach(4242, expected_create_time=10.0)
+                refresh.assert_not_called()
+                start_poll.assert_not_called()
+                self.assertIsNone(manager.root_pid)
+                self.assertFalse(manager.has_tracked_processes)
+                process.suspend.assert_not_called()
+                process.kill.assert_not_called()
+
+    def test_direct_pid_attachment_can_still_select_an_unreadable_identity(self) -> None:
+        manager = ProcessManager(None)
+        process = mock.Mock(pid=4242)
+        process.create_time.side_effect = psutil.AccessDenied(4242)
+        with (
+            mock.patch.object(process_runner.psutil, "Process", return_value=process),
+            mock.patch.object(process_runner, "_monitor_chain", return_value={}),
+            mock.patch.object(manager, "_refresh_tracked_pids"),
+            mock.patch.object(manager, "_start_poll_thread"),
+        ):
+            self.assertEqual(manager.attach(4242), 4242)
+        self.assertIsNone(manager.created_at(4242))
+
+
 @unittest.skipUnless(sys.platform == "win32", "Windows process-handle liveness")
 class WindowsLivenessTests(unittest.TestCase):
     def test_an_exited_process_is_rejected_while_its_handle_is_still_open(self) -> None:
