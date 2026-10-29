@@ -224,6 +224,7 @@ class ProcessManager:
         self.capture_output = capture_output
 
         self._process: subprocess.Popen[bytes] | None = None
+        self._output_streams: dict[str, BinaryIO] = {}
         self._root_pid: int | None = None
         self._tracked_pids: set[int] = set()
         self._identities: dict[int, float] = {}
@@ -336,12 +337,7 @@ class ProcessManager:
     def output_streams(self) -> dict[str, BinaryIO]:
         """Opt-in binary stdout/stderr pipes; the caller owns their draining/close."""
         with self._lock:
-            if self._process is None or not self.capture_output:
-                return {}
-            return {
-                name: stream for name in ("stdout", "stderr")
-                if (stream := getattr(self._process, name)) is not None
-            }
+            return dict(self._output_streams)
 
     def start(self) -> int:
         """Launch the target process and begin PID tree polling."""
@@ -373,6 +369,10 @@ class ProcessManager:
 
             try:
                 self._process = subprocess.Popen(command, **popen_kwargs)
+                self._output_streams = {
+                    name: stream for name in ("stdout", "stderr")
+                    if (stream := getattr(self._process, name)) is not None
+                }
             except PermissionError as exc:
                 self._last_error = str(exc)
                 raise ProcessAccessDeniedError(
