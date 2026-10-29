@@ -920,6 +920,13 @@ class ProcessManager:
         if proc is None:
             return False
         try:
+            if sys.platform.startswith("linux") and proc.status() in {
+                psutil.STATUS_STOPPED, psutil.STATUS_TRACING_STOP
+            }:
+                # SIGSTOP has no suspension count. Leave an existing stop
+                # owned by the user/debugger out of our later SIGCONT pass.
+                self._suspended_pids.discard(pid)
+                return True
             proc.suspend()
             return True
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess) as exc:

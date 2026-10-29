@@ -255,6 +255,21 @@ class LinuxProcessTests(unittest.TestCase):
             manager.attach(child.pid)
         self.assertIsNone(manager._open_tracked(child.pid))
 
+    def test_detach_preserves_a_stop_that_predates_draintracers_pause(self) -> None:
+        target = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        self.addCleanup(target.wait, 10)
+        self.addCleanup(target.kill)
+        proc = psutil.Process(target.pid)
+        proc.suspend()
+        self.assertTrue(_wait(lambda: proc.status() == psutil.STATUS_STOPPED))
+        manager = ProcessManager(None)
+        manager.attach(target.pid)
+        self.addCleanup(manager.detach)
+        self.assertTrue(manager.pause())
+        self.assertNotIn(target.pid, manager._suspended_pids)
+        manager.detach()
+        self.assertEqual(proc.status(), psutil.STATUS_STOPPED)
+
     def test_termination_ends_a_child_started_by_the_sigterm_handler(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             folder = Path(temp)
