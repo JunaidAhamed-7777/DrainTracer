@@ -13,6 +13,7 @@ from collections import deque
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from typing import BinaryIO
 
 import psutil
 
@@ -211,6 +212,7 @@ class ProcessManager:
         cwd: str | None = None,
         env: dict[str, str] | None = None,
         poll_interval: float = 0.5,
+        capture_output: bool = False,
     ) -> None:
         # ``None`` builds a manager that can only attach() to a running PID.
         self.target_path = str(Path(target_path).resolve()) if target_path else None
@@ -218,8 +220,10 @@ class ProcessManager:
         self.cwd = cwd
         self.env = env
         self.poll_interval = poll_interval
+        # Opt-in callers must drain both binary streams for the whole run.
+        self.capture_output = capture_output
 
-        self._process: subprocess.Popen[str] | None = None
+        self._process: subprocess.Popen[bytes] | None = None
         self._root_pid: int | None = None
         self._tracked_pids: set[int] = set()
         self._identities: dict[int, float] = {}
@@ -328,6 +332,17 @@ class ProcessManager:
         with self._lock:
             return bool(self._tracked_pids)
 
+    @property
+    def output_streams(self) -> dict[str, BinaryIO]:
+        """Opt-in binary stdout/stderr pipes; the caller owns their draining/close."""
+        with self._lock:
+            if self._process is None or not self.capture_output:
+                return {}
+            return {
+                name: stream for name in ("stdout", "stderr")
+                if (stream := getattr(self._process, name)) is not None
+            }
+
     def start(self) -> int:
         """Launch the target process and begin PID tree polling."""
         with self._lock:
@@ -348,8 +363,8 @@ class ProcessManager:
                 # The dashboard owns keyboard input; a target reading the
                 # shared console could swallow its keys or block on them.
                 "stdin": subprocess.DEVNULL,
-                "stdout": subprocess.DEVNULL,
-                "stderr": subprocess.DEVNULL,
+                "stdout": subprocess.PIPE if self.capture_output else subprocess.DEVNULL,
+                "stderr": subprocess.PIPE if self.capture_output else subprocess.DEVNULL,
             }
             if sys.platform == "win32":
                 popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP

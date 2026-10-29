@@ -47,6 +47,23 @@ class QuoteTests(unittest.TestCase):
 
 
 class StdinTests(unittest.TestCase):
+    def test_opt_in_binary_output_capture_keeps_stdin_closed(self) -> None:
+        manager = ProcessManager(
+            sys.executable,
+            args=["-c", "import sys; print(repr(sys.stdin.read())); sys.stderr.write('err')"],
+            capture_output=True,
+        )
+        manager.start()
+        streams = manager.output_streams
+        try:
+            self.assertEqual(streams["stdout"].read(), b"''\r\n" if sys.platform == "win32" else b"''\n")
+            self.assertEqual(streams["stderr"].read(), b"err")
+        finally:
+            manager.kill()
+            for stream in streams.values():
+                stream.close()
+        self.assertEqual(ProcessManager(sys.executable).output_streams, {})
+
     def test_targets_read_end_of_file_instead_of_the_console(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             out = Path(temp) / "stdin.txt"
