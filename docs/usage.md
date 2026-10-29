@@ -1,5 +1,11 @@
 # Usage
 
+Add `--no-color` to monitoring commands or to `draintracer diff` to disable
+terminal colors, even when `FORCE_COLOR` is set. Without the flag, Rich keeps
+its normal environment and terminal behavior, including `NO_COLOR`.
+Textual verdicts and availability labels are preserved; bold emphasis may
+remain where the terminal supports it.
+
 [README](../README.md) · [Configuration](configuration.md) · [Reports](reports.md) · [Working principles](../working-principle.md)
 
 Run the commands below from the repository root after installing

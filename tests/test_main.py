@@ -64,6 +64,42 @@ class ParserTests(unittest.TestCase):
 
 
 class DispatchTests(unittest.TestCase):
+    def test_no_color_reaches_normal_and_headless_shared_console(self) -> None:
+        from rich.ansi import AnsiDecoder
+        from rich.console import Console
+        from rich.text import Text
+
+        for headless in (False, True):
+            with self.subTest(headless=headless):
+                output = io.StringIO()
+                console = Console(file=output, force_terminal=True, color_system="truecolor")
+
+                def render_status(*_args, console=console):
+                    console.print(Text("HIGH signal; unavailable handles", style="bold red on blue"))
+                    return 0
+
+                flags = ["--no-color", "--target", "worker.exe", "--no-config"]
+                if headless:
+                    flags.append("--headless")
+                with mock.patch.object(cli, "_display_title"), \
+                        mock.patch.object(cli, "_run_dashboard", side_effect=render_status), \
+                        mock.patch.object(cli, "_run_headless", side_effect=render_status):
+                    self.assertEqual(cli._main(console, flags), 0)
+                self.assertIn("HIGH signal; unavailable handles", output.getvalue())
+                for line in AnsiDecoder().decode(output.getvalue()):
+                    for span in line.spans:
+                        self.assertIsNone(span.style.color)
+                        self.assertIsNone(span.style.bgcolor)
+
+    def test_target_no_color_argument_does_not_change_monitor_output(self) -> None:
+        console = make_console()
+        initial_policy = console.no_color
+        with mock.patch.object(cli, "_run_headless", return_value=0) as run:
+            cli._main(console, ["--headless", "--target", "worker.exe", "--no-config",
+                                "--", "--no-color"])
+        self.assertEqual(run.call_args.args[1], ["--no-color"])
+        self.assertEqual(console.no_color, initial_policy)
+
     def test_headless_builds_a_runner_from_flags(self) -> None:
         with mock.patch.object(cli, "HeadlessRunner") as runner:
             runner.return_value.run.return_value = 1

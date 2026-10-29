@@ -322,6 +322,12 @@ readable fallback when it cannot be displayed.
 
 ## Run a leak check in CI
 
+Use `--no-color` to disable terminal colors in normal or headless runs, or
+`draintracer diff BEFORE.json AFTER.json --no-color` for comparisons. This
+overrides forced color; otherwise Rich follows its normal `NO_COLOR`,
+`FORCE_COLOR`, and terminal detection. Verdict words, unknown readings, and
+text emphasis remain available without relying on color.
+
 From the source checkout, use the included stable workload:
 
 ```powershell

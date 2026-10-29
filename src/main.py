@@ -470,6 +470,7 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--version", action="version", version=f"DrainTracer {DashboardApp.VERSION}")
+    parser.add_argument("--no-color", action="store_true", help="Disable terminal colors, including forced color.")
     target = parser.add_argument_group("target")
     source = target.add_mutually_exclusive_group()
     source.add_argument(
@@ -759,6 +760,8 @@ def _main(console: Console, argv: list[str] | None) -> int:
         return run_diff(arguments[1:], console)
     parser = build_parser()
     args = parser.parse_args(arguments)
+    if args.no_color:
+        console.no_color = True
 
     forwarded_args = list(args.target_args or [])
     if forwarded_args[:1] == ["--"]:

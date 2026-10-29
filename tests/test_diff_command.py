@@ -26,6 +26,20 @@ from src.events import LeakSeverity
 
 
 class DiffCommandTests(unittest.TestCase):
+    def test_no_color_overrides_forced_color_without_losing_verdict_words(self) -> None:
+        from rich.ansi import AnsiDecoder
+        from rich.console import Console
+
+        output = io.StringIO()
+        console = Console(file=output, force_terminal=True, color_system="truecolor", width=100)
+        code = run_diff([str(self.leaky), str(self.fixed), "--no-color"], console)
+        self.assertEqual(code, EXIT_OK)
+        self.assertIn("IMPROVED", output.getvalue())
+        for line in AnsiDecoder().decode(output.getvalue()):
+            for span in line.spans:
+                self.assertIsNone(span.style.color)
+                self.assertIsNone(span.style.bgcolor)
+
     def test_count_budget_flags_reject_fractional_limits(self) -> None:
         for flag in ("--budget-handles", "--budget-threads"):
             with self.subTest(flag=flag):
