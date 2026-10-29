@@ -314,6 +314,15 @@ panel says so; `Esc` clears the filter and restores the retained selection.
 | `3` | Evidence: each window's points, slope, monotonic and drop ratios, score, and verdict | `←`/`→` resource, `↑`/`↓` scroll |
 | `4` | Timeline: one chart with process, pause, signal, and marker annotations | `←`/`→` chart, `F` freeze view, `↑`/`↓` annotations |
 | `5` | Monitor: cadence, collection cost, coverage, freshness, monitor footprint | — |
+| `6` | Compare: a saved baseline against a captured view of the current session | `B` load baseline, `R` refresh, `↑`/`↓` scroll |
+
+In Compare, press `B` and enter a JSON report path (spaces are supported); Enter
+loads it and Esc cancels. The view shows strict comparability and caveats before
+differences, using the same engine and rendering as `draintracer diff --strict`.
+It includes drift, peaks, coverage, signal episodes, and per-operation values
+when both runs recorded operation counts. `R` captures a fresh comparison;
+sampling continues while loading or inspecting the baseline. A failed load
+keeps the previous comparison available. Baselines are read without being modified.
 
 `F` freezes only the timeline view; `Space` still pauses the target.
 Markers record timing, not cause, and severity is a heuristic tier, not a

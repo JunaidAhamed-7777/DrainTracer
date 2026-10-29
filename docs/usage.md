@@ -252,6 +252,13 @@ views never pauses sampling or changes the target.
   cost; these are host context rather than target usage. Unknown readings
   stay `n/a`, and CPU needs a second refresh to establish its baseline.
   Use arrows, paging keys, Home or End to reach all sections in a small terminal.
+- `6` Compare: press `B` to load a saved JSON baseline path, then Enter to
+  confirm or Esc to cancel. It shows strict comparability and caveats before
+  measured differences, using the same engine and renderer as `diff --strict`.
+  It includes drift, peaks, coverage, episodes and, when recorded on both sides,
+  per-operation values. File loading runs separately from the UI and sampler.
+  `R` refreshes the captured current session; scrolling uses arrows, paging,
+  Home and End. Failed loads retain the previous comparison.
 
 Pausing keeps the last totals and alert visible without adding trend
 samples. CPU is summed across the tree relative to one core, so it can

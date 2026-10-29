@@ -41,6 +41,7 @@
     "src/theme.py",
     "src/units.py",
     "src/updates.py",
+    "src/view_comparison.py",
     "src/view_evidence.py",
     "src/view_monitor.py",
     "src/view_processes.py",

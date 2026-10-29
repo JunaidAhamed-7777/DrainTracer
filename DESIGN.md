@@ -95,6 +95,12 @@ PID and creation time. Range controls stay within bounded retained history; free
 captures the current scope and never stops sampling. HTML provides the same named
 annotations as visible chart labels and an escaped textual list.
 
+Compare is view 6. It uses the shared strict report-diff engine and renderer,
+with comparability and caveats above differences. Baseline path input owns keys
+until Enter or Escape; background loading never controls the target. Comparison
+results are captured on request, show their capture time, and refresh with R.
+The scrollable view preserves the previous result after a failed load.
+
 Dashboard help owns keyboard input while open: scrolling, closing help, and view
 selection remain active. Its footer shows those actions only. Target controls and
 session actions require closing help first.
