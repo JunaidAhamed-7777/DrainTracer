@@ -285,6 +285,10 @@ Use the target's own file logging when needed. See the
   with a second press when attached.
 - `Q` — quit, cleaning up a launched tree or detaching from an attached tree.
 
+A partly successful pause is rolled back. If a process cannot be resumed,
+it remains marked as suspended; detach retries it and reports a cleanup error
+when resuming is denied. Resolve the access restriction before retrying cleanup.
+
 Number keys open focused views; `Esc` returns to the overview. Views change
 only what is shown: sampling and the target continue unaffected.
 

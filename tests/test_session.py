@@ -442,6 +442,51 @@ class SessionLifecycleTests(unittest.TestCase):
                 _Session("C:/targets/worker.exe", console=make_console(), timeout=timeout)
 
 
+class PartialPauseCleanupTests(unittest.TestCase):
+    def test_shutdown_retries_partial_pause_without_losing_suspended_identities(self) -> None:
+        from src.process_runner import ProcessManager, ProcessManagerError
+
+        for recovered in (False, True):
+            with self.subTest(recovered=recovered):
+                session = _Session(None, attach_pid=101, console=make_console())
+                manager = session.manager
+                manager._root_pid = 101
+                manager._attached = True
+                manager._tracked_pids = {101, 102}
+                manager._identities = {101: 10.0, 102: 20.0}
+                manager._depths = {101: 0, 102: 1}
+                resume_attempts = 0
+
+                def resume_known_identity(pid, manager=manager, recovered=recovered):
+                    nonlocal resume_attempts
+                    resume_attempts += 1
+                    self.assertEqual(pid, 101)
+                    self.assertEqual(manager._identities[pid], 10.0)
+                    return recovered and resume_attempts == 3
+
+                with (
+                    mock.patch.object(ProcessManager, "is_running", new_callable=mock.PropertyMock,
+                                      return_value=True),
+                    mock.patch.object(manager, "_refresh_tracked_pids"),
+                    mock.patch.object(manager, "_start_poll_thread"),
+                    mock.patch.object(manager, "_suspend_pid", side_effect=[True, False]),
+                    mock.patch.object(manager, "_resume_pid", side_effect=resume_known_identity),
+                    mock.patch.object(session.detector, "stop"),
+                ):
+                    self.assertFalse(manager.pause())
+                    self.assertTrue(manager.is_paused)
+                    with self.assertRaisesRegex(ProcessManagerError, "Cannot detach"):
+                        session.shutdown()
+                self.assertEqual(resume_attempts, 3)
+                if recovered:
+                    self.assertFalse(manager.is_paused)
+                    self.assertFalse(manager.has_tracked_processes)
+                else:
+                    self.assertTrue(manager.is_paused)
+                    self.assertEqual(manager._suspended_pids, {101})
+                    self.assertEqual(manager._identities, {101: 10.0, 102: 20.0})
+
+
 class CoverageTests(unittest.TestCase):
     def _session(self) -> _Session:
         return _Session("C:/targets/worker.exe", console=make_console())
