@@ -84,6 +84,10 @@ help, and version-only commands stay free of update checks.
 - Render UI on the main thread and keep monitoring independent of network work.
 - Verify keyboard cancellation, narrow widths, redirected input, and legacy output.
 
+The Monitor view is scrollable with Up/Down, Page Up/Down and Home/End, so all
+diagnostics remain reachable in narrow terminals. Host pressure is labeled as
+whole-host context, with unknown readings, sample age and collection cost.
+
 Dashboard help owns keyboard input while open: scrolling, closing help, and view
 selection remain active. Its footer shows those actions only. Target controls and
 session actions require closing help first.
