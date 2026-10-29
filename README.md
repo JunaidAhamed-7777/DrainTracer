@@ -310,6 +310,7 @@ Leak health shows the current evidence apart from the session's worst signal:
 once one was judged clean, a severity when growth is detected, and
 `UNAVAILABLE` or `PARTIAL` when processes cannot be read. Unreadable counters
 count as unknown, never zero, and access changes restart detection windows.
+Process names, including bracketed text in parent labels, are displayed literally.
 Evidence and inspector tree totals show `n/a` when unavailable and label partial
 totals as lower bounds; measured zero counters remain zero.
 
