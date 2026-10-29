@@ -96,7 +96,9 @@ The file reader consumes at most **64 MiB**, rejects nesting deeper than
 **64** and more than **1,000,000 JSON tokens** before decoding, and bounds
 decoded value count to the same limit. Strings containing brackets do not
 increase nesting. Malformed UTF-8/JSON, non-finite numbers, unsupported
-versions, duplicate object keys, and invalid known field shapes fail with useful errors.
+versions, duplicate object keys, integers outside finite numeric representability,
+and invalid known field shapes fail with bounded useful errors that do not echo
+the rejected numeric payload.
 `diff` uses this same reader, so it applies the same ingestion policy.
 
 The public schema describes shape and meaning; byte/token/depth limits are
