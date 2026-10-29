@@ -135,6 +135,14 @@ without `session_facts` fall back to retained snapshots, and comparisons
 warn when such a report was thinned. The headless failure decision uses the
 strongest signal observed during the session.
 
+Exact facts are recorded before snapshots enter the bounded consumer queue.
+If that queue overflows while rendering or input is stalled, the chart and
+event transitions can lose detail; `monitor.dropped_snapshots` counts those
+discarded snapshots, including an overflow on the final publication. Peaks,
+worst signals, budget decisions, coverage, and sample counts still include
+every collected observation. `chart.seen` counts snapshots accepted into chart
+history, so it can be smaller than `samples.taken` after queue loss.
+
 The top-level `markers` list holds the markers added with `M` during a
 dashboard session: `index`, `label` (`marker N`), `timestamp`, `time`, and
 `elapsed_seconds` since monitoring started. Markers record when the user

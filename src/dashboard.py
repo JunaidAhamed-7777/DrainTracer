@@ -99,6 +99,7 @@ class DashboardApp(
         attach_pid: int | None = None,
         timeout: float | None = None,
         settings: MonitorSettings | None = None,
+        attach_create_time: float | None = None,
     ) -> None:
         super().__init__(
             target_path,
@@ -108,6 +109,7 @@ class DashboardApp(
             attach_pid=attach_pid,
             timeout=timeout,
             settings=settings,
+            attach_create_time=attach_create_time,
         )
         self.palette = PALETTE
         self._spark_rows = 2
@@ -259,6 +261,10 @@ class DashboardApp(
             return
         if self._show_help and key in HELP_SCROLL:
             self._help_offset = max(0, self._help_offset + HELP_SCROLL[key])
+            return
+        if self._show_help and key not in VIEWS and key != "?" and normalized != "h":
+            # Help owns input until it closes. In particular, target controls
+            # and quit must never act behind the help panel.
             return
         if not self._show_help:
             # The active view sees keys first: navigation, and text while searching.
@@ -720,6 +726,12 @@ class DashboardApp(
         roomy = self.console.size.width >= 120
         keys = Text(no_wrap=True, overflow="ellipsis")
         quit_label = ("detach & quit" if roomy else "detach") if self.attached else "quit"
+        if self._show_help:
+            for key, label in (("UP/DOWN", "scroll"), ("ESC / ? / H", "close help"),
+                               (f"{min(VIEWS)}-{max(VIEWS)}", "views")):
+                keys.append(f" {key} ", style=f"bold {palette.ink} on {palette.muted}")
+                keys.append(f" {label}  ", style=palette.muted)
+            return keys
         if self._view != "overview" and not self._show_help:
             # The view's own keys first; the target controls stay in help.
             controls = list(getattr(self, f"_{self._view}_controls")())

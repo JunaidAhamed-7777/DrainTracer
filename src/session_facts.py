@@ -12,6 +12,7 @@ analysis prefers them over values derived from the kept snapshots.
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from typing import Any
 
@@ -19,7 +20,9 @@ import psutil
 
 from .events import (
     METRIC_KEYS,
+    RESOURCE_METRICS,
     EvidenceState,
+    LeakAlert,
     LeakResource,
     LeakSeverity,
     MetricsSnapshot,
@@ -29,6 +32,9 @@ from .events import (
 # Bumped when the shape of ``session_facts`` changes incompatibly.
 FACTS_SCHEMA = 1
 _JUDGED = {EvidenceState.NO_GROWTH, EvidenceState.GROWTH}
+_SIGNAL_METRICS = tuple(RESOURCE_METRICS.values())
+_UNREADABLE_PID_LIMIT = 50
+_MONITOR_ERROR_LIMIT = 20
 
 
 @dataclass
@@ -78,11 +84,13 @@ class _Signal:
 class SessionFacts:
     """Running summaries of every snapshot a session accepts.
 
-    Fed on the session's thread from immutable snapshots; it only counts
-    what the detector already decided and never re-evaluates detection.
+    Publishers update these synchronized, fixed-size summaries before queue
+    eviction; direct samples use the same path. Readers receive copied state.
+    This only counts detector decisions and never re-evaluates detection.
     """
 
     def __init__(self) -> None:
+        self._lock = threading.Lock()
         self.taken = 0
         self.collected = 0
         self.measured = 0
@@ -106,9 +114,22 @@ class SessionFacts:
         self._monitor_private: int | None = None
         self._classification_age: float | None = None
         self.dropped = 0
+        self.worst = LeakSeverity.NONE
+        self._latest_alerts: dict[LeakResource, LeakAlert] = {}
+        self._judged_resources: set[LeakResource] = set()
+        self._coverage_samples = 0
+        self._partial_samples = dict.fromkeys(_SIGNAL_METRICS, 0)
+        self._unavailable_samples = dict.fromkeys(_SIGNAL_METRICS, 0)
+        self._unreadable_pids: dict[int, str] = {}
+        self._errors: list[str] = []
 
-    def observe(self, snapshot: MetricsSnapshot) -> None:
+    def observe(self, snapshot: MetricsSnapshot, *, dropped: int = 0) -> None:
         """Account for one snapshot, whatever its kind."""
+        with self._lock:
+            self.dropped = max(self.dropped, dropped)
+            self._observe(snapshot)
+
+    def _observe(self, snapshot: MetricsSnapshot) -> None:
         self.taken += 1
         stamp = snapshot.timestamp
         self.first_at = stamp if self.first_at is None else min(self.first_at, stamp)
@@ -119,6 +140,9 @@ class SessionFacts:
             # A failed sample measured nothing; it neither clears signals nor
             # bridges the time between the samples around it.
             self.failed += 1
+            error = f"sampling error: {snapshot.metadata['sampling_error']}"
+            if error not in self._errors and len(self._errors) < _MONITOR_ERROR_LIMIT:
+                self._errors.append(error)
             self._previous = None
             return
         if snapshot.monitoring_paused:
@@ -126,6 +150,27 @@ class SessionFacts:
             self._previous = None
             return
         self.collected += 1
+        if severity_rank(snapshot.severity) > severity_rank(self.worst):
+            self.worst = snapshot.severity
+        self._latest_alerts.update((alert.resource, alert) for alert in snapshot.alerts)
+        self._judged_resources.update(
+            item.resource for item in snapshot.evidence if item.state in _JUDGED
+        )
+        coverage = snapshot.coverage or {}
+        live_coverage = [coverage[m] for m in _SIGNAL_METRICS
+                         if m in coverage and coverage[m].total > 0]
+        if live_coverage:
+            self._coverage_samples += 1
+        for item in live_coverage:
+            if item.measured < item.total:
+                self._partial_samples[item.metric] += 1
+            if item.measured == 0:
+                self._unavailable_samples[item.metric] += 1
+        unreadable = {pid for item in live_coverage for pid in item.unmeasured_pids}
+        names = {process.pid: process.name for process in snapshot.processes}
+        for pid in sorted(unreadable):
+            if len(self._unreadable_pids) < _UNREADABLE_PID_LIMIT:
+                self._unreadable_pids.setdefault(pid, names.get(pid, ""))
         previous, self._previous = self._previous, snapshot
         live = [p for p in snapshot.processes if p.status != psutil.STATUS_DEAD]
         if live:
@@ -197,13 +242,45 @@ class SessionFacts:
 
     def peak(self, key: str) -> tuple[float, float] | None:
         """``(value, timestamp)`` of a total's highest measured value."""
-        return self._peaks.get(key)
+        with self._lock:
+            return self._peaks.get(key)
 
     def episodes(self, resource: LeakResource) -> int:
-        return self._signals[resource].episodes
+        with self._lock:
+            return self._signals[resource].episodes
+
+    def session_state(self) -> dict[str, Any]:
+        """A bounded copy of the authoritative fields used by front ends."""
+        with self._lock:
+            return self._session_state()
+
+    def _session_state(self) -> dict[str, Any]:
+        return {
+            "samples": self.collected,
+            "peaks": {key: value for key, (value, _stamp) in self._peaks.items()},
+            "worst": self.worst,
+            "worst_by_resource": {resource: signal.worst for resource, signal in self._signals.items()},
+            "latest_alerts": dict(self._latest_alerts),
+            "judged_resources": set(self._judged_resources),
+            "coverage_samples": self._coverage_samples,
+            "partial_samples": dict(self._partial_samples),
+            "unavailable_samples": dict(self._unavailable_samples),
+            "unreadable_pids": dict(self._unreadable_pids),
+            "errors": tuple(self._errors),
+            "dropped": self.dropped,
+        }
+
+    def capture(self) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Capture matching bounded UI state and report facts under one lock."""
+        with self._lock:
+            return self._session_state(), self._to_dict()
 
     def to_dict(self) -> dict[str, Any]:
         """JSON primitives; episodes still open count up to the last sample."""
+        with self._lock:
+            return self._to_dict()
+
+    def _to_dict(self) -> dict[str, Any]:
         signals = {}
         for resource, signal in self._signals.items():
             open_seconds = (

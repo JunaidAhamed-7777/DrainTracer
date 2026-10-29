@@ -374,6 +374,35 @@ class HelpAndSortTests(unittest.TestCase):
                 self.assertEqual(len(lines), height)
                 self.assertTrue(all(len(line) <= width for line in lines))
 
+    def test_help_consumes_target_and_session_action_keys(self) -> None:
+        from unittest.mock import patch
+
+        for attached in (False, True):
+            for paused in (False, True):
+                with self.subTest(attached=attached, paused=paused):
+                    app = _app()
+                    app.manager._attached = attached
+                    if paused:
+                        app.detector.pause()
+                    app._handle_key("?")
+                    with patch.object(app.manager, "kill") as kill, \
+                            patch.object(app.manager, "pause") as pause, \
+                            patch.object(app.manager, "resume") as resume, \
+                            patch.object(app, "export_log") as export:
+                        for key in ("k", "K", " ", "q", "e", "m", "s"):
+                            app._handle_key(key)
+                        kill.assert_not_called()
+                        pause.assert_not_called()
+                        resume.assert_not_called()
+                        export.assert_not_called()
+                    self.assertFalse(app._quit_requested)
+                    self.assertTrue(app._show_help)
+                    self.assertEqual(app._kill_armed_until, 0)
+                    self.assertIn("close help", self._render(app).splitlines()[-1])
+                    app._handle_key("5")  # Safe view navigation closes help.
+                    self.assertFalse(app._show_help)
+                    self.assertEqual(app.view, "monitor")
+
     def test_sort_cycles_through_metrics(self) -> None:
         from dataclasses import replace
 

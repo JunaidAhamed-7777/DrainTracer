@@ -290,6 +290,37 @@ class ProcessesViewTests(ViewRenderingMixin, unittest.TestCase):
         app._proc_query = "10"
         self.assertEqual(self._pids(app), [100])
 
+    def test_parent_names_render_as_literal_text(self) -> None:
+        for name in ("[red]worker.exe", "[link=https://example.test]parent[/link]", "[/bold]"):
+            with self.subTest(name=name):
+                app = _app(140, 60)
+                sample_trees(app, [[make_process(100, name=name), _worker(2)]] * 2)
+                app._proc_selected = (2, 2.0)
+                parent = app._parent_text(100)
+                self.assertEqual(parent.plain, f"PID 100 {name}")
+                self.assertEqual(parent.spans, [])
+                with app.console.capture() as capture:
+                    app.console.print(app._render_process_detail(app._selected_row(app._inspector_rows())))
+                self.assertIn(f"PID 100 {name}", " ".join(capture.get().split()))
+
+    def test_filter_hides_a_retained_selection_without_claiming_it_exited(self) -> None:
+        for identity in ((100, 1.0), (1, 1.0)):
+            with self.subTest(identity=identity):
+                app = self._app(80, 24)
+                app._proc_selected = identity  # A live parent or retained exited worker.
+                app._proc_query = "no-match"
+                text = " ".join(render_text(app).split())
+                self.assertIn(f"Selected PID {identity[0]} is hidden by the search filter", text)
+                self.assertNotIn("no longer tracked", text)
+                app._handle_key(ESCAPE)
+                self.assertEqual(app._selected_row(app._inspector_rows()).identity, identity)
+
+    def test_filter_does_not_hide_the_explanation_for_a_dropped_identity(self) -> None:
+        app = self._app()
+        app._proc_selected = (555, 5.0)
+        app._proc_query = "no-match"
+        self.assertIn("PID 555 is no longer tracked", " ".join(render_text(app).split()))
+
     def test_kill_always_targets_the_whole_tree(self) -> None:
         app = self._app()
         app._handle_key(DOWN)
@@ -376,6 +407,37 @@ class EvidenceViewTests(ViewRenderingMixin, unittest.TestCase):
         output = self._text(app)
         self.assertIn(f"{window.score:.2f}", output)
         self.assertIn(f"{window.monotonic_ratio:.0%}", output)
+
+    def test_current_totals_preserve_unknown_zero_and_partial_coverage(self) -> None:
+        from src.events import LeakResource
+
+        zero = replace(make_process(100, private=0, handles=0, threads=0), rss_bytes=0)
+        cases = (
+            ([make_denied(100)], ("n/a", "n/a", "n/a")),
+            ([zero], ("0.0 B", "0", "0")),
+            ([zero, make_denied(200)], ("0.0 B (partial lower bound)",
+                                      "0 (partial lower bound)", "0 (partial lower bound)")),
+        )
+        for processes, expected in cases:
+            with self.subTest(expected=expected):
+                app = _app(140, 60)
+                sample_trees(app, [processes] * 2)
+                for resource, quantity in zip(LeakResource, expected):
+                    facts = app._evidence_facts(resource, app.snapshot.evidence_for(resource), None)
+                    with app.console.capture() as capture:
+                        app.console.print(facts)
+                    self.assertIn("Current " + quantity, " ".join(capture.get().split()))
+                row = app._inspector_rows()[0]
+                tree = app._tree_context(row, " | ")
+                for label, quantity in zip(("private", "handles", "threads"), expected):
+                    self.assertIn(f"{label} {quantity}", tree)
+
+    def test_process_share_uses_the_measured_partial_total(self) -> None:
+        app = _app()
+        sample_trees(app, [[make_process(100, private=MB), make_denied(200)]] * 2)
+        tree = app._tree_context(app._inspector_rows()[0], " | ")
+        self.assertIn("private 1.0 MB (partial lower bound)", tree)
+        self.assertIn("this process 100% of measured private", tree)
 
     def test_steady_resources_explain_which_check_failed(self) -> None:
         app = self._app()
@@ -517,6 +579,33 @@ class TimelineViewTests(ViewRenderingMixin, unittest.TestCase):
         app._handle_key("F")
         self.assertFalse(app.timeline_frozen)
         self.assertIn("30 samples", render_text(app))
+
+    def test_frozen_caption_distinguishes_new_samples_from_retention_loss(self) -> None:
+        app = _app()
+        sample_trees(app, [[make_process(100)]] * 3)
+        app._toggle_freeze()
+        sample_trees(app, [[make_process(100)]] * 2, start=3)
+        text = app._decimation_text(3, 1, 1).plain
+        self.assertIn("2 newer samples collected while frozen", text)
+        self.assertNotIn("earlier samples", text)
+
+    def test_retention_caption_uses_the_sample_count_at_freeze(self) -> None:
+        class Limited(DashboardApp):
+            HISTORY_LIMIT = 2
+
+        app = Limited("worker.exe", console=make_console())
+        sample_trees(app, [[make_process(100)]] * 3)
+        app._toggle_freeze()
+        sample_trees(app, [[make_process(100)]] * 2, start=3)
+        text = app._decimation_text(2, 1, 1).plain
+        self.assertIn("2 newer samples collected while frozen", text)
+        self.assertIn("earlier samples are not charted here", text)
+        self.assertIn("report charts may be thinned; session facts remain exact", text)
+        self.assertNotIn("keep the whole session", text)
+        app._toggle_freeze()
+        text = app._decimation_text(2, 1, 1).plain
+        self.assertNotIn("while frozen", text)
+        self.assertIn("earlier samples are not charted here", text)
 
     def test_paused_samples_leave_a_gap_and_a_mark(self) -> None:
         from helpers import make_snapshot
