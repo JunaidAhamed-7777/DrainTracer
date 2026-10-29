@@ -290,6 +290,19 @@ class ProcessesViewTests(ViewRenderingMixin, unittest.TestCase):
         app._proc_query = "10"
         self.assertEqual(self._pids(app), [100])
 
+    def test_parent_names_render_as_literal_text(self) -> None:
+        for name in ("[red]worker.exe", "[link=https://example.test]parent[/link]", "[/bold]"):
+            with self.subTest(name=name):
+                app = _app(140, 60)
+                sample_trees(app, [[make_process(100, name=name), _worker(2)]] * 2)
+                app._proc_selected = (2, 2.0)
+                parent = app._parent_text(100)
+                self.assertEqual(parent.plain, f"PID 100 {name}")
+                self.assertEqual(parent.spans, [])
+                with app.console.capture() as capture:
+                    app.console.print(app._render_process_detail(app._selected_row(app._inspector_rows())))
+                self.assertIn(f"PID 100 {name}", " ".join(capture.get().split()))
+
     def test_kill_always_targets_the_whole_tree(self) -> None:
         app = self._app()
         app._handle_key(DOWN)

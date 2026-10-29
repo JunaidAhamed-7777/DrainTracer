@@ -306,6 +306,7 @@ Leak health shows the current evidence apart from the session's worst signal:
 once one was judged clean, a severity when growth is detected, and
 `UNAVAILABLE` or `PARTIAL` when processes cannot be read. Unreadable counters
 count as unknown, never zero, and access changes restart detection windows.
+Process names, including bracketed text in parent labels, are displayed literally.
 
 The layout adapts to terminal size and uses ASCII fallbacks for legacy Windows
 encodings. Startup artwork still comes from [TITLE.txt](TITLE.txt), with a
