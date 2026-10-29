@@ -580,6 +580,33 @@ class TimelineViewTests(ViewRenderingMixin, unittest.TestCase):
         self.assertFalse(app.timeline_frozen)
         self.assertIn("30 samples", render_text(app))
 
+    def test_frozen_caption_distinguishes_new_samples_from_retention_loss(self) -> None:
+        app = _app()
+        sample_trees(app, [[make_process(100)]] * 3)
+        app._toggle_freeze()
+        sample_trees(app, [[make_process(100)]] * 2, start=3)
+        text = app._decimation_text(3, 1, 1).plain
+        self.assertIn("2 newer samples collected while frozen", text)
+        self.assertNotIn("earlier samples", text)
+
+    def test_retention_caption_uses_the_sample_count_at_freeze(self) -> None:
+        class Limited(DashboardApp):
+            HISTORY_LIMIT = 2
+
+        app = Limited("worker.exe", console=make_console())
+        sample_trees(app, [[make_process(100)]] * 3)
+        app._toggle_freeze()
+        sample_trees(app, [[make_process(100)]] * 2, start=3)
+        text = app._decimation_text(2, 1, 1).plain
+        self.assertIn("2 newer samples collected while frozen", text)
+        self.assertIn("earlier samples are not charted here", text)
+        self.assertIn("report charts may be thinned; session facts remain exact", text)
+        self.assertNotIn("keep the whole session", text)
+        app._toggle_freeze()
+        text = app._decimation_text(2, 1, 1).plain
+        self.assertNotIn("while frozen", text)
+        self.assertIn("earlier samples are not charted here", text)
+
     def test_paused_samples_leave_a_gap_and_a_mark(self) -> None:
         from helpers import make_snapshot
 
