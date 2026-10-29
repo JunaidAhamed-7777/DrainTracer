@@ -532,8 +532,7 @@ class LeakDetector:
         cpu = None
         if baseline is not None and stamp > baseline[0]:
             cpu = max(0.0, (used - baseline[1]) / (stamp - baseline[0]) * 100.0)
-        private = getattr(memory, "private", None)
-        return cpu, int(memory.rss), int(private) if private is not None else None
+        return cpu, int(memory.rss), self._private_memory(proc, memory)
 
     def _series(self) -> dict[LeakResource, _ResourceSeries]:
         return {
@@ -665,7 +664,8 @@ class LeakDetector:
     ) -> tuple[list[ProcessMetrics], HandleCounts | None]:
         """Attach handle-type counts when a classification pass is due.
 
-        Classification reads the whole system handle table, so it runs every
+        Classification reads the system handle table or Linux descriptor
+        lists, so it runs every
         ``handle_types_interval`` seconds rather than every sample, and backs
         off further when a pass is slow. Processes whose metrics could not
         be read are left out so the type counts add up to the handle total.
@@ -676,7 +676,9 @@ class LeakDetector:
         measured = {
             process.pid
             for process in processes
-            if not process.access_denied and process.status != psutil.STATUS_DEAD
+            if not process.access_denied
+            and process.measured("handles")
+            and process.status != psutil.STATUS_DEAD
         }
         if not measured:
             return processes, None
@@ -687,6 +689,7 @@ class LeakDetector:
             self.handle_types_interval, cost * _CLASSIFY_COST_FACTOR
         )
         if per_pid is None:
+            self._handle_type_history.clear()
             return processes, None
         self._classified_at = clock
         classified = [
@@ -695,7 +698,15 @@ class LeakDetector:
             else process
             for process in processes
         ]
-        totals = total_counts({pid: counts for pid, counts in per_pid.items() if pid in measured})
+        # A protected /proc descriptor directory must not silently become a
+        # zero in the tree's classified totals. Per-process results remain
+        # useful, but an incomplete classification has no comparable total.
+        totals = (
+            total_counts({pid: per_pid[pid] for pid in measured})
+            if measured <= per_pid.keys() else None
+        )
+        if totals is None:
+            self._handle_type_history.clear()
         return classified, totals
 
     def _handle_growth_since(self, since: float) -> dict[str, int] | None:
@@ -754,7 +765,7 @@ class LeakDetector:
                 mem = proc.memory_info()
                 rss = int(mem.rss)
                 vms = int(mem.vms)
-                private_bytes = int(getattr(mem, "private", mem.rss))
+                read_private = self._private_memory(proc, mem)
                 read_handles = self._safe_num_handles(proc)
                 threads = entry.threads if entry is not None else proc.num_threads()
                 read_cpu = self._sample_cpu_percent(proc)
@@ -802,9 +813,12 @@ class LeakDetector:
                 create_time=self.process_manager.created_at(pid),
             )
         else:
+            private_bytes = 0 if read_private is None else read_private
             handles = 0 if read_handles is None else read_handles
             cpu_percent = 0.0 if read_cpu is None else read_cpu
             io_read_bps, io_write_bps = rates if rates is not None else (0.0, 0.0)
+            if read_private is None:
+                unmeasured.append("private_bytes")
             if read_handles is None:
                 unmeasured.append("handles")
             if read_cpu is None:
@@ -831,10 +845,31 @@ class LeakDetector:
         )
 
     @staticmethod
-    def _safe_num_handles(proc: psutil.Process) -> int | None:
-        """The handle count, or ``None`` when it cannot be read (never a false 0)."""
+    def _private_memory(proc: psutil.Process, memory: object) -> int | None:
+        """Windows private committed bytes or Linux unique resident pages.
+
+        RSS includes shared pages, so it must never stand in for private
+        memory. Linux USS may be protected even when basic counters can be
+        read; leave only this metric unmeasured in that case.
+        """
+        private = getattr(memory, "private", None)
+        if private is not None:
+            return int(private)
         try:
-            return int(proc.num_handles())
+            # psutil 8 exposes USS through memory_footprint; older supported
+            # versions provide the same field through memory_full_info.
+            footprint = getattr(proc, "memory_footprint", None)
+            details = footprint() if footprint is not None else proc.memory_full_info()
+            return int(details.uss)
+        except (AttributeError, OSError, psutil.AccessDenied, NotImplementedError):
+            return None
+
+    @staticmethod
+    def _safe_num_handles(proc: psutil.Process) -> int | None:
+        """Windows handles or Linux descriptors; unreadable counts stay unknown."""
+        try:
+            count = getattr(proc, "num_handles", None)
+            return int(count() if count is not None else proc.num_fds())
         except (AttributeError, OSError, psutil.AccessDenied, NotImplementedError):
             return None
 

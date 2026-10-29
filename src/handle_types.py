@@ -1,4 +1,4 @@
-"""Classify the Windows handles of monitored processes by object type.
+"""Classify Windows handles or Linux file descriptors by object type.
 
 One pass reads the system handle table with
 ``NtQuerySystemInformation(SystemExtendedHandleInformation)`` and maps each
@@ -9,15 +9,21 @@ access to the monitored processes and cannot hang on pipe handles.
 Sockets are ``File`` objects on Windows (``\\Device\\Afd``), so they are
 counted from the TCP/UDP connection table instead and moved from the file
 count to the socket count.
+
+Linux reads /proc/PID/fd symlinks without opening the resources they name.
+Sockets and event descriptors have explicit categories; pipes and other
+anonymous kernel descriptors are counted as other.
 """
 
 from __future__ import annotations
 
 import ctypes
 import logging
+import os
 import sys
 from collections import Counter
 from collections.abc import Collection, Mapping
+from pathlib import Path
 
 import psutil
 
@@ -61,13 +67,14 @@ HandleCounts = dict[str, int]
 class HandleClassifier:
     """Count handles per category for a set of PIDs.
 
-    ``classify`` returns ``None`` when classification is unavailable (not
-    Windows, or the system query keeps failing); callers then fall back to
-    total handle counts.
+    ``classify`` returns ``None`` when classification is unavailable. On
+    Linux, PIDs whose descriptor directories cannot be read are omitted
+    rather than represented as a false zero.
     """
 
     def __init__(self) -> None:
-        self._enabled = sys.platform == "win32"
+        self._linux = sys.platform.startswith("linux")
+        self._enabled = self._linux or sys.platform == "win32"
         self._api: _NtApi | None = None
         self._type_names: dict[int, str] = {}
         self._buffer_size = 1 << 20
@@ -85,6 +92,8 @@ class HandleClassifier:
         wanted = set(pids)
         if not wanted:
             return {}
+        if self._linux:
+            return self._classify_descriptors(wanted)
         try:
             api = self._load_api()
             by_type = self._count_by_type(api, wanted)
@@ -99,6 +108,7 @@ class HandleClassifier:
                 self._enabled = False
             return None
         self._failures = 0
+        self.last_error = None
         sockets = _socket_counts(wanted)
 
         result: dict[int, HandleCounts] = {}
@@ -110,6 +120,41 @@ class HandleClassifier:
             moved = min(sockets.get(pid, 0), counts["file"])
             counts["file"] -= moved
             counts["socket"] += moved
+            result[pid] = {category: counts[category] for category in CATEGORIES}
+        return result
+
+    def _classify_descriptors(self, pids: set[int]) -> dict[int, HandleCounts]:
+        """Count readable descriptor links; an inaccessible PID stays unknown."""
+        root = Path(getattr(psutil, "PROCFS_PATH", "/proc"))
+        result: dict[int, HandleCounts] = {}
+        self.last_error = None
+        for pid in pids:
+            counts: Counter[str] = Counter()
+            try:
+                # Materialize first and close scandir before reading links.
+                # When classifying ourselves its temporary directory FD
+                # will disappear and must not inflate the count.
+                with os.scandir(root / str(pid) / "fd") as entries:
+                    descriptors = [entry.path for entry in entries if entry.name.isdecimal()]
+                for descriptor in descriptors:
+                    try:
+                        target = os.readlink(descriptor)
+                    except FileNotFoundError:
+                        continue  # The target closed this FD during the pass.
+                    if target.startswith("socket:["):
+                        category = "socket"
+                    elif target.startswith("anon_inode:[eventfd]"):
+                        category = "event"
+                    elif target.startswith(("pipe:[", "anon_inode:")):
+                        category = "other"
+                    else:
+                        category = "file"
+                    counts[category] += 1
+            except OSError as exc:
+                # hidepid, ptrace restrictions, or process exit are expected;
+                # one unreadable process must not disable all classification.
+                self.last_error = str(exc)
+                continue
             result[pid] = {category: counts[category] for category in CATEGORIES}
         return result
 
@@ -255,28 +300,28 @@ class _UnicodeString(ctypes.Structure):
 class _ObjectTypeInformation(ctypes.Structure):
     _fields_ = [
         ("TypeName", _UnicodeString),
-        ("TotalNumberOfObjects", ctypes.c_ulong),
-        ("TotalNumberOfHandles", ctypes.c_ulong),
-        ("TotalPagedPoolUsage", ctypes.c_ulong),
-        ("TotalNonPagedPoolUsage", ctypes.c_ulong),
-        ("TotalNamePoolUsage", ctypes.c_ulong),
-        ("TotalHandleTableUsage", ctypes.c_ulong),
-        ("HighWaterNumberOfObjects", ctypes.c_ulong),
-        ("HighWaterNumberOfHandles", ctypes.c_ulong),
-        ("HighWaterPagedPoolUsage", ctypes.c_ulong),
-        ("HighWaterNonPagedPoolUsage", ctypes.c_ulong),
-        ("HighWaterNamePoolUsage", ctypes.c_ulong),
-        ("HighWaterHandleTableUsage", ctypes.c_ulong),
-        ("InvalidAttributes", ctypes.c_ulong),
-        ("GenericMapping", ctypes.c_ulong * 4),
-        ("ValidAccessMask", ctypes.c_ulong),
+        ("TotalNumberOfObjects", ctypes.c_uint32),
+        ("TotalNumberOfHandles", ctypes.c_uint32),
+        ("TotalPagedPoolUsage", ctypes.c_uint32),
+        ("TotalNonPagedPoolUsage", ctypes.c_uint32),
+        ("TotalNamePoolUsage", ctypes.c_uint32),
+        ("TotalHandleTableUsage", ctypes.c_uint32),
+        ("HighWaterNumberOfObjects", ctypes.c_uint32),
+        ("HighWaterNumberOfHandles", ctypes.c_uint32),
+        ("HighWaterPagedPoolUsage", ctypes.c_uint32),
+        ("HighWaterNonPagedPoolUsage", ctypes.c_uint32),
+        ("HighWaterNamePoolUsage", ctypes.c_uint32),
+        ("HighWaterHandleTableUsage", ctypes.c_uint32),
+        ("InvalidAttributes", ctypes.c_uint32),
+        ("GenericMapping", ctypes.c_uint32 * 4),
+        ("ValidAccessMask", ctypes.c_uint32),
         ("SecurityRequired", ctypes.c_ubyte),
         ("MaintainHandleCount", ctypes.c_ubyte),
         ("TypeIndex", ctypes.c_ubyte),
         ("ReservedByte", ctypes.c_ubyte),
-        ("PoolType", ctypes.c_ulong),
-        ("DefaultPagedPoolCharge", ctypes.c_ulong),
-        ("DefaultNonPagedPoolCharge", ctypes.c_ulong),
+        ("PoolType", ctypes.c_uint32),
+        ("DefaultPagedPoolCharge", ctypes.c_uint32),
+        ("DefaultNonPagedPoolCharge", ctypes.c_uint32),
     ]
 
 

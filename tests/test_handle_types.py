@@ -64,6 +64,13 @@ def _type_list(names: list[tuple[int, str]], corrupt: int | None = None) -> tupl
 
 
 class ParserTests(unittest.TestCase):
+    def test_windows_object_structure_uses_fixed_width_integers(self) -> None:
+        # Windows LONG/ULONG remain 32 bits even on Linux LP64 hosts. The
+        # parser is imported everywhere and must retain the Windows ABI.
+        self.assertEqual(ctypes.sizeof(_ObjectTypeInformation), 104 if POINTER == 8 else 96)
+        self.assertEqual(_ObjectTypeInformation.TypeIndex.offset,
+                         _ObjectTypeInformation.ValidAccessMask.offset + 6)
+
     def test_handle_columns_read_pid_and_type(self) -> None:
         pids, types = _handle_columns(_table([(4, 37), (1234, 40), (1234, 37)]))
         self.assertEqual(list(zip(pids, types)), [(4, 37), (1234, 40), (1234, 37)])
@@ -98,7 +105,8 @@ class CategoryTests(unittest.TestCase):
         self.assertEqual((totals["file"], totals["socket"], totals["other"]), (5, 1, 4))
 
     def test_classifier_gives_up_after_repeated_failures(self) -> None:
-        classifier = HandleClassifier()
+        with mock.patch("src.handle_types.sys.platform", "win32"):
+            classifier = HandleClassifier()
         classifier._enabled = True
         broken = mock.Mock()
         broken.handle_table.side_effect = OSError("denied")

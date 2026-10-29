@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import os
 import subprocess
 import sys
@@ -43,6 +44,13 @@ def _table(processes: list[tuple[int, list[tuple[int, int]]]]) -> bytes:
 
 
 class ParseTests(unittest.TestCase):
+    def test_nt_structures_keep_windows_abi_on_all_hosts(self) -> None:
+        pointer = ctypes.sizeof(ctypes.c_void_p)
+        self.assertEqual(ctypes.sizeof(_SystemProcessInformation), 256 if pointer == 8 else 184)
+        self.assertEqual(ctypes.sizeof(_SystemThreadInformation), 80 if pointer == 8 else 64)
+        self.assertEqual(_SystemThreadInformation.WaitReason.offset,
+                         _SystemThreadInformation.ThreadState.offset + 4)
+
     def test_wanted_processes_are_decoded(self) -> None:
         raw = _table([(4, [(2, 0)]), (10, [(5, 5), (5, 5)]), (20, [(5, 5), (2, 0)])])
         self.assertEqual(
