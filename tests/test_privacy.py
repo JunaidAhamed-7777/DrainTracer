@@ -46,6 +46,69 @@ def private_fixture() -> dict:
 
 
 class PrivacyTests(unittest.TestCase):
+    def test_numeric_identifiers_in_opaque_and_free_text_contexts_are_removed(self) -> None:
+        from src.investigation import investigation_summary
+
+        seeds = (987654321, 1122334455, 9988776655, 6677889900)
+        report = private_fixture()
+        report["metadata"] = {"value": seeds[0], "operations": seeds[1], "timestamp": 1}
+        report["snapshots"][0]["metadata"] = {"value": seeds[0], "operations": seeds[1], "timestamp": 1}
+        report["markers"][0]["label"] = seeds[2]
+        report["markers"][0]["index"] = seeds[3]
+        report["event_log"][0]["message"] = {"value": seeds[3]}
+        report["outcome"]["measurement"]["reason"] = [seeds[0], seeds[1]]
+        report["outcome"]["target"]["description"] = seeds[2]
+        report["experiment"]["environment"]["os"] = seeds[3]
+        report["settings"]["config_path"] = {"value": seeds[0]}
+        for profile in ("share", "minimal"):
+            with self.subTest(profile=profile), tempfile.TemporaryDirectory() as temp:
+                transformed = redact_report(report, profile)
+                self.assertNotIn("metadata", transformed)
+                self.assertEqual(transformed["snapshots"][0]["metadata"], {})
+                self.assertEqual(transformed["snapshots"][0]["timestamp"], 946684800)
+                paths = export_private_report(report, temp, profile)
+                outputs = [json.dumps(transformed), investigation_summary(report, profile=profile)["text"],
+                           *(path.read_text(encoding="utf-8") for path in paths)]
+                for output in outputs:
+                    for seed in seeds:
+                        self.assertNotIn(str(seed), output)
+
+    def test_ownership_and_recovery_limits_survive_without_checkpoint_identities(self) -> None:
+        report = private_fixture()
+        report["checkpoint"] = {"monitor_pid": 987654321, "session_uuid": SECRET, "digest": SECRET}
+        report["recovery"] = {"partial": True, "final_outcome_confirmed": False,
+                              "exact_through_cutoff": True, "monitor_pid": 987654321, "session_uuid": SECRET}
+        for mode in ("launch", "attach"):
+            with self.subTest(mode=mode):
+                report["mode"] = mode
+                report["experiment"]["mode"] = mode
+                transformed = redact_report(report)
+                self.assertEqual(transformed["mode"], mode)
+                self.assertEqual(transformed["experiment"]["mode"], mode)
+                self.assertEqual(transformed["recovery"], {"partial": True, "final_outcome_confirmed": False,
+                                                           "exact_through_cutoff": True})
+                self.assertNotIn("checkpoint", transformed)
+                self.assertNotIn("987654321", json.dumps(transformed))
+        report["recovery"] = {"partial": 987654321, "final_outcome_confirmed": None,
+                              "exact_through_cutoff": SECRET}
+        self.assertEqual(redact_report(report)["recovery"], {})
+
+    def test_partial_cleanup_and_startup_evidence_survive_without_raw_diagnostics(self) -> None:
+        report = private_fixture()
+        report["outcome"]["startup"] = {"state": "failed", "error": {"value": 9988776655}}
+        report["outcome"]["cleanup"] = {"state": "incomplete", "ownership": "attached",
+            "attempted_actions": {"detach": 1, "terminate": 0, "kill": 0}, "remaining_count": 1,
+            "remaining_processes": [{"pid": 543219, "create_time": 1700000123.5, "resume_required": True}],
+            "omitted_processes": 0, "resume_required": True, "errors": [SECRET, 9988776655]}
+        transformed = redact_report(report)
+        cleanup = transformed["outcome"]["cleanup"]
+        self.assertEqual(cleanup["state"], "incomplete")
+        self.assertTrue(cleanup["resume_required"])
+        self.assertEqual(cleanup["remaining_count"], 1)
+        self.assertEqual(cleanup["remaining_processes"][0]["pid"], transformed["snapshots"][0]["processes"][0]["pid"])
+        self.assertNotIn(SECRET, json.dumps(transformed))
+        self.assertNotIn("9988776655", json.dumps(transformed))
+        self.assertNotIn("543219", json.dumps(transformed))
     def test_profiles_remove_seeded_secrets_and_identifiers_without_mutating_input(self) -> None:
         report = private_fixture()
         original = copy.deepcopy(report)

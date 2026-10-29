@@ -50,8 +50,14 @@ the aggregate measurements retain their original coverage semantics.
 Add `--output-dir .\shared` to explicitly write a JSON/HTML pair. Both
 formats are rendered from one transformed dictionary and identify the
 profile; no original JSON or embedded HTML data is copied alongside them.
-Each export receives a fresh report ID. Unknown future fields are omitted
-instead of guessed safe. Privacy-transformed reports always carry a
+Each export receives a fresh report ID. Evidence is copied only from typed,
+documented paths: an opaque metadata field named `value` or `operations`
+cannot inherit metric permissions, and free-text fields are removed even
+when malformed input supplies numeric or structured values. Marker indices
+are renumbered. Unknown future fields are omitted instead of guessed safe.
+Cleanup/startup/coverage outcomes retain their structured limitations while
+diagnostic text and checkpoint identities are removed. Recovery retains only
+its three Boolean qualification flags. Privacy-transformed reports always carry a
 comparison caveat: pseudonyms cannot establish original target/workload
 equivalence, so strict comparison refuses them.
 

@@ -13,43 +13,120 @@ from .report_contract import METRIC_UNITS, SEVERITIES, validate_report
 
 PROFILES = ("share", "minimal")
 _EPOCH = 946684800.0  # Fixed 2000-01-01 origin; source wall-clock dates are removed.
-_PID_KEYS = {"pid", "ppid", "root_pid", "replaces_pid"}
-_PID_LISTS = {"unmeasured_pids", "unreadable_pids"}
-_TIMES = {"timestamp", "worst_at", "first_seen", "last_seen", "exited_at", "first_sample_at",
-          "last_sample_at", "first_evaluated_at"}
-_ISO_TIMES = {"created_at", "session_started_at", "session_ended_at", "time"}
-_FREE_TEXT = {"message", "label", "description", "reason", "sampling_error", "monitor_errors"}
 _CATEGORIES = {"file", "socket", "registry", "event", "thread", "process", "mutex", "semaphore", "section", "other"}
-_SAFE_TEXT = {*METRIC_UNITS, *SEVERITIES, *_CATEGORIES, "DrainTracer", "memory", "launch", "attach",
-              "running", "sleeping", "disk-sleep", "stopped", "tracing-stop", "zombie", "dead",
-              "wake-kill", "waking", "idle", "locked", "waiting", "parked", "unknown",
-              "collecting", "no_growth", "growth", "unavailable", "partial", "conclusive", "inconclusive",
-              "started", "exited", "restarted", "marker", "none", "info", "ok", "warn", "alert", "error",
-              "left_running", "Windows", "Linux", "uss", "file_descriptors", "private_bytes"}
-_KEYS = {
-    "schema", "report_schema", "sample_count", "snapshot_stride", "snapshots", "processes", "totals",
-    "alerts", "severity", "resource", "memory", "metric", "message", "slope_per_second", "window_seconds",
-    "current_value", "baseline_value", "growth_by_type", "contributors", "delta", "share", "new_process",
-    "growth_from_new_processes", "growth_within_existing", "mostly_new_processes", "name", "status",
-    "create_time", "access_denied", "unmeasured", "process_alive", "monitoring_paused", "warming_up",
-    "sample_interval_ms", "metadata", "sampling_error", "coverage", "measured", "total", "evidence",
-    "valid_samples", "needed_samples", "elapsed_seconds", "needed_seconds", "evaluated_window_seconds",
-    "state", "lifecycle", "process_counts", "live", "started", "exited", "restarted", "counts",
-    "first", "last", "peak", "growth", "diagnostics", "handle_types", "handle_types_at",
-    "handle_types_by_process", "session_facts", "samples", "taken", "collected", "paused", "failed",
-    "peaks", "value", "signals", "worst", "episodes", "escalations", "signal_seconds", "active",
-    "evaluation", "after_warmup_seconds", "evaluated_seconds", "monitor", "requested_interval_ms",
-    "actual_interval_ms", "interval_ms", "collection_ms", "monitor_cpu_percent", "monitor_rss_bytes",
-    "monitor_private_bytes", "monitor_rss_peak_bytes", "monitor_private_peak_bytes", "handle_types_age_seconds",
-    "handle_types_cost_ms", "handle_classification_ms", "handle_types_max_age_seconds", "failed_samples",
-    "dropped_snapshots", "mean", "max", "min", "count", "chart", "stride", "stored", "seen", "metrics",
-    "partial_samples", "unavailable_samples", "partial", "latest", "outcome", "target", "measurement",
-    "exit_code", "target_exit_code", "description", "result", "detection_ran", "partial_coverage",
-    "reason", "monitor_errors", "settings", "windows_seconds", "warmup_seconds", "timeout_seconds",
-    "thresholds", "critical_delta", "critical_slope", "fail_on", "fail_on_inconclusive", "fail_on_target_error",
-    "budgets", "experiment", "environment", "os", "private_memory_metric", "handle_metric", "operations",
-    "warmup", "seconds", "completed", "baseline", "markers", "index", "label", "kind", "event_log", "level",
-    *_PID_KEYS, *_PID_LISTS, *_TIMES, *_ISO_TIMES, *METRIC_UNITS, *_CATEGORIES,
+_RESOURCES = {"memory", "handles", "threads"}
+_STATUS = {"running", "sleeping", "disk-sleep", "stopped", "tracing-stop", "zombie", "dead",
+           "wake-kill", "waking", "idle", "locked", "waiting", "parked", "unknown"}
+_EVIDENCE = {"collecting", "no_growth", "growth", "unavailable", "partial", "stale"}
+_MISSING = object()
+
+
+def _enum(*values: str) -> tuple:
+    return ("enum", set(values))
+
+
+def _mapping(keys, spec) -> tuple:
+    return ("map", set(keys), spec)
+
+
+# Each numeric field is permitted only at its documented structural location.
+# Opaque dictionaries never inherit a global list of evidence-like key names.
+_METRICS = _mapping(METRIC_UNITS, "num")
+_TYPES = _mapping(_CATEGORIES, "count")
+_COUNTS = {key: "count" for key in ("live", "started", "exited", "restarted")}
+_PROCESS = {
+    "pid": "pid", "ppid": "pid", "create_time": "identity", "name": "name",
+    "status": ("enum", _STATUS), "access_denied": "bool", "unmeasured": [("enum", set(METRIC_UNITS))],
+    "handle_types": _TYPES, **{metric: "num" for metric in METRIC_UNITS},
+}
+_PROCESS_SUMMARY = {
+    "pid": "pid", "ppid": "pid", "create_time": "identity", "name": "name",
+    "first_seen": "time", "last_seen": "time", "exited_at": "time", "samples": "count",
+    **{key: _METRICS for key in ("first", "last", "peak", "growth")},
+}
+_CONTRIBUTOR = {"pid": "pid", "create_time": "identity", "name": "name", "delta": "num",
+                "share": "num", "new_process": "bool", "exited": "bool"}
+_ALERT = {
+    "resource": ("enum", _RESOURCES), "metric": ("enum", set(METRIC_UNITS)),
+    "severity": ("enum", set(SEVERITIES)), "message": "redact", "growth_by_type": _TYPES,
+    "contributors": [_CONTRIBUTOR], "mostly_new_processes": "bool",
+    **{key: "num" for key in ("slope_per_second", "window_seconds", "current_value", "baseline_value",
+                              "growth_from_new_processes", "growth_within_existing")},
+}
+_COVERAGE_ITEM = {"measured": "count", "total": "count", "unmeasured_pids": ["pid"]}
+_COVERAGE = _mapping(METRIC_UNITS, _COVERAGE_ITEM)
+_EVIDENCE_ITEM = {"state": ("enum", _EVIDENCE), "severity": ("enum", set(SEVERITIES)),
+                  "valid_samples": "count", "needed_samples": "count", "elapsed_seconds": "num",
+                  "needed_seconds": "num", "evaluated_window_seconds": "num"}
+_STATS = {"count": "count", "mean": "num", "max": "num"}
+_DIAGNOSTICS = {key: "num" for key in ("requested_interval_ms", "actual_interval_ms", "collection_ms",
+    "handle_types_age_seconds", "handle_types_cost_ms", "monitor_cpu_percent", "monitor_rss_bytes",
+    "monitor_private_bytes", "failed_samples", "dropped_snapshots")}
+_LIFECYCLE = {"kind": _enum("started", "exited", "restarted"), "timestamp": "time", "pid": "pid",
+              "ppid": "pid", "create_time": "identity", "name": "name", "replaces_pid": "pid"}
+_SNAPSHOT = {
+    "timestamp": "time", "root_pid": "pid", "process_alive": "bool", "monitoring_paused": "bool",
+    "processes": [_PROCESS], "totals": _METRICS, "alerts": [_ALERT], "severity": ("enum", set(SEVERITIES)),
+    "sample_interval_ms": "num", "warming_up": "bool", "coverage": _COVERAGE,
+    "evidence": _mapping(_RESOURCES, _EVIDENCE_ITEM), "handle_types": _TYPES,
+    "metadata": {"sampling_error": "error"}, "lifecycle": [_LIFECYCLE], "process_counts": _COUNTS,
+    "diagnostics": _DIAGNOSTICS,
+}
+_FACTS = {
+    "schema": "count", "samples": {key: "count" for key in ("taken", "collected", "measured", "paused", "failed")},
+    "first_sample_at": "time", "last_sample_at": "time",
+    "peaks": _mapping(METRIC_UNITS, {"value": "num", "timestamp": "time"}),
+    "signals": _mapping(_RESOURCES, {"worst": ("enum", set(SEVERITIES)), "worst_at": "time",
+        "episodes": "count", "escalations": "count", "signal_seconds": "num", "active": "bool"}),
+    "evaluation": {"after_warmup_seconds": "num", "evaluated_seconds": "num", "first_evaluated_at": "time"},
+    "coverage": {"samples": "count", "partial_samples": _mapping(METRIC_UNITS, "count"),
+                 "unavailable_samples": _mapping(METRIC_UNITS, "count")},
+    "chart": {key: "count" for key in ("stride", "stored", "seen")},
+    "monitor": {"requested_interval_ms": "num", "interval_ms": _STATS, "collection_ms": _STATS,
+                "monitor_cpu_percent": _STATS, "handle_classification_ms": _STATS,
+                **{key: "num" for key in ("monitor_rss_peak_bytes", "monitor_private_peak_bytes",
+                   "handle_types_max_age_seconds", "failed_samples", "dropped_snapshots")}},
+}
+_SETTINGS = {"sample_interval_ms": "num", "windows_seconds": ["num"], "warmup_seconds": "num",
+             "timeout_seconds": "num", "thresholds": _mapping(_RESOURCES,
+                 {"critical_delta": "num", "critical_slope": "num"}),
+             "fail_on": ("enum", set(SEVERITIES)), "fail_on_inconclusive": "bool",
+             "fail_on_target_error": "bool", "require_full_coverage": "bool", "budgets": _METRICS}
+_CLEANUP = {
+    "state": _enum("not_attempted", "complete", "incomplete"), "ownership": _enum("attached", "launched"),
+    "attempted_actions": {key: "count" for key in ("detach", "terminate", "kill")},
+    "remaining_count": "count", "omitted_processes": "count", "resume_required": "bool", "errors": ["redact"],
+    "remaining_processes": [{"pid": "pid", "create_time": "identity", "resume_required": "bool"}],
+}
+_ROOT = {
+    "report_schema": "count", "root_pid": "pid", "mode": _enum("launch", "attach"),
+    "target_exit_code": "num", "sample_count": "count", "snapshot_stride": "count",
+    "session_started_at": "iso", "session_ended_at": "iso", "snapshots": [_SNAPSHOT],
+    "settings": _SETTINGS, "session_facts": _FACTS, "detection_ran": "bool",
+    "coverage": {"samples": "count", "partial": "bool", "full": "bool", "measured_samples": "count",
+                 "fully_measured_samples": "count", "unreadable_pids": ["pid"], "latest": _COVERAGE,
+                 "metrics": _mapping(METRIC_UNITS, {"partial_samples": "count", "unavailable_samples": "count"})},
+    "outcome": {"target": {"state": _enum("running", "stopped", "exited", "unknown", "left_running"),
+                            "exit_code": "num", "failed": "bool", "description": "redact"},
+                "measurement": {"result": _enum("conclusive", "partial", "inconclusive"),
+                                "detection_ran": "bool", "partial_coverage": "bool", "full_coverage": "bool",
+                                "reason": "redact", "coverage": "redact"},
+                "startup": {"state": _enum("not_started", "started", "failed"), "error": "redact"},
+                "cleanup": _CLEANUP,
+                "headless": {"require_full_coverage": "bool", "exit_code": "num", "decision_as_of_checkpoint": "num"},
+                "monitor_errors": ["redact"]},
+    "processes": {"counts": _COUNTS, "live": [_PROCESS_SUMMARY], "exited": [_PROCESS_SUMMARY]},
+    "event_log": [{"timestamp": "time", "time": "iso", "level": _enum("ok", "info", "warn", "alert", "error"),
+                   "message": "redact"}],
+    "event_counts": {key: "count" for key in ("observed", "retained", "dropped")},
+    "markers": [{"timestamp": "time", "kind": _enum("marker"), "index": "count", "label": "redact"}],
+    "warmup": {"seconds": "num", "completed": "bool", "completed_at": "iso", "baseline": _METRICS},
+    "experiment": {"schema": "count", "mode": _enum("launch", "attach"), "operations": "num",
+        "duration_seconds": "num", "budgets": _METRICS,
+        "sampling": {"interval_ms": "num", "windows_seconds": ["num"], "warmup_seconds": "num", "timeout_seconds": "num"},
+        "environment": {"os": _enum("Windows", "Linux"), "private_memory_metric": _enum("private_bytes", "uss"),
+                        "handle_metric": _enum("handles", "file_descriptors")}},
+    "recovery": {"partial": "strict_bool", "final_outcome_confirmed": "strict_bool", "exact_through_cutoff": "strict_bool"},
 }
 
 
@@ -61,35 +138,31 @@ def _iso_stamp(value: Any) -> float | None:
         return None
 
 
-def redact_report(report: dict[str, Any], profile: str = "share") -> dict[str, Any]:
-    """Return an allowlisted copy with pseudonymous identities and relative timing.
+def _children(value, spec):
+    if isinstance(spec, dict) and isinstance(value, dict):
+        yield from ((child, spec[key], value) for key, child in value.items() if key in spec)
+    elif isinstance(spec, list) and isinstance(value, list):
+        yield from ((child, spec[0], None) for child in value)
+    elif isinstance(spec, tuple) and spec[0] == "map" and isinstance(value, dict):
+        yield from ((child, spec[2], value) for key, child in value.items() if key in spec[1])
 
-    ``minimal`` additionally removes event/marker detail and process attribution.
-    Neither profile copies unknown keys, free text, paths, argument fingerprints,
-    config origins, machine identifiers, or captured logs.
-    """
+
+def redact_report(report: dict[str, Any], profile: str = "share") -> dict[str, Any]:
+    """Copy explicitly typed evidence paths; opaque and unknown structures fail closed."""
     validate_report(report)
     if profile not in PROFILES:
         raise ValueError(f"unknown privacy profile; choose {', '.join(PROFILES)}")
     stamps = []
-    pending = [report]
+    pending = [(report, _ROOT)]
     while pending:
-        item = pending.pop()
-        if isinstance(item, dict):
-            for key, child in item.items():
-                if key not in _KEYS:
-                    continue
-                if key in _TIMES or key == "handle_types_at":
-                    if type(child) in (int, float):
-                        stamps.append(child)
-                elif key in _ISO_TIMES:
-                    stamp = _iso_stamp(child)
-                    if stamp is not None:
-                        stamps.append(stamp)
-                if isinstance(child, (dict, list)):
-                    pending.append(child)
-        elif isinstance(item, list):
-            pending.extend(item)
+        value, spec = pending.pop()
+        if spec == "time" and type(value) in (int, float):
+            stamps.append(value)
+        elif spec == "iso":
+            stamp = _iso_stamp(value)
+            if stamp is not None:
+                stamps.append(stamp)
+        pending.extend((child, child_spec) for child, child_spec, _parent in _children(value, spec))
     origin = min(stamps, default=0.0)
     pids: dict[int, int] = {}
     identities: dict[tuple[Any, Any], float] = {}
@@ -107,48 +180,63 @@ def redact_report(report: dict[str, Any], profile: str = "share") -> dict[str, A
         except OverflowError:
             return None
 
-    def copy(value: Any, key: str = "") -> Any:
-        if isinstance(value, dict):
+    def transform(value, spec, parent=None):
+        if value is None:
+            return _MISSING if spec == "strict_bool" else None
+        if isinstance(spec, dict) and isinstance(value, dict):
             result = {}
-            source_pid = value.get("pid")
-            for child_key, child in value.items():
-                if child_key not in _KEYS:
-                    continue
-                if child_key in _PID_KEYS:
-                    result[child_key] = pid(child)
-                elif child_key in _PID_LISTS:
-                    result[child_key] = [pid(item) for item in child] if isinstance(child, list) else []
-                elif child_key in _TIMES or child_key == "handle_types_at":
-                    result[child_key] = shifted(child)
-                elif child_key == "create_time":
-                    identity = (pid(source_pid), child) if type(child) in (int, float) else None
-                    if identity is None:
-                        result[child_key] = None
-                    else:
-                        if identity not in identities:
-                            identities[identity] = float(len(identities) + 1)
-                        result[child_key] = identities[identity]
-                elif child_key in _ISO_TIMES:
-                    try:
-                        result[child_key] = datetime.fromtimestamp(shifted(_iso_stamp(child)), timezone.utc).isoformat()
-                    except (TypeError, ValueError, OverflowError, OSError):
-                        result[child_key] = None
-                elif child_key == "name":
-                    result[child_key] = f"process-{pid(source_pid)}" if source_pid is not None else "process"
-                elif child_key == "handle_types_by_process":
-                    result[child_key] = ({str(pid(int(raw_pid))): copy(counts)
-                                          for raw_pid, counts in child.items() if raw_pid.isdecimal()}
-                                         if isinstance(child, dict) else {})
-                else:
-                    result[child_key] = copy(child, child_key)
+            for key, child in value.items():
+                if key in spec:
+                    copied = transform(child, spec[key], value)
+                    if copied is not _MISSING:
+                        result[key] = copied
             return result
-        if isinstance(value, list):
-            return [copy(item, key) for item in value]
-        if isinstance(value, str):
-            return value if key not in _FREE_TEXT and value in _SAFE_TEXT else "[removed]"
-        return value
+        if isinstance(spec, list) and isinstance(value, list):
+            children = [transform(child, spec[0]) for child in value]
+            return [child for child in children if child is not _MISSING]
+        if isinstance(spec, tuple):
+            if spec[0] == "enum":
+                return value if isinstance(value, str) and value in spec[1] else _MISSING
+            if spec[0] == "map" and isinstance(value, dict):
+                result = {}
+                for key, child in value.items():
+                    if key in spec[1]:
+                        copied = transform(child, spec[2], value)
+                        if copied is not _MISSING:
+                            result[key] = copied
+                return result
+            return _MISSING
+        if spec == "redact":
+            return "[removed]"
+        if spec == "error":
+            return "[removed]" if value else None
+        if spec == "name":
+            return f"process-{pid(parent.get('pid'))}" if isinstance(parent, dict) else "process"
+        if spec == "pid":
+            return pid(value)
+        if spec == "identity":
+            if type(value) not in (int, float) or not isinstance(parent, dict):
+                return _MISSING
+            identity = (pid(parent.get("pid")), value)
+            if identity not in identities:
+                identities[identity] = float(len(identities) + 1)
+            return identities[identity]
+        if spec == "time":
+            return shifted(value)
+        if spec == "iso":
+            try:
+                return datetime.fromtimestamp(shifted(_iso_stamp(value)), timezone.utc).isoformat()
+            except (TypeError, ValueError, OverflowError, OSError):
+                return None
+        if spec == "num" and type(value) in (int, float):
+            return value
+        if spec == "count" and type(value) is int and value >= 0:
+            return value
+        if spec in ("bool", "strict_bool") and type(value) is bool:
+            return value
+        return _MISSING
 
-    redacted = copy(report)
+    redacted = transform(report, _ROOT)
     redacted.update({
         "report_id": str(uuid.uuid4()), "target_path": "shared-target", "app": "DrainTracer",
         "created_at": datetime.fromtimestamp(_EPOCH, timezone.utc).isoformat(),
@@ -159,6 +247,8 @@ def redact_report(report: dict[str, Any], profile: str = "share") -> dict[str, A
                                         "wall-clock dates replaced", "unknown fields and captured logs removed"],
                     "review_required": True},
     })
+    for index, marker in enumerate(redacted.get("markers") or (), start=1):
+        marker["index"] = index
     if profile == "minimal":
         redacted.pop("event_log", None)
         redacted.pop("markers", None)
