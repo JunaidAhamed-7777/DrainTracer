@@ -381,10 +381,15 @@ def _episodes_panel(summary: ReportSummary, start: float | None) -> str:
             f"of the {recorded} episodes counted during the session are listed."
         )
     if not summary.episodes:
-        message = ("Signal episodes were recorded, but their detailed samples were removed "
-                   "by chart thinning. The resource cards retain the recorded counts and severity."
-                   if recorded else "No leak signals were raised during this session.")
-        body = f'<p class="empty">{message}</p>'
+        if recorded:
+            message = ("Signal episodes were recorded, but their detailed samples were removed "
+                       "by chart thinning. The resource cards retain the recorded counts and severity.")
+        elif summary.worst != "none":
+            message = (f"A {summary.worst.upper()} signal was recorded, but no episode details "
+                       "are available. The resource cards preserve the recorded severity.")
+        else:
+            message = "No leak signals were raised during this session."
+        body = f'<p class="empty">{_e(message)}</p>'
     else:
         rows = []
         for episode in summary.episodes:

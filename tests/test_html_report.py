@@ -332,6 +332,26 @@ class SessionFactsRenderingTests(unittest.TestCase):
         self.assertIn("No leak signals were raised during this session.", document)
         self.assertNotIn("Signal episodes were recorded", document)
 
+    def test_exact_severity_without_episode_count_keeps_known_signal(self) -> None:
+        report = _report(snapshots=[snapshot_to_dict(make_snapshot(timestamp=1000))],
+                         session_facts={"schema": 1, "signals": {"memory": {"worst": "high"}}})
+        document = render_html_report(report)
+        panel = document.split('aria-label="Leak signals"', 1)[1].split("</section>", 1)[0]
+        self.assertIn("A HIGH signal was recorded", panel)
+        self.assertIn("no episode details are available", panel)
+        self.assertNotIn("No leak signals were raised", panel)
+        self.assertNotIn("0 of the", panel)
+
+    def test_explicit_signal_free_facts_keep_no_signal_empty_state(self) -> None:
+        report = _report(snapshots=[snapshot_to_dict(make_snapshot(timestamp=1000))],
+                         session_facts={"schema": 1, "signals": {
+                             resource: {"worst": "none", "episodes": 0}
+                             for resource in ("memory", "handles", "threads")}})
+        document = render_html_report(report)
+        panel = document.split('aria-label="Leak signals"', 1)[1].split("</section>", 1)[0]
+        self.assertIn("No leak signals were raised during this session.", panel)
+        self.assertNotIn("signal was recorded", panel)
+
     def test_thinned_reports_say_so_and_show_exact_facts(self) -> None:
         import json as _json
 
