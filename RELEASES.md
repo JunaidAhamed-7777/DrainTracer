@@ -1,9 +1,33 @@
-# Current version: v5.3.3
+# Current version: v5.4.0
 
 Published releases are listed newest first. The exact version here matches
 `DashboardApp.VERSION` in [src/dashboard.py](src/dashboard.py). The README
 shows the release series as `vMAJOR.MINOR.0`; for example, `v5.0.1` still
 belongs to series `v5.0.0`.
+
+## v5.4.0 — 2026-10-29
+
+- Added Linux support, including WSL: executable and Python targets,
+  executable shebang scripts, process attachment, immediate dashboard and
+  picker controls, pause/resume, headless checks, and JSON/HTML reports.
+  Desktop file selection is optional, with typed-path selection when no
+  graphical picker is available.
+- Measured Linux private memory as USS and handles as open file descriptors,
+  with `/proc` descriptor classification and honest unavailable/partial
+  coverage. Reports identify platform counter definitions; strict comparisons
+  reject incompatible definitions. Windows resource counters retain their
+  existing meanings.
+- Isolated Linux launch sessions to track reparented descendants, preserved
+  pre-existing process stops, and hardened PID reuse, interrupted/partial
+  pause cleanup, terminal disconnection, and children started during shutdown.
+  Corrected Windows ABI structure declarations for cross-platform imports.
+- Added Linux CI on Python 3.10 and 3.14 alongside Windows checks. Pull
+  requests run both platforms, and publishing requires their success.
+  Extended regression, real pseudo-terminal, process, resource-growth,
+  bounded-workload, and distribution verification coverage.
+- Updated installation, usage, package metadata, and development documentation
+  for Windows and Linux. This backward-compatible feature release advances
+  the release series from v5.3.0 to v5.4.0.
 
 ## v5.3.3 — 2026-10-28
 

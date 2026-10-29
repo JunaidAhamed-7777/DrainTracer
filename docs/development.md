@@ -2,9 +2,10 @@
 
 [README](../README.md) · [Contributing](../CONTRIBUTING.md) · [Working principles](../working-principle.md) · [Torture targets](../torture/README.md)
 
-DrainTracer is a Python 3.10+ application developed for Windows 10/11.
+DrainTracer is a Python 3.10+ application for Windows 10/11 and Linux.
 The standard library `unittest` suite covers its shared logic, while the
-bounded torture workloads exercise real Windows processes and handles.
+bounded torture workloads exercise real processes, memory growth, Windows
+handles, and Linux file descriptors.
 
 ## Set up a checkout
 
@@ -24,6 +25,22 @@ The editable install adds the `draintracer` command while using the source
 checkout for development. `python -m draintracer` works when the environment's
 Scripts directory is not on `PATH`. The original source workflow remains
 available with `pip install -r requirements.txt` and `python src/main.py`.
+
+On Linux:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -e .
+.venv/bin/python -m draintracer --help
+.venv/bin/python src/main.py --help
+```
+
+Substitute `.venv/bin/python` for `python` below, or activate with
+`. .venv/bin/activate`. Runtime minimums are psutil 5.9.0 and Rich 13.7.0;
+Python 3.10 also needs tomli 1.1.0 or newer. The install commands resolve
+these from `requirements.txt`. tkinter is optional: desktop selection can
+use it, while servers and WSL can use the typed-path fallback, `--target`,
+or `--pid` without a display.
 
 ## Build and verify distributions
 
@@ -47,7 +64,7 @@ created under `dist`:
 
 ```powershell
 python -m venv C:\temp\draintracer-wheel-test
-C:\temp\draintracer-wheel-test\Scripts\python.exe -m pip install .\dist\draintracer-5.2.1-py3-none-any.whl
+C:\temp\draintracer-wheel-test\Scripts\python.exe -m pip install .\dist\draintracer-X.Y.Z-py3-none-any.whl
 Set-Location C:\temp
 .\draintracer-wheel-test\Scripts\draintracer.exe --help
 .\draintracer-wheel-test\Scripts\python.exe -m draintracer --help
@@ -60,13 +77,22 @@ source archive as well; it must be able to build the same complete wheel.
 Repository fixtures remain in the checkout, so use their absolute paths
 when testing an installed command from elsewhere.
 
+The distribution verifier builds a clean environment, runs outside the
+checkout, monitors a bounded Python target, and checks both exports on
+either operating system. For Linux, use the actual wheel version:
+
+```bash
+python tests/verify_distribution.py dist/draintracer-X.Y.Z-py3-none-any.whl
+```
+
 An installed package validates its bundled files and gives pip reinstall
 guidance if they are missing. It must not offer Git repair or write generated
 reports into its installation directory. The source-checkout entry retains
 the committed snapshot and opt-in Git recovery behavior.
 
 Python script targets use the monitor's interpreter. Install DrainTracer in
-the target's environment, or select that environment's `python.exe` with
+the target's environment, or select that environment's `python.exe` or
+Linux `bin/python` with
 `--target` and put the script path and arguments after `--`.
 
 The PyPI description comes from [docs/pypi.md](pypi.md). Keep its commands
@@ -125,8 +151,9 @@ with the published release.
 - [process_picker.py](../src/process_picker.py) and
   [running_processes.py](../src/running_processes.py): searchable, paged
   process selection, read-only discovery, and selection identity checks.
-- [picker_input.py](../src/picker_input.py): immediate Windows arrow/text
-  key decoding and interactive-input detection for the process picker.
+- [picker_input.py](../src/picker_input.py): immediate Windows and POSIX
+  key reading, arrow/text decoding, terminal restoration, and interactive
+  input detection for the startup and process pickers.
 - [config.py](../src/config.py) and [units.py](../src/units.py): TOML
   discovery, profile layering, validation, and unit parsing/formatting.
 - [process_runner.py](../src/process_runner.py): launch and attach,
@@ -135,7 +162,8 @@ with the published release.
   warm-up, rolling windows, trend tests, and severity scoring.
 - [process_table.py](../src/process_table.py) and
   [handle_types.py](../src/handle_types.py): Windows process snapshots
-  and kernel handle classification with fallbacks.
+  and kernel handle classification, Linux descriptor classification, and
+  psutil fallbacks.
 - [events.py](../src/events.py): frozen snapshot/alert models and the
   bounded `MetricsStream` bridge.
 - [session.py](../src/session.py): shared monitoring lifecycle, collected
@@ -156,8 +184,8 @@ with the published release.
 - [report_diff.py](../src/report_diff.py) and
   [diff_command.py](../src/diff_command.py): report loading,
   comparison rules, JSON output, and terminal presentation.
-- [file_picker.py](../src/file_picker.py): native Windows selection
-  with fallback handling.
+- [file_picker.py](../src/file_picker.py): native Windows and optional
+  Tk desktop selection; main handles the typed-path fallback.
 
 ## Preserve the runtime boundaries
 
@@ -202,11 +230,30 @@ python -m unittest discover -s tests -v
 git diff --check
 ```
 
-Tests use the standard library; no pytest installation is required. Windows
-integration tests exercise real launch, attachment, process trees, and
-cleanup. Some tests have platform guards. The HTML report script syntax
+Tests use the standard library; no pytest installation is required.
+Integration tests exercise real launch, attachment, process trees, and
+cleanup on each platform. Linux checks include shebang execution, descriptor
+and USS growth, orphan discovery, and POSIX terminal restoration. Windows
+checks retain batch quoting, native handle types, and NT process-table
+behavior. Some tests have platform guards. The HTML report script syntax
 test runs when `node` is on `PATH`; it skips when Node.js is unavailable.
-Run Windows checks before treating changes to Windows behavior as verified.
+Run both Windows and Linux checks before claiming support for both platforms;
+mocked platform tests do not replace native integration tests.
+
+From Windows, test the same checkout through Ubuntu WSL using a separate
+Linux environment; do not reuse a Windows virtual environment. For example:
+
+```powershell
+wsl -d Ubuntu -- bash -lc 'python3 -m venv ~/.venvs/draintracer-linux'
+wsl -d Ubuntu -- bash -lc 'cd /mnt/c/Github/DrainTracer && ~/.venvs/draintracer-linux/bin/python -m pip install -e .'
+wsl -d Ubuntu -- bash -lc 'cd /mnt/c/Github/DrainTracer && ~/.venvs/draintracer-linux/bin/python -m unittest discover -s tests'
+wsl -d Ubuntu -- bash -lc 'cd /mnt/c/Github/DrainTracer && ~/.venvs/draintracer-linux/bin/python -m compileall -q src'
+```
+
+Adjust the distribution and checkout path to the local installation. A
+native Linux checkout runs the same `python -m unittest` and compile
+commands. Run installation checks before and after changes in both
+environments; the committed inventory describes the same runtime files.
 
 For a focused configuration or report change:
 
@@ -223,6 +270,11 @@ For real process monitoring and exported-report checks:
 python torture\verify_suite.py --case steady-python --case memory-growth
 python torture\verify_suite.py
 ```
+
+On Linux, use `python torture/verify_suite.py`; its default cases select
+Linux executables and shebang scripts in place of Windows batch/EXE-only
+fixtures. Explicit Windows-only cases are unavailable on Linux. Use the
+Linux interpreter for WSL runs.
 
 The full suite takes about 90 seconds and verifies growth signals, normal
 recovery, launch types, descendants, attachment cleanup, headless exit

@@ -2,16 +2,22 @@
 
 [README](../README.md) · [Usage](../docs/usage.md) · [Development](../docs/development.md) · [Reports](../docs/reports.md)
 
-This directory contains bounded Windows workloads for demonstrating every
-target type accepted by DrainTracer: `.py`, `.bat`, `.cmd`, and `.exe`.
+This directory contains bounded Windows and Linux workloads. Python scripts
+work on both platforms; `.bat`, `.cmd`, and `.exe` fixtures require Windows,
+and the Linux verifier also checks a native `/bin/sleep` executable.
 Together they cover genuine leak-shaped growth, normal recovery, recursive
 children, a root that exits before its child, and a fast non-zero exit.
 
-Run from the repository root on Windows 10/11 with Python 3.10+ and the
+Run from the repository root on Windows 10/11 or Linux with Python 3.10+ and the
 dependencies in `requirements.txt` installed. The fixtures are diagnostic
 examples; an observed signal still needs workload context before treating
 it as a real application defect. These scripts require no production
 application or customer data.
+
+Run `python torture/verify_suite.py` on either platform. The verifier selects
+the supported cases automatically, including recursive Python trees on both
+systems. On Linux, use the Python from your Linux virtual environment, such
+as `.venv/bin/python`; Windows script and executable cases are excluded.
 
 ## Safety
 

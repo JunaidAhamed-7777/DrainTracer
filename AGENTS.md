@@ -2,8 +2,8 @@
 
 ## Project overview
 
-DrainTracer is a Windows Python 3.10+ CLI/TUI application that launches a
-target executable or script, tracks its recursive process tree, samples
+DrainTracer is a Windows and Linux Python 3.10+ CLI/TUI application that
+launches a target executable or script, tracks its recursive process tree, samples
 resources with `psutil`, and reports potential memory, handle, and thread
 leaks through a Rich terminal dashboard.
 

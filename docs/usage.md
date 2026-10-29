@@ -3,8 +3,22 @@
 [README](../README.md) · [Configuration](configuration.md) · [Reports](reports.md) · [Working principles](../working-principle.md)
 
 Run the commands below from the repository root after installing
-`requirements.txt` into a Python 3.10+ environment on Windows 10/11.
-DrainTracer currently runs from source; the command is `python src/main.py`.
+`requirements.txt` into a Python 3.10+ environment on Windows 10/11 or Linux.
+These examples use the source command `python src/main.py`; an installed
+package also provides `draintracer` and `python -m draintracer`.
+
+On Linux, set up an isolated environment from the checkout:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -e .
+python src/main.py --help
+```
+
+If your distribution packages venv support separately, install its Python
+venv package first. Use Linux Python inside WSL to monitor Linux processes;
+the Windows installation monitors Windows processes.
 
 ## Startup file check and recovery
 
@@ -47,10 +61,14 @@ program**, then press **Spacebar** (or Enter) to select. Navigation help is
 below and outside the Get Started box. Press **Q** or **Escape** to cancel.
 Redirected or non-terminal input keeps the numbered `1`/`2` prompt.
 
-**Open a program** opens the native Windows file picker.
+**Open a program** opens the native Windows file picker on Windows or a
+Tk desktop dialog on Linux. Linux does not require a desktop or tkinter:
+when no graphical picker is available, enter the target path in the terminal.
+You can always bypass the picker with `--target`.
+
 **Hook to a running program** shows a paged list of
 running program names and PIDs, with at most **15 programs per page**
-(fewer in a short terminal). In an interactive Windows terminal, use
+(fewer in a short terminal). In an interactive terminal, use
 **Up/Down** to move the `>` highlight, then **Enter** to select that program.
 Moving past a page boundary shows the next or previous page automatically.
 You can also type a listed PID and press Enter to select it directly.
@@ -103,9 +121,22 @@ python src/main.py --target .\torture\memory_leak.py
 python src/main.py --target .\torture\memory_leak.py -- --duration 30 --max-mb 192
 ```
 
+On Linux:
+
+```bash
+python src/main.py --target /usr/bin/sleep -- 30
+python src/main.py --target ./torture/memory_leak.py -- --duration 30 --max-mb 192
+chmod +x ./worker.sh
+python src/main.py --target ./worker.sh -- "argument with spaces"
+```
+
 Arguments after `--` belong to the target. Keep DrainTracer options before
-that separator. Python scripts use the current Python interpreter; `.bat`
-and `.cmd` scripts use `cmd.exe`; executables launch directly. Launched
+that separator. Python `.py` scripts use the current Python interpreter and
+do not need an executable bit. Linux binaries and other scripts launch
+directly; scripts need executable permission and a valid shebang such as
+`#!/bin/sh`. To run a shell script without executable permission, use
+`--target /bin/sh -- ./worker.sh`. `.bat` and `.cmd` files use `cmd.exe` on
+Windows; batch files and Windows executables require Windows. Launched
 targets have standard input, output, and error redirected to the null
 device: they cannot read dashboard keys, and their console output is not
 captured. Use the target application's own file logging when needed.
@@ -113,7 +144,10 @@ captured. Use the target application's own file logging when needed.
 Quitting a launch session terminates its tracked process tree. A timeout
 does the same. Descendants already discovered remain tracked when the root
 exits; extremely short-lived intermediate parents may be missed between
-process-tree refreshes.
+process-tree refreshes. Launched Linux targets receive their own session,
+so children that keep that session can be rediscovered after Linux reparents
+them. A daemon that creates a new session before any refresh sees it can
+escape discovery; attach to its actual PID if you need to monitor it.
 
 ## Attach to a running process
 
@@ -121,8 +155,9 @@ process-tree refreshes.
 python src/main.py --pid 4820
 ```
 
-Replace `4820` with the PID shown in Task Manager. DrainTracer tracks the
-root and its descendants. `--pid` and `--target` are mutually exclusive;
+Replace `4820` with the PID shown in Task Manager on Windows or `ps` on Linux.
+DrainTracer tracks the root and its descendants. `--pid` and `--target` are
+mutually exclusive;
 target arguments after `--` cannot be used with attachment.
 
 Quitting, Ctrl+C, or reaching the timeout detaches and leaves an attached
@@ -134,6 +169,10 @@ disables pause and kill and excludes the monitor's own branch.
 Protected processes and processes owned by another user may expose only
 partial metrics. Run elevated only when the target requires those access
 rights; unavailable readings do not establish that resource usage is zero.
+On Linux, `/proc` restrictions, a different process owner, or container
+boundaries can hide private memory or descriptors independently. Attachment
+never adopts unrelated processes merely because they share the target's
+Linux session.
 
 ## Read and control the dashboard
 
@@ -192,6 +231,22 @@ exceed 100%. The memory card's headline and chart are private bytes, the
 counter the memory leak heuristic uses; RSS is shown as context. A warning identifies sustained resource growth that
 needs investigation; it does not identify an allocation or prove a leak.
 
+On Windows, private bytes are private committed memory. On Linux, the
+`private_bytes` report field contains USS: resident memory unique to the
+process. RSS includes shared resident pages and is never substituted when
+private memory is unreadable. These counters measure different things, so
+compare runs from the same platform and check the report's environment.
+
+Linux uses open file descriptor counts wherever the dashboard, reports,
+configuration, or budgets say `handles`. `--budget-handles 500` therefore
+checks whether the tree's peak open descriptor count exceeds 500; it does
+not impose an operating-system limit. Type classification reads
+`/proc/PID/fd`: files, devices, and directories are `file`; sockets,
+including unconnected Unix sockets, are `socket`; eventfds are `event`;
+pipes and other anonymous descriptors are `other`. Windows-only categories
+stay zero. Classification is sampled separately from total counts and can
+differ briefly as descriptors open or close.
+
 The leak health panel shows the current evidence, separate from the
 session's worst signal:
 
@@ -237,6 +292,13 @@ longer representative workload when investigating slower growth.
 ```powershell
 python src/main.py --headless --target .\torture\steady.py --timeout 15s
 python src/main.py --headless --pid 4820 --timeout 10m --fail-on medium
+```
+
+The same workflow works on Linux servers and WSL without a desktop:
+
+```bash
+python src/main.py --headless --target ./torture/steady.py --timeout 15s
+python src/main.py --headless --pid 4820 --timeout 10m --budget-handles 500
 ```
 
 Headless mode requires `--target` or `--pid`. It prints events and a progress
@@ -297,7 +359,8 @@ python src/main.py --help
 python src/main.py diff --help
 ```
 
-If the picker fails, pass `--target` directly. If a process exits before a
+If the desktop picker is unavailable, enter its path at the fallback prompt
+or pass `--target` directly. If a process exits before a
 window fills, extend the workload. If normal initialization triggers a
 signal, use a warm-up or a workload-specific profile from the
 [configuration guide](configuration.md).
@@ -308,6 +371,12 @@ Internal diagnostics can be written to a local file:
 $env:DRAINTRACER_LOG = Join-Path $PWD "draintracer-debug.log"
 python src/main.py --target .\torture\steady.py
 Remove-Item Env:DRAINTRACER_LOG
+```
+
+On Linux, set the variable for one invocation:
+
+```bash
+DRAINTRACER_LOG="$PWD/draintracer-debug.log" python src/main.py --target ./torture/steady.py
 ```
 
 The log's parent directory must already exist. Reports and diagnostics can

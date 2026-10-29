@@ -2,12 +2,13 @@
 
 ![DrainTracer: see what keeps growing](https://raw.githubusercontent.com/JunaidAhamed-7777/DrainTracer/main/docs/assets/hero.png)
 
-Resource growth monitoring for **Windows 10/11** and **Python 3.10+**.
+Resource growth monitoring for **Windows 10/11 and Linux** with **Python 3.10+**.
 Launch an executable or script, or attach to a PID, and watch its recursive
 process tree in a live terminal dashboard. The target needs no source
 changes or instrumentation.
 
-DrainTracer flags sustained growth in private memory, handles, and threads.
+DrainTracer flags sustained growth in private memory, handles or Linux file
+descriptors, and threads.
 A signal is a lead for investigation, not proof of an unreleased allocation.
 Process counters do not identify allocation sites, and short runs can be
 inconclusive.
@@ -26,6 +27,21 @@ If the command is not on `PATH`, use `python -m draintracer` with the same
 Python used for installation. The startup menu lets you open a program or
 select a running process.
 
+On Linux, install into a virtual environment:
+
+```bash
+python3 -m venv ~/.venvs/draintracer
+~/.venvs/draintracer/bin/python -m pip install draintracer
+~/.venvs/draintracer/bin/python -m draintracer --version
+~/.venvs/draintracer/bin/draintracer --target /usr/bin/sleep -- 30
+```
+
+Linux supports native executables, Python `.py` targets, and executable
+scripts with a shebang. Batch files and Windows executables require Windows.
+A desktop picker uses optional tkinter; without a display or tkinter, enter
+the target path in the terminal or pass `--target`. The dashboard and
+headless mode work in Linux terminals and WSL.
+
 ```powershell
 # Launch a program
 draintracer --target "C:\work\My App\worker.exe"
@@ -40,6 +56,12 @@ draintracer --target .\server.exe --warmup 15s --timeout 2m
 Quitting stops a launched target and its tracked tree. Quitting an attached
 session leaves the target running. Launched targets have their console
 input and output redirected; use their own file logging when needed.
+
+Launched Linux trees receive their own session so descendants can be
+rediscovered after a parent exits. A daemon that leaves that session before
+being discovered can escape tracking; attach to its actual PID to monitor
+it. Attachment leaves session ownership alone and never includes unrelated
+processes merely because they share a session.
 
 Python script targets use DrainTracer's Python interpreter. Install
 DrainTracer in the target's environment, or launch that environment's
@@ -72,6 +94,15 @@ measured. Memory alerts are based on private bytes, shown alongside RSS
 (working set). Alerts name the processes that grew. Number keys open a
 process inspector, the evidence behind each signal, an annotated
 timeline, and monitor diagnostics.
+
+On Linux, private memory is USS (unique resident pages); Windows uses private
+committed bytes. Linux `handles` readings and `--budget-handles` count open
+file descriptors. The report keeps the existing `private_bytes` and
+`handles` keys and records their platform semantics in its environment
+metadata. Linux descriptor categories include files, sockets, eventfds, and
+other descriptors such as pipes. `/proc` permissions can hide individual
+counters; unavailable data stays unknown, and RSS is never substituted for
+private memory. Compare runs using the same platform and workload.
 
 Press `E` to export JSON and an offline interactive HTML report; press `O`
 to open the latest report.

@@ -1,6 +1,7 @@
 # DrainTracer Working Principles
 
-DrainTracer launches a target process or attaches to a running PID, tracks
+DrainTracer runs on Windows 10/11 and Linux with Python 3.10 or newer. It
+launches a target process or attaches to a running PID, tracks
 its recursive child-process tree, samples resource counters every 500 ms by
 default, and publishes immutable snapshots to the terminal dashboard or
 headless runner and export layer.
@@ -85,11 +86,18 @@ heuristic.
 DrainTracer reads `psutil.Process.memory_info()` for every tracked process:
 
 - `rss` → resident memory / working set
-- `vms` → virtual memory size
-- `private` → private bytes when the platform exposes it
+- `vms` → the platform's virtual-memory counter
+- Windows `private` → private committed bytes
 
-If `private` is unavailable, the implementation falls back to RSS for that
-process. Tree totals are calculated by summing each process field:
+On Linux, private memory is USS (Unique Set Size), read through psutil's
+`memory_full_info().uss` or `memory_footprint().uss` when that newer API is
+available. USS counts resident pages unique to the process. The report's
+existing `private_bytes` field holds that value; it does not rename the
+schema field or treat Linux USS as equivalent to Windows committed memory.
+RSS includes shared pages and is never used as a private-memory fallback.
+If `/proc` permissions prevent USS access, private memory alone is marked
+unmeasured while readable RSS, descriptor, and thread counters remain usable.
+Tree totals sum each measured process field:
 
 ```text
 total_rss_bytes     = sum(process.rss_bytes)
@@ -97,11 +105,12 @@ total_vms_bytes     = sum(process.vms_bytes)
 total_private_bytes = sum(process.private_bytes)
 ```
 
-The memory leak heuristic uses the aggregated private-byte series because
-private bytes (committed memory the process alone owns) more closely
-represent memory owned by the monitored process tree. RSS is the working
-set: the pages currently resident in physical memory, which Windows can trim
-or grow without the program allocating anything. The dashboard therefore
+The memory leak heuristic uses this aggregated private-memory series.
+Windows committed private memory and Linux USS are separate definitions:
+compare runs from the same platform and check `private_memory_metric` in
+the report's experiment environment. RSS is the working set: resident
+pages, including shared ones, that the OS can trim or grow without a new
+application allocation. The dashboard therefore
 charts private bytes in the memory card, compact strip, and process tables
 (kept even in narrow tables), with RSS shown as context; memory alerts name
 `private_bytes` as their `metric`. Neither counter alone proves an
@@ -115,7 +124,7 @@ processes, and each snapshot's `coverage` records, per metric, how many live
 processes were measured and which PIDs were not. Exited processes count as
 neither.
 
-## 3. System handles
+## 3. System handles and Linux descriptors
 
 On Windows, each process is sampled with:
 
@@ -123,22 +132,30 @@ On Windows, each process is sampled with:
 process.num_handles()
 ```
 
-The tree handle count is the sum of the accessible process handle counts:
+Linux uses `process.num_fds()` instead. Open files, devices, directories,
+pipes, sockets, and anonymous kernel descriptors all contribute. Existing
+dashboard labels, JSON keys, thresholds, and budget names retain `handles`;
+on Linux `--budget-handles N` checks the peak descriptor count against N.
+It does not set an OS resource limit. `handle_metric` in the experiment
+environment records whether a run measured handles or file descriptors.
+
+The tree count is the sum of the measured per-process counts:
 
 ```text
-total_handles = sum(process.num_handles() for every tracked process)
+total_handles = sum(process.handles for every measured tracked process)
 ```
 
 If the platform does not implement the counter, access is denied, or the
 process disappears during sampling, the per-process value is reported as
-`0` and the snapshot retains the process availability information.
+`0` with the counter in `unmeasured`, and coverage records that the value is
+unknown. An unknown count does not establish zero resource usage.
 
 The aggregate handle series is one of the three inputs to leak detection.
 
 ### Handle types
 
 Every two seconds DrainTracer also classifies each readable process's
-handles by kernel object type. One call to
+handles or descriptors. On Windows, one call to
 `NtQuerySystemInformation(SystemExtendedHandleInformation)` returns the
 system handle table, whose entries carry the owning PID and an object-type
 index; `NtQueryObject(ObjectTypesInformation)` maps indexes to names such
@@ -166,8 +183,22 @@ system handles. When a pass is slower, the next one is scheduled at least
 20 times its duration later, keeping classification near 5% of one core.
 Processes whose metrics could not be read are left out so the categories
 add up to the handle total. After three consecutive failures (for example,
-a sandbox that blocks the call), classification turns itself off and the
-dashboard falls back to totals.
+a sandbox that blocks the Windows call), Windows classification turns itself
+off and the dashboard falls back to totals.
+
+On Linux, classification reads `/proc/PID/fd` symlinks without opening the
+resources they name. Path-backed descriptors are `file`, sockets are
+`socket` (including Unix and unconnected sockets), eventfds are `event`,
+and pipes or other anonymous descriptors are `other`. The remaining
+Windows-specific categories stay zero. A descriptor closed during the pass
+is skipped. A PID whose directory or links cannot be read is omitted, and
+one protected or exited process does not disable classification for others.
+If a pass misses any process whose descriptor total was measured, its
+tree-wide type total is unavailable and type-growth history resets, avoiding
+a false change when classification access returns. Per-process readable
+type counts remain available. Totals and classification run separately, so
+resource churn can cause brief differences between them. Slow Linux passes
+use the same adaptive interval as Windows passes.
 
 When a handle signal is raised, the alert records `growth_by_type`: the
 change per category between the first classification inside the signal's
@@ -177,7 +208,7 @@ file streams from leaked connections.
 
 ## 4. Thread count
 
-Each sample takes one system process snapshot,
+On Windows, each sample takes one system process snapshot,
 `NtQuerySystemInformation(SystemProcessInformation)`, and reads every
 tracked process's thread count from it. The same snapshot gives each
 process's run state: a process whose threads are all suspended reports
@@ -185,6 +216,8 @@ process's run state: a process whose threads are all suspended reports
 too, but psutil enumerates every process on the system once per call, so
 asking per process cost two full enumerations per tracked process per
 sample. If the snapshot is unavailable, DrainTracer falls back to psutil.
+Linux directly uses psutil's per-process `num_threads()` and `status()`;
+the NT process-table optimization is disabled there.
 
 The reported tree total is:
 
@@ -398,14 +431,15 @@ seconds is reported as a restart. Snapshots carry `lifecycle` events and
 
 DrainTracer records each tracked process's creation time. Before it samples,
 suspends, or kills a PID, it opens that PID again and rejects it when the
-creation time differs. Windows reuses PID values, so this check avoids
-operating on a different process that inherited a stale number. Windows
-reports creation times exactly, so a 10 ms tolerance tells apart even
-processes started moments apart (other systems allow one second). The
+creation time differs. Both operating systems reuse PID values, so this
+check avoids operating on a different process that inherited a stale number.
+Windows uses a 10 ms creation-time tolerance; Linux uses a tighter 1 ms
+tolerance for timestamps derived from procfs clock ticks. The
 root's creation time is kept after the root exits, so a process that later
-takes over an attached root's PID is never mistaken for it. (Opening an
-exited PID already fails on Windows, so the extra `is_running()` and zombie
-checks run only on POSIX systems.)
+takes over an attached root's PID is never mistaken for it. Linux zombie and
+dead states are treated as exited. Windows also checks whether the process
+handle is signaled, since another program may hold a handle after exit even
+while basic PID queries still succeed.
 
 DrainTracer never tracks itself. When an attached root is one of its own
 ancestors (the terminal, an IDE, or `explorer.exe`), the walk skips
@@ -417,7 +451,11 @@ are refused for such a tree and only detaching remains.
 Launched targets get an empty standard input, so they cannot read or block
 on the keys meant for the dashboard. Their standard output and error are
 also discarded rather than captured in the event log or reports; targets
-that need diagnostic output should use their own file logging. Batch files run through
+that need diagnostic output should use their own file logging. Python `.py`
+targets use DrainTracer's Python interpreter. Linux binaries and executable
+scripts launch directly; scripts need a valid shebang, or the caller can
+explicitly target an interpreter and pass the script after `--`. Windows
+executables and batch files require Windows. On Windows, batch files run through
 `cmd.exe /d /e:on /v:off /s /c` with every argument quoted for cmd.exe, so
 spaces and characters such as `&`, `|`, `<`, `>`, `^`, `!`, and parentheses
 reach the script intact instead of splitting the command line. cmd.exe
@@ -446,8 +484,20 @@ the processes it left behind. A process counts as its child only if it was
 created after the parent and before DrainTracer saw the parent gone (and
 before any other process took over the PID), so the children of a later
 process that reuses the PID are never adopted. A process that starts a
-child and exits between two refreshes (500 ms apart) without being seen is
-the one case this cannot follow.
+child and exits between two refreshes (500 ms apart) without being seen can
+break this parent-link recovery.
+
+Linux reparents orphans, so launches also receive an isolated session with
+`start_new_session=True`. Refreshes recover members of that session after
+their original parents exit, checking creation times and session-leader PID
+reuse before adopting them. This does not change a launched program's
+arguments or require a shell. A daemon that calls `setsid()` before any
+refresh discovers it can leave both the parent walk and the known session;
+that unseen process cannot be guaranteed to remain tracked. Already observed
+descendants keep their identity and remain tracked when they change sessions.
+Attachment never claims the target's session because it may contain
+unrelated programs; it follows discovered descendants and leaves the
+attached program running on normal shutdown.
 
 Descendants are terminated before their parents. The tree is resolved first,
 then walked from the deepest recorded process upward, so parent links are
@@ -570,7 +620,9 @@ asset fails HTML export without discarding the completed JSON report.
   `note`), mode, duration, sampling settings, budgets, `arguments` reduced
   to a `count` and a 16-character SHA-256 `fingerprint`, and the machine
   (OS, architecture, CPU count, total memory, Python and DrainTracer
-  versions). Host and user names and environment variables are never
+  versions), plus `private_memory_metric` and `handle_metric` to identify
+  Windows committed-private/handles or Linux USS/file-descriptor semantics.
+  Host and user names and environment variables are never
   recorded, and secret-looking label values become `<redacted>`.
 - `processes` — final `counts` (live, started, exited, restarted) and
   bounded `live` and `exited` per-process summaries: identity, name,
@@ -640,8 +692,8 @@ Each item in `snapshots` contains:
 - `severity` — snapshot-wide severity: `none`, `low`, `medium`, `high`, or `critical`.
 - `sample_interval_ms` — configured sampling interval.
 - `metadata` — tracked PIDs or sampling diagnostics.
-- `handle_types` — tree-wide handle counts per category on samples where
-  handles were classified; `null` on the others.
+- `handle_types` — tree-wide handle or Linux descriptor counts per category
+  on complete classification samples; `null` when not due or unavailable.
 - `warming_up` — `true` while a warm-up defers the leak heuristics.
 - `coverage` — per metric (`rss_bytes`, `private_bytes`, `handles`,
   `threads`): `measured` and `total` live processes and `unmeasured_pids`;

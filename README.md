@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="docs/usage.md"><img src="https://img.shields.io/badge/platform-Windows_10%20%2F%2011-101820?style=flat-square&labelColor=196F69" alt="Windows 10 and 11"></a>
+  <a href="docs/usage.md"><img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-101820?style=flat-square&labelColor=196F69" alt="Windows and Linux"></a>
   <a href="requirements.txt"><img src="https://img.shields.io/badge/python-3.10%2B-101820?style=flat-square&labelColor=196F69" alt="Python 3.10 or newer"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-101820?style=flat-square&labelColor=0069B8" alt="MIT license"></a>
 </p>
@@ -11,12 +11,12 @@
 <h1 align="center">DrainTracer</h1>
 
 <p align="center">
-  <strong>Release series: v5.3.0</strong> ·
+  <strong>Release series: v5.4.0</strong> ·
   <a href="RELEASES.md">Current version and release notes</a>
 </p>
 
 <p align="center">
-  Resource leak monitoring for Windows process trees.<br>
+  Resource leak monitoring for Windows and Linux process trees.<br>
   Launch a program or attach to a PID. Watch what keeps growing.
 </p>
 
@@ -36,10 +36,12 @@
 
 DrainTracer is a Python CLI/TUI that watches an executable or script and its
 recursive child processes. It shows resource usage in a live terminal dashboard
-and flags sustained growth in **private memory, handles, and threads**.
+and flags sustained growth in **private memory, handles (file descriptors on
+Linux), and threads**. **Linux support has been added in v5.4.0**, including
+WSL.
 
 Use it to investigate a worker that grows over time, catch resource regressions
-in a Windows CI job, or compare the same workload before and after a fix.
+in a Windows or Linux CI job, or compare the same workload before and after a fix.
 The target needs no source changes or instrumentation.
 
 **A leak signal is a lead for investigation, not proof of an unreleased
@@ -72,7 +74,8 @@ values and process IDs vary by run.*
 - **Separate startup from steady state.** Use a warm-up and project profiles
   for cache loading, JIT compilation, or heavier workloads.
 - **Investigate handle growth.** See file, socket, registry, event, and other
-  handle categories when Windows exposes them.
+  handle categories when Windows exposes them; Linux classifies file,
+  socket, eventfd, and other descriptors through `/proc`.
 - **Keep the evidence.** Export JSON and an offline interactive HTML report;
   compare two labeled runs for resolved, new, or worsening signals, with
   verdicts qualified (or refused under `--strict`) when the runs differ.
@@ -82,8 +85,8 @@ values and process IDs vary by run.*
 
 ## Get started
 
-You need **Windows 10/11** and **Python 3.10+**. Use PowerShell for the
-commands below.
+You need **Windows 10/11 or Linux** and **Python 3.10+**. Windows examples
+use PowerShell; Linux examples use a shell such as Bash.
 
 ### Install from PyPI
 
@@ -127,6 +130,48 @@ source examples below, activate the environment or replace `python` with
 `.\.venv\Scripts\python.exe`. Calling that executable directly avoids
 PowerShell activation-policy changes.
 
+### Linux, including WSL
+
+From a checkout, create a Linux Python environment and install DrainTracer:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install .
+.venv/bin/python -m draintracer --help
+.venv/bin/python -m draintracer --target ./torture/memory_leak.py --timeout 20s
+```
+
+On Ubuntu/Debian, install `python3-venv` if `python3 -m venv` reports that
+it is missing. Run these commands inside WSL to monitor Linux processes.
+Use the Windows installation to monitor Windows processes.
+
+Linux supports native executables, executable scripts with a valid `#!`
+interpreter line, and `.py` files through DrainTracer's Python. For example:
+
+```bash
+.venv/bin/draintracer --target /usr/bin/sleep -- 30
+.venv/bin/draintracer --pid 4820
+.venv/bin/draintracer --headless --target ./torture/steady.py --timeout 15s
+```
+
+The startup menu, process browser, dashboard keys, pause/resume, JSON/HTML
+exports, and headless checks work on Linux. A desktop file dialog uses
+optional tkinter; without Tk or a display, startup asks for a typed path.
+`--target` and `--pid` work without a desktop. Windows `.exe`, `.bat`, and
+`.cmd` programs require Windows.
+
+On Linux, **private bytes measure USS (private resident memory)** and
+**handles count open file descriptors**, including files, sockets, and
+pipes. `--budget-handles` therefore limits descriptor counts. Protected
+`/proc` measurements appear as unavailable. Reports record these definitions;
+strict comparisons reject differing platforms or counter definitions.
+Compare memory and resource trends between runs on the same platform.
+
+Linux launches use an isolated session to retain descendants after a parent
+exits. A child that creates another session before discovery can escape
+tracking. Attachment tracks discovered descendants and leaves the target
+running when you quit. See [Usage](docs/usage.md) for permissions and cleanup.
+
 Before starting from a checkout, DrainTracer checks the committed
 [runtime snapshot](runtime-manifest.json) for required source files, title
 artwork, and report frames. If files are missing, it lists them and offers
@@ -152,8 +197,8 @@ local data handling.
 
 Once the installation check passes, `draintracer` offers two startup choices:
 
-- **Open a program:** select an executable, Python script, or Windows
-  batch file in the native file picker.
+- **Open a program:** select an executable or script in the desktop file
+  picker, or enter its path on Linux without a desktop.
 - **Hook to a running program:** browse up to 15 names and PIDs at a
   time. Use **Up/Down** to highlight a program and **Enter** to select it,
   or type a listed PID and press Enter. The list filters as you type a

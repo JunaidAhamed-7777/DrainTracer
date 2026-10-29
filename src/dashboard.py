@@ -81,7 +81,7 @@ class DashboardApp(
     produced, and switching views never changes monitoring.
     """
 
-    VERSION = "v5.3.3"
+    VERSION = "v5.4.0"
     DELTA_WINDOW_SECONDS = 10.0
     FRAME_SECONDS = 0.1
     # Redraw at least this often so the clock and countdowns keep moving.
