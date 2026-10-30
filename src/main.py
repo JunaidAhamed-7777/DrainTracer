@@ -334,7 +334,7 @@ def _load_title_art() -> str:
     title_path = resource_path("TITLE.txt")
     try:
         title = title_path.read_text(encoding="utf-8").strip()
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         title = "DRAINTRACER"
     return title
 

@@ -267,6 +267,17 @@ class StartupDispatchTests(unittest.TestCase):
                 if status is not True:
                     self.assertNotIn("New Version Available!", output.getvalue())
 
+    def test_load_title_art_invalid_utf8_uses_fallback(self) -> None:
+        """A TITLE.txt that is not valid UTF-8 falls back to DRAINTRACER."""
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as temp:
+            title_file = Path(temp) / "TITLE.txt"
+            title_file.write_bytes(b"\xff\xfe\xfd")
+            with mock.patch.object(cli, "resource_path", return_value=title_file):
+                self.assertEqual(cli._load_title_art(), "DRAINTRACER")
+
     def test_update_notice_colors_match_the_requested_labels(self) -> None:
         notice = cli._update_notice(True)
         self.assertEqual(notice.spans[0].style, "red")
