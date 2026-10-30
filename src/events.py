@@ -5,10 +5,13 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from queue import Empty, Queue
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .session_facts import SessionFacts
 
 
 class LeakSeverity(str, Enum):
@@ -574,16 +577,18 @@ SnapshotCallback = Callable[[MetricsSnapshot], None]
 class MetricsStream:
     """Thread-safe queue and callback bridge for metrics snapshots."""
 
-    def __init__(self, max_queue_size: int = 256) -> None:
+    def __init__(self, max_queue_size: int = 256, *, facts: SessionFacts | None = None) -> None:
         self._queue: Queue[MetricsSnapshot] = Queue(maxsize=max_queue_size)
         self._callbacks: list[SnapshotCallback] = []
         self._lock = threading.Lock()
         self._dropped = 0
+        self.facts = facts
 
     @property
     def dropped(self) -> int:
         """Snapshots discarded because the queue was full when they arrived."""
-        return self._dropped
+        with self._lock:
+            return self._dropped
 
     def subscribe(self, callback: SnapshotCallback) -> None:
         """Register a callback invoked on every published snapshot."""
@@ -600,25 +605,28 @@ class MetricsStream:
         """Push a snapshot to subscribers and the internal queue."""
         with self._lock:
             callbacks = list(self._callbacks)
+            if self._queue.full():
+                try:
+                    self._queue.get_nowait()
+                    self._dropped += 1
+                except Empty:
+                    pass  # A consumer drained it after the fullness check.
+            if snapshot.diagnostics is not None:
+                snapshot = replace(snapshot, diagnostics=replace(
+                    snapshot.diagnostics,
+                    dropped_snapshots=max(snapshot.diagnostics.dropped_snapshots, self._dropped),
+                ))
+            # Fixed-size accounting precedes visibility to the consumer and
+            # survives queue eviction. No UI work runs on this path.
+            if self.facts is not None:
+                self.facts.observe(snapshot, dropped=self._dropped)
+            self._queue.put_nowait(snapshot)
 
         for callback in callbacks:
             try:
                 callback(snapshot)
             except Exception:
-                # UI callbacks must not break the sampling loop.
-                pass
-
-        try:
-            self._queue.put_nowait(snapshot)
-        except Exception:
-            try:
-                self._queue.get_nowait()
-                self._dropped += 1
-            except Empty:
-                pass
-            try:
-                self._queue.put_nowait(snapshot)
-            except Exception:
+                # Subscriber failures must not break the sampling loop.
                 pass
 
     def get_latest(self, timeout: float | None = None) -> MetricsSnapshot | None:

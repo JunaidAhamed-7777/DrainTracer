@@ -335,6 +335,7 @@ class StartupDispatchTests(unittest.TestCase):
         kwargs = app.call_args.kwargs
         self.assertEqual(kwargs["attach_pid"], 4242)
         self.assertEqual(kwargs["timeout"], 120.0)
+        self.assertEqual(kwargs["attach_create_time"], 10.0)
         self.assertEqual(kwargs["report_dir"], "out")
         self.assertIs(kwargs["console"], console)
         self.assertIsNone(kwargs["settings"].source)
