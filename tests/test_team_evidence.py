@@ -134,6 +134,20 @@ class EvidenceTests(unittest.TestCase):
         limited.delete_report(actor, metadata["report_id"])
         self.assert_code("quota", limited.ingest, actor, report_bytes(), request_id=uuid4().hex)
 
+    def test_corrupt_accounting_cannot_subsidize_project_or_global_admission(self):
+        metadata = self.store.ingest(self.admin, report_bytes())
+        self.store.update_policy(self.admin, ProjectPolicy(max_bytes=4096))
+        with self.store.connection() as connection:
+            connection.execute("UPDATE reports SET stored_bytes=-100000 WHERE id=?", (metadata["report_id"],))
+        self.assert_code("storage", self.store.ingest, self.admin, report_bytes())
+        with self.store.connection() as connection:
+            connection.execute("UPDATE reports SET stored_bytes=length(payload)+length(summary)")
+        backup = self.store.backup(self.admin)
+        with self.store.connection() as connection:
+            connection.execute("UPDATE backups SET stored_bytes=1 WHERE id=?", (backup["backup_id"],))
+        self.assert_code("storage", self.store.ingest, self.admin, report_bytes())
+        self.assertEqual(len(self.store.list_reports(self.admin)["reports"]), 1)
+
     def test_policy_rejects_unknown_fields_and_tightens_existing_privacy_without_extending_expiry(self):
         metadata = self.store.ingest(self.admin, report_bytes())
         self.assert_code("invalid", self.store.update_policy, self.admin, {"arbitrary": True})

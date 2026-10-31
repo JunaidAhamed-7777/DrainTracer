@@ -73,7 +73,19 @@ class _Evidence:
         total = 0
         for table in ("reports", "backups", "project_records"):
             where, parameters = (" WHERE project_id=?", (project_id,)) if project_id else ("", ())
-            total += connection.execute(f"SELECT coalesce(sum(stored_bytes),0) FROM {table}{where}", parameters).fetchone()[0]
+            if table == "reports":
+                expected = "coalesce(length(payload),0)+coalesce(length(summary),0)"
+                invalid = ("(state='active' AND (typeof(payload)!='blob' OR typeof(summary)!='blob')) "
+                           "OR (state!='active' AND (payload IS NOT NULL OR summary IS NOT NULL))")
+            else:
+                expected, invalid = "length(payload)", "typeof(payload)!='blob'"
+            row = connection.execute(
+                f"SELECT coalesce(sum(stored_bytes),0),coalesce(max(CASE WHEN typeof(stored_bytes)!='integer' "
+                f"OR stored_bytes<0 OR stored_bytes!={expected} OR {invalid} THEN 1 ELSE 0 END),0) FROM {table}{where}",
+                parameters).fetchone()
+            if row[1]:
+                raise TeamError("storage", "Evidence accounting does not match authoritative stored bytes")
+            total += row[0]
         return total
 
     def _admit_bytes(self, connection, project_id, policy, added):
