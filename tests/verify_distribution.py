@@ -19,6 +19,7 @@ from email.parser import BytesParser
 from pathlib import Path
 
 from verify_baseline_distribution import verify_baseline_runtime
+from verify_controlled_workload import verify_controlled_workload
 
 
 def _require(condition: bool, message: str) -> None:
@@ -162,6 +163,7 @@ def verify_distribution(wheel: Path) -> str:
         source_commit = subprocess.check_output(["git", "rev-parse", "HEAD"],
                                                cwd=Path(__file__).resolve().parent.parent, text=True).strip()
         verify_baseline_runtime(python, cwd, environment, source_commit)
+        verify_controlled_workload(python, cwd, environment, source_commit)
 
         workload_command = scripts / ("draintracer-workload.exe" if os.name == "nt" else "draintracer-workload")
         _require(workload_command.is_file(), "Installing the wheel did not create draintracer-workload.")

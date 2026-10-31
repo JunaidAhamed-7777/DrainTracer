@@ -93,3 +93,18 @@ Continuity/clean-recipe admission is tested with deterministic counter and cavea
 regressions here. Final native recipe promotion/check and installed real-run
 verification require the combined timing/workload source; those integrated
 checks must pass before publishing this feature.
+
+
+Native integration verification on 2026-10-31 combined the clean recipe policy,
+clock/gap accounting and bounded report writer. A clean candidate wheel produced
+eight independent real recipe recordings (40–41 samples each), all with zero
+clock adjustments, sampling gaps and paused samples and complete workflow/owned
+cleanup. The first two clean recipes were deliberately promoted; the second
+pair passed (`unchanged`, exit 0). Selected and inherited environment groups
+were each refused for promotion and check, including explicit regression
+acceptance, while the approved audit remained unchanged. This verifies the
+recorded-choice clean exception; it does not establish complete OS equivalence.
+The combined native suite passed 903 tests (25 platform skips). The source and
+isolated wheel passed strict metadata checks and exact runtime-file inventory.
+`tests/verify_controlled_workload.py` repeats the installed eight-run proof;
+ordinary installed baseline runs also receive a two-second startup warm-up.
