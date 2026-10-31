@@ -1,0 +1,68 @@
+# Local agent operations and support
+
+The agent is installed with the Python package and started explicitly in the
+foreground. There is no system service, startup entry or network listener to
+remove. The same authenticated local client reuses session listing, progress,
+cancellation and JSON/HTML evidence. Installation or a connected client never
+grants launch, pause or kill capabilities by itself.
+
+## Diagnostics and recovery
+
+`draintracer-agent diagnose` reports responsive/readiness status, active and
+retained counts, queue depth, observation age, stale sessions, storage admission
+limits and bounded storage errors. It falls back to read-only offline journal
+inspection when the agent cannot be reached; offline state never claims that
+a saved active session is still running or complete. Diagnostic inspection
+never launches, attaches, resumes or kills a process.
+
+`draintracer-agent recover SESSION_UUID` previews the assigned intact checkpoint
+as explicitly partial evidence without starting the agent. `--out-dir DIRECTORY`
+writes a fresh JSON/HTML pair. Writer, target and checkpoint identities must
+match; missing or corrupt evidence is an explicit error. Live evidence uses
+the existing `export SESSION_UUID` command and opens in the accessible offline
+HTML report, with its matching JSON beside it.
+
+## Stop, upgrade, rollback and removal
+
+`draintracer-agent stop` requests ordinary authenticated shutdown. Its reply
+acknowledges the request, not completed cleanup. Stop admission, cancel all
+active sessions, release attachments and stop owned launches; inspect the
+stopped journal/diagnostics before proceeding. A client disconnect does not
+revoke an accepted cancellation. Never substitute an unverified PID kill.
+
+Install in a user-controlled virtual environment beneath a trusted private
+ancestor. Pin the exact published version when repeatability matters. Before
+upgrade, stop the agent, confirm no active writer, preserve the entire private
+state directory and install the new wheel in a separate environment. Inspect
+its version/help and diagnose the existing state before explicitly starting.
+Rollback uses the previous environment and its compatible state backup;
+future-version state is preserved and refused, never rewritten to force a
+rollback. Agent credentials, checkpoints and journals remain private local
+data throughout. Do not copy them into bug reports.
+
+`draintracer-agent remove` previews removal of the known control files only.
+`--apply` requires a stopped agent and no unresolved known launched process.
+It never sends process-control signals and never recursively deletes a state
+directory. Reports, checkpoints and unrelated files are preserved. Remove
+those later under an explicit local retention decision. Uninstall the package
+from its virtual environment with that environment's `python -m pip uninstall
+draintracer`, or remove only the disposable environment you created. Existing
+application data and other environments are outside this operation.
+
+## Previewable support bundle
+
+`draintracer-agent support` previews a typed, redacted diagnostic document.
+The bundle excludes credentials, SID/user/host identity, raw session/request
+IDs, PIDs, creation times, paths, raw errors/events, journal/checkpoint files,
+arguments and environment values. Known counts, states, units, ages, versions
+and readiness/storage booleans remain to explain the problem. Unknown fields
+are dropped, even when numeric or structured.
+
+Optional `--include-report SESSION_UUID` adds the latest matching report after
+the same reviewed `share`/`minimal` privacy transform used by standalone
+reports. `minimal` is the default. Its JSON and offline HTML come from exactly
+the same transformed dictionary. The preview contains the eligible data;
+`--out PATH.zip` creates an exclusive local archive after size checks. Nothing
+is uploaded. Inspect the preview, archive contents and destination before
+sharing: retained numerical evidence and workload timing can still be
+identifying. A support bundle is neither anonymous nor a causal diagnosis.
