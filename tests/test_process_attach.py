@@ -205,21 +205,31 @@ class WindowsLivenessTests(unittest.TestCase):
 
         import psutil._pswindows as windows
 
-        target = subprocess.Popen([_PYTHON, "-c", "import time; time.sleep(60)"])
-        self.addCleanup(target.wait, 10)
-        self.addCleanup(target.kill)
         api = ctypes.WinDLL("kernel32", use_last_error=True)
         api.GetProcessTimes.argtypes = [wintypes.HANDLE, *([ctypes.POINTER(wintypes.FILETIME)] * 4)]
         api.GetProcessTimes.restype = wintypes.BOOL
-        stamps = [wintypes.FILETIME() for _ in range(4)]
-        self.assertTrue(api.GetProcessTimes(target._handle, *map(ctypes.byref, stamps)))
-        ticks = (stamps[0].dwHighDateTime << 32) | stamps[0].dwLowDateTime
-        # Subtract the integer epoch before float division, matching psutil.
-        # Dividing first can introduce a different rounding error.
-        expected = (ticks - 116444736000000000) / 10000000
-        self.assertEqual({psutil.Process(target.pid).create_time() for _ in range(200)}, {expected})
-        with mock.patch.object(windows.cext, "proc_times", side_effect=ctypes.WinError(5)):
-            self.assertEqual({psutil.Process(target.pid).create_time() for _ in range(20)}, {expected})
+        # Multiple starts cover different FILETIME rounding cases. A repeated
+        # read of only one process cannot detect a wrong conversion oracle.
+        for start in range(40):
+            with self.subTest(start=start):
+                target = subprocess.Popen([_PYTHON, "-c", "import time; time.sleep(60)"])
+                try:
+                    stamps = [wintypes.FILETIME() for _ in range(4)]
+                    self.assertTrue(api.GetProcessTimes(target._handle, *map(ctypes.byref, stamps)))
+                    ticks = (stamps[0].dwHighDateTime << 32) | stamps[0].dwLowDateTime
+                    # psutil casts the integer epoch difference to C double
+                    # BEFORE division. Python int/int division can round to a
+                    # different float; neither is a raw FILETIME identity.
+                    expected = float(ticks - 116444736000000000) / 10000000.0
+                    fast = {psutil.Process(target.pid).create_time() for _ in range(5)}
+                    self.assertEqual(fast, {expected})
+                    with mock.patch.object(windows.cext, "proc_times", side_effect=ctypes.WinError(5)):
+                        fallback = {psutil.Process(target.pid).create_time() for _ in range(3)}
+                    self.assertEqual(fallback, fast)
+                finally:
+                    # Use the original owned handle, regardless of assertions.
+                    target.kill()
+                    target.wait(timeout=10)
 
     def test_close_but_distinct_windows_identities_never_reach_process_controls(self) -> None:
         original = 1700000000.0
