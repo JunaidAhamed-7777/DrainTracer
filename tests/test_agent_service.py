@@ -286,7 +286,7 @@ class NativeAgentTests(unittest.TestCase):
                                                 "timeout_seconds": 10, "sample_interval_ms": 100,
                                                 "windows_seconds": [1]})
         session_id = accepted["session_id"]
-        wait_for(child_file.exists)
+        wait_for(lambda: child_file.exists() and child_file.stat().st_size > 0)
         child_pid = int(child_file.read_text())
         wait_for(lambda: self.client.request("status", {"session_id": session_id})["sample_count"] >= 2)
         self.assertTrue(self.client.request("pause", {"session_id": session_id})["completed"])

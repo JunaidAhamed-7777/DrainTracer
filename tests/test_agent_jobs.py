@@ -64,7 +64,7 @@ class NativeJobTests(unittest.TestCase):
                 f"pathlib.Path({str(child_file)!r}).write_text(str(p.pid)); time.sleep(60)")
         process = JobProcess([sys.executable, "-c", code])
         self.addCleanup(process.close)
-        wait_for(child_file.exists)
+        wait_for(lambda: child_file.exists() and child_file.stat().st_size > 0)
         child_pid = int(child_file.read_text())
         self.assertIsNone(process.poll())
         self.assertTrue(psutil.pid_exists(child_pid))
@@ -106,7 +106,8 @@ class NativeJobTests(unittest.TestCase):
         agent = subprocess.Popen([sys.executable, "-c", helper], stdin=subprocess.DEVNULL,
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         try:
-            wait_for(lambda: root_file.exists() and child_file.exists())
+            wait_for(lambda: root_file.exists() and child_file.exists()
+                     and root_file.stat().st_size > 0 and child_file.stat().st_size > 0)
             root_pid, child_pid = int(root_file.read_text()), int(child_file.read_text())
             agent.kill()
             agent.communicate(timeout=5)
