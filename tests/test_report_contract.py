@@ -13,6 +13,7 @@ from unittest import mock
 from src.report_contract import (
     ReportContractError,
     main,
+    parse_report,
     read_report,
     report_schema,
     session_summary,
@@ -25,6 +26,20 @@ FIXTURES = ROOT / "tests" / "fixtures" / "reports"
 
 
 class CompatibilityTests(unittest.TestCase):
+    def test_machine_summaries_keep_checkpoint_qualification_without_identity_fields(self) -> None:
+        report = read_report(FIXTURES / "v3.json")
+        report["recovery"] = {"partial": True, "exact_through_cutoff": True,
+                              "final_outcome_confirmed": False, "session_id": "private-identity"}
+        summary = session_summary(report)
+        self.assertEqual(summary["recovery"], {"partial": True, "exact_through_cutoff": True,
+                                               "final_outcome_confirmed": False})
+        del report["recovery"]
+        report["checkpoint"] = {"schema": 1}
+        self.assertTrue(session_summary(report)["recovery"]["partial"])
+        report["recovery"] = {"partial": "yes"}
+        with self.assertRaises(ReportContractError):
+            session_summary(report)
+
     def test_supported_fixtures_and_published_schemas_agree(self) -> None:
         for version in (1, 2, 3):
             with self.subTest(version=version):
@@ -74,6 +89,27 @@ class CompatibilityTests(unittest.TestCase):
 
 
 class IngestionTests(unittest.TestCase):
+    def test_in_memory_parser_matches_file_validation_without_touching_the_filesystem(self) -> None:
+        for version in (1, 2, 3):
+            raw = (FIXTURES / f"v{version}.json").read_bytes()
+            expected = read_report(FIXTURES / f"v{version}.json")
+            with mock.patch("builtins.open", side_effect=AssertionError("upload touched a file")):
+                self.assertEqual(parse_report(raw), expected)
+
+    def test_in_memory_parser_enforces_type_bytes_and_predecode_limits(self) -> None:
+        for raw in (None, "{}", bytearray(b"{}"), memoryview(b"{}")):
+            with self.subTest(kind=type(raw)), self.assertRaises(ReportContractError):
+                parse_report(raw)
+        with mock.patch("src.report_contract.MAX_REPORT_BYTES", 8), \
+                mock.patch("src.report_contract.json.loads") as decoder, \
+                self.assertRaisesRegex(ReportContractError, "byte limit"):
+            parse_report(b" " * 9)
+        decoder.assert_not_called()
+        for raw in (b"\xff", b'{"snapshots": [], "snapshots": []}', b'{"snapshots": [], "v": NaN}',
+                    b'{"report_schema": 999, "snapshots": []}'):
+            with self.subTest(raw=raw), self.assertRaises(ReportContractError):
+                parse_report(raw)
+
     def test_huge_integers_fail_before_analysis_without_echoing_the_payload(self) -> None:
         payload = 10**1000
         report = {"snapshots": [], "opaque": {"identifier": payload}}

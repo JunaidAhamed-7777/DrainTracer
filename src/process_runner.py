@@ -95,7 +95,7 @@ def describe_pid(pid: int) -> str:
 # milliseconds later is a different one. Linux derives them from boot time
 # and clock ticks, but repeated reads still identify the same start tick;
 # a one-second tolerance could mistake a quickly reused PID for its owner.
-_SAME_START = 0.01 if sys.platform == "win32" else 0.001
+_SAME_START = 0.0 if sys.platform == "win32" else 0.001
 
 
 @dataclass(frozen=True)
@@ -363,7 +363,7 @@ class ProcessManager:
                 popen_kwargs["start_new_session"] = True
 
             try:
-                self._process = subprocess.Popen(command, **popen_kwargs)
+                self._process = self._spawn_process(command, popen_kwargs)
             except PermissionError as exc:
                 self._last_error = str(exc)
                 raise ProcessAccessDeniedError(
@@ -391,6 +391,10 @@ class ProcessManager:
             self._exit_code = None
             self._start_poll_thread()
             return self._root_pid
+
+    def _spawn_process(self, command, popen_kwargs):
+        """Private launch seam for the opt-in agent's job-bound process adapter."""
+        return subprocess.Popen(command, **popen_kwargs)
 
     def attach(self, pid: int, *, expected_create_time: float | None = None) -> int:
         """Track an already running process (and its descendants) by PID.
@@ -857,13 +861,15 @@ class ProcessManager:
         except (psutil.Error, OSError):
             return
 
-    def _open_tracked(self, pid: int, *, discovering: bool = False) -> psutil.Process | None:
-        """Return the original process for a PID, rejecting reused PID values."""
+    def _open_tracked(
+        self, pid: int, *, discovering: bool = False, for_control: bool = False
+    ) -> psutil.Process | None:
+        """Observe tracked PIDs; controls additionally require a verified identity."""
         with self._lock:
-            return self._open_tracked_unlocked(pid, discovering=discovering)
+            return self._open_tracked_unlocked(pid, discovering=discovering, for_control=for_control)
 
     def _open_tracked_unlocked(
-        self, pid: int, *, discovering: bool = False
+        self, pid: int, *, discovering: bool = False, for_control: bool = False
     ) -> psutil.Process | None:
         # Refresh can retire a PID while a caller still holds an earlier PID
         # set. Only validated discovery may open an untracked descendant.
@@ -874,6 +880,11 @@ class ProcessManager:
         except (psutil.NoSuchProcess, psutil.ZombieProcess):
             self._suspended_pids.discard(pid)
             return None
+        except (psutil.AccessDenied, OSError):
+            if for_control:
+                self._last_error = f"Cannot verify current identity for PID {pid}; process control refused"
+                return None
+            raise
 
         # POSIX zombies still have a PID. Windows liveness is checked below
         # using a process handle, avoiding a system-wide status enumeration.
@@ -894,7 +905,15 @@ class ProcessManager:
         try:
             created = proc.create_time()
         except psutil.AccessDenied:
+            if for_control:
+                self._last_error = f"Cannot verify current identity for PID {pid}; process control refused"
+                return None
             return proc
+        except OSError:
+            if for_control:
+                self._last_error = f"Cannot verify current identity for PID {pid}; process control refused"
+                return None
+            raise
         except (psutil.NoSuchProcess, psutil.ZombieProcess):
             self._suspended_pids.discard(pid)
             return None
@@ -913,7 +932,16 @@ class ProcessManager:
             except OSError:
                 # An unreadable exit state must not silently drop a live PID.
                 pass
-        if expected is None:
+        if for_control and expected is None:
+            self._last_error = f"Original identity for PID {pid} is unknown; process control refused"
+            return None
+        if for_control and self._root_pid is not None and self._root_created is None:
+            self._last_error = "Original root identity is unknown; process-tree control refused"
+            return None
+        if expected is None and discovering:
+            # A later readable observation cannot prove an initially unknown
+            # tracked process is still the same incarnation. Only fresh,
+            # validated tree discovery may establish a new child identity.
             self._identities[pid] = created
         return proc
 
@@ -945,7 +973,7 @@ class ProcessManager:
             time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
 
     def _suspend_pid(self, pid: int) -> bool:
-        proc = self._open_tracked(pid)
+        proc = self._open_tracked(pid, for_control=True)
         if proc is None:
             return False
         try:
@@ -963,9 +991,11 @@ class ProcessManager:
             return False
 
     def _resume_pid(self, pid: int) -> bool:
-        proc = self._open_tracked(pid)
+        proc = self._open_tracked(pid, for_control=True)
         if proc is None:
-            return True  # an exited or reused process no longer needs resuming
+            # A proven exit/reuse clears the owed resume. An unreadable
+            # identity retains ownership debt for a later safe retry.
+            return pid not in self._suspended_pids
         try:
             proc.resume()
             return True
@@ -976,7 +1006,7 @@ class ProcessManager:
             return False
 
     def _terminate_pid(self, pid: int, graceful: bool) -> None:
-        proc = self._open_tracked(pid)
+        proc = self._open_tracked(pid, for_control=True)
         if proc is None:
             return
         try:
