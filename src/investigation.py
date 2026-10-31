@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from .privacy import redact_report
@@ -20,7 +21,8 @@ def _object(value: Any) -> dict[str, Any]:
 
 def _number(value: Any) -> float | None:
     try:
-        return float(value) if type(value) in (int, float) else None
+        number = float(value) if type(value) in (int, float) else None
+        return number if number is not None and math.isfinite(number) else None
     except OverflowError:
         return None
 
@@ -49,7 +51,7 @@ def _guidance(resource: str, runtime: str, platform: str | None) -> list[str]:
     elif resource == "threads" and runtime == "python":
         guidance.append("Compare threading.enumerate() around the exercise and inspect thread lifetimes; "
                         "native-extension threads can require a native profiler. " + _PYTHON_THREADS)
-    elif resource == "handles":
+    elif resource == "handles" and platform == "Linux":
         guidance.append("For Linux descriptors, inspect the original process's /proc/PID/fd entries and "
                         "instrument matching open/close lifetimes during the same bounded exercise.")
     if not guidance:

@@ -63,6 +63,37 @@ class InvestigationTests(unittest.TestCase):
         self.assertIn("detection window judged: unknown", text)
         self.assertNotIn("CLEAR", text)
 
+    def test_unknown_platform_does_not_invent_linux_descriptor_guidance(self) -> None:
+        text = investigation_summary({"snapshots": []}, resource="handles")["text"]
+        self.assertIn("not identified sufficiently", text)
+        self.assertNotIn("/proc/", text)
+        self.assertNotIn("WPR trace", text)
+
+    def test_overflowing_change_remains_unknown(self) -> None:
+        report = private_fixture()
+        for sample in report["snapshots"]:
+            sample["alerts"][0].update(baseline_value=-1e308, current_value=1e308)
+        text = investigation_summary(report)["text"]
+        self.assertIn("Observed change: unknown", text)
+        self.assertNotIn("inf bytes", text)
+
+    def test_numeric_identifiers_are_removed_before_investigation_formatting(self) -> None:
+        seeds = (987654321, 1122334455, 9988776655, 6677889900)
+        report = private_fixture()
+        report["metadata"] = {"value": seeds[0], "operations": seeds[1], "timestamp": 1}
+        report["snapshots"][0]["metadata"] = dict(report["metadata"])
+        report["markers"][0].update(label=seeds[2], index=seeds[3])
+        report["event_log"][0]["message"] = {"value": seeds[3]}
+        report["outcome"]["measurement"]["reason"] = [seeds[0], seeds[1]]
+        report["outcome"]["target"]["description"] = seeds[2]
+        report["experiment"]["environment"]["os"] = seeds[3]
+        report["settings"]["config_path"] = {"value": seeds[0]}
+        for profile in ("share", "minimal"):
+            with self.subTest(profile=profile):
+                text = investigation_summary(report, profile=profile)["text"]
+                for seed in seeds:
+                    self.assertNotIn(str(seed), text)
+
     def test_recovery_and_incomplete_cleanup_qualifications_survive_copying(self) -> None:
         report = private_fixture()
         report["recovery"] = {"partial": True, "final_outcome_confirmed": False, "exact_through_cutoff": True}
