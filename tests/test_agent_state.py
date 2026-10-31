@@ -101,6 +101,18 @@ class JournalTests(unittest.TestCase):
             AgentJournal(self.directory, app_version="v5.4.0", owner="test-owner")
         self.assertEqual(self.journal.path.read_bytes(), raw)
 
+    @unittest.skipUnless(os.name == "nt", "native private journal ACL")
+    def test_public_readable_journal_is_refused_without_repair_or_rewrite(self):
+        self.journal.write([record()], [])
+        prior = self.journal.path.read_bytes()
+        self.journal.close()
+        subprocess.run(["icacls", str(self.journal.path), "/grant", "*S-1-1-0:(R)"], check=True, capture_output=True)
+        with self.assertRaises((AgentStateError, OSError)):
+            AgentJournal(self.directory, app_version="v5.4.0", owner="test-owner")
+        self.assertEqual(self.journal.path.read_bytes(), prior)
+        permissions = subprocess.run(["icacls", str(self.journal.path)], check=True, capture_output=True, text=True).stdout
+        self.assertIn("Everyone:(R)", permissions)
+
     def test_storage_high_water_and_inventory_limits_are_explicit_without_deletion(self):
         extra = self.directory / "preserved.bin"
         extra.write_bytes(b"x" * (1024 * 1024))

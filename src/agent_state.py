@@ -12,7 +12,12 @@ import time
 import uuid
 from pathlib import Path
 
-from .agent_transport import AgentTransportError, _decode_frame, verify_trusted_path
+from .agent_transport import (
+    AgentTransportError,
+    _decode_frame,
+    verify_private_data_path,
+    verify_trusted_path,
+)
 from .checkpoints import _lock
 
 MAX_STATE_BYTES = 4 * 1024 * 1024
@@ -157,6 +162,8 @@ class AgentJournal:
         try:
             verify_trusted_path(self.path)
             if self.path.exists():
+                if os.name == "nt":
+                    verify_private_data_path(self.path)
                 with self.path.open("rb") as handle:
                     raw = handle.read(MAX_STATE_BYTES + 1)
                 if len(raw) > MAX_STATE_BYTES:

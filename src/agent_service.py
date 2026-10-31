@@ -21,6 +21,7 @@ from .agent_transport import (
     AgentTransportError,
     current_user_sid,
     process_user_sid,
+    verify_private_data_path,
     verify_trusted_path,
 )
 from .api import CommandTimeoutError, Session, SessionOptions, _version
@@ -182,6 +183,7 @@ class AgentRegistry:
         if self.checkpoints is None:
             raise AgentError("evidence_unavailable", "no recovery checkpoint directory is configured")
         source = self.checkpoints / record.checkpoint
+        verify_private_data_path(source)
         raw = read_checkpoint(source, app_version=_version())
         metadata = raw["checkpoint"]
         if metadata["writer_identity"] != record.writer_identity:
