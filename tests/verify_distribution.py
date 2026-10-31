@@ -150,6 +150,33 @@ def verify_distribution(wheel: Path) -> str:
         _require(f"<script>{probe['js']}</script>" in page, "The HTML export does not embed its bundled JavaScript.")
         _require(not list(package.rglob("leak_report_*.json")), "Reports were written inside the installed package.")
         _require(not list(package.rglob("leak_report_*.html")), "HTML reports were written inside the installed package.")
+
+        api_probe = json.loads(_run(
+            [str(python), "-c", """import json, sys
+from draintracer.api import Session, SessionOptions
+from draintracer.report_contract import validate_report
+assert 'draintracer.dashboard' not in sys.modules
+options = SessionOptions(sample_interval_ms=100, windows_seconds=(1,), warmup_seconds=2,
+                         timeout_seconds=4, report_dir='api-reports')
+with Session.launch('bounded_worker.py', options=options) as session:
+    result = session.wait()
+validate_report(session.report())
+assert 'draintracer.dashboard' not in sys.modules
+print(json.dumps({'reason': result.reason, 'cleanup': result.cleanup, 'errors': result.errors,
+                  'samples': session.status.sample_count, 'code': result.exit_code,
+                  'measurement': result.measurement,
+                  'json': str(result.exports.json_path), 'html': str(result.exports.html_path)}))
+"""], cwd=cwd, environment=environment,
+        ))
+        _require(api_probe["reason"] == "timeout" and api_probe["cleanup"] == "complete",
+                 "The supported API did not complete ownership cleanup.")
+        _require(api_probe["code"] == 0 and not api_probe["errors"] and api_probe["samples"] >= 4
+                 and api_probe["measurement"] == "conclusive",
+                 "The supported API failed to collect a judged bounded session "
+                 f"(code={api_probe['code']}, samples={api_probe['samples']}, measurement={api_probe['measurement']}, "
+                 f"errors={str(api_probe['errors'])[:500]}).")
+        _require(Path(api_probe["json"]).is_file() and Path(api_probe["html"]).is_file(),
+                 "The supported API did not export a complete report pair.")
     return version
 
 

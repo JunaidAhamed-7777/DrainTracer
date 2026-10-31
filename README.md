@@ -10,6 +10,10 @@
 
 <h1 align="center">DrainTracer</h1>
 
+Python integrations can use the [supported session API](docs/python-api.md)
+for launch/attach, immutable snapshots, bounded subscriptions, cancellation,
+and explicit cleanup/export outcomes without initializing the dashboard.
+
 <p align="center">
   <strong>Release series: v5.4.0</strong> ·
   <a href="RELEASES.md">Current version and release notes</a>
