@@ -18,8 +18,10 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from .budgets import BUDGET_METRICS, format_budget
 from .events import (
     EvidenceState,
+    METRIC_LABELS,
     LeakAlert,
     LeakResource,
     LeakSeverity,
@@ -608,6 +610,14 @@ class DashboardApp(
             f"handles {handles.critical_delta:,.0f}, {handles.critical_slope:g}/s {glyphs.sep} "
             f"threads {threads.critical_delta:,.0f}, {threads.critical_slope:g}/s",
         )
+        budgets = [f"{METRIC_LABELS[metric]}: {format_budget(metric, self.settings.budgets[metric])}"
+                   for metric in BUDGET_METRICS if metric in self.settings.budgets]
+        session.add_row("Budgets", Text("\n".join(budgets) if budgets else "none configured"))
+        if budgets:
+            session.add_row("Budget checks", Text(
+                "Headless runs and report comparisons check these ceilings. "
+                "This dashboard displays them without enforcing them."
+            ))
         # Paths and names are user data: Text keeps Rich from reading them as markup.
         session.add_row("Settings", Text(self.settings.describe()))
         session.add_row("Reports", Text(os.path.abspath(self.report_dir)))

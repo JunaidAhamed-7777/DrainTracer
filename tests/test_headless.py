@@ -186,6 +186,60 @@ class ExitStatusTests(unittest.TestCase):
 
 
 class OutputTests(unittest.TestCase):
+    def test_plain_interrupt_exports_readable_evidence_and_runs_cleanup(self) -> None:
+        from src.theme import plain_console
+
+        with tempfile.TemporaryDirectory() as directory:
+            runner = HeadlessRunner("worker.exe", console=plain_console(make_console()),
+                                    report_dir=directory, quiet=True)
+            with mock.patch.object(runner, "start"), \
+                    mock.patch.object(runner, "_monitor", side_effect=KeyboardInterrupt), \
+                    mock.patch.object(runner, "shutdown") as cleanup:
+                self.assertEqual(runner.run(), EXIT_INTERRUPTED)
+            cleanup.assert_called_once_with()
+            self.assertEqual(len(list(Path(directory).rglob("*.json"))), 1)
+            self.assertEqual(len(list(Path(directory).rglob("*.html"))), 1)
+            self.assertIn("INTERRUPTED", _output(runner))
+            self.assertIn("INCONCLUSIVE", _output(runner).upper())
+            self.assertNotIn("\x1b", _output(runner))
+
+    def test_static_output_distinguishes_unavailable_counters_from_real_zero(self) -> None:
+        from helpers import make_denied, make_process
+
+        for process, amount in ((make_denied(100), "n/a"),
+                                (make_process(100, private=0, rss=0, handles=0, threads=0), "0.0 B")):
+            with self.subTest(amount=amount):
+                runner = HeadlessRunner("worker.exe", console=make_console())
+                runner._accept_snapshot(make_snapshot(processes=(process,), measured_coverage=True))
+                runner._print_progress()
+                runner._print_summary()
+                output = _output(runner)
+                self.assertIn(f"private {amount}", output)
+                self.assertEqual(runner._metric_text("private_bytes", peak=True), amount)
+                if amount == "n/a":
+                    self.assertIn("handles n/a", output)
+                    self.assertIsNone(runner.facts.peak("private_bytes"))
+                else:
+                    self.assertIn("handles 0", output)
+
+    def test_quiet_hides_routine_output_but_keeps_evidence_and_failures(self) -> None:
+        runner = HeadlessRunner("worker.exe", console=make_console(), quiet=True)
+        runner._print_banner()
+        runner._append_event("routine event", "info")
+        runner._print_progress()
+        self.assertEqual(_output(runner), "")
+        runner._append_event("partial coverage warning", "warn")
+        runner._append_event("export error", "error")
+        runner._accept_snapshot(make_snapshot(alerts=(make_alert(severity=LeakSeverity.HIGH),)))
+        runner._print_summary()
+        output = _output(runner)
+        self.assertIn("partial coverage warning", output)
+        self.assertIn("export error", output)
+        self.assertIn("RESULT", output)
+        self.assertIn("HIGH", output)
+        self.assertEqual(runner.exit_status(), EXIT_LEAK)
+        self.assertTrue(any("routine event" in event[1] for event in runner._events))
+
     def test_events_print_as_tagged_lines(self) -> None:
         runner = HeadlessRunner("C:/targets/worker.exe", console=make_console())
         runner._accept_snapshot(make_snapshot(alerts=(make_alert(severity=LeakSeverity.MEDIUM),)))
