@@ -20,6 +20,14 @@ mode that skips the check, or enforce your own network restrictions. Offline
 interactive monitoring continues if the request cannot complete. A target
 application's own network traffic is independent of DrainTracer.
 
+`doctor` and `init` also skip the update check. Doctor performs local,
+read-only target/PID checks and a temporary output-access probe; it does
+not execute the target or send diagnostics. Its output contains local
+paths, configuration origins, profile names, and numeric settings, so review
+it before sharing. It excludes experiment free text, target arguments, and
+environment values. `init` previews locally and writes a new configuration
+only with `--write`; an existing file is never overwritten.
+
 Pip installation, manual upgrades, Git fetch/pull, an accepted checkout
 repair, and opening external links can also contact providers. Writing to
 a shared or synchronized directory, enabling CI output/artifact publication,
@@ -150,6 +158,15 @@ working directory, unless `--report-dir` or configuration overrides it.
 Headless runs attempt an export automatically at completion. Exports use
 fresh report IDs, so repeated exports accumulate files. Long-session history
 thinning limits in-memory detail; it does not expire saved reports.
+
+Opt-in `--checkpoint PATH` saves report data, a session UUID, monitor/target
+process identities, timestamps, and a checksum to a bounded local file. The
+same session replaces its previous checkpoint; new sessions refuse existing
+files. The checksum detects corruption and does not authenticate evidence.
+Recovery writes new partial JSON/HTML reports. Checkpoints, recovered reports,
+and the checkpoint's one-byte `.lock` sidecar are not automatically expired.
+They are not encrypted or anonymous. Review all of them before sharing and
+remove them under your own retention policy after the writer has stopped.
 
 `DRAINTRACER_LOG` enables diagnostic file logging. Existing files are appended
 to without built-in rotation. Unset it when finished:

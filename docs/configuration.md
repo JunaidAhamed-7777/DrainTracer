@@ -64,6 +64,17 @@ are rejected before a process is launched or attached.
 - `fail_on_target_error`: `true` makes a headless run exit `4` when a
   launched target exits by itself with a non-zero code; default `false`.
   CLI: `--fail-on-target-error`.
+- `require_full_coverage`: `true` makes a headless run exit `3` unless every
+  collected live sample measured private bytes, handles, and threads for the
+  whole tree and no sample failed; default `false`. Unknown coverage fails
+  this policy. Pauses are excluded, and detection judgement is controlled
+  separately by `fail_on_inconclusive`. CLI: `--require-full-coverage`.
+- `checkpoint`: opt-in checkpoint file path, resolved relative to the config
+  file. Existing files are refused for a new session, even if they contain an
+  earlier checkpoint. CLI: `--checkpoint PATH`.
+- `checkpoint_interval`: duration from `"1s"` through `"1h"`, default `"30s"`.
+  It sets the cadence only; a `checkpoint` path is still required to enable
+  persistence. CLI: `--checkpoint-interval DURATION`.
 - `workload_id`, `build`, `note`: non-empty strings recorded in the report's
   `experiment` section for comparisons; secret-looking values are redacted.
   CLI: `--workload-id ID`, `--build LABEL`, `--note TEXT`.
