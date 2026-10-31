@@ -318,6 +318,7 @@ def main(argv=None):
         if args.mode == "reference":
             print("START synthetic retention/export stress", flush=True)
             record["active_case"] = {"phase": "synthetic_retention_export"}
+            save(args.output, record)
             record["retention"] = retention(shape, args.output.parent / (args.output.stem + "-retention"), smoke=args.smoke)
             if not args.smoke:
                 if record["retention"]["watcher_error"] or any(not row["quality_pass"] or row["watcher_error"] for row in record["runs"]):
@@ -329,6 +330,7 @@ def main(argv=None):
         else:
             print("START native 31-process soak", flush=True)
             record["active_case"] = {"phase": "native_soak", "tree_size": 31}
+            save(args.output, record)
             row, _shape = native(4, 1, record["settings"]["soak_seconds"],
                 args.output.parent / (args.output.stem + "-reports") / "soak-31")
             row["budget_breaches"] = breaches(row, budget)
