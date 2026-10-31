@@ -219,6 +219,16 @@ Hook selection keeps the program's PID and creation time through attachment.
 If that identity changes or cannot be verified, select the program again.
 An explicit `--pid` selects the process current when attachment begins.
 
+On Windows, tracked PID creation times must match exactly: a sub-10 ms change
+identifies a replacement, which is left untouched by the old target's controls.
+See [process identity verification](docs/process-identities.md) for native
+stability evidence and the limits of this check.
+
+An unreadable current or original creation identity permits observation but
+refuses process control. A later readable PID holder does not automatically
+gain the old target's control authority; attach again with a verified identity.
+An owed resume remains pending until it can be retried safely.
+
 Use **Up/Down** to highlight a startup choice, then **Spacebar** (or Enter)
 to select it. Navigation help appears below the Get Started box. Redirected
 or non-terminal input keeps the numbered `1`/`2` prompt.
@@ -587,3 +597,9 @@ from a second terminal to observe a same-user process, then `status`, `events`,
 launch, launch pause/resume, and explicit kill require separate server flags.
 See the [local agent contract and commands](docs/local-agent.md) for private
 state permissions, limits, trusted launch roots, cleanup, and failure states.
+
+The optional agent saves bounded admission state before starting a session.
+After restart it marks old active sessions interrupted and can export their
+latest intact checkpoint as partial evidence; it never retries a launch or
+reattaches automatically. See [agent scheduling and recovery](docs/agent-recovery.md)
+for retention, storage admission limits, and failure semantics.

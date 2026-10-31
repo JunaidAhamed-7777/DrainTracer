@@ -9,6 +9,7 @@ import uuid
 from pathlib import Path
 
 from .agent_service import AgentError, AgentPolicy, AgentRegistry
+from .agent_state import AgentJournal
 from .agent_transport import (
     AgentTransportError,
     PipeListener,
@@ -18,15 +19,26 @@ from .agent_transport import (
     pipe_name,
     private_directory,
 )
+from .api import _version
 
 
 class AgentServer:
-    def __init__(self, state_directory, *, profile="default", policy=None):
+    def __init__(self, state_directory, *, profile="default", policy=None,
+                 retention_seconds=7 * 86400, max_storage_bytes=512 * 1024 * 1024):
         self.directory = private_directory(state_directory)
         self.secret = load_secret(self.directory, create=True)
         self.reports = private_directory(self.directory / "reports")
-        self.registry = AgentRegistry(self.reports, policy or AgentPolicy())
-        self.listener = PipeListener(pipe_name(profile))
+        self.checkpoints = private_directory(self.directory / "checkpoints")
+        from .agent_transport import current_user_sid
+        self.journal = AgentJournal(self.directory, app_version=_version(), owner=current_user_sid(),
+                                    retention_seconds=retention_seconds, max_storage_bytes=max_storage_bytes)
+        try:
+            self.registry = AgentRegistry(self.reports, policy or AgentPolicy(), journal=self.journal,
+                                          checkpoints=self.checkpoints)
+            self.listener = PipeListener(pipe_name(profile))
+        except BaseException:
+            self.journal.close()
+            raise
         self.rejected_connections = 0
 
     def serve(self, stop: threading.Event):
@@ -55,6 +67,7 @@ class AgentServer:
                 clean = self.registry.close(timeout=15)
             finally:
                 self.listener.close()
+                self.journal.close()
         return clean
 
 
@@ -97,6 +110,8 @@ def build_parser():
     server.add_argument("--max-sessions", type=int, default=4)
     server.add_argument("--max-records", type=int, default=64)
     server.add_argument("--max-timeout", type=float, default=3600)
+    server.add_argument("--retention-days", type=float, default=7)
+    server.add_argument("--storage-limit-mib", type=int, default=512)
     start = commands.add_parser("start")
     target = start.add_mutually_exclusive_group(required=True)
     target.add_argument("--pid", type=int)
@@ -128,7 +143,9 @@ def main(argv=None):
                                  allow_kill=args.allow_kill, launch_roots=tuple(map(Path, args.launch_root)),
                                  max_sessions=args.max_sessions, max_records=args.max_records,
                                  max_timeout=args.max_timeout)
-            server = AgentServer(args.state_dir, profile=args.profile, policy=policy)
+            server = AgentServer(args.state_dir, profile=args.profile, policy=policy,
+                                 retention_seconds=args.retention_days * 86400,
+                                 max_storage_bytes=args.storage_limit_mib * 1024 * 1024)
             stop = threading.Event()
             print(json.dumps({"agent": "ready", "protocol": 1, "profile": args.profile}), flush=True)
             try:

@@ -8,6 +8,7 @@ import tempfile
 import threading
 import time
 import unittest
+import uuid
 from concurrent.futures import Future
 from pathlib import Path
 from types import SimpleNamespace
@@ -67,6 +68,24 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(session.status.state, "created")
             self.assertEqual(session.close(5).reason, "cancelled")
             spawn.assert_not_called()
+
+    def test_private_agent_checkpoint_identity_is_assigned_before_backend_start(self):
+        from src.api import _version
+        from src.checkpoints import read_checkpoint
+
+        identity = str(uuid.uuid4())
+        checkpoint = self.root / "assigned-checkpoint.json"
+        with mock.patch("subprocess.Popen") as spawn, self.assertRaises(ValueError):
+            Session.launch(self.target, _checkpoint_session_id="not-a-uuid")
+        spawn.assert_not_called()
+        session = Session.launch(self.target, options=self.options(timeout_seconds=1.2, checkpoint=str(checkpoint),
+                                 checkpoint_interval_seconds=1), _checkpoint_session_id=identity)
+        session.start()
+        self.addCleanup(session.close, 5)
+        self.assertIsNotNone(session.wait(5))
+        saved = read_checkpoint(checkpoint, app_version=_version(), session_id=identity)
+        self.assertEqual(saved["session_id"], identity)
+        self.assertEqual(saved["checkpoint"]["session_id"], identity)
 
     def test_nonblocking_launch_timeout_exact_facts_and_detached_immutable_values(self):
         session = Session.launch(self.target, options=self.options(timeout_seconds=1.3))

@@ -208,8 +208,15 @@ dropped, and cursor-gap counts. Progress events sample detached API status;
 they are not a second exact telemetry stream. Exact measurement summaries
 remain in the reports. Responses expose at most eight bounded error excerpts
 plus the original count; complete private evidence remains on disk.
-The last 256 request identities are replay-safe in memory: repeating identical
-parameters returns the prior reply, while different parameters return a
-`conflict`. These records alone do not promise durable exactly-once launch
-across restart. Persistence, crash/restart labels, retention, and retry policy
-are covered by the separate scheduling/recovery work.
+The last 256 request replies, including uncertain command failures, are
+replay-safe in memory: repeating identical parameters returns the prior reply,
+while different parameters return a `conflict`. Accepted start identities also
+persist in the bounded scheduling journal. On restart, saved active sessions
+become interrupted; none is relaunched or reattached automatically. Private
+one-second checkpoints can recover an explicitly partial JSON/HTML prefix.
+The default retention is seven days and the storage admission high-water mark
+is 512 MiB; `serve --retention-days DAYS --storage-limit-mib MIB` changes these
+within documented bounds. Existing evidence files are preserved. These are
+admission/metadata limits, not an OS filesystem quota. See the
+[scheduling and recovery policy](agent-recovery.md) for crash, retry, retention,
+and storage semantics and the recorded acceptance drills.
