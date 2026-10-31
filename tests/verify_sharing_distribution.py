@@ -17,9 +17,12 @@ import sys
 import time
 import traceback
 from datetime import datetime, timezone
+from importlib.metadata import version
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
+
+import psutil
 
 from draintracer.team_security import secure_directory
 
@@ -74,7 +77,9 @@ def verify(output, fixtures, source_commit):
                   started_at=datetime.now(timezone.utc).isoformat(),
                   machine={"platform": platform.platform(), "python": sys.version,
                            "machine_hash": hashlib.sha256(platform.node().encode()).hexdigest(),
-                           "processor": platform.processor(), "cpu_count": os.cpu_count()},
+                           "processor": platform.processor(), "architecture": platform.machine(),
+                           "cpu_count": os.cpu_count(), "memory_total_bytes": psutil.virtual_memory().total},
+                  installed_versions={name: version(name) for name in ("draintracer", "psutil", "rich", "pip")},
                   qualifications=["Disposable local technical credentials, not human participants or consent",
                                   "Client-computed receipts; the server did not recompute private measurements",
                                   "All command outcomes and raw private report evidence are retained"])
