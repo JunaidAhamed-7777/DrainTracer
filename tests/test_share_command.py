@@ -35,7 +35,12 @@ from src.team_transport import Endpoint
 def evidence_document():
     return {"operations_schema": 1, "version": share_command._version(), "operating_prerequisites_met": True,
             "operator": "Named reference operator", "support_contact": "Local reference contact",
-            "components": ["team", "local_collection"], "finished_at": datetime.now(timezone.utc).isoformat(),
+            "components": ["team", "local_collection", "transport"], "finished_at": datetime.now(timezone.utc).isoformat(),
+            "checks_passed": True,
+            "rates": {name: {"successful": 1, "total": 1, "ratio": 1.0}
+                      for name in ("tls_authorized_read_availability", "durable_queue_recovery")},
+            "timings_seconds": {"upload": {"samples": 1, "minimum": .1, "median": .1, "maximum": .1}},
+            "budgets": {"upload_seconds": 2}, "budget_checks": {"upload": True},
             "readiness_gates": {key: True for key in ("named_operator", "support_contact", "runbook_identified",
                                 "successful_restore_exercise", "team_exercise_completed", "required_observations_complete",
                                 "all_checks_and_budgets_passed")}}
@@ -162,6 +167,23 @@ class ShareCommandTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 share_command.operating_evidence(path)
         self.assertEqual(path.read_bytes(), before)
+
+    def test_local_only_or_inconsistent_transport_operating_evidence_cannot_admit_sharing(self):
+        valid = evidence_document()
+        mutations = [lambda item: item.update(components=["team", "local_collection"]),
+                     lambda item: item.update(checks_passed=False),
+                     lambda item: item["rates"]["tls_authorized_read_availability"].update(total=0, successful=0, ratio=None),
+                     lambda item: item["rates"]["durable_queue_recovery"].update(successful=0),
+                     lambda item: item["rates"]["durable_queue_recovery"].update(successful=True),
+                     lambda item: item["timings_seconds"]["upload"].update(samples=0),
+                     lambda item: item["timings_seconds"]["upload"].update(maximum=3),
+                     lambda item: item["budget_checks"].update(upload=False)]
+        for mutate in mutations:
+            altered = copy.deepcopy(valid)
+            mutate(altered)
+            path = self.private_json("operating.json", altered)
+            with self.subTest(mutate=mutate), self.assertRaises(ValueError):
+                share_command.operating_evidence(path)
 
     def test_real_tls_upload_flush_history_export_and_revoked_outage_exits(self):
         path = self.root / "raw.json"

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import ipaddress
 import json
+import math
 import os
 import re
 import stat
@@ -55,6 +56,31 @@ def _label(value):
             and not any(unicodedata.category(character).startswith("C") for character in value))
 
 
+def _passing_transport(value):
+    """Check the recorded transport observations, not just a declared ready flag."""
+    try:
+        if "transport" not in value["components"] or value.get("checks_passed") is not True:
+            return False
+        for name in ("tls_authorized_read_availability", "durable_queue_recovery"):
+            rate = value["rates"][name]
+            if (type(rate["total"]) is not int or not 1 <= rate["total"] <= 128
+                    or type(rate["successful"]) is not int or rate["successful"] != rate["total"]
+                    or type(rate["ratio"]) not in (int, float) or rate["ratio"] != 1):
+                return False
+        timing = value["timings_seconds"]["upload"]
+        if set(timing) != {"samples", "minimum", "median", "maximum"} or type(timing["samples"]) is not int or not 1 <= timing["samples"] <= 128:
+            return False
+        numbers = [timing[key] for key in ("minimum", "median", "maximum")]
+        budget = value["budgets"]["upload_seconds"]
+        return (all(type(number) in (int, float) and math.isfinite(number) and number >= 0 for number in numbers)
+                and type(budget) in (int, float) and math.isfinite(budget) and 0 < budget <= 60
+                and numbers[0] <= numbers[1] <= numbers[2] <= budget
+                and value["budget_checks"]["upload"] is True
+                and all(check is True for check in value["budget_checks"].values()))
+    except (KeyError, TypeError, AttributeError, OverflowError):
+        return False
+
+
 def operating_evidence(path, *, now=None):
     """Require current private local evidence, without claiming human consent or attestation."""
     value = _object(path, 1024 * 1024, private=True)
@@ -69,6 +95,7 @@ def operating_evidence(path, *, now=None):
                 or not isinstance(gates, dict) or not required <= gates.keys() or not all(item is True for item in gates.values())
                 or not _label(value.get("operator")) or not _label(value.get("support_contact"))
                 or not isinstance(value.get("components"), list) or "team" not in value["components"]
+                or not _passing_transport(value)
                 or finished.utcoffset() != timedelta(0) or not current - timedelta(days=7) <= finished <= current):
             raise ValueError
     except (ValueError, KeyError, TypeError, AttributeError):
