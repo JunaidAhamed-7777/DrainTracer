@@ -145,7 +145,12 @@ percentage. RSS remains a sampled lower bound.
   local monitor must complete with cleanup and readable JSON/HTML on both
   supported platforms, independently of any sharing listener.
 - Windows measures two baseline accepted/completed runs: natural exit and
-  cancellation. Both require complete cleanup and readable JSON/HTML. A third
+  cancellation. Both require three live samples before the driver continues,
+  complete cleanup and readable JSON/HTML. The natural fixture waits for a
+  private release marker, then performs its 1.3-second work and exits normally;
+  its gate is bounded at 30 seconds. The existing 10-second sample wait,
+  45-second target limit and measured operating budgets remain unchanged.
+  Completed-state age is never substituted for live freshness. A third
   deliberately crashed run is separate from that completion-rate denominator;
   its owned job must stop, and offline recovery must remain partial and
   unconfirmed through the saved cutoff. Recovery never restarts the agent.
