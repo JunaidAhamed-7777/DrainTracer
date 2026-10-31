@@ -467,6 +467,25 @@ class EndToEndTests(unittest.TestCase):
         self.assertFalse(runner.manager.has_tracked_processes)
         self.assertIn("INTERRUPTED", _output(runner))
 
+    def test_interrupt_during_html_export_keeps_corrected_json_and_exit_policy(self) -> None:
+        runner = self._runner("import time\ntime.sleep(60)\n", timeout=0.2)
+        with mock.patch("src.session.write_html_report", side_effect=KeyboardInterrupt):
+            self.assertEqual(runner.run(), EXIT_INTERRUPTED)
+        self.assertFalse(runner.manager.has_tracked_processes)
+        report = self._report()
+        self.assertIn("HTML report interrupted", report["outcome"]["monitor_errors"])
+        self.assertEqual(report["headless"]["exit_code"], EXIT_INTERRUPTED)
+        self.assertEqual(report["outcome"]["cleanup"]["state"], "complete")
+        self.assertIn("Report export interrupted", _output(runner))
+
+    def test_interrupt_before_json_export_returns_130_after_owned_cleanup(self) -> None:
+        runner = self._runner("import time\ntime.sleep(60)\n", timeout=0.2)
+        with mock.patch("src.session.write_json_report", side_effect=KeyboardInterrupt):
+            self.assertEqual(runner.run(), EXIT_INTERRUPTED)
+        self.assertFalse(runner.manager.has_tracked_processes)
+        self.assertIsNone(runner._last_report)
+        self.assertIn("Report export interrupted", _output(runner))
+
     def test_an_unexpected_error_still_stops_the_target_and_exports(self) -> None:
         runner = self._runner("import time\ntime.sleep(60)\n")
         with mock.patch.object(HeadlessRunner, "_monitor", side_effect=RuntimeError("progress bug")), \

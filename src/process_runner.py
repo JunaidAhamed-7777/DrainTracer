@@ -13,6 +13,7 @@ from collections import deque
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from typing import BinaryIO
 
 import psutil
 
@@ -95,7 +96,7 @@ def describe_pid(pid: int) -> str:
 # milliseconds later is a different one. Linux derives them from boot time
 # and clock ticks, but repeated reads still identify the same start tick;
 # a one-second tolerance could mistake a quickly reused PID for its owner.
-_SAME_START = 0.01 if sys.platform == "win32" else 0.001
+_SAME_START = 0.0 if sys.platform == "win32" else 0.001
 
 
 @dataclass(frozen=True)
@@ -211,6 +212,7 @@ class ProcessManager:
         cwd: str | None = None,
         env: dict[str, str] | None = None,
         poll_interval: float = 0.5,
+        capture_output: bool = False,
     ) -> None:
         # ``None`` builds a manager that can only attach() to a running PID.
         self.target_path = str(Path(target_path).resolve()) if target_path else None
@@ -218,8 +220,11 @@ class ProcessManager:
         self.cwd = cwd
         self.env = env
         self.poll_interval = poll_interval
+        # Opt-in callers must drain both binary streams for the whole run.
+        self.capture_output = capture_output
 
-        self._process: subprocess.Popen[str] | None = None
+        self._process: subprocess.Popen[bytes] | None = None
+        self._output_streams: dict[str, BinaryIO] = {}
         self._root_pid: int | None = None
         self._tracked_pids: set[int] = set()
         self._identities: dict[int, float] = {}
@@ -334,6 +339,12 @@ class ProcessManager:
         with self._lock:
             return bool(self._tracked_pids)
 
+    @property
+    def output_streams(self) -> dict[str, BinaryIO]:
+        """Opt-in binary stdout/stderr pipes; the caller owns their draining/close."""
+        with self._lock:
+            return dict(self._output_streams)
+
     def start(self) -> int:
         """Launch the target process and begin PID tree polling."""
         with self._lock:
@@ -354,8 +365,8 @@ class ProcessManager:
                 # The dashboard owns keyboard input; a target reading the
                 # shared console could swallow its keys or block on them.
                 "stdin": subprocess.DEVNULL,
-                "stdout": subprocess.DEVNULL,
-                "stderr": subprocess.DEVNULL,
+                "stdout": subprocess.PIPE if self.capture_output else subprocess.DEVNULL,
+                "stderr": subprocess.PIPE if self.capture_output else subprocess.DEVNULL,
             }
             if sys.platform == "win32":
                 popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
@@ -364,6 +375,10 @@ class ProcessManager:
 
             try:
                 self._process = self._spawn_process(command, popen_kwargs)
+                self._output_streams = {
+                    name: stream for name in ("stdout", "stderr")
+                    if (stream := getattr(self._process, name, None)) is not None
+                }
             except PermissionError as exc:
                 self._last_error = str(exc)
                 raise ProcessAccessDeniedError(
@@ -642,7 +657,8 @@ class ProcessManager:
             # quoted for cmd. /d skips AutoRun commands, /e:on enables the
             # substring syntax the % escape relies on, and /v:off keeps !
             # literal.
-            comspec = os.environ.get("COMSPEC") or "cmd.exe"
+            environment = self.env if self.env is not None else os.environ
+            comspec = environment.get("COMSPEC") or "cmd.exe"
             inner = " ".join(_quote_for_cmd(part) for part in (str(path), *self.args))
             return f'"{comspec}" /d /e:on /v:off /s /c "{inner}"'
         if suffix in {".bat", ".cmd"}:
@@ -861,13 +877,15 @@ class ProcessManager:
         except (psutil.Error, OSError):
             return
 
-    def _open_tracked(self, pid: int, *, discovering: bool = False) -> psutil.Process | None:
-        """Return the original process for a PID, rejecting reused PID values."""
+    def _open_tracked(
+        self, pid: int, *, discovering: bool = False, for_control: bool = False
+    ) -> psutil.Process | None:
+        """Observe tracked PIDs; controls additionally require a verified identity."""
         with self._lock:
-            return self._open_tracked_unlocked(pid, discovering=discovering)
+            return self._open_tracked_unlocked(pid, discovering=discovering, for_control=for_control)
 
     def _open_tracked_unlocked(
-        self, pid: int, *, discovering: bool = False
+        self, pid: int, *, discovering: bool = False, for_control: bool = False
     ) -> psutil.Process | None:
         # Refresh can retire a PID while a caller still holds an earlier PID
         # set. Only validated discovery may open an untracked descendant.
@@ -878,6 +896,11 @@ class ProcessManager:
         except (psutil.NoSuchProcess, psutil.ZombieProcess):
             self._suspended_pids.discard(pid)
             return None
+        except (psutil.AccessDenied, OSError):
+            if for_control:
+                self._last_error = f"Cannot verify current identity for PID {pid}; process control refused"
+                return None
+            raise
 
         # POSIX zombies still have a PID. Windows liveness is checked below
         # using a process handle, avoiding a system-wide status enumeration.
@@ -898,7 +921,15 @@ class ProcessManager:
         try:
             created = proc.create_time()
         except psutil.AccessDenied:
+            if for_control:
+                self._last_error = f"Cannot verify current identity for PID {pid}; process control refused"
+                return None
             return proc
+        except OSError:
+            if for_control:
+                self._last_error = f"Cannot verify current identity for PID {pid}; process control refused"
+                return None
+            raise
         except (psutil.NoSuchProcess, psutil.ZombieProcess):
             self._suspended_pids.discard(pid)
             return None
@@ -917,7 +948,16 @@ class ProcessManager:
             except OSError:
                 # An unreadable exit state must not silently drop a live PID.
                 pass
-        if expected is None:
+        if for_control and expected is None:
+            self._last_error = f"Original identity for PID {pid} is unknown; process control refused"
+            return None
+        if for_control and self._root_pid is not None and self._root_created is None:
+            self._last_error = "Original root identity is unknown; process-tree control refused"
+            return None
+        if expected is None and discovering:
+            # A later readable observation cannot prove an initially unknown
+            # tracked process is still the same incarnation. Only fresh,
+            # validated tree discovery may establish a new child identity.
             self._identities[pid] = created
         return proc
 
@@ -949,7 +989,7 @@ class ProcessManager:
             time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
 
     def _suspend_pid(self, pid: int) -> bool:
-        proc = self._open_tracked(pid)
+        proc = self._open_tracked(pid, for_control=True)
         if proc is None:
             return False
         try:
@@ -967,9 +1007,11 @@ class ProcessManager:
             return False
 
     def _resume_pid(self, pid: int) -> bool:
-        proc = self._open_tracked(pid)
+        proc = self._open_tracked(pid, for_control=True)
         if proc is None:
-            return True  # an exited or reused process no longer needs resuming
+            # A proven exit/reuse clears the owed resume. An unreadable
+            # identity retains ownership debt for a later safe retry.
+            return pid not in self._suspended_pids
         try:
             proc.resume()
             return True
@@ -980,7 +1022,7 @@ class ProcessManager:
             return False
 
     def _terminate_pid(self, pid: int, graceful: bool) -> None:
-        proc = self._open_tracked(pid)
+        proc = self._open_tracked(pid, for_control=True)
         if proc is None:
             return
         try:

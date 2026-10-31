@@ -27,6 +27,19 @@ def _wait_for(predicate, timeout: float = 15.0) -> bool:
 
 
 class ReportExportTests(unittest.TestCase):
+    def test_html_interruption_is_recorded_in_saved_json_before_propagating(self) -> None:
+        import json
+
+        with tempfile.TemporaryDirectory() as temp:
+            session = _Session("worker.exe", console=make_console(), report_dir=temp)
+            with mock.patch("src.session.write_html_report", side_effect=KeyboardInterrupt), \
+                    self.assertRaises(KeyboardInterrupt):
+                session.export_log()
+            saved = json.loads(session._last_report.read_text(encoding="utf-8"))
+            self.assertIn("HTML report interrupted", saved["outcome"]["monitor_errors"])
+            self.assertEqual(saved["outcome"], session._last_report_data["outcome"])
+            self.assertIsNone(session._last_html_report)
+
     def test_html_failure_is_recorded_in_json_and_cached_report(self) -> None:
         import json
 
