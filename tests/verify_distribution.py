@@ -100,6 +100,13 @@ def verify_distribution(wheel: Path) -> str:
         for entry in ([str(command)], [str(python), "-m", "draintracer"]):
             help_output = _run([*entry, "--help"], cwd=cwd, environment=environment)
             _require("--target" in help_output and "--headless" in help_output, "CLI help is incomplete.")
+        agent_command = scripts / ("draintracer-agent.exe" if os.name == "nt" else "draintracer-agent")
+        _require(agent_command.is_file(), "Installing the wheel did not create the agent command.")
+        agent_help = _run([str(agent_command), "--help"], cwd=cwd, environment=environment)
+        _require("serve" in agent_help and "cancel" in agent_help, "The installed agent command is unavailable.")
+        _run([str(python), "-c", ("import sys; from draintracer.agent_command import AgentClient; "
+              "assert 'draintracer.dashboard' not in sys.modules; "
+              "assert 'draintracer.main' not in sys.modules")], cwd=cwd, environment=environment)
         diff_help = _run([str(command), "diff", "--help"], cwd=cwd, environment=environment)
         _require("--fail-on-regression" in diff_help, "The installed diff command is unavailable.")
 
