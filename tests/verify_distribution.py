@@ -104,9 +104,9 @@ def verify_distribution(wheel: Path) -> str:
         _require(agent_command.is_file(), "Installing the wheel did not create the agent command.")
         agent_help = _run([str(agent_command), "--help"], cwd=cwd, environment=environment)
         _require("serve" in agent_help and "cancel" in agent_help, "The installed agent command is unavailable.")
-        _run([str(python), "-c", "import sys; from draintracer.agent_command import AgentClient; "
+        _run([str(python), "-c", ("import sys; from draintracer.agent_command import AgentClient; "
               "assert 'draintracer.dashboard' not in sys.modules; "
-              "assert 'draintracer.main' not in sys.modules"], cwd=cwd, environment=environment)
+              "assert 'draintracer.main' not in sys.modules")], cwd=cwd, environment=environment)
         diff_help = _run([str(command), "diff", "--help"], cwd=cwd, environment=environment)
         _require("--fail-on-regression" in diff_help, "The installed diff command is unavailable.")
 
