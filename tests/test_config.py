@@ -73,6 +73,35 @@ class DiscoveryTests(ConfigTestCase):
 
 
 class LayeringTests(ConfigTestCase):
+    def test_origins_follow_individual_profile_and_command_line_overrides(self) -> None:
+        self.write(".drainrc", '''
+            sample_interval = "1s"
+            budget_handles = 300
+            [thresholds.memory]
+            critical_delta = "100MB"
+            [profiles.ci]
+            sample_interval = "250ms"
+            budget_handles = 200
+            [profiles.ci.thresholds.memory]
+            critical_slope = "1MB/s"
+        ''')
+        settings = self.resolve(profile="ci", overrides={"warmup": 2.0, "budgets": {"threads": 4}})
+        self.assertEqual(settings.origins["sample_interval_ms"], "profile ci")
+        self.assertEqual(settings.origins["warmup"], "command line")
+        self.assertEqual(settings.origins["budgets.handles"], "profile ci")
+        self.assertEqual(settings.origins["budgets.threads"], "command line")
+        self.assertEqual(settings.origins["thresholds.memory.critical_delta"], "config file")
+        self.assertEqual(settings.origins["thresholds.memory.critical_slope"], "profile ci")
+        self.assertNotIn("timeout", settings.origins)
+        with self.assertRaises(TypeError):
+            settings.origins["warmup"] = "changed"
+
+    def test_origin_metadata_does_not_change_settings_equality_or_noop_overrides(self) -> None:
+        explicit = self.resolve(discover=False, overrides={"warmup": 0.0})
+        self.assertEqual(explicit, MonitorSettings())
+        empty = self.resolve(discover=False, overrides={"budgets": None, "thresholds": None})
+        self.assertEqual(dict(empty.origins), {})
+
     CONFIG = """
         sample_interval = "250ms"
         windows = ["30s", "10s", "30s"]
