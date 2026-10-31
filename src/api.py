@@ -211,11 +211,17 @@ class Subscription:
         with self._lock:
             return self._failures
 
+    @property
+    def closed(self) -> bool:
+        with self._lock:
+            return self._closed
+
     def close(self) -> None:
         with self._lock:
             self._closed = True
             self._dropped += len(self._pending)
             self._pending.clear()
+            self._callback = None
 
     def _offer(self, event: SessionEvent) -> None:
         with self._lock:
@@ -241,8 +247,9 @@ class Subscription:
                 self._scheduled = False
                 return
             event = self._pending.popleft()
+            callback = self._callback
         try:
-            self._callback(event)
+            callback(event)
         except BaseException:  # noqa: BLE001 - user callbacks cannot kill shared workers
             with self._lock:
                 self._failures += 1
@@ -265,7 +272,7 @@ class Session:
     def __init__(self, target_path: str | None, args: Sequence[str] = (), *,
                  attach_pid: int | None = None, create_time: float | None = None,
                  options: SessionOptions | None = None, _manager_factory=None):
-        self.options = options or SessionOptions()
+        self._options = options or SessionOptions()
         if not isinstance(self.options, SessionOptions):
             raise TypeError("options must be SessionOptions")
         if attach_pid is not None:
@@ -295,6 +302,10 @@ class Session:
         self._final_report: dict[str, Any] | None = None
         self._subscribers: list[Subscription] = []
 
+    @property
+    def options(self) -> SessionOptions:
+        return self._options
+
     @classmethod
     def launch(cls, path: str | Path, args: Sequence[str] = (), *, options: SessionOptions | None = None, **private):
         return cls(str(path), args, options=options, **private)
@@ -318,6 +329,7 @@ class Session:
             raise TypeError("callback must be callable")
         _start_callbacks()
         with self._lock:
+            self._subscribers = [item for item in self._subscribers if not item.closed]
             if self._done.is_set() or len(self._subscribers) >= 64:
                 raise RuntimeError("session has ended or subscription limit reached")
             subscription = Subscription(callback)
@@ -476,6 +488,8 @@ class Session:
                     manager = self._manager_factory(self._target, args=list(self._args))
                     backend.manager = manager
                     backend.detector.process_manager = manager
+                if self._cancel.is_set():
+                    return
                 backend.start()
                 self._publish(backend, "running", errors, kind="snapshot")
                 while not self._cancel.is_set():

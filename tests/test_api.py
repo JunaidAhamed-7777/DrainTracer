@@ -60,6 +60,8 @@ class ApiTests(unittest.TestCase):
             options.budgets["handles"] = 1
         with mock.patch("subprocess.Popen") as spawn:
             session = Session.launch(self.target, options=self.options())
+            with self.assertRaises(AttributeError):
+                session.options = options
             self.assertEqual(session.status.state, "created")
             self.assertEqual(session.close(5).reason, "cancelled")
             spawn.assert_not_called()
@@ -212,6 +214,38 @@ class ApiTests(unittest.TestCase):
         finally:
             release.set()
             session.close(8)
+
+    def test_all_callback_workers_can_block_without_stalling_monitor_cleanup(self):
+        release = threading.Event()
+        condition = threading.Condition()
+        entered = []
+        def callback(_event):
+            with condition:
+                entered.append(1)
+                condition.notify_all()
+            release.wait(20)
+        session = Session.launch(self.target, options=self.options(timeout_seconds=1.2))
+        subscriptions = [session.subscribe(callback) for _ in range(4)]
+        try:
+            session.start()
+            with condition:
+                self.assertTrue(condition.wait_for(lambda: len(entered) == 4, timeout=4))
+            self.assertEqual(session.wait(8).cleanup, "complete")
+            self.assertGreaterEqual(session.status.sample_count, 8)
+            for subscription in subscriptions:
+                subscription.close()
+        finally:
+            release.set()
+            session.close(8)
+
+    def test_closed_subscriptions_release_callback_and_do_not_exhaust_session_limit(self):
+        session = Session.launch(self.target, options=self.options())
+        for _ in range(100):
+            subscription = session.subscribe(lambda _event: None)
+            subscription.close()
+            self.assertTrue(subscription.closed)
+            self.assertIsNone(subscription._callback)
+        session.close(5)
 
     def test_callback_backpressure_and_failures_are_observable(self):
         events = []
