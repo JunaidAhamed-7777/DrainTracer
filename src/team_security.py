@@ -106,17 +106,48 @@ def private_file_lock(path: Path):
         handle.close()
 
 
+def _new_credential_file(path: Path) -> int:
+    """Provision only a fresh secret file; existing ACL/owner is never repaired."""
+    if os.name != "nt":
+        return os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    import ctypes
+    import msvcrt
+
+    from .agent_transport import _INVALID_HANDLE, _api, _attributes
+    kernel, _security = _api()
+    with _attributes() as attributes:
+        handle = kernel.CreateFileW(str(path), 0xC0000000, 7, ctypes.byref(attributes), 1, 0x80, None)
+    if handle == _INVALID_HANDLE:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        return msvcrt.open_osfhandle(handle, os.O_WRONLY | os.O_BINARY)
+    except BaseException:
+        kernel.CloseHandle(handle)
+        raise
+
+
+def _verify_credential_file(path: Path) -> Path:
+    verify_data_file(path, writable=False)
+    if os.name == "nt":
+        from .agent_transport import verify_private_path
+        try:
+            verify_private_path(path)
+        except (ValueError, OSError) as error:
+            raise TeamError("storage", "Credential must retain its protected owner-only file policy") from error
+    return path
+
+
 def write_credential_file(path: str | Path, value: dict) -> Path:
     destination = _absolute(path)
     secure_directory(destination.parent)
     encoded = json.dumps(value, ensure_ascii=True, allow_nan=False).encode("utf-8")
     if len(encoded) > 8192:
         raise TeamError("invalid", "Credential file exceeds its size limit")
-    descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    descriptor = _new_credential_file(destination)
     # An uncertain exclusively-created file remains for local inspection;
     # retries never overwrite it or silently turn a partial write into success.
     with os.fdopen(descriptor, "wb") as handle:
-        verify_data_file(destination)
+        _verify_credential_file(destination)
         handle.write(encoded)
         handle.flush()
         os.fsync(handle.fileno())
@@ -124,7 +155,7 @@ def write_credential_file(path: str | Path, value: dict) -> Path:
 
 
 def read_credential_file(path: str | Path) -> dict:
-    source = verify_data_file(path, writable=False)
+    source = _verify_credential_file(_absolute(path))
     with source.open("rb") as handle:
         raw = handle.read(8193)
     if len(raw) > 8192:
