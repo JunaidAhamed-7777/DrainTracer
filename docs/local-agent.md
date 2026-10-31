@@ -164,7 +164,8 @@ cannot provide code, a manager class, environment values, or an export path.
 The default active-session limit is four, configurable from one through eight.
 At most 64 session records are retained by default (up to 256); a new accepted
 session can evict the oldest completed record, preserving its report files.
-Status pages hold at most 32 records. There is no launch queue: exhausted
+Status pages hold at most 32 records; use `status --offset OFFSET --limit LIMIT`
+and the returned `next_offset` to read another page. There is no launch queue: exhausted
 capacity is a `capacity` error. Each session has a deadline, 60 seconds by
 default, capped at the server's one-hour default maximum (configurable up to
 24 hours). Sampling intervals range from 100 milliseconds to 60 seconds;

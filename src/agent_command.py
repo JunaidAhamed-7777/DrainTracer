@@ -110,6 +110,8 @@ def build_parser():
     start.add_argument("target_args", nargs=argparse.REMAINDER, help="Literal target arguments after --.")
     status = commands.add_parser("status")
     status.add_argument("session_id", nargs="?")
+    status.add_argument("--offset", type=int)
+    status.add_argument("--limit", type=int)
     events = commands.add_parser("events")
     events.add_argument("session_id")
     events.add_argument("--cursor", type=int, default=0)
@@ -155,6 +157,13 @@ def main(argv=None):
                 params.update(target=args.target, args=target_args)
         elif args.session_id is not None:
             params["session_id"] = args.session_id
+        if args.command == "status" and (args.offset is not None or args.limit is not None):
+            if args.session_id is not None:
+                raise AgentError("invalid_input", "status pagination cannot select one session")
+            if args.offset is not None:
+                params["offset"] = args.offset
+            if args.limit is not None:
+                params["limit"] = args.limit
         if args.command == "events":
             params.update(cursor=args.cursor, limit=args.limit)
         print(json.dumps(client.request(args.command, params), indent=2, ensure_ascii=True, allow_nan=False))
