@@ -53,13 +53,11 @@ def exercise_agent(root: Path, evidence: ExerciseEvidence, sampler: ResourceSamp
     try:
         sampler.add("agent", process.pid)
         def connect_ready():
-            nonlocal client
             if process.poll() is not None:
                 raise RuntimeError("Owned reference agent exited before readiness")
             try:
                 candidate = AgentClient(state, profile=profile, timeout=0.3)
                 if candidate.request("diagnostics")["ready"]:
-                    client = candidate
                     return True
             except (OSError, ValueError, RuntimeError):
                 pass
@@ -68,6 +66,10 @@ def exercise_agent(root: Path, evidence: ExerciseEvidence, sampler: ResourceSamp
         ready = evidence.probe("agent_ready", lambda: _wait(connect_ready, 10), timing="readiness")
         if ready is None:
             return False
+        # A short startup probe must not become the operation deadline.
+        # The single pipe can still be finishing/rearming after its reply;
+        # subsequent admission/control uses the normal bounded client contract.
+        client = AgentClient(state, profile=profile)
 
         def status(identity):
             return client.request("status", {"session_id": identity})
