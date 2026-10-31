@@ -115,7 +115,7 @@ def _metadata_hash(values: dict) -> str:
 
 def _schema_shape(connection: sqlite3.Connection) -> str:
     objects = [tuple(row) for row in connection.execute(
-        "SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name")]
+        "SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name NOT GLOB 'sqlite_*' ORDER BY type,name")]
     return hashlib.sha256(json.dumps(objects, ensure_ascii=True, separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
