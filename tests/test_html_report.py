@@ -174,6 +174,34 @@ class RenderTests(unittest.TestCase):
         self.assertNotIn("n/a", rows[1])
         self.assertEqual(rows[2].count("n/a"), 6)
 
+    def test_retained_sample_table_and_csv_match_plotted_values_offline(self) -> None:
+        import csv
+        import io
+        from urllib.parse import unquote
+
+        from helpers import make_denied
+
+        snapshots = [snapshot_to_dict(make_snapshot(timestamp=1000, processes=(make_process(100),),
+                                                    measured_coverage=True)),
+                     snapshot_to_dict(make_snapshot(timestamp=1001, processes=(make_denied(100),),
+                                                    measured_coverage=True))]
+        document = render_html_report(_report(snapshots=snapshots, snapshot_stride=8))
+        panel = document.split('<details class="panel sample-data"', 1)[1].split("</details>", 1)[0]
+        self.assertIn("Retained chart sample values (2 rows)", panel)
+        self.assertIn("not a complete whole-run sample log", panel)
+        self.assertIn("1 in 8 observations", panel)
+        self.assertIn("Private bytes (bytes)", panel)
+        self.assertIn("Handles (count)", panel)
+        self.assertIn("n/a", panel)
+        href = re.search(r'href="(data:text/csv;charset=utf-8,[^"]+)"', panel).group(1)
+        rows = list(csv.reader(io.StringIO(unquote(href.split(",", 1)[1]))))
+        payload = json.loads(_data_block(document))
+        self.assertEqual(rows[0][0], "Elapsed (seconds)")
+        self.assertEqual(float(rows[1][1]), payload["series"]["private"][0])
+        self.assertEqual(rows[2][1:6], ["n/a"] * 5)
+        self.assertIsNone(payload["series"]["cpu"][1])
+        self.assertIn('<td class="num">10,485,760</td>', panel)
+
     def test_linux_counter_definitions_and_paths_render_on_either_platform(self) -> None:
         report = _report(target_path="/opt/worker\\name")
         report["experiment"] = {"environment": {

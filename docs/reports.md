@@ -65,6 +65,10 @@ The report includes:
   Observed signal severity remains visible alongside coverage qualifications.
 - Memory, handles, handle categories, threads, and CPU charts. Hover for
   values, drag to zoom, and use legend entries to toggle series.
+- A collapsible retained-sample table and offline CSV download with elapsed
+  seconds, private/RSS bytes, handle/thread counts, and CPU percent. These
+  use the plotted retained arrays; `n/a` remains unknown, and thinned data
+  is explicitly qualified rather than presented as every observation.
 - Markers where signals appeared or escalated, warm-up and pause bands,
   and the time the root exited.
 - Continuous signal episodes, events, and the final available process list.
