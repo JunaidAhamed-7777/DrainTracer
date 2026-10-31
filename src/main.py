@@ -459,6 +459,8 @@ examples:
   draintracer --headless --target app.exe --workload-id import-1k --operations 1000
   draintracer --headless --target app.exe --budget-private 500MB --budget-handles 2000
   draintracer diff before.json after.json            compare two reports
+  draintracer doctor --target worker.py --json       check setup without starting a target
+  draintracer init                                  preview a validated project config
 """
 
 

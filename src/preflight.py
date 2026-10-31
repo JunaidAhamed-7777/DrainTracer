@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -169,6 +170,12 @@ def _target_access(target: str, arguments: list[str], checks):
                 _check(checks, "interpreter", "error", "The current Python interpreter is not executable.")
             else:
                 _check(checks, "interpreter", "ok", f"Python interpreter: {interpreter}")
+        elif path.suffix.lower() in {".bat", ".cmd"} and sys.platform == "win32":
+            if shutil.which(os.environ.get("COMSPEC") or "cmd.exe") is None:
+                _check(checks, "interpreter", "error",
+                       "The Windows command interpreter is unavailable; check COMSPEC and PATH.")
+            else:
+                _check(checks, "interpreter", "ok", "The Windows command interpreter is available.")
         elif sys.platform.startswith("linux") and not os.access(path, os.X_OK):
             _check(checks, "target", "error", f"Target is not executable; check its execute permissions: {path}")
             return

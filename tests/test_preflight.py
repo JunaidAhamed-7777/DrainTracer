@@ -97,6 +97,19 @@ class DoctorTests(unittest.TestCase):
         self.assertEqual(checks[-1]["state"], "error")
         self.assertIn("Windows batch files require Windows", checks[-1]["message"])
 
+    def test_windows_batch_interpreter_is_checked_without_executing_it(self) -> None:
+        target = self.root / "target.cmd"
+        target.write_text("echo never run", encoding="utf-8")
+        checks = []
+        with mock.patch.object(preflight.sys, "platform", "win32"), \
+                mock.patch.object(preflight.shutil, "which", return_value=None), \
+                mock.patch("src.process_runner.subprocess.Popen") as launched:
+            preflight._target_access(str(target), [], checks)
+        launched.assert_not_called()
+        self.assertTrue(any(check["check"] == "interpreter" and check["state"] == "error"
+                            for check in checks))
+        self.assertIn("COMSPEC and PATH", checks[0]["message"])
+
     def test_invalid_settings_are_structured_and_quiet_output_keeps_warnings(self) -> None:
         code, text = self._run("--interval", "1s", "--window", "1s", "--json")
         self.assertEqual(code, 2)
