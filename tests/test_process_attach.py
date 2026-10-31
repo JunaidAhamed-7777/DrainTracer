@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ctypes
+import math
 import os
 import subprocess
 import sys
@@ -198,6 +200,63 @@ class SelectedIdentityTests(unittest.TestCase):
 
 @unittest.skipUnless(sys.platform == "win32", "Windows process-handle liveness")
 class WindowsLivenessTests(unittest.TestCase):
+    def test_creation_time_is_identical_across_native_fast_and_fallback_reads(self) -> None:
+        from ctypes import wintypes
+
+        import psutil._pswindows as windows
+
+        api = ctypes.WinDLL("kernel32", use_last_error=True)
+        api.GetProcessTimes.argtypes = [wintypes.HANDLE, *([ctypes.POINTER(wintypes.FILETIME)] * 4)]
+        api.GetProcessTimes.restype = wintypes.BOOL
+        # Multiple starts cover different FILETIME rounding cases. A repeated
+        # read of only one process cannot detect a wrong conversion oracle.
+        for start in range(40):
+            with self.subTest(start=start):
+                target = subprocess.Popen([_PYTHON, "-c", "import time; time.sleep(60)"])
+                try:
+                    stamps = [wintypes.FILETIME() for _ in range(4)]
+                    self.assertTrue(api.GetProcessTimes(target._handle, *map(ctypes.byref, stamps)))
+                    ticks = (stamps[0].dwHighDateTime << 32) | stamps[0].dwLowDateTime
+                    # psutil casts the integer epoch difference to C double
+                    # BEFORE division. Python int/int division can round to a
+                    # different float; neither is a raw FILETIME identity.
+                    expected = float(ticks - 116444736000000000) / 10000000.0
+                    fast = {psutil.Process(target.pid).create_time() for _ in range(5)}
+                    self.assertEqual(fast, {expected})
+                    with mock.patch.object(windows.cext, "proc_times", side_effect=ctypes.WinError(5)):
+                        fallback = {psutil.Process(target.pid).create_time() for _ in range(3)}
+                    self.assertEqual(fallback, fast)
+                finally:
+                    # Use the original owned handle, regardless of assertions.
+                    target.kill()
+                    target.wait(timeout=10)
+
+    def test_close_but_distinct_windows_identities_never_reach_process_controls(self) -> None:
+        original = 1700000000.0
+        for replacement in (original + .005, math.nextafter(original, math.inf)):
+            with self.subTest(replacement=replacement):
+                manager = ProcessManager(None)
+                manager._root_pid = 4242
+                manager._root_created = original
+                manager._tracked_pids = {4242}
+                manager._identities = {4242: original}
+                process = mock.Mock(pid=4242)
+                process.create_time.return_value = replacement
+                with (mock.patch.object(process_runner.psutil, "Process", return_value=process),
+                      mock.patch.object(process_runner, "_windows_process_exited", return_value=False)):
+                    self.assertEqual(process_runner._reused_since(4242, original), replacement)
+                    self.assertIsNone(manager._open_tracked(4242))
+                    self.assertFalse(manager._suspend_pid(4242))
+                    self.assertTrue(manager._resume_pid(4242))  # original no longer needs resuming
+                    manager._terminate_pid(4242, graceful=True)
+                    manager._terminate_pid(4242, graceful=False)
+                process.suspend.assert_not_called()
+                process.resume.assert_not_called()
+                process.terminate.assert_not_called()
+                process.kill.assert_not_called()
+                self.assertEqual(manager._identities[4242], original)
+                self.assertIn("was reused", manager.last_error)
+
     def test_an_exited_process_is_rejected_while_its_handle_is_still_open(self) -> None:
         target = subprocess.Popen([_PYTHON, "-c", "pass"])
         self.addCleanup(target.wait, 10)
