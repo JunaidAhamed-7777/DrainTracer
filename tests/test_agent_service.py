@@ -11,6 +11,7 @@ import threading
 import time
 import unittest
 import uuid
+import weakref
 from pathlib import Path
 from types import SimpleNamespace
 from typing import ClassVar
@@ -180,6 +181,23 @@ class RegistryTests(unittest.TestCase):
         exported = self.registry.handle(request("export", {"session_id": session_id}))["result"]
         self.assertEqual(exported["reports"], ["evidence.json"])
         self.assertEqual(exported["directory"], str(self.root))
+
+    def test_completed_registry_record_releases_the_full_api_session(self):
+        session_id = self.attach()["result"]["session_id"]
+        session = FakeSession.created.pop()
+        reference = weakref.ref(session)
+        session.status.sample_count = 37
+        session.status.measurement = "partial"
+        session.finish()
+        self.registry.refresh()
+        self.assertIsNone(self.registry.records[session_id].session)
+        del session
+        self.assertIsNone(reference())
+        status = self.registry.handle(request("status", {"session_id": session_id}))["result"]
+        self.assertEqual(status["sample_count"], 37)
+        self.assertEqual(status["measurement"], "partial")
+        self.assertEqual(status["result"]["cleanup"], "complete")
+        self.assertFalse(self.registry.handle(request("cancel", {"session_id": session_id}))["result"]["accepted"])
 
     def test_uncertain_command_reply_is_replayed_without_repeating_side_effects(self):
         session_id = self.attach()["result"]["session_id"]

@@ -100,6 +100,8 @@ class _Record:
     event_count: int = 0
     last_samples: int = -1
     last_api_state: str = ""
+    last_measurement: str = "inconclusive"
+    last_full_coverage: bool = False
 
     def event(self, kind, **values):
         self.event_count += 1
@@ -142,6 +144,7 @@ class AgentRegistry:
                 record.event("progress", state=status.state, sample_count=status.sample_count,
                              measurement=status.measurement, full_coverage=status.full_coverage)
                 record.last_samples, record.last_api_state = status.sample_count, status.state
+                record.last_measurement, record.last_full_coverage = status.measurement, status.full_coverage
             result = record.session.wait(0)
             if result is not None:
                 record.state = "failed" if result.reason == "failed" else "completed"
@@ -153,14 +156,18 @@ class AgentRegistry:
                                  "errors": [str(error)[:512] for error in result.errors[:8]],
                                  "error_count": len(result.errors)}
                 record.event("finished", **record.result)
+                # The bounded registry keeps tiny final metadata, not the API
+                # session's complete report and retained immutable snapshot.
+                record.session = None
             elif status.state in {"starting", "running", "stopping"}:
                 record.state = status.state
 
     def _status(self, record):
-        status = record.session.status
+        status = record.session.status if record.session is not None else None
         return {"session_id": record.identity, "mode": record.mode, "state": record.state,
-                "sample_count": status.sample_count, "measurement": status.measurement,
-                "full_coverage": status.full_coverage, "result": record.result,
+                "sample_count": status.sample_count if status else max(0, record.last_samples),
+                "measurement": status.measurement if status else record.last_measurement,
+                "full_coverage": status.full_coverage if status else record.last_full_coverage, "result": record.result,
                 "reports": self._report_names(record.exports)}
 
     def handle(self, request):
@@ -238,6 +245,8 @@ class AgentRegistry:
                     "observed": record.event_count, "retained": len(record.events),
                     "dropped": record.event_count - len(record.events), "cursor_gap": max(0, oldest - cursor - 1)}
         if operation == "cancel":
+            if record.session is None:
+                return {"accepted": False, "finished": True, "session_id": record.identity}
             record.session.cancel()
             return {"accepted": True, "session_id": record.identity}
         if operation == "export":
@@ -248,6 +257,8 @@ class AgentRegistry:
                     raise AgentError("storage", "report export failed; inspect session status and storage")
             return {"directory": str(self.reports), "reports": self._report_names(record.exports)}
         if operation in {"pause", "resume", "kill"}:
+            if record.session is None:
+                raise AgentError("session_finished", "the session has already finished")
             if operation in {"pause", "resume"} and (not self.policy.allow_pause or record.mode == "attach"):
                 raise AgentError("forbidden", "pause/resume is authorized only for launched sessions")
             if operation == "kill" and not self.policy.allow_kill:
