@@ -158,6 +158,45 @@ dashboard session: `index`, `label` (`marker N`), `timestamp`, `time`, and
 noted something; they do not establish cause. Reports without the field
 have no markers.
 
+### Startup and cleanup outcomes
+
+`outcome.startup` records `state` (`not_started`, `started`, or `failed`) and
+an `error` when startup fails. Headless failed starts attempt to export the
+available evidence and still exit `2`; that startup result takes precedence
+even if an initial sample contained a signal.
+
+`outcome.cleanup` records `state` (`not_attempted`, `complete`, or
+`incomplete`), ownership (`launched` or `attached`), and exact
+`attempted_actions` counts for `terminate`, `kill`, and `detach`. Detach
+includes resuming processes suspended by DrainTracer. `remaining_count`,
+up to 50 `remaining_processes` with PID, creation time, and `resume_required`, `omitted_processes`,
+`resume_required`, and up to 20 distinct `errors` describe partial cleanup.
+These are observed results, not proof that a PID remains current later.
+
+Cleanup exceptions are monitor errors and headless runs still attempt to
+export evidence. A method that returns normally with survivors retains the
+established default exit policy; the warning and `state: incomplete` make
+that condition explicit. Automation that requires complete cleanup must check
+this field as well as the exit code. An attached program left running after
+successful detach has `cleanup.state: complete`.
+
+After startup succeeds, exit precedence is: a qualifying signal (`1`),
+interruption (`130`), monitor/cleanup exception or JSON export failure (`2`),
+budget breach (`5`), opted-in target failure (`4`), then opted-in inconclusive
+measurement or incomplete coverage (`3`), otherwise `0`. `headless.exit_code` records the decision at
+report construction. If JSON writing fails, no successfully written report
+can promise to record that later failure; the terminal exit remains decisive.
+
+`--require-full-coverage` (or `require_full_coverage = true`) is an opt-in
+headless policy. A session needs at least one live collected sample; every
+such sample must record full private-byte, handle, and thread coverage, and
+no sample may have failed. Missing coverage records are unknown and do not
+pass this policy. Paused samples are excluded. Warm-up samples count toward
+coverage, while `--fail-on-inconclusive` separately requires a judged leak
+window. Coverage is recorded as `coverage.full`, `measured_samples`, and
+`fully_measured_samples`, also mirrored in `session_facts.coverage`; the
+measurement outcome includes `full_coverage`.
+
 The `experiment` section records the optional labels (`workload_id`,
 `build`, `operations`, `note`), the mode, `arguments` (`count` and a
 16-character SHA-256 `fingerprint` only), duration, sampling settings,
