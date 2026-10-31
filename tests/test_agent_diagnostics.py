@@ -162,8 +162,21 @@ class NativeOperationsTests(unittest.TestCase):
               mock.patch.object(psutil.Process, "terminate", side_effect=AssertionError("removal must not terminate")),
               mock.patch.object(psutil.Process, "resume", side_effect=AssertionError("removal must not resume")),
               mock.patch.object(psutil.Process, "suspend", side_effect=AssertionError("removal must not suspend"))):
+            original_unlink = Path.unlink
+
+            def controlled_failure(path, *args, **kwargs):
+                if path.name == "agent-state.json":
+                    raise OSError("controlled transient journal removal failure")
+                return original_unlink(path, *args, **kwargs)
+
+            with (mock.patch.object(Path, "unlink", controlled_failure), self.assertRaises(OSError)):
+                remove_control_files(self.state, apply=True)
+            self.assertTrue((self.state / "agent-state.json").exists())
+            self.assertFalse((self.state / "credential").exists())
+            self.assertFalse((self.state / "agent-state.lock").exists())
             removed = remove_control_files(self.state, apply=True)
         self.assertTrue(removed["applied"])
+        self.assertTrue(remove_control_files(self.state, apply=True)["already_removed"])
         self.assertFalse((self.state / "credential").exists())
         self.assertFalse((self.state / "agent-state.json").exists())
         self.assertFalse((self.state / "agent-state.lock").exists())

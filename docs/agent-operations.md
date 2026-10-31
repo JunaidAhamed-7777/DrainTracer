@@ -42,7 +42,9 @@ data throughout. Do not copy them into bug reports.
 
 `draintracer-agent remove` previews removal of the known control files only.
 `--apply` requires a stopped agent and no unresolved known launched process.
-It never sends process-control signals and never recursively deletes a state
+The validated journal is removed last so a partial file-removal failure can
+be retried without guessing about ownership. Missing/corrupt authority blocks
+removal when control files remain. It never sends process-control signals and never recursively deletes a state
 directory. Reports, checkpoints and unrelated files are preserved. Remove
 those later under an explicit local retention decision. Uninstall the package
 from its virtual environment with that environment's `python -m pip uninstall

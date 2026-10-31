@@ -29,7 +29,7 @@ from .agent_transport import (
     verify_trusted_path,
 )
 from .api import _version
-from .checkpoints import read_checkpoint, recovered_report
+from .checkpoints import _lock, read_checkpoint, recovered_report
 from .html_report import render_html_report, write_html_report
 from .privacy import PROFILES, redact_report
 from .process_runner import _windows_process_exited
@@ -122,9 +122,15 @@ def recover_session(directory, session_id, output=None):
 
 
 @contextmanager
-def _stopped_lock(directory):
+def _stopped_lock(directory, *, create=False):
     """Open an existing lock without creating, resizing or replacing a file."""
     path = verify_trusted_path(Path(directory) / "agent-state.lock")
+    if create and not path.exists():
+        # An explicit removal retry may recreate only its missing owned lock,
+        # after the intact journal has established the state identity.
+        with _lock(path):
+            yield
+        return
     with path.open("r+b", buffering=0) as handle:
         if os.fstat(handle.fileno()).st_size != 1:
             raise AgentStateError("cannot confirm an owned agent lock file")
@@ -202,19 +208,26 @@ def _confirm_no_owned_survivors(directory, records):
 def remove_control_files(directory, *, apply=False):
     directory = Path(directory).absolute()
     verify_private_path(directory)
-    # Validate the credential's format/permissions but never serialize it.
-    load_secret(directory)
-    with _stopped_lock(directory):
+    planned = ["credential", "agent-state.json", "agent-state.lock"]
+    if not any((directory / name).exists() for name in planned):
+        return {"applied": apply, "already_removed": True, "control_files": [],
+                "preserved": ["reports", "checkpoints", "unrelated files"]}
+    _saved(directory)  # Missing authority is not permission to remove leftovers.
+    if (directory / "credential").exists():
+        load_secret(directory)  # Validate format/permissions, never serialize it.
+    with _stopped_lock(directory, create=apply):
         saved = _saved(directory)
         _confirm_no_owned_survivors(directory, saved["sessions"])
-        planned = ["credential", "agent-state.json", "agent-state.lock"]
-        result = {"applied": apply, "control_files": planned, "preserved": ["reports", "checkpoints", "unrelated files"]}
+        result = {"applied": apply, "control_files": planned,
+                  "preserved": ["reports", "checkpoints", "unrelated files"]}
         if apply:
-            # Explicit known files only. No recursive traversal or process control.
-            (directory / "credential").unlink()
-            (directory / "agent-state.json").unlink()
+            (directory / "credential").unlink(missing_ok=True)
     if apply:
-        (directory / "agent-state.lock").unlink()
+        (directory / "agent-state.lock").unlink(missing_ok=True)
+        # Keep the validated journal until all other control-file removals
+        # succeed. A transient failure can then be retried without guessing
+        # about prior process ownership or deleting unrelated files.
+        (directory / "agent-state.json").unlink()
     return result
 
 
