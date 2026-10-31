@@ -208,6 +208,29 @@ class RecipeTests(unittest.TestCase):
         self.assertIsNone(runner._exercise_manager)
         self.assertEqual(runner.workflow["state"], "interrupted")
 
+    def test_capture_startup_error_still_closes_pipes_and_owned_target(self) -> None:
+        self.data["capture_logs"] = {"max_bytes": 1024}
+        runner = self.runner()
+        with mock.patch("src.workload.BoundedLog.start", side_effect=OSError("unavailable output")):
+            self.assertEqual(runner.run(), 2)
+        self.assertFalse(runner.manager.has_tracked_processes)
+        self.assertTrue(all(stream.closed for stream in runner.manager.output_streams.values()))
+        self.assertIsNotNone(runner._last_report)
+
+    @unittest.skipUnless(sys.platform == "win32", "native Windows batch forwarding")
+    def test_batch_recipe_retains_literals_and_selected_interpreter(self) -> None:
+        script = self.folder / "literal worker.cmd"
+        script.write_text('@echo off\r\nset "A1=%~1"\r\nset "A2=%~2"\r\n'
+                          'setlocal EnableDelayedExpansion\r\n'
+                          '> "%~dp0received.txt" echo(^[!A1!^] ^[!A2!^]\r\n', encoding="ascii")
+        self.data["command"] = {"target": script.name, "args": ["%BUILD_TAG%", "!USERNAME!"]}
+        self.data["environment"] = {"COMSPEC": os.environ.get("COMSPEC", "C:/Windows/System32/cmd.exe"),
+                                    "BUILD_TAG": "expanded-value-must-not-appear"}
+        runner = self.runner()
+        self.assertEqual(runner.run(), 0)
+        self.assertEqual((self.folder / "received.txt").read_text().strip(), "[%BUILD_TAG%] [!USERNAME!]")
+        self.assertFalse(runner.manager.has_tracked_processes)
+
 
 if __name__ == "__main__":
     unittest.main()
