@@ -80,6 +80,7 @@ class ApiTests(unittest.TestCase):
         self.assertGreaterEqual(session.status.sample_count, 8)
         snapshot = session.snapshot
         self.assertIsNotNone(snapshot)
+        self.assertIsInstance(snapshot.root_create_time, float)
         with self.assertRaises(TypeError):
             snapshot.data["totals"]["handles"] = -1
         with self.assertRaises(TypeError):
@@ -115,6 +116,7 @@ class ApiTests(unittest.TestCase):
         session = Session.attach(process.pid, create_time=identity, options=self.options())
         session.start()
         self.assertTrue(wait_until(lambda: session.status.sample_count >= 2))
+        self.assertEqual(session.snapshot.root_create_time, identity)
         self.assertEqual(session.close(8).cleanup, "complete")
         self.assertIsNone(process.poll())
         process.kill()

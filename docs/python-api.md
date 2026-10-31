@@ -34,6 +34,9 @@ is installed. Attach creation time is checked before sampling when supplied;
 omitting it means attaching to the identity found at startup.
 
 `status`, `snapshot`, and final result records are immutable detached values.
+`Snapshot.root_create_time` carries the identity recorded when the backend
+launched or attached, and remains available after cleanup. It is not a later PID
+lookup; `None` means unknown and must never authorize process control.
 `report(timeout)` returns an independent mutable report dictionary. `export()`
 writes the usual JSON/HTML pair only under the configured report directory and
 returns an `ExportResult`; an HTML failure is explicit even when JSON succeeds.

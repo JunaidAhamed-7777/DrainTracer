@@ -122,6 +122,7 @@ class Snapshot:
     timestamp: float
     root_pid: int | None
     data: Mapping[str, Any]
+    root_create_time: float | None = None
 
 
 @dataclass(frozen=True)
@@ -409,7 +410,8 @@ class Session:
 
     def _publish(self, backend, state: str, errors: list[str], *, kind: str = "status") -> None:
         raw = backend.snapshot if backend is not None else None
-        snapshot = None if raw is None else Snapshot(raw.timestamp, raw.root_pid, _freeze(snapshot_to_dict(raw)))
+        snapshot = None if raw is None else Snapshot(raw.timestamp, raw.root_pid,
+                                                     _freeze(snapshot_to_dict(raw)), backend._target_created)
         current_errors = tuple(dict.fromkeys([*errors, *(backend.monitor_errors if backend else ())]))
         status = SessionStatus(state, snapshot, backend._sample_count if backend else 0,
                                backend.measurement_outcome if backend else "inconclusive",
