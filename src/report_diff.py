@@ -298,6 +298,7 @@ class ReportComparison:
                 "exact_facts": report.summary.exact,
                 "chart_stride": report.summary.chart_stride,
                 "experiment": _experiment_side(report.experiment),
+                "process_attribution": dict(report.summary.process_attribution or {}),
             }
 
         return {
