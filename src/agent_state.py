@@ -145,6 +145,44 @@ def _validate(data, *, app_version, owner):
     return data
 
 
+def acquire_control_fence(directory: Path, *, create=True):
+    """Permanent OS-owned startup/removal exclusion; this file is never unlinked."""
+    path = verify_trusted_path(directory / "agent-control.lock")
+    if not create and not path.exists():
+        raise AgentStateError("the permanent control fence is missing; removal cannot proceed")
+    try:
+        handle = _lock(path)
+    except OSError as error:
+        raise AgentStateError("agent startup or removal is already active") from error
+    try:
+        handle.seek(0)
+        if handle.read(2) != b"\0":
+            raise AgentStateError("the permanent control fence has invalid contents")
+        if os.name == "nt":
+            verify_private_data_path(path)
+    except BaseException:
+        handle.close()
+        raise
+    return handle
+
+
+def read_agent_state(directory: Path, *, app_version: str, owner: str):
+    """Read-only, bounded inspection; never acquire writer ownership or rewrite state."""
+    path = verify_trusted_path(directory / "agent-state.json")
+    if os.name == "nt":
+        verify_private_data_path(path)
+    try:
+        with path.open("rb") as handle:
+            raw = handle.read(MAX_STATE_BYTES + 1)
+        if len(raw) > MAX_STATE_BYTES:
+            raise AgentStateError("agent scheduling state exceeds its byte limit")
+        return _validate(_decode_frame(raw), app_version=app_version, owner=owner)
+    except AgentStateError:
+        raise
+    except (AgentTransportError, ValueError, TypeError, OverflowError) as error:
+        raise AgentStateError("agent scheduling state is malformed; prior data preserved") from error
+
+
 class AgentJournal:
     def __init__(self, directory: Path, *, app_version: str, owner: str,
                  retention_seconds=7 * 86400, max_storage_bytes=512 * 1024 * 1024):
@@ -162,13 +200,7 @@ class AgentJournal:
         try:
             verify_trusted_path(self.path)
             if self.path.exists():
-                if os.name == "nt":
-                    verify_private_data_path(self.path)
-                with self.path.open("rb") as handle:
-                    raw = handle.read(MAX_STATE_BYTES + 1)
-                if len(raw) > MAX_STATE_BYTES:
-                    raise AgentStateError("agent scheduling state exceeds its byte limit")
-                self.data = _validate(_decode_frame(raw), app_version=app_version, owner=owner)
+                self.data = read_agent_state(directory, app_version=app_version, owner=owner)
             else:
                 self.data = {"schema": 1, "protocol": 1, "version": app_version, "owner": owner,
                              "state_id": str(uuid.uuid4()), "updated_at": time.time(), "sessions": [], "tombstones": []}
@@ -208,29 +240,7 @@ class AgentJournal:
             temporary.unlink(missing_ok=True)
 
     def inventory(self):
-        """Bounded, non-following local inventory; no automatic file deletion."""
-        count = total = 0
-        pending = [(self.directory, 0)]
-        while pending:
-            directory, depth = pending.pop()
-            if depth > 4:
-                raise AgentStateError("agent storage has an unexpected directory depth")
-            with os.scandir(directory) as entries:
-                for entry in entries:
-                    count += 1
-                    if count > MAX_INVENTORY:
-                        raise AgentStateError("agent storage exceeds its inventory bound")
-                    metadata = entry.stat(follow_symlinks=False)
-                    if entry.is_symlink() or getattr(metadata, "st_file_attributes", 0) & 0x400:
-                        raise AgentStateError("agent storage cannot contain redirected entries")
-                    if entry.is_dir(follow_symlinks=False):
-                        pending.append((Path(entry.path), depth + 1))
-                    elif entry.is_file(follow_symlinks=False):
-                        total += metadata.st_size
-                    else:
-                        raise AgentStateError("agent storage contains an unsupported entry")
-        return {"bytes": total, "entries": count, "limit_bytes": self.max_storage_bytes,
-                "admission_available": total < self.max_storage_bytes}
+        return storage_inventory(self.directory, self.max_storage_bytes)
 
     def require_capacity(self):
         inventory = self.inventory()
@@ -242,3 +252,29 @@ class AgentJournal:
         if self._lock is not None:
             self._lock.close()
             self._lock = None
+
+
+def storage_inventory(directory: Path, max_storage_bytes=None):
+    """Bounded, non-following local inventory; no automatic file deletion."""
+    count = total = 0
+    pending = [(directory, 0)]
+    while pending:
+        directory, depth = pending.pop()
+        if depth > 4:
+            raise AgentStateError("agent storage has an unexpected directory depth")
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                count += 1
+                if count > MAX_INVENTORY:
+                    raise AgentStateError("agent storage exceeds its inventory bound")
+                metadata = entry.stat(follow_symlinks=False)
+                if entry.is_symlink() or getattr(metadata, "st_file_attributes", 0) & 0x400:
+                    raise AgentStateError("agent storage cannot contain redirected entries")
+                if entry.is_dir(follow_symlinks=False):
+                    pending.append((Path(entry.path), depth + 1))
+                elif entry.is_file(follow_symlinks=False):
+                    total += metadata.st_size
+                else:
+                    raise AgentStateError("agent storage contains an unsupported entry")
+    return {"bytes": total, "entries": count, "limit_bytes": max_storage_bytes,
+            "admission_available": total < max_storage_bytes if max_storage_bytes is not None else None}
