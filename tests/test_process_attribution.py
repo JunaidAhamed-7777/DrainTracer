@@ -133,7 +133,7 @@ class ProcessAttributionTests(unittest.TestCase):
         self.assertEqual(alert.current_value - alert.baseline_value, 10 * 1024**2)
 
     def test_positive_share_denominator_excludes_offsets_from_exits(self):
-        history = ProcessHistory()
+        history = ProcessHistory(120)
         history.observe(1000, [make_process(100, private=100 * 1024**2), make_process(300, private=40 * 1024**2)])
         history.observe(1010, [make_process(100, private=130 * 1024**2), make_process(200, private=20 * 1024**2)])
         result = history.attribute("private_bytes", 1000, 1010)
