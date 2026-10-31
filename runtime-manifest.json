@@ -42,6 +42,7 @@
     "src/running_processes.py",
     "src/session.py",
     "src/session_facts.py",
+    "src/team_transport.py",
     "src/startup.py",
     "src/stats.py",
     "src/theme.py",
