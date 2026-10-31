@@ -106,6 +106,8 @@ def _validate(data, *, app_version, owner):
         if record["identity_status"] not in {"not_checked", "identity_matches", "reused", "exited", "unknown", "unavailable"}:
             raise AgentStateError("agent identity diagnostic is malformed")
         result = record["result"]
+        if (record["state"] in {"completed", "failed", "interrupted"}) != (result is not None):
+            raise AgentStateError("agent result and terminal state disagree")
         if result is not None:
             keys = {"reason", "exit_code", "startup", "cleanup", "measurement", "full_coverage", "target_exit_code", "errors", "error_count"}
             if not isinstance(result, dict) or set(result) != keys:

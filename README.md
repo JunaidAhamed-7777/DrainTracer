@@ -544,3 +544,9 @@ from a second terminal to observe a same-user process, then `status`, `events`,
 launch, launch pause/resume, and explicit kill require separate server flags.
 See the [local agent contract and commands](docs/local-agent.md) for private
 state permissions, limits, trusted launch roots, cleanup, and failure states.
+
+The optional agent saves bounded admission state before starting a session.
+After restart it marks old active sessions interrupted and can export their
+latest intact checkpoint as partial evidence; it never retries a launch or
+reattaches automatically. See [agent scheduling and recovery](docs/agent-recovery.md)
+for retention, storage admission limits, and failure semantics.

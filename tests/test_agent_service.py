@@ -42,7 +42,7 @@ class FakeSession:
 
     def __init__(self, options, mode):
         self.options, self.mode = options, mode
-        self.status = SimpleNamespace(state="running", sample_count=0, measurement="inconclusive", full_coverage=False)
+        self.status = SimpleNamespace(state="running", snapshot=None, sample_count=0, measurement="inconclusive", full_coverage=False)
         self.result = None
         self.cancelled = False
         self.created.append(self)

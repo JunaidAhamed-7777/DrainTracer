@@ -64,3 +64,24 @@ its attachment or stops its owned launch; incomplete cleanup remains visible.
 Client disconnect, endpoint profile changes, or upgrade do not silently adopt
 old process ownership. Upgrade, rollback and removal procedures must preserve
 this journal/evidence boundary and never delete unrelated application data.
+
+## Recorded acceptance drills
+
+Native Windows tests start separate agent processes, monitor an owned root
+and child, kill the agent abruptly, and restart against the same state. They
+verify interrupted/unknown-cleanup labels, partial-prefix export, durable
+start replay without another launch, and OS job cleanup. A second drill drops
+a client connection without acknowledging a reply, then kills/restarts the
+agent while an attached target continues running with the same identity.
+A failed target and an admission high-water condition leave another accepted
+session sampling and allow its cancellation/cleanup. Atomic-write fault tests
+inject full-disk-style fsync/replace errors and preserve the prior intact
+journal; an actual system disk is never intentionally filled.
+
+Defaults are seven days of completed/interrupted metadata and a 512 MiB
+storage admission high-water mark. Retention is configurable from one second
+through 90 days; storage admission is configurable from 1 MiB through 64 GiB.
+The inventory reads at most 4,096 non-redirected entries with four directory
+levels. No file is deleted automatically. A previously unobserved active
+record is marked interrupted on its first restart even when older than the
+retention period. Its fresh interrupted record then follows retention.
