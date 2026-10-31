@@ -370,3 +370,19 @@ Before publishing a change, run the relevant tests and smoke workloads,
 inspect the diff, and confirm generated caches, virtual environments,
 logs, and leak reports are excluded. Follow [CONTRIBUTING.md](../CONTRIBUTING.md)
 for pull request scope, validation details, and repository-owner authorship.
+
+For a preserved installed sharing proof, run
+`python tests/run_sharing_proof.py --output NEW_PRIVATE_LEAF` from a native Git
+checkout. To reuse the exact Windows-created Git ZIP under Linux/WSL without
+reading Windows worktree metadata, supply
+`--source-archive SOURCE.zip --source-commit FULL_SHA --archive-sha256 SHA256`
+as well. Obtain the hash and commit from the trusted archive producer; the
+hash identifies bytes and is not signed source attestation. The helper checks
+that hash and the Git ZIP comment before validating all paths/types and
+extracting exclusively into a new private leaf. It refuses links, path aliases,
+overwrites and excessive archives (64 MiB compressed, 256 MiB expanded,
+32 MiB/file, 10,000 entries). Existing attempts remain untouched. Preparation
+failures are recorded in `bootstrap.json` and `bootstrap-failure.txt` once the
+new private output directory has been provisioned. This command runs real
+workloads; lightweight tests are `test_proof_archive.py` and
+`test_sharing_proof_bootstrap.py`, which exercise setup without collection.
