@@ -456,6 +456,9 @@ units, and [working-principle.md](working-principle.md) for the detection math.
 The [repeated Windows/Linux calibration](docs/calibration-results.md) records
 tested warning delays, benign startup/cache warnings, slow-growth misses,
 coverage, and duration/profile guidance with reproducible aggregate evidence.
+Growth dominated by new workers keeps its full aggregate severity; the
+[measured worker-growth policy](docs/worker-growth-policy.md) explains the
+capacity distinction, CI effects, and separately scoped tracing decision.
 
 ## Save and compare evidence
 
