@@ -45,7 +45,7 @@ and terminal authorization/input failures are visible to the caller.
 
 Collection, local JSON/HTML export and process cleanup never import the
 transport or wait for this queue. Enqueue/flush failures retain local reports.
-Only the explicit flush command attempts the network. Operators review queued
+Of the queue commands, only explicit flush attempts the network. Operators review queued
 content and retention before sharing; credentials are never stored in entries.
 Each client pins its project when it opens the credential file. A later
 same-project credential rotation refreshes the secret; a cross-project
@@ -196,3 +196,22 @@ evidence. Approval/evidence deletion invalidates linked receipts; backups do
 not roll credentials or deletion authority backward. Apply the retention and
 authority-loss procedures in the [operating runbook](service-operations.md).
 External exports and copies need their own operator-controlled retention.
+
+## Reproduce the installed reference
+
+The developer helper [run_sharing_proof.py](../tests/run_sharing_proof.py)
+builds committed source through an sdist into an isolated wheel, then runs the
+[installed workflow](../tests/verify_sharing_distribution.py) in a new private
+workspace. It retains command outcomes, private raw evidence, archive/package
+hashes and failed attempts. These files can contain local paths and credentials;
+keep them private rather than attaching the workspace to a public issue.
+
+Candidate source `bdb7da2` passed this workflow on native Windows and WSL Linux
+from the same archive. Each executed eight independent recipe recordings,
+strict W4 approval/check, 33 recorded commands, two sanitized report uploads,
+approval replay and identical receipt retrieval by distinct operator/viewer
+credentials. Current transport operating evidence admitted the foreground
+listener and its owned process was reaped. A prior native attempt correctly
+refused a sampling gap; no timing guard was relaxed. These historical `v5.4.0`
+candidate checks do not substitute for fresh current-version operating evidence
+after an upgrade or establish a human pilot, production SLA or attestation.
