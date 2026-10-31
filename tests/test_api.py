@@ -8,12 +8,20 @@ import tempfile
 import threading
 import time
 import unittest
+from concurrent.futures import Future
 from pathlib import Path
 from unittest import mock
 
 import psutil
 
-from src.api import Session, SessionEvent, SessionOptions, SessionStatus, Subscription
+from src.api import (
+    CommandTimeoutError,
+    Session,
+    SessionEvent,
+    SessionOptions,
+    SessionStatus,
+    Subscription,
+)
 from src.report_contract import validate_report
 
 
@@ -114,6 +122,66 @@ class ApiTests(unittest.TestCase):
             with self.assertRaises(PermissionError):
                 control()
         session.close(5)
+
+    def test_enabled_controls_run_on_controller_and_record_kill_ownership(self):
+        session = Session.launch(self.target, options=self.options(allow_pause=True, allow_kill=True))
+        session.start()
+        self.assertTrue(wait_until(lambda: session.status.sample_count >= 2))
+        try:
+            self.assertTrue(session.pause())
+            self.assertTrue(wait_until(lambda: session.snapshot.data["monitoring_paused"]))
+            self.assertTrue(session.resume())
+            self.assertTrue(session.kill())
+            result = session.wait(8)
+            self.assertEqual(result.cleanup, "complete")
+            self.assertEqual(session.report()["outcome"]["cleanup"]["attempted_actions"]["kill"], 1)
+        finally:
+            session.close(8)
+
+    def test_queued_expired_command_is_cancelled_and_queue_is_bounded(self):
+        session = Session.launch(self.target, options=self.options())
+        session._thread = mock.Mock()  # Keep execution under this test's control.
+        with self.assertRaises(CommandTimeoutError) as caught:
+            session._command("pause", 0)
+        self.assertFalse(caught.exception.may_have_run)
+        backend = mock.Mock()
+        session._drain_commands(backend)
+        backend.manager.pause.assert_not_called()
+        for _ in range(32):
+            session._commands.put_nowait(("pause", Future()))
+        with self.assertRaisesRegex(RuntimeError, "queue is full"):
+            session._command("pause", 0)
+
+    def test_inflight_command_timeout_reports_uncertain_execution(self):
+        session = Session.launch(self.target, options=self.options())
+        session._thread = mock.Mock()
+        entered, release = threading.Event(), threading.Event()
+        backend = mock.Mock()
+        def pause():
+            entered.set()
+            release.wait(5)
+            return True
+        backend.manager.pause.side_effect = pause
+        errors = []
+        def caller():
+            try:
+                session._command("pause", 0.2)
+            except CommandTimeoutError as error:
+                errors.append(error)
+        request = threading.Thread(target=caller)
+        request.start()
+        self.assertTrue(wait_until(lambda: not session._commands.empty()))
+        controller = threading.Thread(target=session._drain_commands, args=(backend,))
+        controller.start()
+        try:
+            self.assertTrue(entered.wait(2))
+            request.join(2)
+            self.assertEqual(len(errors), 1)
+            self.assertTrue(errors[0].may_have_run)
+        finally:
+            release.set()
+            controller.join(5)
+            request.join(5)
 
     def test_failed_start_still_has_partial_report_and_explicit_outcome(self):
         session = Session.launch(self.root / "missing.exe", options=self.options())

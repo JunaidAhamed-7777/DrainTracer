@@ -84,7 +84,11 @@ class SessionOptions:
         object.__setattr__(self, "windows_seconds", tuple(self.windows_seconds))
         object.__setattr__(self, "budgets", _freeze(dict(self.budgets)))
         object.__setattr__(self, "thresholds", _freeze({key: dict(value) for key, value in self.thresholds.items()}))
-        self._settings()
+        settings = self._settings()
+        # Capture relative destinations before another thread can change cwd.
+        object.__setattr__(self, "report_dir", Path(settings.report_dir).resolve())
+        if settings.checkpoint is not None:
+            object.__setattr__(self, "checkpoint", str(Path(settings.checkpoint).resolve()))
 
     def _settings(self):
         table = {
@@ -276,7 +280,7 @@ class Session:
             not isinstance(item, str) or "\x00" in item for item in args
         ):
             raise ValueError("args must contain at most 1024 strings without NUL")
-        self._target = target_path
+        self._target = str(Path(target_path).resolve()) if target_path is not None else None
         self._args = tuple(args)
         self._attach_pid = attach_pid
         self._create_time = create_time
@@ -363,6 +367,8 @@ class Session:
         try:
             return future.result(timeout=timeout)
         except FutureTimeout:
+            if future.done():
+                raise  # Preserve a TimeoutError raised by the command itself.
             raise CommandTimeoutError(may_have_run=not future.cancel()) from None
 
     def pause(self, timeout: float = 5.0) -> bool:
@@ -392,9 +398,10 @@ class Session:
     def _publish(self, backend, state: str, errors: list[str], *, kind: str = "status") -> None:
         raw = backend.snapshot if backend is not None else None
         snapshot = None if raw is None else Snapshot(raw.timestamp, raw.root_pid, _freeze(snapshot_to_dict(raw)))
+        current_errors = tuple(dict.fromkeys([*errors, *(backend.monitor_errors if backend else ())]))
         status = SessionStatus(state, snapshot, backend._sample_count if backend else 0,
                                backend.measurement_outcome if backend else "inconclusive",
-                               backend.full_coverage if backend else False, tuple(errors))
+                               backend.full_coverage if backend else False, current_errors)
         with self._lock:
             self._status = status
             subscriptions = tuple(self._subscribers)
@@ -441,7 +448,7 @@ class Session:
                         backend.detector.resume()
                 elif name == "kill":
                     backend._mark_stopping()
-                    backend.manager.kill()
+                    backend._attempt_cleanup("kill")
                     value = not backend.manager.has_tracked_processes
                 else:
                     raise ValueError("unknown session command")
