@@ -535,6 +535,8 @@ and comparison exit codes.
 
 ## Documentation
 
+- [Service observation recipe](docs/service-observation.md) — inspect an
+  authorized disposable Windows service and verify it survives ordinary detach.
 - [Usage and troubleshooting](docs/usage.md) — launch, attach, controls, warm-up,
   headless operation, and diagnostic logging.
 - [Configuration](docs/configuration.md) — TOML discovery, profiles, thresholds,
