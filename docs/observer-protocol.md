@@ -87,3 +87,9 @@ evidence. Document discovery limits and the unexpected-crash policy separately:
 ordinary cleanup is tested, while a forcibly killed process cannot run Python
 `finally` blocks. No recovery test may resume/kill a PID without its proven
 identity and ownership.
+
+Run the bounded failure drills with `python torture/observer_stress.py --output
+torture/reports/observer-stress-windows.json`, using a distinct Linux output
+name for that environment. Read the [recorded drill outcomes and crash
+policy](observer-stress-results.md), including the preserved failed harness
+attempt and full-sequence rerun.

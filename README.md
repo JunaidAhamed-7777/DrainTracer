@@ -222,6 +222,9 @@ An unreadable current or original creation identity permits observation but
 refuses process control. A later readable PID holder does not automatically
 gain the old target's control authority; attach again with a verified identity.
 An owed resume remains pending until it can be retried safely.
+The [lifecycle stress evidence and crash policy](docs/observer-stress-results.md)
+describe tested failure handling, polling limits, and the boundary when abrupt
+monitor termination prevents normal cleanup.
 
 Use **Up/Down** to highlight a startup choice, then **Spacebar** (or Enter)
 to select it. Navigation help appears below the Get Started box. Redirected
