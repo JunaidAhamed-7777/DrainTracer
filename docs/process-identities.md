@@ -35,3 +35,12 @@ claiming to force the OS to recycle a particular PID on demand. Unreadable
 identities and the interval between validation and an OS operation require
 their own conservative handling; this fix removes incorrect ten-millisecond
 identity equivalence without claiming every control race is eliminated.
+
+Process-control opens separately require a recorded original creation time
+and a currently readable matching time. A denied current query still permits
+read-only observation, but cannot authorize pause, resume or termination.
+Initially unknown tracked identities are not promoted by later observations;
+the original root also needs a known identity before controlling its tree.
+Reattach explicitly once the required identity can be verified. If an owned
+pause cannot safely be resumed, its resume debt remains visible for retry;
+a proven exit or PID replacement clears that debt without touching a bystander.
