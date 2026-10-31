@@ -76,3 +76,20 @@ timing-ceiling breaches and an unexpected Windows thread signal. Their CPU
 and RSS ceilings passed, but this component exercise cannot turn those
 failed collection/classification ceilings into passes or relabel source
 `3f42974` as a later release's measurement.
+
+## Preserved provenance-harness amendment before verification
+
+The first reference attempt used source `e465c0f`. Its complete Windows
+reference and derived budget are retained as `host-reference-attempt1-windows`
+records. Linux failed before any timing replicate because Linux Git cannot
+read the Windows-created checkout's absolute `C:/...` worktree pointer.
+Its `CalledProcessError`, zero runs and active preparation state are retained
+in `host-reference-attempt1-linux.json`. No verification used that budget.
+
+The amendment selects the checkout owner's `git.exe` under WSL and translates
+only the Git metadata directory using `wslpath`, as the existing calibration
+harness does. Linux Python/psutil still perform the actual Linux measurements.
+Record the runtime version alongside the source hashes. After committing this
+provenance-only fix, recollect both complete reference sets from one new
+immutable source, commit their derived budgets, then verify once per platform.
+The timing sequence, margins, floors and quality rules above do not change.
