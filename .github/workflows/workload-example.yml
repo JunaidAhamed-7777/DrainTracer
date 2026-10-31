@@ -7,6 +7,12 @@ on:
       - '.github/workflows/workload-example.yml'
       - 'docs/ci-workloads.md'
   workflow_dispatch:
+    inputs:
+      published_version:
+        description: 'Exact published MAJOR.MINOR.PATCH; leave empty to build this checkout'
+        required: false
+        type: string
+        default: ''
 permissions:
   contents: read
 jobs:
@@ -21,14 +27,27 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.10'
-      - name: Build this candidate and prepare the disposable source fixture
+      - name: Select the published package or build this candidate, then prepare the fixture
         id: candidate
         shell: pwsh
+        env:
+          DRAIN_PUBLISHED_VERSION: ${{ inputs.published_version }}
         run: |
-          python -m pip install build
-          python -m build
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python .github/ci/candidate.py >> $env:GITHUB_OUTPUT
+          $publishedVersion = $env:DRAIN_PUBLISHED_VERSION
+          if ([string]::IsNullOrEmpty($publishedVersion)) {
+            python -m pip install build
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            python -m build
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            python .github/ci/candidate.py >> $env:GITHUB_OUTPUT
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } else {
+            if ($publishedVersion -cnotmatch '\A(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\z') {
+              throw 'Use an exact published MAJOR.MINOR.PATCH version'
+            }
+            "version=$publishedVersion" >> $env:GITHUB_OUTPUT
+            'wheel=' >> $env:GITHUB_OUTPUT
+          }
           Copy-Item torture/memory_leak.py .github/ci/worker.py
       - name: Collect a known growing baseline without approving it
         id: before
