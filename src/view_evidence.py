@@ -345,7 +345,7 @@ class EvidenceViewMixin:
                 f"{', exited' if item.exited else ''})"
                 for item in alert.contributors[:3]
             )
-            lines.append(Text(f"Contributors: {top}"))
+            lines.append(Text(f"Contributors (share of positive growth): {top}"))
             lines.append(Text(
                 f"Positive growth: new processes {_quantity(alert.resource, alert.growth_from_new_processes)}"
                 f"{sep}existing processes {_quantity(alert.resource, alert.growth_within_existing)}",

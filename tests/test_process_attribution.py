@@ -9,13 +9,14 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from helpers import make_alert, make_console, make_snapshot, render_text
+from helpers import make_alert, make_console, make_process, make_snapshot, render_text
 from test_report_diff import _run
 
 from src.analysis import PROCESS_SUMMARY_SCAN_LIMIT, process_attribution, summarize
 from src.dashboard import DashboardApp
 from src.diff_command import run_diff
 from src.events import GrowthContributor, ProcessSummary
+from src.process_history import ProcessHistory
 from src.report import process_summary_to_dict, snapshot_to_dict
 from src.report_diff import compare_reports, load_report
 
@@ -128,7 +129,17 @@ class ProcessAttributionTests(unittest.TestCase):
         self.assertIn("Positive growth: new processes 20.0 MB", output)
         self.assertIn("existing processes 30.0 MB", output)
         self.assertIn("Exits and decreases can offset", output)
+        self.assertIn("share of positive growth", output)
         self.assertEqual(alert.current_value - alert.baseline_value, 10 * 1024**2)
+
+    def test_positive_share_denominator_excludes_offsets_from_exits(self):
+        history = ProcessHistory()
+        history.observe(1000, [make_process(100, private=100 * 1024**2), make_process(300, private=40 * 1024**2)])
+        history.observe(1010, [make_process(100, private=130 * 1024**2), make_process(200, private=20 * 1024**2)])
+        result = history.attribute("private_bytes", 1000, 1010)
+        self.assertEqual(result.growth_from_new_processes, 20 * 1024**2)
+        self.assertEqual(result.growth_within_existing, 30 * 1024**2)
+        self.assertEqual([item.share for item in result.contributors], [0.6, 0.4])
 
 
 if __name__ == "__main__":
