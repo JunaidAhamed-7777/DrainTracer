@@ -104,6 +104,12 @@ def verify_distribution(wheel: Path) -> str:
         _require(agent_command.is_file(), "Installing the wheel did not create the agent command.")
         agent_help = _run([str(agent_command), "--help"], cwd=cwd, environment=environment)
         _require("serve" in agent_help and "cancel" in agent_help, "The installed agent command is unavailable.")
+        operations_command = scripts / ("draintracer-ops.exe" if os.name == "nt" else "draintracer-ops")
+        _require(operations_command.is_file(), "Installing the wheel did not create the operating exercise command.")
+        operations_help = _run([str(operations_command), "--help"], cwd=cwd, environment=environment)
+        _require("--operator" in operations_help and "--workspace" in operations_help, "Operating CLI help is incomplete.")
+        _run([str(python), str(Path(__file__).parent.resolve() / "installed_operating_probe.py")],
+             cwd=cwd, environment=environment, timeout=120)
         _run([str(python), "-c", ("import sys; from draintracer.agent_command import AgentClient; "
               "assert 'draintracer.dashboard' not in sys.modules; "
               "assert 'draintracer.main' not in sys.modules")], cwd=cwd, environment=environment)
