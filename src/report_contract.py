@@ -212,13 +212,27 @@ def read_report(path: str | Path) -> dict[str, Any]:
     try:
         with Path(path).open("rb") as handle:
             raw = handle.read(MAX_REPORT_BYTES + 1)
+    except FileNotFoundError:
+        raise ReportContractError("no such file") from None
+    except (OSError, ValueError) as exc:
+        raise ReportContractError(f"cannot read report ({getattr(exc, 'strerror', None) or exc})") from None
+    return parse_report(raw)
+
+
+def parse_report(raw: bytes) -> dict[str, Any]:
+    """Validate immutable UTF-8 upload bytes with the same bounds as file input.
+
+    This function performs no filesystem writes or reads. Ingestion services
+    can validate and privacy-transform a report before persisting any bytes.
+    """
+    if type(raw) is not bytes:
+        raise ReportContractError("expected immutable UTF-8 report bytes")
+    try:
         if len(raw) > MAX_REPORT_BYTES:
             raise ReportContractError(f"report exceeds {MAX_REPORT_BYTES} byte limit")
         text = raw.decode("utf-8")
         _check_text_depth(text)
         data = json.loads(text, object_pairs_hook=_unique_object)
-    except FileNotFoundError:
-        raise ReportContractError("no such file") from None
     except UnicodeDecodeError:
         raise ReportContractError("not a UTF-8 JSON report") from None
     except json.JSONDecodeError as exc:
@@ -229,8 +243,6 @@ def read_report(path: str | Path) -> dict[str, Any]:
         raise
     except ValueError as exc:
         raise ReportContractError(f"not a usable JSON report ({exc})") from None
-    except OSError as exc:
-        raise ReportContractError(f"cannot read report ({exc.strerror or exc})") from None
     return validate_report(data)
 
 
