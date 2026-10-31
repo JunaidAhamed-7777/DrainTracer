@@ -12,7 +12,10 @@ Create or replace a baseline with `promote STORE --run A.json --run B.json
 resource, explicit judged/full coverage, and equivalent target, arguments,
 settings, detector version and environment. A new baseline is compared with the
 existing one before replacement. Incompatible or insufficient reports cannot be
-promoted, even with a suppression. A measured regression or exceeded budget
+promoted, even with a suppression. Recorded startup, cleanup, target, monitor,
+interruption or workload failures make evidence unusable regardless of measured
+coverage. A raw workload record requires completed steps and confirmed exercise
+cleanup. A measured regression, any recorded leak signal, or exceeded budget
 also requires `--accept-regression`, and remains recorded in the audit.
 
 The store copies validated reports under their SHA-256 content identifiers.
@@ -24,7 +27,11 @@ have chained hashes to detect accidental alteration, not to authenticate a
 writer who can replace the whole directory. Writers use an OS-released lock;
 failed manifest replacement preserves the previous baseline. Unreferenced
 content files after a failed write are harmless and are never selected as a
-baseline automatically. History stops at 512 entries rather than truncating.
+baseline automatically. Evidence objects are also written to private temporary
+files, flushed and atomically published, so a writer crash never leaves a
+partial object at an approved content name. A retry can proceed while an
+unreferenced temporary file remains. History stops at 512 entries rather than
+truncating.
 
 `check STORE --run NEW_A.json --run NEW_B.json --source-commit FULL_SHA` reuses
 strict repeated-run statistics. Report-sourced peak budgets must agree in all

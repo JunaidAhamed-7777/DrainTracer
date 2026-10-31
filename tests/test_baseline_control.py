@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import io
 import json
+import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -23,6 +26,7 @@ from src.baseline_control import (
 )
 from src.config import MonitorSettings
 from src.diff_command import run_diff
+from src.events import LeakSeverity
 
 APPROVAL = {"approved_by": "reviewer", "reason": "Reviewed the repeated controlled workload",
             "source_commit": "a" * 40}
@@ -46,7 +50,11 @@ class BaselineTests(unittest.TestCase):
             experiment["budgets"] = budgets or {}
             data = _run(step, handles_step=handles_step, report_schema=3, version="v5.4.0", mode="launch",
                         report_id=f"{prefix}-{index}", experiment=experiment,
-                        outcome={"measurement": {"result": "conclusive", "full_coverage": True}})
+                        outcome={"measurement": {"result": "conclusive", "full_coverage": True},
+                                 "startup": {"state": "started", "error": None},
+                                 "cleanup": {"state": "complete", "remaining_count": 0,
+                                             "resume_required": False, "errors": []},
+                                 "target": {"failed": False}, "monitor_errors": []})
             data["settings"]["thresholds"] = thresholds
             if change:
                 change(data)
@@ -144,7 +152,12 @@ class BaselineTests(unittest.TestCase):
         self.approve(self.reports("a"))
         later = self.reports("b")
         before = (self.store / "baseline.json").read_bytes()
-        with BaselineStore(self.store) as store, mock.patch("src.baseline_control.os.replace", side_effect=OSError("disk unavailable")):
+        replace_file = os.replace
+        def replace(source, destination):
+            if Path(destination).name == "baseline.json":
+                raise OSError("disk unavailable")
+            return replace_file(source, destination)
+        with BaselineStore(self.store) as store, mock.patch("src.baseline_control.os.replace", side_effect=replace):
             with self.assertRaises(OSError):
                 store.promote(later, **APPROVAL)
             self.assertEqual(store.state["revision"], 1)
@@ -152,6 +165,62 @@ class BaselineTests(unittest.TestCase):
         with BaselineStore(self.store) as store:
             self.assertEqual(store.state["revision"], 1)
         self.assertFalse(list(self.store.glob(".baseline-*")))
+
+    def test_crashed_mid_object_write_never_publishes_a_partial_hash_object_and_retry_succeeds(self):
+        self.approve(self.reports("a"))
+        later = self.reports("b")
+        before = (self.store / "baseline.json").read_bytes()
+        objects = set(self.store.glob("*.json"))
+        script = r'''import os, sys, tempfile
+from src.baseline_control import BaselineStore, load_runs
+original = tempfile.NamedTemporaryFile
+class CrashWrite:
+    def __init__(self, handle): self.handle, self.name = handle, handle.name
+    def __enter__(self): return self
+    def __exit__(self, *args): return self.handle.__exit__(*args)
+    def write(self, data):
+        self.handle.write(data[:10]); self.handle.flush(); os.fsync(self.handle.fileno())
+        os._exit(23)
+def open_temporary(*args, **kwargs): return CrashWrite(original(*args, **kwargs))
+tempfile.NamedTemporaryFile = open_temporary
+with BaselineStore(sys.argv[1]) as store:
+    store.promote(load_runs(sys.argv[2:]), approved_by='reviewer', reason='Interrupted object-write drill', source_commit='b'*40)
+'''
+        crashed = subprocess.run([sys.executable, "-c", script, str(self.store), *[str(item.path) for item in later]],
+                                 check=False, capture_output=True, text=True, timeout=15)
+        self.assertEqual(crashed.returncode, 23, crashed.stdout + crashed.stderr)
+        self.assertEqual((self.store / "baseline.json").read_bytes(), before)
+        self.assertEqual(set(self.store.glob("*.json")), objects)
+        self.assertTrue(list(self.store.glob(".evidence-*")))
+        with BaselineStore(self.store) as store:
+            store.promote(later, **APPROVAL)
+            self.assertEqual(store.state["revision"], 2)
+            self.assertEqual(len(store.reports()), 2)
+
+    def test_recorded_operational_failures_are_never_waived_by_an_approval(self):
+        changes = [lambda data: data["outcome"]["startup"].update(state="failed"),
+                   lambda data: data["outcome"]["cleanup"].update(state="incomplete"),
+                   lambda data: data["outcome"]["cleanup"].update(resume_required=True),
+                   lambda data: data["outcome"].update(monitor_errors=["sample failed"]),
+                   lambda data: data["outcome"]["target"].update(failed=True),
+                   lambda data: data.update(headless={"exit_code": 130}),
+                   lambda data: data["outcome"].update(workload={"state": "failed"}),
+                   lambda data: data.update(workload=None)]
+        for index, change in enumerate(changes):
+            with self.subTest(index=index), self.assertRaises(BaselineEvidenceError):
+                self.reports(f"failed{index}", change=change)
+
+    def test_initial_recorded_signals_need_explicit_acceptance(self):
+        reports = self.reports("signal", change=lambda data: data.update(
+            snapshots=_run(3, severity=LeakSeverity.HIGH)["snapshots"]))
+        with self.assertRaisesRegex(BaselineError, "recorded signal"):
+            self.approve(reports)
+        self.assertEqual(self.approve(reports, accept_regression=True)["revision"], 1)
+
+    def test_unknown_programmatic_budget_override_is_rejected(self):
+        self.approve(self.reports("a"))
+        with BaselineStore(self.store) as store, self.assertRaisesRegex(BaselineError, "overrides"):
+            store.check(self.reports("b"), source_commit="b" * 40, budgets={"typo": 10})
 
     def test_held_writer_lock_prevents_a_second_writer(self):
         self.approve(self.reports("a"))
