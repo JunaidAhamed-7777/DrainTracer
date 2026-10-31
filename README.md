@@ -415,6 +415,9 @@ tables show `PRIVATE`; RSS (working set), CPU, and I/O provide context, and
 neither memory counter alone proves an allocation leak. Read the
 [configuration reference](docs/configuration.md) for discovery, precedence, and
 units, and [working-principle.md](working-principle.md) for the detection math.
+The [repeated Windows/Linux calibration](docs/calibration-results.md) records
+tested warning delays, benign startup/cache warnings, slow-growth misses,
+coverage, and duration/profile guidance with reproducible aggregate evidence.
 
 ## Save and compare evidence
 
