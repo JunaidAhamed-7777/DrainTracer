@@ -46,6 +46,7 @@
     "src/service_agent_exercise.py",
     "src/service_exercise.py",
     "src/service_operations.py",
+    "src/service_team_exercise.py",
     "src/session.py",
     "src/session_facts.py",
     "src/startup.py",
