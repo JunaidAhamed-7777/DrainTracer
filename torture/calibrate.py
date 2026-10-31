@@ -143,6 +143,7 @@ def summarize_run(runner: MeasuredRunner, case: Case, repeat: int, code: int) ->
         "intended_growth": case.intended_growth, "injected_root_read_denial": case.deny_root,
         "fixture": case.fixture, "target_arguments": [*case.arguments, "--duration", "90"],
         "warmup_seconds": runner.settings.warmup, "exit_code": code,
+        "interrupted": runner._interrupted,
         "duration_seconds": round(runner._uptime(), 4),
         "detection_ran": report["detection_ran"], "partial_coverage": report["coverage"]["partial"],
         "coverage": {key: value for key, value in report["coverage"].items()
@@ -270,8 +271,9 @@ def main(argv: list[str] | None = None) -> int:
                 record["state"] = "aborted_cleanup_unconfirmed"
                 save(args.output, record)
                 return 2
-            if result.get("exit_code") == 130:
+            if result.get("interrupted") or result.get("exit_code") == 130:
                 record["state"] = "interrupted"
+                record["finished_at"] = datetime.now(timezone.utc).isoformat()
                 save(args.output, record)
                 return 130
     record["state"] = "complete_with_errors" if failed else "complete"
