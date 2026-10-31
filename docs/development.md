@@ -47,6 +47,15 @@ Python 3.14 with current dependencies. Both run regression tests, bounded
 workloads, builds, and clean wheel installation; publishing also requires
 the Windows checks.
 
+Windows CI runs Python 3.10 with the same minimum runtime dependencies on
+`windows-latest`, plus Python 3.14 with current dependencies on
+`windows-2022` and `windows-2025`. Every job runs the snapshot, compilation,
+JavaScript, regression, bounded real-process, distribution build, and clean
+wheel checks. These hosted Windows Server images test the Windows APIs;
+they do not substitute for testing every Windows 10/11 desktop configuration.
+Jobs have a 20-minute limit. A matrix failure blocks publication, which remains
+separate from read-only PR jobs and their three-day failure diagnostics.
+
 ## Build and verify distributions
 
 Install the build frontend and create both a wheel and source archive:
@@ -236,6 +245,10 @@ git diff --check
 ```
 
 Tests use the standard library; no pytest installation is required.
+`python -m unittest discover -s tests -p test_checkpoints.py` also exercises
+exclusive-writer crash recovery and a real abruptly killed monitor on the
+current platform, using only bounded test-owned workloads. Recovery must never
+reopen a target PID or treat a saved identity as process-control authorization.
 Integration tests exercise real launch, attachment, process trees, and
 cleanup on each platform. Linux checks include shebang execution, descriptor
 and USS growth, orphan discovery, and POSIX terminal restoration. Windows

@@ -11,7 +11,7 @@ from pathlib import Path
 from helpers import make_alert, make_console, make_process, make_snapshot
 
 from src.privacy import export_private_report, preview_json, redact_report
-from src.report_contract import main, session_summary
+from src.report_contract import ReportContractError, main, session_summary
 from src.session import MonitorSession
 
 SECRET = "SensitiveSeedABC987"
@@ -98,7 +98,8 @@ class PrivacyTests(unittest.TestCase):
                 self.assertNotIn("987654321", json.dumps(transformed))
         report["recovery"] = {"partial": 987654321, "final_outcome_confirmed": None,
                               "exact_through_cutoff": SECRET}
-        self.assertEqual(redact_report(report)["recovery"], {})
+        with self.assertRaises(ReportContractError):
+            redact_report(report)
 
     def test_partial_cleanup_and_startup_evidence_survive_without_raw_diagnostics(self) -> None:
         report = private_fixture()
@@ -191,6 +192,29 @@ class PrivacyTests(unittest.TestCase):
         comparison = compare_reports(loaded, loaded, strict=True)
         self.assertEqual(comparison.verdict, NOT_COMPARABLE)
         self.assertIn("privacy transformed", " | ".join(comparison.warnings))
+
+    def test_transformed_recovered_evidence_keeps_both_independent_comparison_limits(self) -> None:
+        from src.analysis import summarize
+        from src.report_diff import (
+            INSUFFICIENT_COVERAGE,
+            NOT_COMPARABLE,
+            LoadedReport,
+            compare_reports,
+        )
+
+        source = private_fixture()
+        source["recovery"] = {"partial": True, "exact_through_cutoff": True, "final_outcome_confirmed": False}
+        for profile in ("share", "minimal"):
+            with self.subTest(profile=profile):
+                report = redact_report(source, profile)
+                report["detection_ran"] = True
+                loaded = LoadedReport(Path("shared-prefix.json"), report, summarize(report))
+                comparison = compare_reports(loaded, loaded, strict=True)
+                limits = {caveat.kind: caveat.blocks for caveat in comparison.caveats}
+                self.assertEqual(limits["privacy"], NOT_COMPARABLE)
+                self.assertEqual(limits["recovered checkpoint"], INSUFFICIENT_COVERAGE)
+                self.assertEqual(comparison.verdict, NOT_COMPARABLE)
+                self.assertFalse(session_summary(report)["recovery"]["final_outcome_confirmed"])
 
     def test_cli_defaults_to_local_preview_and_only_writes_when_requested(self) -> None:
         import contextlib
