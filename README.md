@@ -666,7 +666,9 @@ operator/contact. Its default local baseline exercises ingestion, committed
 durability, authority/permission/retention refusals, sanitized restoration and
 local collection; Windows also measures agent freshness, completed
 runs, cleanup and crash-prefix recovery. It writes bounded private readiness
-evidence with explicit counts and local budgets. See the
+evidence with explicit counts and local budgets. Credential and retention
+expiry drills use separate stepped fixture clocks; baseline timings use real
+clocks. See the
 [operating objectives and recovery runbook](docs/service-operations.md) for the
 new-workspace command, limits, explicit optional `--with-transport` TLS extension
 and deployment prerequisites. A passing fixture

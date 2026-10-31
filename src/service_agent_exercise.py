@@ -34,7 +34,13 @@ def exercise_agent(root: Path, evidence: ExerciseEvidence, sampler: ResourceSamp
     from .report_contract import read_report
 
     state, script = root / "agent", root / "owned-workload.py"
-    script.write_text("import sys,time\npayload=bytearray(2*1024*1024)\ntime.sleep(float(sys.argv[1]))\n", encoding="ascii")
+    script.write_text("import sys,time\nfrom pathlib import Path\npayload=bytearray(2*1024*1024)\n"
+                      "if len(sys.argv)>2:\n"
+                      "    gate=Path(sys.argv[2]); deadline=time.monotonic()+30\n"
+                      "    while not gate.exists():\n"
+                      "        if time.monotonic()>=deadline: raise SystemExit(70)\n"
+                      "        time.sleep(.02)\n"
+                      "time.sleep(float(sys.argv[1]))\n", encoding="ascii")
     profile = "ops-" + uuid4().hex[:20]
     # Windows venv python.exe may be a redirector. Use the base interpreter
     # with this installed package's parent on sys.path so the Popen handle is
@@ -74,8 +80,9 @@ def exercise_agent(root: Path, evidence: ExerciseEvidence, sampler: ResourceSamp
         def status(identity):
             return client.request("status", {"session_id": identity})
 
-        def start(seconds):
-            return client.request("start", {"mode": "launch", "target": str(script), "args": [str(seconds)],
+        def start(seconds, gate=None):
+            arguments = [str(seconds)] + ([str(gate)] if gate is not None else [])
+            return client.request("start", {"mode": "launch", "target": str(script), "args": arguments,
                                              "timeout_seconds": 45, "sample_interval_ms": 100,
                                              "windows_seconds": [1]})["session_id"]
 
@@ -88,12 +95,18 @@ def exercise_agent(root: Path, evidence: ExerciseEvidence, sampler: ResourceSamp
             return None
 
         for cancel in (False, True):
-            identity = start(30 if cancel else 1.3)
+            # The natural fixture begins its unchanged work duration only
+            # after enough live observations. A late client cannot turn
+            # startup/sampling latency into an insufficient short recording.
+            gate = None if cancel else root / "release-natural-workload"
+            identity = start(30 if cancel else 1.3, gate)
             accepted += 1
             current = _wait(lambda identity=identity: sampled(identity), 10)
             age = current["observation_age_seconds"]
             evidence.timings.setdefault("freshness", []).append(age)
             evidence.check("agent_sample_observation_is_fresh", age >= 0)
+            if gate is not None:
+                gate.touch(exist_ok=False)
 
             def finish(cancel=cancel, identity=identity):
                 if cancel:
@@ -104,6 +117,9 @@ def exercise_agent(root: Path, evidence: ExerciseEvidence, sampler: ResourceSamp
             final = evidence.probe("agent_cancel_completed" if cancel else "agent_natural_run_completed", finish,
                                    timing="cleanup" if cancel else None)
             success = final is not None and final["result"]["startup"] == "started" and final["result"]["cleanup"] == "complete"
+            success = (success and final["result"]["error_count"] == 0
+                       and (cancel or (final["result"]["reason"] == "target_exited"
+                                       and final["result"]["target_exit_code"] == 0)))
             completed += int(success)
             evidence.check("owned_workload_cleanup_confirmed", success)
             persisted = False
