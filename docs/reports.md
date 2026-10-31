@@ -205,6 +205,33 @@ worst signals, budget decisions, coverage, and sample counts still include
 every collected observation. `chart.seen` counts snapshots accepted into chart
 history, so it can be smaller than `samples.taken` after queue loss.
 
+Export may thin the chart further when a dense process tree would exceed the
+public reader's token, nesting, or 64 MiB byte limits. First/last retained
+snapshots and all exact session facts remain; `snapshot_stride` and
+`session_facts.chart.stride/stored` describe the exported detail. JSON and HTML
+use the same bounded dictionary, while live dashboard history remains intact.
+A single-sample peak or warning can disappear from the chart but remains in
+exact peaks/signals/counts. If non-chart evidence itself cannot fit, export
+fails explicitly instead of silently dropping that evidence.
+
+Exact `session_facts.monitor.clock_adjustments` and `sampling_gaps` count
+temporal resets even when their detailed snapshot/event is evicted. New reports
+record zero explicitly; an absent field in an older report is unknown. A
+non-advancing/backwards wall clock, a wall/monotonic step difference over one
+second, or a sample gap longer than the requested interval plus the shortest
+window's 15% uncovered allowance restarts detection and attribution windows.
+The reset snapshot's metadata identifies the reason and measured clock/gap
+values. Shorter clock slews are not classified by this step guard.
+
+Fresh windows must fill after a reset. Unobserved gaps do not count toward
+warm-up, evaluated time, or cadence facts; cadence diagnostics still expose the
+actual observer delay. Intentional pause also clears windows, with paused
+samples marked stale. Prior peaks, counts, lifecycle summaries, and already
+judged signals remain historical evidence. Per-counter full coverage means
+every observed live counter was readable; it cannot prove continuous sampling
+through a gap. Check temporal counters alongside coverage before using a run
+as a regression baseline.
+
 The top-level `markers` list holds the markers added with `M` or `N` during a
 dashboard session: `index`, `label` (`marker N` or an entered label), `timestamp`, `time`, and
 `elapsed_seconds` since monitoring started. Markers record when the user
@@ -212,7 +239,7 @@ noted something; they do not establish cause. Reports without the field
 have no markers.
 HTML charts draw the same named timing annotations, and a separate marker
 table preserves their full labels and elapsed times without requiring hover.
-Activating a row with Enter or Space inspects its interval. Marker labels are
+Activating a marker's Zoom button with Enter or Space inspects its interval. Marker labels are
 limited to 80 characters in the dashboard and chart payload; the payload retains
 at most 500 user markers independently of chart thinning.
 

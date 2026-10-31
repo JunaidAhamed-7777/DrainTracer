@@ -233,6 +233,12 @@ An unreadable current or original creation identity permits observation but
 refuses process control. A later readable PID holder does not automatically
 gain the old target's control authority; attach again with a verified identity.
 An owed resume remains pending until it can be retried safely.
+The [lifecycle stress evidence and crash policy](docs/observer-stress-results.md)
+describe tested failure handling, polling limits, and the boundary when abrupt
+monitor termination prevents normal cleanup.
+The [observer verification and native soak](docs/observer-verification-results.md)
+record measured costs, unchanged local budget failures, and the unexpected
+Windows thread warning with their source and machine limits.
 
 Use **Up/Down** to highlight a startup choice, then **Spacebar** (or Enter)
 to select it. Navigation help appears below the Get Started box. Redirected
@@ -567,9 +573,16 @@ peaks with their times, worst severities, signal episode counts, evaluated
 time, and sample counts stay exact in `session_facts`. Reports include local
 paths and process details. If a stalled consumer overflows the sample queue,
 reports count the discarded detail; peaks, signals, budgets, coverage, and
-sample counts still include every observation. Review reports before sharing. The
-[report guide](docs/reports.md) covers the schema, retention, interpretation,
+sample counts still include every observation. Review reports before sharing.
+Dense-tree exports may thin chart detail further to stay readable by the
+bounded machine contract; first/last points and exact facts remain.
+The [report guide](docs/reports.md) covers the schema, retention, interpretation,
 and comparison exit codes.
+
+Clock adjustments and sampling gaps restart resource windows with fresh
+evidence and appear in warnings and exact monitor diagnostics. Counter coverage
+describes observed samples; it does not establish continuous observation across
+an interruption. Earlier judged signals remain historical evidence.
 
 ## Documentation
 
