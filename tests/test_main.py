@@ -52,6 +52,7 @@ class ParserTests(unittest.TestCase):
             ("--profile", "ci", "--no-config"): "--profile needs a settings file",
             ("--config", "a.toml", "--no-config"): "not allowed with argument",
             ("--interval", "10ms"): "between 100ms and 1m",
+            ("--checkpoint-interval", "500ms"): "between 1s and 1h",
             ("--window", "2h"): "at most 1h",
             ("--warmup", "2d"): "unknown duration unit",
             ("--warmup", "30h"): "at most 24h",
@@ -64,6 +65,40 @@ class ParserTests(unittest.TestCase):
 
 
 class DispatchTests(unittest.TestCase):
+    def test_checkpoint_flags_reach_the_session_settings(self) -> None:
+        with mock.patch.object(cli, "HeadlessRunner") as runner:
+            runner.return_value.run.return_value = 0
+            self.assertEqual(cli._main(make_console(), ["--headless", "--target", "worker.exe", "--no-config",
+                                                        "--checkpoint", "state.json", "--checkpoint-interval", "2s"]), 0)
+        settings = runner.call_args.kwargs["settings"]
+        self.assertEqual(settings.checkpoint, "state.json")
+        self.assertEqual(settings.checkpoint_interval, 2.0)
+
+    def test_plain_routes_to_static_headless_output_with_no_terminal_sequences(self) -> None:
+        from rich.console import Console
+        from rich.text import Text
+
+        output = io.StringIO()
+        console = Console(file=output, force_terminal=True, color_system="truecolor", width=40)
+        with mock.patch.object(cli, "HeadlessRunner") as runner, \
+                mock.patch.object(cli, "DashboardApp") as dashboard:
+            runner.return_value.run.side_effect = lambda: runner.call_args.kwargs["console"].print(
+                Text("INCONCLUSIVE: handles unavailable", style="bold red on blue")
+            ) or 0
+            code = cli._main(console, ["--plain", "--target", "worker.exe", "--no-config"])
+        self.assertEqual(code, 0)
+        dashboard.assert_not_called()
+        self.assertNotIn("\x1b", output.getvalue())
+        self.assertIn("INCONCLUSIVE: handles unavailable", output.getvalue())
+
+    def test_quiet_implies_headless_and_preserves_target_arguments(self) -> None:
+        with mock.patch.object(cli, "HeadlessRunner") as runner:
+            runner.return_value.run.return_value = 0
+            cli._main(make_console(), ["--quiet", "--target", "worker.exe", "--no-config",
+                                       "--", "--plain", "--quiet"])
+        self.assertTrue(runner.call_args.kwargs["quiet"])
+        self.assertEqual(runner.call_args.kwargs["args"], ["--plain", "--quiet"])
+
     def test_no_color_reaches_normal_and_headless_shared_console(self) -> None:
         from rich.ansi import AnsiDecoder
         from rich.console import Console
@@ -133,6 +168,16 @@ class DispatchTests(unittest.TestCase):
         kwargs = runner.call_args.kwargs
         self.assertEqual(kwargs["fail_on"], LeakSeverity.HIGH)
         self.assertEqual(kwargs["attach_pid"], 4242)
+
+    def test_full_coverage_policy_is_headless_only_and_reaches_the_runner(self) -> None:
+        self.assertIn("--headless", _parse_error(["--target", "app.exe", "--require-full-coverage"]))
+        with mock.patch.object(cli, "HeadlessRunner") as runner:
+            runner.return_value.run.return_value = 3
+            code = cli._main(make_console(), ["--headless", "--pid", "4242", "--no-config",
+                                              "--require-full-coverage"])
+        self.assertEqual(code, 3)
+        self.assertTrue(runner.call_args.kwargs["require_full_coverage"])
+        self.assertTrue(runner.call_args.kwargs["settings"].require_full_coverage)
 
     def test_settings_file_profile_and_flags_layer_in_order(self) -> None:
         import tempfile

@@ -30,7 +30,7 @@ from .report_diff import (
     format_drift,
     load_report,
 )
-from .theme import PALETTE, Glyphs, select_glyphs
+from .theme import ASCII_GLYPHS, PALETTE, Glyphs, plain_console, select_glyphs
 from .units import format_duration
 
 EXIT_OK = 0
@@ -79,6 +79,8 @@ def build_diff_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("after", metavar="AFTER", help="The later report to compare against it.")
     parser.add_argument("--no-color", action="store_true", help="Disable terminal colors, including forced color.")
+    parser.add_argument("--plain", action="store_true", help="Print unstyled text without panel or table borders.")
+    parser.add_argument("--quiet", action="store_true", help="Print only the verdict, caveats, and budget checks.")
     parser.add_argument(
         "--json",
         action="store_true",
@@ -129,6 +131,8 @@ def run_diff(argv: list[str], console: Console) -> int:
     args = build_diff_parser().parse_args(argv)
     if args.no_color:
         console.no_color = True
+    if args.plain:
+        console = plain_console(console)
     try:
         before = load_report(args.before)
         after = load_report(args.after)
@@ -150,8 +154,11 @@ def run_diff(argv: list[str], console: Console) -> int:
             json.dumps(comparison.to_dict(), indent=2, allow_nan=False),
             markup=False,
             highlight=False,
+            emoji=False,
             soft_wrap=True,
         )
+    elif args.plain or args.quiet:
+        console.print(_plain_comparison(comparison, quiet=args.quiet))
     else:
         console.print(render_comparison(comparison, select_glyphs(console), console.width))
     if comparison.blocked:
@@ -161,6 +168,36 @@ def run_diff(argv: list[str], console: Console) -> int:
     if args.fail_on_regression and comparison.verdict in {REGRESSED, MIXED}:
         return EXIT_REGRESSION
     return EXIT_OK
+
+
+def _plain_comparison(comparison: ReportComparison, *, quiet: bool = False) -> Text:
+    """Keep evidence and qualification readable without styling or box glyphs."""
+    def amount(resource, value):
+        return "n/a" if value is None else format_amount(resource, value)
+
+    def drift(resource, value):
+        return "n/a" if value is None else format_drift(resource, value)
+
+    lines = [f"VERDICT {comparison.verdict_label.upper()}", comparison.headline()]
+    lines.extend(f"Caveat: {warning}" for warning in comparison.warnings)
+    if not quiet:
+        lines += [f"BEFORE {comparison.before.path}", f"AFTER {comparison.after.path}"]
+        for item in comparison.resources:
+            lines.append(
+                f"{item.resource}: signal {item.before.worst.upper()} to {item.after.worst.upper()} "
+                f"({item.signal}); growth {amount(item.resource, item.before.growth)} "
+                f"to {amount(item.resource, item.after.growth)}; "
+                f"drift {drift(item.resource, item.before.drift_per_second)} "
+                f"to {drift(item.resource, item.after.drift_per_second)}; "
+                f"peak {amount(item.resource, item.peak_before)} "
+                f"to {amount(item.resource, item.peak_after)}"
+            )
+            if item.normalized:
+                lines.append(f"{item.resource} growth per operation: {_per_operation_text(item, ASCII_GLYPHS)}")
+        for kind, (before, after) in comparison.handle_type_growth.items():
+            lines.append(f"Handle type {kind}: {amount('handles', before)} to {amount('handles', after)}")
+    lines.extend(f"Budget: {check.describe()}" for check in comparison.budgets)
+    return Text("\n".join(lines))
 
 
 # Below this many columns the per-resource table no longer fits.

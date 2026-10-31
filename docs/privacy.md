@@ -20,6 +20,14 @@ mode that skips the check, or enforce your own network restrictions. Offline
 interactive monitoring continues if the request cannot complete. A target
 application's own network traffic is independent of DrainTracer.
 
+`doctor` and `init` also skip the update check. Doctor performs local,
+read-only target/PID checks and a temporary output-access probe; it does
+not execute the target or send diagnostics. Its output contains local
+paths, configuration origins, profile names, and numeric settings, so review
+it before sharing. It excludes experiment free text, target arguments, and
+environment values. `init` previews locally and writes a new configuration
+only with `--write`; an existing file is never overwritten.
+
 Pip installation, manual upgrades, Git fetch/pull, an accepted checkout
 repair, and opening external links can also contact providers. Writing to
 a shared or synchronized directory, enabling CI output/artifact publication,
@@ -27,6 +35,48 @@ or posting evidence sends information through those systems under your
 control. A local path is not necessarily private storage.
 
 ## What a report can reveal
+
+### Previewable privacy exports
+
+Reports remain detailed by default. To inspect an explicit transformation
+without writing files:
+
+```powershell
+draintracer-report redact .\run.json --profile share
+draintracer-report redact .\run.json --profile minimal
+```
+
+`share` removes paths, free text, argument fingerprints, configuration
+origins, host identifiers, unknown fields, and captured logs. It replaces
+process IDs/names/creation identities with local pseudonyms and shifts all
+recorded wall-clock dates to a fixed origin while preserving intervals.
+Numeric resource evidence, coverage, and signal windows remain available.
+`minimal` also removes event/marker detail and per-process resource
+attribution. Per-process counters removed intentionally are marked unknown;
+the aggregate measurements retain their original coverage semantics.
+
+Add `--output-dir .\shared` to explicitly write a JSON/HTML pair. Both
+formats are rendered from one transformed dictionary and identify the
+profile; no original JSON or embedded HTML data is copied alongside them.
+Each export receives a fresh report ID. Evidence is copied only from typed,
+documented paths: an opaque metadata field named `value` or `operations`
+cannot inherit metric permissions, and free-text fields are removed even
+when malformed input supplies numeric or structured values. Marker indices
+are renumbered. Unknown future fields are omitted instead of guessed safe.
+Cleanup/startup/coverage outcomes retain their structured limitations while
+diagnostic text and checkpoint identities are removed. Recovery retains only
+its three Boolean qualification flags. Privacy-transformed reports always carry a
+comparison caveat: pseudonyms cannot establish original target/workload
+equivalence, so strict comparison refuses them.
+
+Preview and export run locally without an account, upload, or telemetry.
+The command does not transmit evidence. Saving into a synchronized/shared
+folder can still send files through that service under your control.
+Review both outputs before sharing: retained resource values and timing
+patterns can identify a workload, so a transformed report is not a promise
+of anonymity. Keep the original private report separately when needed.
+
+### Detailed reports
 
 Review all of these, even if you used a harmless workload label:
 
@@ -109,6 +159,15 @@ Headless runs attempt an export automatically at completion. Exports use
 fresh report IDs, so repeated exports accumulate files. Long-session history
 thinning limits in-memory detail; it does not expire saved reports.
 
+Opt-in `--checkpoint PATH` saves report data, a session UUID, monitor/target
+process identities, timestamps, and a checksum to a bounded local file. The
+same session replaces its previous checkpoint; new sessions refuse existing
+files. The checksum detects corruption and does not authenticate evidence.
+Recovery writes new partial JSON/HTML reports. Checkpoints, recovered reports,
+and the checkpoint's one-byte `.lock` sidecar are not automatically expired.
+They are not encrypted or anonymous. Review all of them before sharing and
+remove them under your own retention policy after the writer has stopped.
+
 `DRAINTRACER_LOG` enables diagnostic file logging. Existing files are appended
 to without built-in rotation. Unset it when finished:
 
@@ -151,3 +210,18 @@ For reviewers maintaining this guide:
 Changes to these data flows should trigger review of this guide and
 [PRIVACY.md](../PRIVACY.md). Proposed hosted sharing and user research need
 additional implementation and notices; these documents do not implement them.
+
+## Optional local agent support
+
+The opt-in agent stores a private credential, scheduling journal, checkpoints
+and reports beneath a verified local user-controlled path. Its authenticated
+pipe is local and never uploads evidence. `diagnose` is private operational
+output and may contain local session/process identities, paths and error text;
+do not paste it unreviewed. `support` previews an explicitly typed redacted
+document, excludes credentials and raw operational metadata, and can include
+up to two explicitly chosen privacy-transformed reports. JSON and offline HTML
+share the same transformed report object. Archive creation requires `--out`;
+there is no automatic publication. Numerical evidence can still identify a
+workload. Removal previews/applies only known control files after shutdown;
+reports, checkpoints and unrelated application files are preserved. See
+[agent operations](agent-operations.md) before sharing or removing data.

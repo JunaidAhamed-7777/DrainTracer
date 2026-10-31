@@ -63,7 +63,10 @@ _LAYER_KEYS = (
     "fail_on",
     "fail_on_inconclusive",
     "fail_on_target_error",
+    "require_full_coverage",
     "report_dir",
+    "checkpoint",
+    "checkpoint_interval",
     "thresholds",
     "workload_id",
     "build",
@@ -74,7 +77,7 @@ _LAYER_KEYS = (
     "budget_threads",
 )
 # Optional headless policies; all default to off so exit codes stay unchanged.
-_POLICY_KEYS = ("fail_on_inconclusive", "fail_on_target_error")
+_POLICY_KEYS = ("fail_on_inconclusive", "fail_on_target_error", "require_full_coverage")
 # Experiment labels recorded in reports; free text except the operation count.
 _LABEL_KEYS = ("workload_id", "build", "note")
 _ROOT_KEYS = (*_LAYER_KEYS, "profiles", "default_profile")
@@ -110,6 +113,11 @@ class MonitorSettings:
     budgets: Mapping[str, float] = field(default_factory=lambda: MappingProxyType({}))
     profile: str | None = None
     source: Path | None = None
+    # Explicit layers only; fields absent here retain their built-in origin.
+    origins: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}), compare=False)
+    require_full_coverage: bool = False
+    checkpoint: str | None = None
+    checkpoint_interval: float = 30.0
 
     @property
     def experiment(self) -> ExperimentInfo:
@@ -237,7 +245,7 @@ def _apply_file(
 ) -> MonitorSettings:
     _reject_unknown(root, _ROOT_KEYS, "")
     base = {key: value for key, value in root.items() if key in _LAYER_KEYS}
-    settings = _apply(settings, _parse_layer(base, "", folder))
+    settings = _apply(settings, _parse_layer(base, "", folder), origin="config file")
 
     profiles = root.get("profiles", {})
     if not isinstance(profiles, dict) or not all(isinstance(v, dict) for v in profiles.values()):
@@ -252,7 +260,8 @@ def _apply_file(
     if chosen not in profiles:
         available = ", ".join(sorted(profiles)) or "none are defined"
         raise ConfigError(f"profile {chosen!r} is not defined (available: {available})")
-    settings = _apply(settings, _parse_layer(profiles[chosen], f"profiles.{chosen}.", folder))
+    settings = _apply(settings, _parse_layer(profiles[chosen], f"profiles.{chosen}.", folder),
+                      origin=f"profile {chosen}")
     return replace(settings, profile=chosen)
 
 
@@ -314,6 +323,13 @@ def _parse_layer(table: Mapping[str, Any], where: str, folder: Path) -> dict[str
         if not isinstance(value, str) or not value.strip():
             raise ConfigError(f"{where}report_dir must be a non-empty path")
         overrides["report_dir"] = str(folder / value)
+    if "checkpoint" in table:
+        value = table["checkpoint"]
+        if not isinstance(value, str) or not value.strip():
+            raise ConfigError(f"{where}checkpoint must be a non-empty path")
+        overrides["checkpoint"] = str(folder / value)
+    if "checkpoint_interval" in table:
+        overrides["checkpoint_interval"] = _duration(table["checkpoint_interval"], f"{where}checkpoint_interval")
     if "thresholds" in table:
         overrides["thresholds"] = _parse_thresholds(table["thresholds"], f"{where}thresholds.")
     for key in _LABEL_KEYS:
@@ -373,8 +389,20 @@ def _parse_thresholds(table: Any, where: str) -> dict[LeakResource, dict[str, fl
     return parsed
 
 
-def _apply(settings: MonitorSettings, overrides: Mapping[str, Any]) -> MonitorSettings:
+def _apply(
+    settings: MonitorSettings, overrides: Mapping[str, Any], *, origin: str = "command line"
+) -> MonitorSettings:
     values = dict(overrides)
+    origins = dict(settings.origins)
+    for key, value in values.items():
+        if key in {"budgets", "thresholds"} and not value:
+            continue
+        origins[key] = origin
+        if key == "budgets":
+            origins.update({f"budgets.{metric}": origin for metric in value})
+        elif key == "thresholds":
+            for resource, changes in value.items():
+                origins.update({f"thresholds.{resource.value}.{name}": origin for name in changes})
     budgets = values.pop("budgets", None)
     if budgets:
         values["budgets"] = MappingProxyType({**settings.budgets, **budgets})
@@ -384,10 +412,14 @@ def _apply(settings: MonitorSettings, overrides: Mapping[str, Any]) -> MonitorSe
         for resource, fields in partial.items():
             merged[resource] = replace(merged[resource], **fields)
         values["thresholds"] = MappingProxyType(merged)
-    return replace(settings, **values)
+    return replace(settings, **values, origins=MappingProxyType(origins))
 
 
 def _check_consistency(settings: MonitorSettings) -> None:
+    if settings.checkpoint is not None and (not isinstance(settings.checkpoint, str) or not settings.checkpoint.strip()):
+        raise ConfigError("checkpoint must be a non-empty path")
+    if not 1.0 <= settings.checkpoint_interval <= 3600.0:
+        raise ConfigError("checkpoint_interval must be between 1s and 1h")
     if settings.timeout is not None and settings.warmup and settings.timeout <= settings.warmup:
         raise ConfigError(
             f"the {format_duration(settings.timeout)} time limit ends before the "

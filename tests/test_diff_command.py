@@ -26,6 +26,32 @@ from src.events import LeakSeverity
 
 
 class DiffCommandTests(unittest.TestCase):
+    def test_plain_diff_has_text_labels_and_no_terminal_controls(self) -> None:
+        from rich.console import Console
+
+        output = io.StringIO()
+        console = Console(file=output, force_terminal=True, color_system="truecolor", width=40)
+        code = run_diff([str(self.leaky), str(self.fixed), "--plain"], console)
+        self.assertEqual(code, EXIT_OK)
+        text = output.getvalue()
+        self.assertNotIn("\x1b", text)
+        self.assertIn("VERDICT IMPROVED", text)
+        self.assertIn("memory: signal HIGH to NONE", text)
+        self.assertNotIn("│", text)
+
+    def test_quiet_diff_keeps_blocking_caveats_and_json_takes_precedence(self) -> None:
+        report = _run(0.0)
+        report["target_path"] = "other:warning:.exe"
+        self.fixed.write_text(json.dumps(report), encoding="utf-8")
+        code, text = self._run(str(self.leaky), str(self.fixed), "--quiet", "--strict")
+        self.assertEqual(code, EXIT_NOT_COMPARABLE)
+        self.assertIn("Caveat:", text)
+        self.assertIn("VERDICT NOT COMPARABLE", text)
+        self.assertNotIn("memory: signal", text)
+        code, text = self._run(str(self.leaky), str(self.fixed), "--json", "--plain", "--quiet")
+        self.assertEqual(code, EXIT_OK)
+        self.assertEqual(json.loads(text)["after"]["target"], "other:warning:.exe")
+
     def test_no_color_overrides_forced_color_without_losing_verdict_words(self) -> None:
         from rich.ansi import AnsiDecoder
         from rich.console import Console
@@ -174,14 +200,16 @@ class DiffCommandTests(unittest.TestCase):
         self.assertIn("Diff error:", output)
         self.assertIn("no such file", output)
 
-    def test_numbers_beyond_float_range_never_read_as_a_regression(self) -> None:
+    def test_numbers_beyond_float_range_are_rejected_before_comparison(self) -> None:
         report = json.loads(self.fixed.read_text(encoding="utf-8"))
         report["snapshots"][1]["totals"]["handles"] = 10**400
         huge = self.root / "huge.json"
         huge.write_text(json.dumps(report), encoding="utf-8")
-        # An integer above the float range is skipped like any non-number.
+        # The shared bounded reader rejects values analysis cannot represent.
         code, output = self._run(str(self.fixed), str(huge), "--fail-on-regression")
-        self.assertEqual(code, EXIT_OK, output)
+        self.assertEqual(code, EXIT_ERROR, output)
+        self.assertIn("unrepresentable number", output)
+        self.assertNotIn("DRAINTRACER REPORT DIFF", output)
         # One too long to parse at all is an unreadable report.
         endless = self.root / "endless.json"
         endless.write_text(json.dumps(report).replace("1" + "0" * 400, "1" + "0" * 5000),
