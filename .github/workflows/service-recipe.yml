@@ -31,6 +31,16 @@ jobs:
           python-version: '3.10'
       - name: Install runtime dependencies
         run: python -m pip install -r requirements.txt
+      - name: Verify cleanup after an uncertain service creation
+        shell: pwsh
+        run: |
+          try {
+            ./torture/verify_service_recipe.ps1 -SimulateCreateResponseLoss
+            throw 'Expected the simulated lost acknowledgement.'
+          } catch {
+            if ($_.Exception.Message -ne 'Simulated lost create acknowledgement.') { throw }
+          }
+          Write-Output 'Uncertain service creation cleaned up its exact disposable registration.'
       - name: Verify safe service observation and ordinary detach
         shell: pwsh
         run: ./torture/verify_service_recipe.ps1 -ResultPath '${{ runner.temp }}/service-recipe-result.json'

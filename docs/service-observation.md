@@ -43,6 +43,12 @@ or machine names. A successful compilation alone is not an SCM/detach test;
 the PR must have a successful service-observation job before this validation
 is considered complete.
 
+The CI job also injects a lost acknowledgement immediately after creation.
+Cleanup records creation intent before the SCM request and inspects only that
+unique name/exact binary registration even when creation does not return
+normally. The negative test passes only when registration removal completes
+and the original simulated error is preserved.
+
 ## Identify and inspect the intended service
 
 For a disposable service already started by its owner, substitute its exact

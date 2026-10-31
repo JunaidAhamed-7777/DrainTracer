@@ -1,6 +1,7 @@
 param(
     [string]$Python = 'python',
-    [string]$ResultPath = (Join-Path $env:TEMP 'draintracer-service-recipe-result.json')
+    [string]$ResultPath = (Join-Path $env:TEMP 'draintracer-service-recipe-result.json'),
+    [switch]$SimulateCreateResponseLoss
 )
 
 $ErrorActionPreference = 'Stop'
@@ -13,7 +14,7 @@ $ServiceName = 'DrainTracerRecipe_' + [guid]::NewGuid().ToString('N')
 $ServiceRoot = Join-Path $env:TEMP $ServiceName
 $Executable = Join-Path $ServiceRoot 'DisposableService.exe'
 $BinaryPath = '"' + $Executable + '" ' + $ServiceName
-$Created = $false
+$CreationAttempted = $false
 $ProcessIdentity = $null
 
 function Invoke-Sc([string[]]$Arguments) {
@@ -58,8 +59,10 @@ try {
     # Grant only read/execute on this new fixture folder to LocalService.
     & icacls.exe $ServiceRoot /grant '*S-1-5-19:(OI)(CI)RX' | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Could not grant LocalService access to its fixture executable.' }
+    # Creation can commit in SCM before its client returns or acknowledges it.
+    $CreationAttempted = $true
     Invoke-Sc -Arguments @('create', $ServiceName, 'binPath=', $BinaryPath, 'start=', 'demand', 'obj=', 'NT AUTHORITY\LocalService')
-    $Created = $true
+    if ($SimulateCreateResponseLoss) { throw 'Simulated lost create acknowledgement.' }
     Invoke-Sc -Arguments @('start', $ServiceName)
     $deadline = [DateTime]::UtcNow.AddSeconds(20)
     do {
@@ -104,7 +107,7 @@ try {
         fixture_self_limit_seconds = 120
     }
 } finally {
-    if ($Created) {
+    if ($CreationAttempted) {
         $owned = Get-OwnedService
         if ($null -ne $owned) {
             if ($owned.State -ne 'Stopped') {
