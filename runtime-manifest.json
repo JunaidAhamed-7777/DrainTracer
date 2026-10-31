@@ -10,6 +10,7 @@
     "src/__main__.py",
     "src/analysis.py",
     "src/budgets.py",
+    "src/checkpoints.py",
     "src/config.py",
     "src/dashboard.py",
     "src/diff_command.py",

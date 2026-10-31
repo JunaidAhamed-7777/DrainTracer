@@ -245,6 +245,10 @@ git diff --check
 ```
 
 Tests use the standard library; no pytest installation is required.
+`python -m unittest discover -s tests -p test_checkpoints.py` also exercises
+exclusive-writer crash recovery and a real abruptly killed monitor on the
+current platform, using only bounded test-owned workloads. Recovery must never
+reopen a target PID or treat a saved identity as process-control authorization.
 Integration tests exercise real launch, attachment, process trees, and
 cleanup on each platform. Linux checks include shebang execution, descriptor
 and USS growth, orphan discovery, and POSIX terminal restoration. Windows

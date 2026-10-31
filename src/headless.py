@@ -240,8 +240,8 @@ class HeadlessRunner(MonitorSession):
         except Exception as exc:  # the tree is gone; a failed sample is harmless
             self._print_line("warn", f"Final sample failed: {exc}")
 
-    def build_report(self) -> dict[str, Any]:
-        report = super().build_report()
+    def build_report(self, *, snapshot_limit: int | None = None) -> dict[str, Any]:
+        report = super().build_report(snapshot_limit=snapshot_limit)
         report["headless"] = {
             "fail_on": self.fail_on.value,
             "breached": self.breached,

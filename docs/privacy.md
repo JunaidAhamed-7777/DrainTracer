@@ -117,6 +117,15 @@ Headless runs attempt an export automatically at completion. Exports use
 fresh report IDs, so repeated exports accumulate files. Long-session history
 thinning limits in-memory detail; it does not expire saved reports.
 
+Opt-in `--checkpoint PATH` saves report data, a session UUID, monitor/target
+process identities, timestamps, and a checksum to a bounded local file. The
+same session replaces its previous checkpoint; new sessions refuse existing
+files. The checksum detects corruption and does not authenticate evidence.
+Recovery writes new partial JSON/HTML reports. Checkpoints, recovered reports,
+and the checkpoint's one-byte `.lock` sidecar are not automatically expired.
+They are not encrypted or anonymous. Review all of them before sharing and
+remove them under your own retention policy after the writer has stopped.
+
 `DRAINTRACER_LOG` enables diagnostic file logging. Existing files are appended
 to without built-in rotation. Unset it when finished:
 

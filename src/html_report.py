@@ -42,6 +42,12 @@ _RESOURCE_TITLES = {
 _LEVELS = {"ok", "info", "warn", "alert", "error"}
 
 
+def _partial_evidence(report: Mapping[str, Any]) -> bool:
+    recovery = report.get("recovery")
+    return (isinstance(recovery, Mapping) and recovery.get("partial") is True
+            or isinstance(report.get("checkpoint"), Mapping))
+
+
 def render_html_report(report: Mapping[str, Any]) -> str:
     """Return the complete HTML document for an exported report."""
     style = _load_frame("report.css")
@@ -117,7 +123,8 @@ def _masthead(
     if stride > 1:
         # Say plainly what the thinning costs: the chart, or also the totals.
         thinned = f"; chart thinned 1:{stride} (" + (
-            "peaks, signals and counts are exact)"
+            ("peaks, signals and counts are exact through the checkpoint)" if _partial_evidence(report)
+             else "peaks, signals and counts are exact)")
             if summary.exact
             else "peaks and signal episodes come from the kept samples only)"
         )
@@ -127,8 +134,9 @@ def _masthead(
         ("Mode", mode),
         ("Root PID", str(report.get("root_pid") or "—")),
         ("Started", _local_time(report.get("session_started_at"))),
-        ("Ended", _local_time(report.get("session_ended_at"), "still running at export")),
-        ("Monitored", format_clock(summary.duration)),
+        ("Ended", "unknown after checkpoint" if _partial_evidence(report)
+         else _local_time(report.get("session_ended_at"), "still running at export")),
+        ("Saved prefix" if _partial_evidence(report) else "Monitored", format_clock(summary.duration)),
         (
             "Samples",
             f"{_sample_count(report, summary):,}"
@@ -230,6 +238,8 @@ def _partial_coverage(report: Mapping[str, Any], summary: ReportSummary) -> bool
 
 
 def _verdict_label(report: Mapping[str, Any], summary: ReportSummary) -> str:
+    if _partial_evidence(report):
+        return "PARTIAL" if summary.worst == "none" else f"{summary.worst.upper()} / PARTIAL"
     if summary.worst != "none":
         return summary.worst.upper()
     if all(item.coverage_samples > 0 and item.unavailable_samples == item.coverage_samples
@@ -244,6 +254,21 @@ def _verdict(report: Mapping[str, Any], summary: ReportSummary) -> str:
     worst = summary.worst
     badge = _verdict_label(report, summary)
     partial = _partial_coverage(report, summary)
+    if _partial_evidence(report):
+        badge = "PARTIAL" if worst == "none" else f"{worst.upper()} / PARTIAL"
+        evidence = (f"A {worst.upper()} signal was recorded before the checkpoint. "
+                    if worst != "none" else "No full-session verdict is available. ")
+        recovery = report.get("recovery") or {}
+        exact = isinstance(recovery, Mapping) and recovery.get("exact_through_cutoff") is True and summary.exact
+        detail = evidence + ("Saved session facts are exact through the checkpoint. " if exact
+                             else "Only saved observations are available. ")
+        detail += "The missing tail, final outcome, and cleanup are unknown."
+        severity = worst if worst != "none" else "low"
+        return (
+            f'<section class="verdict sev-{severity}" aria-label="Verdict">'
+            f'<span class="badge sev-{severity}">{_e(badge)}</span>'
+            f'<div><h2>Partial checkpoint evidence</h2><p>{_e(detail)}</p></div></section>'
+        )
     if badge in ("INCONCLUSIVE", "UNAVAILABLE"):
         # Older reports lack the field; only an explicit False is inconclusive.
         headline = "No resource measurements were available" if badge == "UNAVAILABLE" else (
