@@ -556,3 +556,13 @@ After restart it marks old active sessions interrupted and can export their
 latest intact checkpoint as partial evidence; it never retries a launch or
 reattaches automatically. See [agent scheduling and recovery](docs/agent-recovery.md)
 for retention, storage admission limits, and failure semantics.
+
+`draintracer-agent diagnose` exposes live readiness/freshness/queue/storage or
+read-only offline state. `recover SESSION_UUID` previews an intact partial
+checkpoint; add `--out-dir DIRECTORY` to save it. `stop` requests ordinary
+cleanup, and `remove` previews stopped-only control-file removal while keeping
+evidence and unrelated data. `support` previews typed, redacted diagnostics;
+add up to two explicit `--include-report SESSION_UUID` selections and `--out
+PATH.zip` for an exclusive local archive. Nothing is uploaded. Follow the
+[agent operations guide](docs/agent-operations.md) for installation, upgrade,
+rollback, removal, privacy review, and command bounds.

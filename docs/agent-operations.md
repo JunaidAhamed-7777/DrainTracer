@@ -66,3 +66,30 @@ the same transformed dictionary. The preview contains the eligible data;
 is uploaded. Inspect the preview, archive contents and destination before
 sharing: retained numerical evidence and workload timing can still be
 identifying. A support bundle is neither anonymous nor a causal diagnosis.
+
+## Bounds and local acceptance evidence
+
+Live freshness uses monotonic time: an active session is stale after the larger
+of ten seconds or three configured sample intervals without a status/sample
+advance. Offline observation age is wall-clock information and never proves a
+live session. Storage inspection remains bounded by the scheduling policy.
+Recovery previews never open a PID. Removal inspects at most 512 known launched
+identities and 128 MiB of checkpoint files, refuses uncertainty or a live known
+launch, and invokes no process-control operation.
+
+Support previews and archive contents are limited to 16 MiB; compressed ZIPs
+are limited to 8 MiB, with at most two selected reports. The output parent must
+have a trusted local ancestor chain. A flushed private temporary file is
+published by an atomic, exclusive hard link; filesystems without that operation
+return an error without replacing a destination. Failed writes preserve the
+previous destination and remove only this operation's own temporary file.
+
+Native acceptance tests stop an agent with a launched and attached workload,
+verify owned cleanup and the attachment's survival, inspect the offline
+journal without a write, preview/apply removal, and verify every unrelated note
+and evidence file remains. Another test kills an agent and recovers its intact
+prefix without accessing a PID or starting a backend. Seeded string, numeric,
+and structured private values are absent from both the support preview and
+all JSON/HTML/archive member names; supplied numerical evidence is retained
+only in documented typed fields. These are local tests, not hosted production
+availability or a user pilot.
