@@ -111,3 +111,81 @@ input validation, bounded resource use, ownership checks, and explicit
 failure states. Changes to authentication, endpoint exposure, service
 accounts, privilege, or automatic persistence require another threat review.
 Reports retain the normal [privacy and sharing requirements](privacy.md).
+
+## Start and use the foreground agent
+
+Install the current wheel in a virtual environment. Start the agent explicitly
+in a Windows terminal; its default state directory is
+`%LOCALAPPDATA%\DrainTracerAgent`. The parent of an explicit `--state-dir`
+must already exist. The command creates only its own private leaf, credential,
+and report directory. There is no automatic startup registration.
+
+```powershell
+draintracer-agent serve
+```
+
+Use a second terminal under the same account. Supply the creation time of the
+currently running target, rather than trusting its PID alone:
+
+```powershell
+$targetPid = 8172  # replace with your permitted application's PID
+$created = python -c "import psutil; print(psutil.Process($targetPid).create_time())"
+draintracer-agent start --pid $targetPid --create-time $created --timeout 30
+draintracer-agent status
+```
+
+The start result contains a `session_id`. Use that UUID in subsequent commands:
+
+```powershell
+draintracer-agent status SESSION_UUID
+draintracer-agent events SESSION_UUID --cursor 0 --limit 100
+draintracer-agent export SESSION_UUID
+draintracer-agent cancel SESSION_UUID
+```
+
+Output is JSON with escaped non-ASCII characters, so redirected output and
+legacy Windows consoles preserve the same fields. `export` returns an
+agent-owned directory and relative report paths, including the normal
+filename/date grouping. Open the HTML file locally. Cancelled attachments
+remain running. Ctrl+C in the foreground agent performs ordinary session
+cleanup; launched workloads belong to their session and are stopped.
+
+Launch authorization needs both `--allow-launch` and one or more trusted
+`--launch-root DIRECTORY` declarations on `serve`. Launch pause/resume needs
+`--allow-pause`; explicit kill needs `--allow-kill`. These flags are independent.
+A client starts a permitted launch with `start --target PATH --timeout 30 --
+LITERAL_ARGUMENTS`. Arguments after `--` are passed literally by the process
+adapter. Attached targets cannot be paused through the agent. The supported
+Python API's private manager adapter is confined to agent composition; clients
+cannot provide code, a manager class, environment values, or an export path.
+
+## Current bounds and protocol details
+
+The default active-session limit is four, configurable from one through eight.
+At most 64 session records are retained by default (up to 256); a new accepted
+session can evict the oldest completed record, preserving its report files.
+Status pages hold at most 32 records. There is no launch queue: exhausted
+capacity is a `capacity` error. Each session has a deadline, 60 seconds by
+default, capped at the server's one-hour default maximum (configurable up to
+24 hours). Sampling intervals range from 100 milliseconds to 60 seconds;
+there are one through eight leak windows, each from one second to one hour.
+
+The single IPC handler consumes one authenticated exchange at a time. Every
+pipe read/write and incomplete peer is bounded by a three-second I/O deadline;
+controller export/control calls have five-second command deadlines. A reply
+is acknowledged before the server disconnects the pipe, preventing Windows
+from discarding unread reply bytes. A client disconnect does not cancel a
+session that was already accepted. A timed-out command reports `may_have_run`
+when its controller began execution; clients must inspect status before any
+retry involving process control.
+
+Each retained session has 200 progress/state events, with observed, retained,
+dropped, and cursor-gap counts. Progress events sample detached API status;
+they are not a second exact telemetry stream. Exact measurement summaries
+remain in the reports. Responses expose at most eight bounded error excerpts
+plus the original count; complete private evidence remains on disk.
+The last 256 request identities are replay-safe in memory: repeating identical
+parameters returns the prior reply, while different parameters return a
+`conflict`. These records alone do not promise durable exactly-once launch
+across restart. Persistence, crash/restart labels, retention, and retry policy
+are covered by the separate scheduling/recovery work.
