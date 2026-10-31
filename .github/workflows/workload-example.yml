@@ -54,10 +54,7 @@ jobs:
           artifact-name: workload-after-${{ github.run_id }}
       - name: Prepare a deliberately inconclusive duration
         shell: pwsh
-        run: |
-          $recipe = Get-Content .github/ci/workload.json -Raw | ConvertFrom-Json
-          $recipe.timeout = 2
-          $recipe | ConvertTo-Json -Depth 10 | Set-Content .github/ci/short.json -Encoding utf8
+        run: python .github/ci/prepare_short.py
       - name: Retain evidence from the expected failing short run
         id: short
         continue-on-error: true
