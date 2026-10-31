@@ -476,6 +476,8 @@ A failed HTML companion is recorded in the retained JSON when the outcome
 update can be written.
 An offline retained-sample table and CSV download expose plotted values
 without hovering over charts.
+Labeled range fields, native signal Zoom buttons, and focusable data tables
+support keyboard use. See the [HTML accessibility checks](docs/html-accessibility.md).
 
 ![The exported HTML report shows the HIGH memory signal, resource trend charts, recorded events, and growing processes](docs/assets/html-report.gif)
 

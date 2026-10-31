@@ -174,6 +174,30 @@ class RenderTests(unittest.TestCase):
         self.assertNotIn("n/a", rows[1])
         self.assertEqual(rows[2].count("n/a"), 6)
 
+    def test_offline_keyboard_and_table_semantics_are_explicit(self) -> None:
+        document = render_html_report(_report())
+        self.assertIn('<form id="range-controls" class="chart-range" novalidate hidden>', document)
+        self.assertIn('<label for="zoom-start">From (seconds)</label>', document)
+        self.assertIn('<label for="zoom-end">To (seconds)</label>', document)
+        self.assertIn('role="status" aria-live="polite"', document)
+        self.assertIn('class="signal-zoom" aria-label="Zoom charts to memory signal', document)
+        self.assertIn('class="table-scroll" tabindex="0" role="region" aria-label="Table:', document)
+        self.assertIn('<th scope="col"', document)
+
+    def test_handle_category_values_have_an_offline_equivalent_and_safe_csv_headers(self) -> None:
+        from urllib.parse import unquote
+
+        snapshots = [snapshot_to_dict(make_snapshot(timestamp=1000 + index)) for index in range(2)]
+        for index, sample in enumerate(snapshots):
+            sample["handle_types"] = {"file": 10 + index, "=SENSITIVE()": 1}
+        document = render_html_report(_report(snapshots=snapshots))
+        self.assertIn("Retained handle classifications", document)
+        self.assertIn("file (count)", document)
+        href = re.search(r'download="retained-handle-categories.csv" href="([^"]+)"', document).group(1)
+        content = unquote(href.split(",", 1)[1])
+        self.assertIn("'=SENSITIVE() (count)", content)
+        self.assertIn("0.000,10,1", content)
+
     def test_retained_sample_table_and_csv_match_plotted_values_offline(self) -> None:
         import csv
         import io
@@ -226,7 +250,8 @@ class RenderTests(unittest.TestCase):
         document = render_html_report(_report())
         self.assertIn("Memory · private bytes", document)
         self.assertIn("peak private 10.0 MB · RSS (working set) 10.0 MB", document)
-        self.assertIn("<th class=\"num\">Private</th><th class=\"num\">RSS (working set)</th>", document)
+        self.assertIn('<th scope="col" class="num">Private</th>'
+                      '<th scope="col" class="num">RSS (working set)</th>', document)
         self.assertIn('label: "RSS (working set)"', document)
 
     def test_experiment_provenance_renders_redacted(self) -> None:

@@ -78,6 +78,17 @@ help, and version-only commands stay free of update checks.
 
 ## Do's and Don'ts
 
+Offline HTML reports retain their existing instrument-panel layout. The
+canonical web palette and native controls live in leak_reports/frames/report.css
+and report.js; Python owns static semantic tables and summaries. Dark muted
+text is #8e97bf for contrast on tooltip surfaces. Light badge fills use
+#347b24 (clear), #946108 (low), #b2500d (medium), #d0324f (high), and
+#a3001f (critical) with white text. These web adjustments do not alter terminal
+theme tokens. Native number fields and Apply range provide a keyboard
+alternative to drag zoom; native details/table/CSV expose values without a
+pointer. Focus outlines, semantic labels, and text verdicts accompany color.
+Tables own horizontal scrolling; they never constrain page height.
+
 - Reuse shared keyboard input, palette, and Rich components.
 - Keep visible help adjacent to the controls it describes.
 - Confirm choices explicitly; arrow movement alone never launches or attaches.

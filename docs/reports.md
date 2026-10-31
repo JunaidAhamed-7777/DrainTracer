@@ -69,6 +69,8 @@ The report includes:
   seconds, private/RSS bytes, handle/thread counts, and CPU percent. These
   use the plotted retained arrays; `n/a` remains unknown, and thinned data
   is explicitly qualified rather than presented as every observation.
+  Retained handle-category values use a second table and CSV at their own
+  classification cadence.
 - Markers where signals appeared or escalated, warm-up and pause bands,
   and the time the root exited.
 - Continuous signal episodes, events, and the final available process list.
@@ -87,6 +89,13 @@ interpreting a paused or failed sample as a measured zero.
 The HTML and JSON use the same report dictionary, so their exported samples
 agree. Handle classifications are less frequent than the main sampling
 interval and use their own timestamps.
+
+For keyboard access, enter elapsed seconds in From/To and activate Apply
+range; Escape resets. Each signal has a native Zoom button. Tables have
+named horizontal scroll regions and column headers, while the retained
+sample disclosure and CSV links use native browser controls. Verdict,
+coverage, units, and process evidence remain readable without chart
+interaction or JavaScript. See [accessibility verification](html-accessibility.md).
 
 ## Use the JSON data
 
