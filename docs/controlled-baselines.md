@@ -22,6 +22,9 @@ suppression can waive continuity loss. A measured regression, any recorded leak 
 also requires `--accept-regression`, and remains recorded in the audit.
 
 The store copies validated reports under their SHA-256 content identifiers.
+Programmatic promote/check calls first detach and revalidate current report
+data and recompute summaries; editing a LoadedReport dictionary after loading
+cannot reuse a stale clean summary or bypass an initial-signal approval gate.
 Checks read these copies and verify their hashes; editing or replacing an
 original input file cannot silently change the approved baseline. The atomic
 manifest records every promotion/suppression in sequence, including the OS
