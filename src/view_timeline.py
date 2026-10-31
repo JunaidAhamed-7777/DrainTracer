@@ -336,10 +336,15 @@ class TimelineViewMixin:
             text += f"{sep}~{per_column:.1f} samples per column, highest shown"
         else:
             text += f"{sep}one sample per column at most"
-        if self._sample_count > samples:
+        frozen = self._timeline_frozen
+        range_count = frozen.sample_count if frozen is not None else self._sample_count
+        newer = self._sample_count - range_count
+        if newer:
+            text += f"{sep}{newer:,} newer samples collected while frozen"
+        if range_count > samples:
             text += (
                 f"{sep}earlier samples are not charted here (the dashboard keeps the last "
-                f"{self.HISTORY_LIMIT}); reports keep the whole session"
+                f"{self.HISTORY_LIMIT}); report charts may be thinned; session facts remain exact"
             )
         return Text(text, style=self.palette.muted)
 

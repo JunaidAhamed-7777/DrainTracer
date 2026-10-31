@@ -207,6 +207,10 @@ Once the installation check passes, `draintracer` offers two startup choices:
   for pages, `/refresh` to reload, and
   `/clear` to reset the search. Quitting detaches and leaves the program running.
 
+Hook selection keeps the program's PID and creation time through attachment.
+If that identity changes or cannot be verified, select the program again.
+An explicit `--pid` selects the process current when attachment begins.
+
 Use **Up/Down** to highlight a startup choice, then **Spacebar** (or Enter)
 to select it. Navigation help appears below the Get Started box. Redirected
 or non-terminal input keeps the numbered `1`/`2` prompt.
@@ -286,6 +290,10 @@ Use the target's own file logging when needed. See the
   with a second press when attached.
 - `Q` — quit, cleaning up a launched tree or detaching from an attached tree.
 
+A partly successful pause is rolled back. If a process cannot be resumed,
+it remains marked as suspended; detach retries it and reports a cleanup error
+when resuming is denied. Resolve the access restriction before retrying cleanup.
+
 Number keys open focused views; `Esc` returns to the overview. Views change
 only what is shown: sampling and the target continue unaffected.
 
@@ -313,10 +321,12 @@ count as unknown, never zero, and access changes restart detection windows.
 Process names, including bracketed text in parent labels, are displayed literally.
 Evidence and inspector tree totals show `n/a` when unavailable and label partial
 totals as lower bounds; measured zero counters remain zero.
+The frozen timeline distinguishes newer samples collected since freezing from
+older samples outside the retained dashboard history. Exported charts may be thinned.
 
 The layout adapts to terminal size and uses ASCII fallbacks for legacy Windows
 encodings. Startup artwork still comes from [TITLE.txt](TITLE.txt), with a
-readable fallback when it cannot be displayed.
+readable fallback when it cannot be read as UTF-8 or displayed.
 
 ## Run a leak check in CI
 
@@ -389,7 +399,15 @@ generated reports are ignored by Git.
 
 The HTML report works offline, with interactive charts, signal episodes,
 events, a process list, a ranking of growing processes that keeps ones that
-exited, run provenance, and monitor diagnostics.
+exited, run provenance, and monitor diagnostics. Verdicts and resource cards
+identify partial or unavailable coverage and preserve any observed signal.
+Unreadable process counters show `n/a`; measured zero counters remain zero.
+After chart thinning, resource cards label their sample-based values as
+`retained peak`. If thinning removes signal details, the report preserves
+and explains the recorded episode count. Reports with recorded severity but
+no episode counts still identify the signal and qualify the missing detail.
+A failed HTML companion is recorded in the retained JSON when the outcome
+update can be written.
 
 ![The exported HTML report shows the HIGH memory signal, resource trend charts, recorded events, and growing processes](docs/assets/html-report.gif)
 
@@ -426,7 +444,9 @@ Use comparable workloads, durations, warm-ups, and settings. Long sessions
 thin the stored chart history; reports then say "chart thinned 1:N", while
 peaks with their times, worst severities, signal episode counts, evaluated
 time, and sample counts stay exact in `session_facts`. Reports include local
-paths and process details, so review them before sharing. The
+paths and process details. If a stalled consumer overflows the sample queue,
+reports count the discarded detail; peaks, signals, budgets, coverage, and
+sample counts still include every observation. Review reports before sharing. The
 [report guide](docs/reports.md) covers the schema, retention, interpretation,
 and comparison exit codes.
 
