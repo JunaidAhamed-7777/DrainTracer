@@ -176,6 +176,12 @@ def _provenance(data: Mapping[str, Any]) -> None:
         raise BaselineEvidenceError("baseline requires complete detector sampling and threshold settings")
 
 
+def _inconclusive_resources(comparison) -> bool:
+    # A different resource's regression can dominate the descriptive headline.
+    # No exception may waive overlap or unknown evidence in any resource.
+    return any(item.verdict in ("overlap", "unknown") for item in comparison.resources)
+
+
 def _current_reports(reports: Sequence[LoadedReport]) -> tuple[LoadedReport, ...]:
     """Snapshot mutable public LoadedReport data; summaries are never caller authority."""
     if not 2 <= len(reports) <= MAX_GROUP_RUNS:
@@ -457,7 +463,7 @@ class BaselineStore:
         comparison = None
         if self.state["revision"]:
             comparison = compare_repeated_reports(self.reports(), reports, budgets=self.state["budgets"])
-            if _gating_caveats(comparison.caveats) or comparison.blocked or comparison.measured_verdict == "inconclusive":
+            if _gating_caveats(comparison.caveats) or comparison.blocked or _inconclusive_resources(comparison):
                 raise BaselineError("incompatible, insufficient or inconclusive runs cannot replace a baseline")
             if (comparison.measured_verdict in ("regressed", "mixed") or comparison.over_budget) and not accept_regression:
                 raise BaselineError("regression/budget change requires explicit accept_regression approval")
@@ -542,7 +548,7 @@ class BaselineStore:
                                          and item["resource"] == finding["resource"] and item["kind"] == finding["kind"]]
         # Only the clean-recipe informational scope qualification is allowed.
         # Suppressions never turn missing provenance or continuity into a pass.
-        if _gating_caveats(comparison.caveats) or comparison.blocked or comparison.measured_verdict == "inconclusive":
+        if _gating_caveats(comparison.caveats) or comparison.blocked or _inconclusive_resources(comparison):
             code = 3
         elif any(item["kind"] == "regression" and not item["suppressed_by"] for item in findings):
             code = 1

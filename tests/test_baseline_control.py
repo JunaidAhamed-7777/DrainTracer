@@ -269,6 +269,27 @@ with BaselineStore(sys.argv[1]) as store:
                     store.promote(group, **APPROVAL)
             self.assertFalse(list(self.store.glob("*.json")))
 
+    def test_suppressed_regression_cannot_hide_another_resources_inconclusive_overlap(self):
+        def handles(data, steps):
+            index = int(data["report_id"].rsplit("-", 1)[1])
+            for sample_index, sample in enumerate(data["snapshots"]):
+                sample["totals"]["handles"] = sample["processes"][0]["handles"] = 200 + sample_index * steps[index]
+        approved = self.reports("approved-overlap", (0, 0), change=lambda data: handles(data, (0, 10)))
+        self.approve(approved)
+        later = self.reports("later-overlap", (3, 3), change=lambda data: handles(data, (5, 15)))
+        with BaselineStore(self.store) as store:
+            store.suppress(resource="memory", kind="regression", expires=(datetime.now(timezone.utc) + timedelta(days=1)).isoformat(), **APPROVAL)
+            before = (self.store / "baseline.json").read_bytes()
+            code, result = store.check(later, source_commit="b" * 40)
+            self.assertEqual(code, 3)
+            self.assertFalse(result["passed"])
+            self.assertEqual(result["comparison"]["resources"]["memory"]["verdict"], "regressed")
+            self.assertEqual(result["comparison"]["resources"]["handles"]["verdict"], "overlap")
+            self.assertTrue(result["findings"][0]["suppressed_by"])
+            with self.assertRaisesRegex(BaselineError, "inconclusive"):
+                store.promote(later, **APPROVAL, accept_regression=True)
+            self.assertEqual((self.store / "baseline.json").read_bytes(), before)
+
     def test_mutated_loaded_data_cannot_reuse_a_stale_clean_summary_for_approval_or_check(self):
         self.approve(self.reports("approved"))
         signaled = self.reports("mutated-signal")
