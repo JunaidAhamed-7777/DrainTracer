@@ -329,6 +329,91 @@ class PidReuseTests(unittest.TestCase):
         self.assertIsNone(decoy.poll(), "the unrelated process was killed")
 
 
+class UnverifiedControlTests(unittest.TestCase):
+    def _manager(self, known=True):
+        manager = ProcessManager(None)
+        manager._root_pid = 4242
+        manager._tracked_pids = {4242}
+        manager._root_created = 10.0 if known else None
+        manager._identities = {4242: 10.0} if known else {}
+        process = mock.Mock(pid=4242)
+        process.is_running.return_value = True
+        process.status.return_value = psutil.STATUS_RUNNING
+        return manager, process
+
+    def test_unreadable_current_identity_retains_observation_but_refuses_all_controls(self):
+        manager, process = self._manager()
+        process.create_time.side_effect = psutil.AccessDenied(4242)
+        manager._suspended_pids = {4242}
+        with mock.patch.object(process_runner.psutil, "Process", return_value=process):
+            self.assertIs(manager._open_tracked(4242), process)
+            self.assertFalse(manager._suspend_pid(4242))
+            self.assertFalse(manager._resume_pid(4242))
+            manager._terminate_pid(4242, graceful=True)
+            manager._terminate_pid(4242, graceful=False)
+        for action in (process.suspend, process.resume, process.terminate, process.kill):
+            action.assert_not_called()
+        self.assertEqual(manager._suspended_pids, {4242})
+        self.assertEqual(manager._identities, {4242: 10.0})
+        self.assertIn("control refused", manager.last_error)
+
+    def test_later_readability_does_not_promote_an_unknown_original_into_control_authority(self):
+        manager, process = self._manager(known=False)
+        process.create_time.return_value = 20.0
+        with (mock.patch.object(process_runner.psutil, "Process", return_value=process),
+              mock.patch.object(process_runner, "_windows_process_exited", return_value=False)):
+            self.assertIs(manager._open_tracked(4242), process)
+            self.assertNotIn(4242, manager._identities)
+            self.assertFalse(manager._suspend_pid(4242))
+            manager._terminate_pid(4242, graceful=True)
+            manager._terminate_pid(4242, graceful=False)
+        for action in (process.suspend, process.terminate, process.kill):
+            action.assert_not_called()
+        self.assertIn("Original identity", manager.last_error)
+
+    def test_owned_resume_debt_survives_denial_until_a_verified_retry(self):
+        manager, process = self._manager()
+        manager._suspended_pids = {4242}
+        manager._paused = True
+        process.create_time.side_effect = psutil.AccessDenied(4242)
+        with (mock.patch.object(process_runner.psutil, "Process", return_value=process),
+              mock.patch.object(process_runner, "_windows_process_exited", return_value=False)):
+            self.assertFalse(manager.resume())
+            self.assertEqual(manager.pending_resume_pids, frozenset({4242}))
+            process.resume.assert_not_called()
+            process.create_time.side_effect = None
+            process.create_time.return_value = 10.0
+            self.assertTrue(manager.resume())
+        process.resume.assert_called_once()
+        self.assertEqual(manager.pending_resume_pids, frozenset())
+
+    def test_unknown_original_root_cannot_authorize_control_of_a_readable_descendant(self):
+        manager, process = self._manager(known=False)
+        manager._tracked_pids.add(4343)
+        manager._identities[4343] = 11.0
+        process.pid = 4343
+        process.create_time.return_value = 11.0
+        with (mock.patch.object(process_runner.psutil, "Process", return_value=process),
+              mock.patch.object(process_runner, "_windows_process_exited", return_value=False)):
+            self.assertIs(manager._open_tracked(4343), process)
+            self.assertFalse(manager._suspend_pid(4343))
+            manager._terminate_pid(4343, graceful=False)
+        process.suspend.assert_not_called()
+        process.kill.assert_not_called()
+        self.assertIn("root identity is unknown", manager.last_error)
+
+    def test_unreadable_process_open_is_a_control_refusal(self):
+        manager, _process = self._manager()
+        manager._suspended_pids = {4242}
+        for failure in (psutil.AccessDenied(4242), PermissionError("injected query denial")):
+            with mock.patch.object(process_runner.psutil, "Process", side_effect=failure):
+                self.assertFalse(manager._suspend_pid(4242))
+                self.assertFalse(manager._resume_pid(4242))
+                manager._terminate_pid(4242, graceful=True)
+                manager._terminate_pid(4242, graceful=False)
+        self.assertEqual(manager.pending_resume_pids, frozenset({4242}))
+
+
 class PollLoopTests(unittest.TestCase):
     def test_a_failed_refresh_does_not_stop_tracking(self) -> None:
         from unittest import mock

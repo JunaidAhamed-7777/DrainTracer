@@ -218,6 +218,11 @@ identifies a replacement, which is left untouched by the old target's controls.
 See [process identity verification](docs/process-identities.md) for native
 stability evidence and the limits of this check.
 
+An unreadable current or original creation identity permits observation but
+refuses process control. A later readable PID holder does not automatically
+gain the old target's control authority; attach again with a verified identity.
+An owed resume remains pending until it can be retried safely.
+
 Use **Up/Down** to highlight a startup choice, then **Spacebar** (or Enter)
 to select it. Navigation help appears below the Get Started box. Redirected
 or non-terminal input keeps the numbered `1`/`2` prompt.
