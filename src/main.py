@@ -314,7 +314,7 @@ try:
     from .report import DEFAULT_REPORT_DIR
     from .resources import resource_path
     from .startup import choose_startup_action
-    from .theme import PALETTE, blend
+    from .theme import PALETTE, blend, plain_console
     from .units import parse_count, parse_duration
     from .updates import check_for_update
 except ModuleNotFoundError as _dependency_error:
@@ -459,6 +459,8 @@ examples:
   draintracer --headless --target app.exe --workload-id import-1k --operations 1000
   draintracer --headless --target app.exe --budget-private 500MB --budget-handles 2000
   draintracer diff before.json after.json            compare two reports
+  draintracer doctor --target worker.py --json       check setup without starting a target
+  draintracer init                                  preview a validated project config
 """
 
 
@@ -470,6 +472,9 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--version", action="version", version=f"DrainTracer {DashboardApp.VERSION}")
+    parser.add_argument("--no-color", action="store_true", help="Disable terminal colors, including forced color.")
+    parser.add_argument("--plain", action="store_true", help="Use static, unstyled headless text output.")
+    parser.add_argument("--quiet", action="store_true", help="Use headless output with warnings, signals, errors, and the final summary only.")
     target = parser.add_argument_group("target")
     source = target.add_mutually_exclusive_group()
     source.add_argument(
@@ -763,8 +768,22 @@ def _main(console: Console, argv: list[str] | None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     if arguments[:1] == ["diff"]:
         return run_diff(arguments[1:], console)
+    if arguments[:1] == ["doctor"]:
+        from .preflight import run_doctor
+
+        return run_doctor(arguments[1:], console, parser_factory=build_parser,
+                          settings_resolver=_resolve_settings)
+    if arguments[:1] == ["init"]:
+        from .preflight import run_init
+
+        return run_init(arguments[1:], console)
     parser = build_parser()
     args = parser.parse_args(arguments)
+    if args.no_color:
+        console.no_color = True
+    if args.plain:
+        console = plain_console(console)
+    args.headless = args.headless or args.plain or args.quiet
 
     forwarded_args = list(args.target_args or [])
     if forwarded_args[:1] == ["--"]:
@@ -906,6 +925,7 @@ def _run_headless(
         fail_on_inconclusive=settings.fail_on_inconclusive,
         fail_on_target_error=settings.fail_on_target_error,
         require_full_coverage=settings.require_full_coverage,
+        quiet=args.quiet,
     )
     try:
         return runner.run()
