@@ -478,6 +478,10 @@ resource trends, events, and process growth after recording.*
 
 Use the JSON reports for scripts and comparisons:
 
+`draintracer-report investigate run.json --runtime python --format text`
+creates a privacy-transformed, copyable [investigation summary](docs/investigation-summary.md)
+with resource/window/contributor/coverage evidence and relevant profiler next steps.
+
 Preview an explicit privacy transformation locally with
 `draintracer-report redact run.json --profile share`; add
 `--output-dir shared` to write the same transformed data as JSON and HTML.
