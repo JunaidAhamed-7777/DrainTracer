@@ -76,6 +76,22 @@ class DatabaseTests(unittest.TestCase):
         with self.assertRaises(TeamError):
             _Database.open(self.path)
 
+    def test_reopened_unsupported_columns_constraints_or_indexes_fail_closed(self):
+        for index, statement in enumerate((
+            "ALTER TABLE credentials ADD COLUMN unexpected TEXT",
+            "CREATE INDEX unexpected_lookup ON reports(id)",
+            "DROP INDEX reports_expiry",
+        )):
+            with self.subTest(statement=statement):
+                path = self.path.parent / f"shape-{index}"
+                store = _Database.create(path)
+                store.close()
+                with closing(sqlite3.connect(store.path)) as connection:
+                    connection.execute(statement)
+                    connection.commit()
+                with self.assertRaises(TeamError):
+                    _Database.open(path)
+
 
 if __name__ == "__main__":
     unittest.main()
