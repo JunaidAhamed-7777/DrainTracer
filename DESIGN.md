@@ -87,3 +87,8 @@ help, and version-only commands stay free of update checks.
 Dashboard help owns keyboard input while open: scrolling, closing help, and view
 selection remain active. Its footer shows those actions only. Target controls and
 session actions require closing help first.
+
+The shared Rich Console owns terminal color policy across normal, headless,
+and diff output. Explicit `--no-color` wins over forced color; absent that flag,
+Rich's environment behavior is retained. Words and emphasis carry verdicts
+and unknown readings independently of palette colors.

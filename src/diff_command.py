@@ -78,6 +78,7 @@ def build_diff_parser() -> argparse.ArgumentParser:
         "before", metavar="BEFORE", help="The earlier report (leak_report_<UUID>.json)."
     )
     parser.add_argument("after", metavar="AFTER", help="The later report to compare against it.")
+    parser.add_argument("--no-color", action="store_true", help="Disable terminal colors, including forced color.")
     parser.add_argument(
         "--json",
         action="store_true",
@@ -126,6 +127,8 @@ def _budget(metric: str):
 def run_diff(argv: list[str], console: Console) -> int:
     """Parse ``diff`` arguments, compare the reports, and return the exit code."""
     args = build_diff_parser().parse_args(argv)
+    if args.no_color:
+        console.no_color = True
     try:
         before = load_report(args.before)
         after = load_report(args.after)
