@@ -256,11 +256,10 @@ class MonitorViewMixin:
         memory = "n/a" if host.available_memory_bytes is None else (
             f"{self._format_bytes(host.available_memory_bytes)} available physical"
         )
-        age = max(host.age_seconds, time.time() - host.sampled_at)
         cost = "n/a" if host.collection_ms is None else f"{host.collection_ms:.2f} ms"
         return [
             ("CPU", cpu), ("Memory", memory),
-            ("Age / cost", f"{_age(age)} old; {cost} pass; every 5s"),
+            ("Age / cost", f"{_age(host.age_seconds)} old at sample; {cost} pass; every 5s"),
             ("Meaning", "whole host context; not target usage or cause"),
         ]
 
