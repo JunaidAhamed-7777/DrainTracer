@@ -30,6 +30,7 @@ draintracer-report = "draintracer.report_contract:main"
 draintracer-agent = "draintracer.agent_command:main"
 draintracer-team = "draintracer.team_command:main"
 draintracer-ops = "draintracer.service_exercise:main"
+draintracer-share = "draintracer.share_command:main"
 
 [project.urls]
 Homepage = "https://github.com/JunaidAhamed-7777/DrainTracer"
