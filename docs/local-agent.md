@@ -51,6 +51,9 @@ code, not a sandbox: allowed workloads can themselves execute other code.
 Attached targets are detached and any agent-owned pause is resumed during
 ordinary cancellation/shutdown. A launched tree belongs to its session and
 is stopped on cleanup. Kill is never inferred from attach permission.
+The agent refuses attached-target pause/resume even when launch pause is
+authorized: a crash between an OS suspension and a durable record cannot
+prove ownership safely enough to resume that process after restart.
 
 ## Bounds and failure semantics
 

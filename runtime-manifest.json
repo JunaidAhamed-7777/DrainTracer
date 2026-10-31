@@ -8,6 +8,7 @@
     "runtime-manifest.json",
     "src/__init__.py",
     "src/__main__.py",
+    "src/agent_transport.py",
     "src/analysis.py",
     "src/api.py",
     "src/budgets.py",
