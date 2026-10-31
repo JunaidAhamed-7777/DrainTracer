@@ -78,6 +78,11 @@ and profiler handoff.
 exact temporal-reset counts when present, or `null` for legacy unknowns. A
 judged result and readable observed counters can coexist with an interruption;
 check these counts before treating a run as continuous baseline evidence.
+`workload_state` is the optional recipe-execution state, or `null` for a report
+without that outcome. `failed`, `interrupted`, or another unfinished state
+qualifies resource evidence; leak-free samples do not establish a completed
+workload. Privacy copies preserve this typed state while dropping execution
+paths, selected environment names, and log metadata.
 
 The [session-summary JSON Schema](../schemas/session-summary.json) defines
 `summary_schema: 1`. Every listed top-level field is present; unavailable

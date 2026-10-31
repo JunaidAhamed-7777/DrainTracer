@@ -94,6 +94,8 @@ def summary_schema() -> dict[str, Any]:
                                            "clock_adjustments": {"type": ["integer", "null"], "minimum": 0},
                                            "sampling_gaps": {"type": ["integer", "null"], "minimum": 0}}},
             "monitor_errors": {"type": ["array", "null"], "items": {"type": "string"}},
+            "workload_state": {"enum": [None, "not_started", "starting", "running", "complete", "failed",
+                                         "interrupted", "monitor_error", "startup_failed"]},
             "peaks": {"type": "object", "required": list(METRIC_UNITS), "properties": {
                 metric: {"type": "object", "required": ["value", "timestamp", "unit", "basis"],
                          "properties": {"value": {"type": ["number", "null"]},
@@ -292,6 +294,7 @@ def session_summary(report: dict[str, Any]) -> dict[str, Any]:
                         "clock_adjustments": _object(facts.get("monitor")).get("clock_adjustments"),
                         "sampling_gaps": _object(facts.get("monitor")).get("sampling_gaps")},
         "monitor_errors": _object(report.get("outcome")).get("monitor_errors"),
+        "workload_state": _object(_object(report.get("outcome")).get("workload")).get("state"),
         "peaks": result_peaks,
         "worst_severity": max(known, key=SEVERITIES.index) if known else None,
         "counts": {"stored_snapshots": len(report["snapshots"]), "observed_samples": observed,

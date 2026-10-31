@@ -254,6 +254,14 @@ _TIMING_DETAIL = (" The clock changed or sampling was interrupted, so windows re
 def _verdict_label(report: Mapping[str, Any], summary: ReportSummary) -> str:
     if _partial_evidence(report):
         return "PARTIAL" if summary.worst == "none" else f"{summary.worst.upper()} / PARTIAL"
+    outcome = report.get("outcome")
+    if isinstance(outcome, Mapping) and "workload" in outcome:
+        workload = outcome["workload"]
+        state = workload.get("state") if isinstance(workload, Mapping) else None
+        if state != "complete":
+            return "WORKLOAD INTERRUPTED" if state == "interrupted" else (
+                "WORKLOAD FAILED" if state in {"failed", "monitor_error", "startup_failed"}
+                else "WORKLOAD INCOMPLETE")
     if summary.worst != "none":
         return summary.worst.upper()
     if all(item.coverage_samples > 0 and item.unavailable_samples == item.coverage_samples
@@ -285,6 +293,14 @@ def _verdict(report: Mapping[str, Any], summary: ReportSummary) -> str:
             f'<span class="badge sev-{severity}">{_e(badge)}</span>'
             f'<div><h2>Partial checkpoint evidence</h2><p>{_e(detail)}</p></div></section>'
         )
+    if badge.startswith("WORKLOAD "):
+        detail = ("Readiness, exercise steps, or monitoring did not complete. "
+                  "Inspect the workload outcome and rerun after correcting the failure. "
+                  "Resource measurements below describe only the evidence collected")
+        detail += f"; the highest retained leak signal is {worst.upper()}." if worst != "none" else "."
+        return ('<section class="verdict sev-low" aria-label="Verdict">'
+                f'<span class="badge sev-low">{badge}</span>'
+                f'<div><h2>{_e(badge.capitalize())}</h2><p>{_e(detail)}</p></div></section>')
     if badge in ("INCONCLUSIVE", "UNAVAILABLE"):
         # Older reports lack the field; only an explicit False is inconclusive.
         headline = "No resource measurements were available" if badge == "UNAVAILABLE" else (
