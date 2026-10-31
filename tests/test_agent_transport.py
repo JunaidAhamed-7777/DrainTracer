@@ -109,6 +109,8 @@ class NativeTransportTests(unittest.TestCase):
     def test_inherited_data_files_accept_only_verified_owner_and_privileged_principals(self) -> None:
         inherited = self.directory / "database.sqlite3"
         inherited.write_bytes(b"private database placeholder")
+        # Preserve the token's natural owner, including Administrators on an
+        # elevated hosted runner. Product code performs no ownership repair.
         verify_private_data_path(inherited)
         with tempfile.NamedTemporaryFile(dir=self.directory, delete=False) as temporary:
             temporary.write(b"private temporary or SQLite sidecar")
@@ -118,6 +120,20 @@ class NativeTransportTests(unittest.TestCase):
         with self.assertRaisesRegex(AgentTransportError, "another principal"):
             verify_private_data_path(inherited)
         self.assertEqual(inherited.read_bytes(), b"private database placeholder")
+
+    def test_privileged_owned_inherited_data_never_relaxes_protected_state_or_public_read(self) -> None:
+        if not ctypes.windll.shell32.IsUserAnAdmin():
+            self.skipTest("setting a fresh fixture owner to Administrators requires an elevated token")
+        path = self.directory / "admin-owned.sqlite3"
+        path.write_bytes(b"private elevated writer data")
+        subprocess.run(["icacls", str(path), "/setowner", "*S-1-5-32-544"], check=True, capture_output=True)
+        verify_private_data_path(path)
+        with self.assertRaisesRegex(AgentTransportError, "unexpected owner"):
+            verify_private_path(path)
+        subprocess.run(["icacls", str(path), "/grant", "*S-1-1-0:(R)"], check=True, capture_output=True)
+        with self.assertRaisesRegex(AgentTransportError, "another principal"):
+            verify_private_data_path(path)
+        self.assertEqual(path.read_bytes(), b"private elevated writer data")
 
     def test_public_parent_cannot_replace_a_private_state_leaf(self) -> None:
         parent = self.directory / "public-parent"
