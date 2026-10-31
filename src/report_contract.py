@@ -62,6 +62,9 @@ def report_schema() -> dict[str, Any]:
             "snapshot_stride": {"type": "integer", "minimum": 1},
             "snapshots": {"type": "array", "items": snapshot},
             "detection_ran": {"type": ["boolean", "null"]},
+            "recovery": {"type": ["object", "null"], "properties": {
+                key: {"type": "boolean"} for key in
+                ("partial", "exact_through_cutoff", "final_outcome_confirmed")}},
             **{key: {"type": ["object", "null"]}
                for key in ("settings", "experiment", "coverage", "outcome", "session_facts")},
         },
@@ -89,6 +92,8 @@ def summary_schema() -> dict[str, Any]:
                                            "partial_coverage": {"type": ["boolean", "null"]},
                                            "result": nullable_string}},
             "monitor_errors": {"type": ["array", "null"], "items": {"type": "string"}},
+            "workload_state": {"enum": [None, "not_started", "starting", "running", "complete", "failed",
+                                         "interrupted", "monitor_error", "startup_failed"]},
             "peaks": {"type": "object", "required": list(METRIC_UNITS), "properties": {
                 metric: {"type": "object", "required": ["value", "timestamp", "unit", "basis"],
                          "properties": {"value": {"type": ["number", "null"]},
@@ -97,6 +102,9 @@ def summary_schema() -> dict[str, Any]:
                                         "basis": {"enum": ["session_facts", "retained_snapshots", "unavailable"]}}}
                 for metric, unit in METRIC_UNITS.items()}},
             "worst_severity": {"enum": [*SEVERITIES, None]},
+            "recovery": {"type": "object", "properties": {
+                key: {"type": "boolean"} for key in
+                ("partial", "exact_through_cutoff", "final_outcome_confirmed")}},
             "counts": {"type": "object", "required": ["stored_snapshots", "observed_samples", "chart_stride"],
                        "properties": {key: {"type": ["integer", "null"], "minimum": 0}
                                       for key in ("stored_snapshots", "observed_samples", "chart_stride")}},
@@ -282,11 +290,19 @@ def session_summary(report: dict[str, Any]) -> dict[str, Any]:
                                                             _object(report.get("coverage")).get("partial")),
                         "result": measurement.get("result")},
         "monitor_errors": _object(report.get("outcome")).get("monitor_errors"),
+        "workload_state": _object(_object(report.get("outcome")).get("workload")).get("state"),
         "peaks": result_peaks,
         "worst_severity": max(known, key=SEVERITIES.index) if known else None,
         "counts": {"stored_snapshots": len(report["snapshots"]), "observed_samples": observed,
                    "chart_stride": _object(facts.get("chart")).get("stride", report.get("snapshot_stride"))},
     }
+    recovery = _object(report.get("recovery"))
+    if recovery or isinstance(report.get("checkpoint"), dict):
+        summary["recovery"] = {key: value for key, value in recovery.items()
+                               if key in ("partial", "exact_through_cutoff", "final_outcome_confirmed")
+                               and type(value) is bool}
+        if isinstance(report.get("checkpoint"), dict):
+            summary["recovery"].update(partial=True, final_outcome_confirmed=False)
     _validate(summary, summary_schema())
     return summary
 

@@ -73,6 +73,35 @@ class DiscoveryTests(ConfigTestCase):
 
 
 class LayeringTests(ConfigTestCase):
+    def test_origins_follow_individual_profile_and_command_line_overrides(self) -> None:
+        self.write(".drainrc", '''
+            sample_interval = "1s"
+            budget_handles = 300
+            [thresholds.memory]
+            critical_delta = "100MB"
+            [profiles.ci]
+            sample_interval = "250ms"
+            budget_handles = 200
+            [profiles.ci.thresholds.memory]
+            critical_slope = "1MB/s"
+        ''')
+        settings = self.resolve(profile="ci", overrides={"warmup": 2.0, "budgets": {"threads": 4}})
+        self.assertEqual(settings.origins["sample_interval_ms"], "profile ci")
+        self.assertEqual(settings.origins["warmup"], "command line")
+        self.assertEqual(settings.origins["budgets.handles"], "profile ci")
+        self.assertEqual(settings.origins["budgets.threads"], "command line")
+        self.assertEqual(settings.origins["thresholds.memory.critical_delta"], "config file")
+        self.assertEqual(settings.origins["thresholds.memory.critical_slope"], "profile ci")
+        self.assertNotIn("timeout", settings.origins)
+        with self.assertRaises(TypeError):
+            settings.origins["warmup"] = "changed"
+
+    def test_origin_metadata_does_not_change_settings_equality_or_noop_overrides(self) -> None:
+        explicit = self.resolve(discover=False, overrides={"warmup": 0.0})
+        self.assertEqual(explicit, MonitorSettings())
+        empty = self.resolve(discover=False, overrides={"budgets": None, "thresholds": None})
+        self.assertEqual(dict(empty.origins), {})
+
     CONFIG = """
         sample_interval = "250ms"
         windows = ["30s", "10s", "30s"]
@@ -248,21 +277,43 @@ class ExampleFileTests(unittest.TestCase):
         self.assertEqual(heavy.thresholds[LeakResource.MEMORY].critical_delta, 4 * 1024 * MB)
 
 
+class CheckpointSettingsTests(ConfigTestCase):
+    def test_checkpoint_paths_and_cadence_are_opt_in_and_layered(self) -> None:
+        self.assertIsNone(self.resolve(discover=False).checkpoint)
+        self.write(".drainrc", 'checkpoint = "state/session.json"\n[profiles.ci]\ncheckpoint_interval = "1s"\n')
+        settings = self.resolve(profile="ci")
+        self.assertEqual(Path(settings.checkpoint), self.root / "state/session.json")
+        self.assertEqual(settings.checkpoint_interval, 1.0)
+
+    def test_invalid_checkpoint_settings_fail_before_startup(self) -> None:
+        for text, error in (('checkpoint = ""', "non-empty path"),
+                            ('checkpoint_interval = "500ms"', "between 1s and 1h"),
+                            ('checkpoint_interval = "2h"', "between 1s and 1h")):
+            with self.subTest(text=text):
+                self.write(".drainrc", text)
+                self.assertConfigError(error)
+
+
 class PolicySettingsTests(ConfigTestCase):
     def test_policies_come_from_files_and_default_off(self) -> None:
         self.assertFalse(self.resolve(discover=False).fail_on_inconclusive)
+        self.assertFalse(self.resolve(discover=False).require_full_coverage)
         self.write(".drainrc", """
             fail_on_inconclusive = true
             [profiles.ci]
             fail_on_target_error = true
+            require_full_coverage = true
         """)
         settings = self.resolve(profile="ci")
         self.assertTrue(settings.fail_on_inconclusive)
         self.assertTrue(settings.fail_on_target_error)
+        self.assertTrue(settings.require_full_coverage)
 
     def test_policies_must_be_booleans(self) -> None:
-        self.write(".drainrc", 'fail_on_target_error = "yes"\n')
-        self.assertConfigError("fail_on_target_error must be true or false")
+        for key in ("fail_on_target_error", "require_full_coverage"):
+            with self.subTest(key=key):
+                self.write(".drainrc", f'{key} = "yes"\n')
+                self.assertConfigError(f"{key} must be true or false")
 
 
 class ExperimentSettingsTests(ConfigTestCase):

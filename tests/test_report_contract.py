@@ -25,6 +25,20 @@ FIXTURES = ROOT / "tests" / "fixtures" / "reports"
 
 
 class CompatibilityTests(unittest.TestCase):
+    def test_machine_summaries_keep_checkpoint_qualification_without_identity_fields(self) -> None:
+        report = read_report(FIXTURES / "v3.json")
+        report["recovery"] = {"partial": True, "exact_through_cutoff": True,
+                              "final_outcome_confirmed": False, "session_id": "private-identity"}
+        summary = session_summary(report)
+        self.assertEqual(summary["recovery"], {"partial": True, "exact_through_cutoff": True,
+                                               "final_outcome_confirmed": False})
+        del report["recovery"]
+        report["checkpoint"] = {"schema": 1}
+        self.assertTrue(session_summary(report)["recovery"]["partial"])
+        report["recovery"] = {"partial": "yes"}
+        with self.assertRaises(ReportContractError):
+            session_summary(report)
+
     def test_supported_fixtures_and_published_schemas_agree(self) -> None:
         for version in (1, 2, 3):
             with self.subTest(version=version):

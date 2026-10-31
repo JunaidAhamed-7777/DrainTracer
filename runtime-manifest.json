@@ -10,6 +10,7 @@
     "src/__main__.py",
     "src/analysis.py",
     "src/budgets.py",
+    "src/checkpoints.py",
     "src/config.py",
     "src/dashboard.py",
     "src/diff_command.py",
@@ -24,6 +25,7 @@
     "src/leak_detector.py",
     "src/main.py",
     "src/picker_input.py",
+    "src/preflight.py",
     "src/privacy.py",
     "src/process_history.py",
     "src/process_picker.py",
@@ -45,6 +47,8 @@
     "src/view_monitor.py",
     "src/view_processes.py",
     "src/view_timeline.py",
-    "src/widgets.py"
+    "src/widgets.py",
+    "src/workload.py",
+    "src/workload_logs.py"
   ]
 }

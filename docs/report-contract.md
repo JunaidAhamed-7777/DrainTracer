@@ -67,6 +67,12 @@ Export I/O failures use error code `export_failed`. See the
 
 ## Summary version 1
 
+`workload_state` is the optional recipe-execution state, or `null` for a report
+without that outcome. `failed`, `interrupted`, or another unfinished state
+qualifies resource evidence; leak-free samples do not establish a completed
+workload. Privacy copies preserve this typed state while dropping execution
+paths, selected environment names, and log metadata.
+
 The [session-summary JSON Schema](../schemas/session-summary.json) defines
 `summary_schema: 1`. Every listed top-level field is present; unavailable
 values are `null`:
@@ -90,6 +96,14 @@ values are `null`:
   and failed observations when available,
   and chart stride when recorded. Retained count is never substituted for
   an unknown whole-session count.
+
+The optional `recovery` object contains only the Boolean evidence flags
+`partial`, `exact_through_cutoff`, and `final_outcome_confirmed`. A recovered
+checkpoint is an exact recorded prefix with an unknown tail and final
+outcome. Its counts and peaks must not be presented as a completed session.
+The summary also marks a raw checkpoint as partial even when its `recovery`
+flags are absent. Older ordinary summaries may omit `recovery` entirely;
+that absence does not establish a complete outcome.
 
 Memory counters use bytes; handles/threads use counts; CPU uses percent;
 I/O rates use bytes/second. Memory and handle definitions remain platform
@@ -115,3 +129,11 @@ The public schema describes shape and meaning; byte/token/depth limits are
 additional ingestion requirements. No field can instruct the validator to
 execute code, follow a URL, or load another file. Summaries preserve paths
 and identifiers: use the explicit privacy export workflow before sharing.
+
+Ordinary `read_report` validation checks report shape and ingestion bounds.
+Checkpoint consumers must additionally use `checkpoints.read_checkpoint`
+for checkpoint schema, writer-version, session/process-identity consistency,
+cutoff, 128-sample bound, and checksum validation. A checksum detects
+corruption; it does not authenticate the writer. The supported
+[`recover` command](reports.md#checkpoint-recovery) performs these
+checks before exporting new JSON and HTML, without reopening any process.

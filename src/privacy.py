@@ -113,6 +113,8 @@ _ROOT = {
                                 "reason": "redact", "coverage": "redact"},
                 "startup": {"state": _enum("not_started", "started", "failed"), "error": "redact"},
                 "cleanup": _CLEANUP,
+                "workload": {"state": _enum("not_started", "starting", "running", "complete", "failed",
+                                             "interrupted", "monitor_error", "startup_failed")},
                 "headless": {"require_full_coverage": "bool", "exit_code": "num", "decision_as_of_checkpoint": "num"},
                 "monitor_errors": ["redact"]},
     "processes": {"counts": _COUNTS, "live": [_PROCESS_SUMMARY], "exited": [_PROCESS_SUMMARY]},

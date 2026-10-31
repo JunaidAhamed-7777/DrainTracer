@@ -150,6 +150,32 @@ def verify_distribution(wheel: Path) -> str:
         _require(f"<script>{probe['js']}</script>" in page, "The HTML export does not embed its bundled JavaScript.")
         _require(not list(package.rglob("leak_report_*.json")), "Reports were written inside the installed package.")
         _require(not list(package.rglob("leak_report_*.html")), "HTML reports were written inside the installed package.")
+
+        workload_command = scripts / ("draintracer-workload.exe" if os.name == "nt" else "draintracer-workload")
+        _require(workload_command.is_file(), "Installing the wheel did not create draintracer-workload.")
+        _run([str(workload_command), "--help"], cwd=cwd, environment=environment)
+        target.write_text("from pathlib import Path\nimport os,time\nPath('ready').touch()\n"
+                          "print(os.environ['SELECTED'], flush=True)\ntime.sleep(20)\n", encoding="utf-8")
+        recipe = cwd / "recipe.json"
+        recipe.write_text(json.dumps({"schema": 1, "command": {"target": target.name}, "timeout": 4,
+                                      "readiness": {"file": "ready", "timeout": 3},
+                                      "environment": {"SELECTED": "disposable-selected-value"},
+                                      "capture_logs": {"max_bytes": 1024}}), encoding="utf-8")
+        recipe_reports = cwd / "recipe-reports"
+        _run([str(workload_command), str(recipe), "--report-dir", str(recipe_reports), "--no-color"],
+             cwd=cwd, environment=environment)
+        recipe_json = list(recipe_reports.rglob("*.json"))
+        _require(len(recipe_json) == 1, "The installed recipe command did not export one report.")
+        workload_report = json.loads(recipe_json[0].read_text(encoding="utf-8"))
+        workload = workload_report["workload"]
+        _require(workload["outcome"]["state"] == "complete", "The installed recipe workflow did not complete.")
+        _require(workload["outcome"]["readiness"] == "ready", "Installed recipe readiness was not observed.")
+        _require(workload_report["outcome"]["cleanup"]["remaining_count"] == 0, "Recipe target cleanup was incomplete.")
+        _require(len(workload["logs"]) == 2, "Recipe output capture did not create separate stream records.")
+        for captured in workload["logs"]:
+            content = Path(captured["path"]).read_bytes()
+            _require(len(content) <= 1024 and b"disposable-selected-value" not in content,
+                     "Installed recipe output was not bounded and redacted.")
     return version
 
 
