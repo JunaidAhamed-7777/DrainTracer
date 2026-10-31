@@ -112,8 +112,14 @@ responsible for stopping their own disposable service and removing its test
 registration. The supplied verifier performs that cleanup itself, guarded by
 its unique name and exact binary path.
 
-Local checks on 2026-10-31 used Windows build 26300/Python 3.14.7: the fixture
-compiled, invalid names were rejected, and the PowerShell script parsed. The
-local terminal lacks service-creation elevation, so no local SCM success is
-claimed. Actual SCM execution evidence comes from the dedicated CI job; record
-its result before closing [issue #60](https://github.com/JunaidAhamed-7777/DrainTracer/issues/60).
+Checked on 2026-10-31: local Windows build 26300/Python 3.14.7 compiled the
+fixture, rejected invalid names, parsed the verifier, and refused service
+creation from a non-elevated terminal. Actual SCM execution passed in
+[CI run 41200531625](https://github.com/JunaidAhamed-7777/DrainTracer/actions/runs/41200531625)
+at commit `332ffa3`: Windows build 26100/Python 3.10.11, 64 samples over the
+16-second observation, judged windows and full coverage, the same LocalService
+process running after detach, and registration removal confirmed. The separate
+lost-acknowledgement cleanup drill also passed. The synthetic result artifact
+is retained for three days; the job record and reproducible verifier remain
+available. These checks cover a dedicated disposable service, not every
+service account, protected process, or shared-host configuration.
