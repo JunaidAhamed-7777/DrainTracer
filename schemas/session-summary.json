@@ -405,6 +405,20 @@
         null
       ]
     },
+    "recovery": {
+      "type": "object",
+      "properties": {
+        "partial": {
+          "type": "boolean"
+        },
+        "exact_through_cutoff": {
+          "type": "boolean"
+        },
+        "final_outcome_confirmed": {
+          "type": "boolean"
+        }
+      }
+    },
     "counts": {
       "type": "object",
       "required": [
