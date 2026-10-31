@@ -145,6 +145,9 @@ def _masthead(
         ),
         ("Processes", f"up to {summary.max_processes}"),
     ]
+    privacy = report.get("privacy")
+    if isinstance(privacy, Mapping):
+        facts.append(("Privacy", f"{privacy.get('profile', 'transformed')} · review before sharing"))
     facts_data = summary.facts
     if facts_data is not None and facts_data.evaluated_seconds is not None:
         facts.append(("Evaluated", format_clock(facts_data.evaluated_seconds)))
