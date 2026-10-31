@@ -80,6 +80,7 @@ class DatabaseTests(unittest.TestCase):
         for index, statement in enumerate((
             "ALTER TABLE credentials ADD COLUMN unexpected TEXT",
             "CREATE INDEX unexpected_lookup ON reports(id)",
+            "CREATE INDEX sqliteX_extra ON reports(id)",
             "DROP INDEX reports_expiry",
         )):
             with self.subTest(statement=statement):
