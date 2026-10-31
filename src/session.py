@@ -211,6 +211,7 @@ class MonitorSession:
         self._markers: list[TimelineMark] = []
         self._marker_count = 0
         self._checkpoint_store: CheckpointStore | None = None
+        self._checkpoint_session_id: str | None = None
         self._checkpoint_next = 0.0
         self._checkpoint_error: str | None = None
         self._target_created: float | None = None
@@ -396,7 +397,9 @@ class MonitorSession:
         """
         try:
             if self.settings.checkpoint is not None:
-                self._checkpoint_store = CheckpointStore(self.settings.checkpoint, self.VERSION)
+                self._checkpoint_store = CheckpointStore(
+                    self.settings.checkpoint, self.VERSION, session_id=self._checkpoint_session_id
+                )
             if self.attached:
                 self.manager.attach(self.attach_pid, expected_create_time=self.attach_create_time)
             else:

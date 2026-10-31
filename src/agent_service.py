@@ -184,7 +184,7 @@ class AgentRegistry:
             raise AgentError("evidence_unavailable", "no recovery checkpoint directory is configured")
         source = self.checkpoints / record.checkpoint
         verify_private_data_path(source)
-        raw = read_checkpoint(source, app_version=_version())
+        raw = read_checkpoint(source, app_version=_version(), session_id=record.identity)
         metadata = raw["checkpoint"]
         if metadata["writer_identity"] != record.writer_identity:
             raise AgentError("evidence_unavailable", "checkpoint writer identity does not match the session")
@@ -500,7 +500,7 @@ class AgentRegistry:
             created = _number(params.get("create_time"), "create_time", 0.000001, 2**53)
             if pid == os.getpid() or process_user_sid(pid) != current_user_sid():
                 raise AgentError("forbidden", "attachment requires another process owned by the current user")
-            session = self.session_type.attach(pid, create_time=created, options=options)
+            session = self.session_type.attach(pid, create_time=created, options=options, _checkpoint_session_id=identity)
         elif mode == "launch":
             if "pid" in params or "create_time" in params:
                 raise AgentError("invalid_input", "launch does not accept attachment fields")
@@ -515,7 +515,8 @@ class AgentRegistry:
             if (not isinstance(args, list) or len(args) > 64
                     or any(not isinstance(value, str) or len(value) > 4096 or "\0" in value for value in args)):
                 raise AgentError("invalid_input", "target arguments must be at most 64 bounded literal strings")
-            session = self.session_type.launch(path, args=args, options=options, _manager_factory=AgentProcessManager)
+            session = self.session_type.launch(path, args=args, options=options, _manager_factory=AgentProcessManager,
+                                               _checkpoint_session_id=identity)
         else:
             raise AgentError("invalid_input", "mode must be attach or launch")
         retired_record = self.records.pop(retired) if retired is not None else None

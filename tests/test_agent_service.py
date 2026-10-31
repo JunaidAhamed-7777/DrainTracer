@@ -48,15 +48,17 @@ class FakeSession:
         self.created.append(self)
 
     @classmethod
-    def attach(cls, _pid, *, create_time, options):
+    def attach(cls, _pid, *, create_time, options, _checkpoint_session_id=None):
         result = cls(options, "attach")
         result.create_time = create_time
+        result.checkpoint_session_id = _checkpoint_session_id
         return result
 
     @classmethod
-    def launch(cls, path, args=(), *, options, _manager_factory):
+    def launch(cls, path, args=(), *, options, _manager_factory, _checkpoint_session_id=None):
         result = cls(options, "launch")
         result.path, result.args, result.factory = path, args, _manager_factory
+        result.checkpoint_session_id = _checkpoint_session_id
         return result
 
     def start(self):

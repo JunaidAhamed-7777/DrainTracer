@@ -214,6 +214,39 @@ class NativeRecoveryTests(unittest.TestCase):
         self.assertEqual(report["root_pid"], target["pid"])
         self.assertEqual(client.request("status")["active_sessions"], 0)
 
+    def test_same_writer_checkpoint_swap_is_refused_when_pending_launch_identity_is_unknown(self):
+        script = self.root / "steady.py"
+        script.write_text("import time; time.sleep(60)", encoding="utf-8")
+        process, client = self.start_agent(allow_launch=True)
+        params = {"mode": "launch", "target": str(script), "timeout_seconds": 20,
+                  "sample_interval_ms": 100, "windows_seconds": [1]}
+        first, second = (client.request("start", params)["session_id"] for _ in range(2))
+        first_path = self.state / "checkpoints" / (first + ".json")
+        second_path = self.state / "checkpoints" / (second + ".json")
+        wait_for(lambda: first_path.exists() and second_path.exists())
+        original = read_checkpoint(first_path, app_version=_version(), session_id=first)
+        other = read_checkpoint(second_path, app_version=_version(), session_id=second)
+        self.assertEqual(original["checkpoint"]["writer_identity"], other["checkpoint"]["writer_identity"])
+        process.kill()
+        process.communicate(timeout=5)
+        journal = self.state / "agent-state.json"
+        saved = json.loads(journal.read_text(encoding="utf-8"))
+        first_record = next(item for item in saved["sessions"] if item["session_id"] == first)
+        first_record.update(pid=None, create_time=None, state="accepted", result=None)
+        journal.write_text(json.dumps(saved), encoding="utf-8")
+        replacement = second_path.read_bytes()
+        first_path.write_bytes(replacement)
+        _new_process, client = self.start_agent(allow_launch=True)
+        restored = client.request("status", {"session_id": first})
+        self.assertEqual(restored["state"], "interrupted")
+        self.assertIsNone(restored["target_identity"]["pid"])
+        self.assertEqual(restored["identity_status"], "unknown")
+        with self.assertRaises(AgentError) as refused:
+            client.request("export", {"session_id": first})
+        self.assertEqual(refused.exception.code, "evidence_unavailable")
+        self.assertEqual(first_path.read_bytes(), replacement)
+        self.assertEqual(client.request("status")["active_sessions"], 0)
+
     def test_failed_workload_and_storage_exhaustion_do_not_stop_another_session(self):
         good, bad = self.root / "good.py", self.root / "bad.py"
         good.write_text("import time; time.sleep(60)", encoding="utf-8")
