@@ -311,7 +311,7 @@ def main(argv=None):
                 save(args.output, record)
                 if not row["cleanup_complete"]:
                     raise RuntimeError("Owned cleanup is incomplete; refusing another target")
-                if row["exit_code"] == 130:
+                if row.get("interrupted") or row["exit_code"] == 130:
                     raise KeyboardInterrupt
                 print(f"DONE {args.mode} {repeat} tree-{size}: {row['budget_breaches']}", flush=True)
                 gc.collect()
@@ -333,6 +333,8 @@ def main(argv=None):
                 args.output.parent / (args.output.stem + "-reports") / "soak-31")
             row["budget_breaches"] = breaches(row, budget)
             record["soak"] = row
+            if row.get("interrupted") or row["exit_code"] == 130:
+                raise KeyboardInterrupt
         record["state"] = "complete"
         record["active_case"] = None
         if budget and any(row["budget_breaches"] for row in [*record["runs"], *([record["soak"]] if "soak" in record else [])]):
