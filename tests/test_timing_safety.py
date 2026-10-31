@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import json
 import time
 import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-from helpers import make_process
+from helpers import make_console, make_process
 
-from src.events import LeakResource
+from src.events import LeakResource, MetricsStream
+from src.headless import HeadlessRunner
 from src.leak_detector import LeakDetector
 from src.process_runner import ProcessManager
 from src.session_facts import SessionFacts
@@ -93,6 +95,27 @@ class TimingSafetyTests(unittest.TestCase):
         sample = self.tick(20)
         self.assertTrue(sample.warming_up)
         self.assertGreater(self.detector.warmup_remaining, 3)
+
+    def test_timing_counts_survive_queue_eviction_privacy_and_machine_summary(self) -> None:
+        from src.privacy import redact_report
+        from src.report_contract import session_summary
+
+        for _ in range(4):
+            self.tick()
+        gap = self.tick(9)
+        runner = HeadlessRunner("worker.exe", console=make_console())
+        stream = MetricsStream(1, facts=runner.facts)
+        stream.publish(gap)
+        stream.publish(self.tick())
+        for sample in stream.drain():
+            runner._accept_snapshot(sample, already_observed=True)
+        self.assertIn("1 sampling gap", runner.monitor_cost_text())
+        shared = redact_report(json.loads(json.dumps(runner.build_report())))
+        self.assertEqual(shared["session_facts"]["monitor"]["sampling_gaps"], 1)
+        self.assertEqual(shared["session_facts"]["monitor"]["clock_adjustments"], 0)
+        summary = session_summary(shared)
+        self.assertEqual(summary["measurement"]["sampling_gaps"], 1)
+        self.assertEqual(summary["measurement"]["clock_adjustments"], 0)
 
 
 if __name__ == "__main__":
