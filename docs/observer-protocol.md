@@ -6,7 +6,7 @@ thresholds, and scopes budgets to the recorded source, OS, Python, machine
 conditions, and at most 31 logical fixture processes. It does not establish
 hardware-independent cost limits or the performance of every Windows service.
 
-## Pilot, budgets, and verification
+## Reference runs, budgets, and verification
 
 1. Measure native stable process trees of depth 0/2/4 and fan-out 2: one,
    seven, and 31 logical Python processes, each holding 1 MiB and one waiting
@@ -29,7 +29,7 @@ hardware-independent cost limits or the performance of every Windows service.
    objects. Measure RSS and export cost, validate the resulting JSON through
    the bounded public reader, and verify exact facts and first/last points
    survive any contract-driven export thinning.
-4. Derive per-size budgets from the maximum pilot run values. P95 collection,
+4. Derive per-size budgets from the maximum reference-run values. P95 collection,
    mean/P95 sampler CPU, and P95 post-collection age receive a 1.5 multiplier;
    observed maxima and export duration receive a 2.0 multiplier. The RSS
    ceiling is 1.25 times the largest measured native or full-retention peak.
