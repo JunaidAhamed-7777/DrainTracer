@@ -8,6 +8,36 @@ label redaction is not whole-report sanitization. See
 [Privacy and safe sharing](privacy.md) and the [privacy policy](../PRIVACY.md)
 for storage, network behavior, retention, and deletion.
 
+## Compare repeated runs
+
+Supply independently collected reports on both sides:
+
+```powershell
+draintracer diff a1.json b1.json --before-run a2.json --before-run a3.json --after-run b2.json --after-run b3.json --json
+```
+
+Each group needs 2–20 reports. Paths and recorded report IDs must be distinct
+across both groups: the same run cannot supply either side's evidence twice.
+Legacy reports without IDs cannot prove independence; collect separate runs
+and preserve their original files. Combined source JSON
+is limited to 128 MiB before loading; the ordinary per-report validation still
+applies. Repeated mode always checks strict comparability for every within-group
+and across-group pair. Every caveat retains its run labels, such as A2/B3, and
+blocks a strict claim when the ordinary comparison engine would block it.
+
+For each resource, JSON and terminal output show median and observed minimum and
+maximum drift (bytes or counts per second in JSON) and whole-run peaks. Improvement
+requires all after-run drift values below all before-run drift values beyond the
+existing resource noise band, or every after-run signal below every before-run
+signal. A new strongest after-run signal is a regression. Large median differences
+with overlapping ranges remain inconclusive. Mixed resource improvements and
+regressions remain mixed. Peaks describe usage; budgets apply to the largest peak
+across all after runs. Existing regression and budget exit flags still apply.
+
+These are observed ranges, not confidence intervals or calibrated probabilities.
+No detector thresholds change. The shared `compare_repeated_reports` engine is
+also the basis for controlled baseline checks, so those checks use the same rule.
+
 ## Export a session
 
 Press `E` in the dashboard to export the samples collected so far. Each
@@ -158,6 +188,33 @@ discarded snapshots, including an overflow on the final publication. Peaks,
 worst signals, budget decisions, coverage, and sample counts still include
 every collected observation. `chart.seen` counts snapshots accepted into chart
 history, so it can be smaller than `samples.taken` after queue loss.
+
+Export may thin the chart further when a dense process tree would exceed the
+public reader's token, nesting, or 64 MiB byte limits. First/last retained
+snapshots and all exact session facts remain; `snapshot_stride` and
+`session_facts.chart.stride/stored` describe the exported detail. JSON and HTML
+use the same bounded dictionary, while live dashboard history remains intact.
+A single-sample peak or warning can disappear from the chart but remains in
+exact peaks/signals/counts. If non-chart evidence itself cannot fit, export
+fails explicitly instead of silently dropping that evidence.
+
+Exact `session_facts.monitor.clock_adjustments` and `sampling_gaps` count
+temporal resets even when their detailed snapshot/event is evicted. New reports
+record zero explicitly; an absent field in an older report is unknown. A
+non-advancing/backwards wall clock, a wall/monotonic step difference over one
+second, or a sample gap longer than the requested interval plus the shortest
+window's 15% uncovered allowance restarts detection and attribution windows.
+The reset snapshot's metadata identifies the reason and measured clock/gap
+values. Shorter clock slews are not classified by this step guard.
+
+Fresh windows must fill after a reset. Unobserved gaps do not count toward
+warm-up, evaluated time, or cadence facts; cadence diagnostics still expose the
+actual observer delay. Intentional pause also clears windows, with paused
+samples marked stale. Prior peaks, counts, lifecycle summaries, and already
+judged signals remain historical evidence. Per-counter full coverage means
+every observed live counter was readable; it cannot prove continuous sampling
+through a gap. Check temporal counters alongside coverage before using a run
+as a regression baseline.
 
 The top-level `markers` list holds the markers added with `M` during a
 dashboard session: `index`, `label` (`marker N`), `timestamp`, `time`, and

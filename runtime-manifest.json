@@ -16,6 +16,7 @@
     "src/agent_transport.py",
     "src/analysis.py",
     "src/api.py",
+    "src/baseline_control.py",
     "src/budgets.py",
     "src/checkpoints.py",
     "src/config.py",
@@ -38,6 +39,7 @@
     "src/process_picker.py",
     "src/process_runner.py",
     "src/process_table.py",
+    "src/repeat_comparison.py",
     "src/report.py",
     "src/report_contract.py",
     "src/report_diff.py",
@@ -73,6 +75,8 @@
     "src/view_monitor.py",
     "src/view_processes.py",
     "src/view_timeline.py",
-    "src/widgets.py"
+    "src/widgets.py",
+    "src/workload.py",
+    "src/workload_logs.py"
   ]
 }

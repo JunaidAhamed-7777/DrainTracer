@@ -240,9 +240,28 @@ def _partial_coverage(report: Mapping[str, Any], summary: ReportSummary) -> bool
             or measurement.get("result") == "partial")
 
 
+def _timing_interrupted(summary: ReportSummary) -> bool:
+    monitor = summary.facts.monitor if summary.facts is not None else None
+    return isinstance(monitor, Mapping) and any(
+        type(monitor.get(key)) is int and monitor[key] > 0 for key in ("clock_adjustments", "sampling_gaps")
+    )
+
+
+_TIMING_DETAIL = (" The clock changed or sampling was interrupted, so windows restarted. "
+                  "Earlier judgments do not establish continuous observation.")
+
+
 def _verdict_label(report: Mapping[str, Any], summary: ReportSummary) -> str:
     if _partial_evidence(report):
         return "PARTIAL" if summary.worst == "none" else f"{summary.worst.upper()} / PARTIAL"
+    outcome = report.get("outcome")
+    if isinstance(outcome, Mapping) and "workload" in outcome:
+        workload = outcome["workload"]
+        state = workload.get("state") if isinstance(workload, Mapping) else None
+        if state != "complete":
+            return "WORKLOAD INTERRUPTED" if state == "interrupted" else (
+                "WORKLOAD FAILED" if state in {"failed", "monitor_error", "startup_failed"}
+                else "WORKLOAD INCOMPLETE")
     if summary.worst != "none":
         return summary.worst.upper()
     if all(item.coverage_samples > 0 and item.unavailable_samples == item.coverage_samples
@@ -250,6 +269,8 @@ def _verdict_label(report: Mapping[str, Any], summary: ReportSummary) -> str:
         return "UNAVAILABLE"
     if report.get("detection_ran", _measurement(report).get("detection_ran")) is False:
         return "INCONCLUSIVE"
+    if _timing_interrupted(summary):
+        return "EVIDENCE GAPS"
     return "PARTIAL" if _partial_coverage(report, summary) else "CLEAR"
 
 
@@ -272,6 +293,14 @@ def _verdict(report: Mapping[str, Any], summary: ReportSummary) -> str:
             f'<span class="badge sev-{severity}">{_e(badge)}</span>'
             f'<div><h2>Partial checkpoint evidence</h2><p>{_e(detail)}</p></div></section>'
         )
+    if badge.startswith("WORKLOAD "):
+        detail = ("Readiness, exercise steps, or monitoring did not complete. "
+                  "Inspect the workload outcome and rerun after correcting the failure. "
+                  "Resource measurements below describe only the evidence collected")
+        detail += f"; the highest retained leak signal is {worst.upper()}." if worst != "none" else "."
+        return ('<section class="verdict sev-low" aria-label="Verdict">'
+                f'<span class="badge sev-low">{badge}</span>'
+                f'<div><h2>{_e(badge.capitalize())}</h2><p>{_e(detail)}</p></div></section>')
     if badge in ("INCONCLUSIVE", "UNAVAILABLE"):
         # Older reports lack the field; only an explicit False is inconclusive.
         headline = "No resource measurements were available" if badge == "UNAVAILABLE" else (
@@ -285,6 +314,8 @@ def _verdict(report: Mapping[str, Any], summary: ReportSummary) -> str:
             if partial:
                 detail += " Coverage was partial or unavailable."
             detail += " A clean result here says nothing about leaks; monitor for longer."
+        if _timing_interrupted(summary):
+            detail += _TIMING_DETAIL
         return (
             '<section class="verdict sev-low" aria-label="Verdict">'
             f'<span class="badge sev-low">{badge}</span>'
@@ -293,7 +324,8 @@ def _verdict(report: Mapping[str, Any], summary: ReportSummary) -> str:
             "</section>"
         )
     if worst == "none":
-        headline = "No leak signals in the measured subset" if partial else "No leak signals"
+        headline = "No leak signals in interrupted observations" if badge == "EVIDENCE GAPS" else (
+            "No leak signals in the measured subset" if partial else "No leak signals")
         detail = (
             "No measured resource showed sustained growth that met the detector's criteria. "
             "That is not proof the program is leak-free."
@@ -312,7 +344,9 @@ def _verdict(report: Mapping[str, Any], summary: ReportSummary) -> str:
         detail = "; ".join(parts) + "."
     if partial:
         detail += " Coverage was partial or unavailable; unreadable processes may hide growth."
-    tone = "low" if badge == "PARTIAL" else worst
+    if _timing_interrupted(summary):
+        detail += _TIMING_DETAIL
+    tone = "low" if badge in {"PARTIAL", "EVIDENCE GAPS"} else worst
     return (
         f'<section class="verdict sev-{_e(tone)}" aria-label="Verdict">'
         f'<span class="badge sev-{_e(tone)}">{_e(badge)}</span>'
@@ -515,6 +549,11 @@ def _monitor_panel(summary: ReportSummary) -> str:
             f"{int(finite(monitor.get('dropped_snapshots')) or 0):,} dropped before display",
         ),
     ]
+    timing = []
+    for key, label in (("clock_adjustments", "clock adjustment"), ("sampling_gaps", "sampling gap")):
+        value = monitor.get(key)
+        timing.append(f"{value:,} {label}{'s' if value != 1 else ''}" if type(value) is int and value >= 0 else f"{label}s unknown")
+    rows.append(("Observation timing", " · ".join(timing)))
     if facts is not None and facts.evaluated_seconds is not None:
         rows.append(
             (
@@ -523,6 +562,19 @@ def _monitor_panel(summary: ReportSummary) -> str:
                 f"{format_clock(facts.after_warmup_seconds or 0.0)} after warm-up",
             )
         )
+    host = monitor.get("host_context")
+    if isinstance(host, Mapping):
+        cpu = finite(host.get("cpu_percent"))
+        available = finite(host.get("available_memory_bytes"))
+        age = finite(host.get("age_seconds"))
+        cost = finite(host.get("collection_ms"))
+        rows += [
+            ("Host CPU context", f"{cpu:.1f}% of host capacity" if cpu is not None else "n/a"),
+            ("Host available physical memory", format_bytes(available) if available is not None else "n/a"),
+            ("Host sampling", (f"{age:.1f}s old at final sample" if age is not None else "age n/a")
+             + (f" · {cost:.2f} ms pass" if cost is not None else " · cost n/a")
+             + " · every 5s; whole host context, not target usage or cause"),
+        ]
     body = _table(
         ("Measure", "Value"),
         [f"<tr><td>{_e(label)}</td><td>{_e(value)}</td></tr>" for label, value in rows],

@@ -10,6 +10,9 @@
 
 <h1 align="center">DrainTracer</h1>
 
+[Controlled local baselines](docs/controlled-baselines.md) add deliberate
+repeated-run approvals, reviewable audit history, report-sourced budgets and
+scoped expiring exceptions for reproducible regression checks.
 Python integrations can use the [supported session API](docs/python-api.md)
 for launch/attach, immutable snapshots, bounded subscriptions, cancellation,
 and explicit cleanup/export outcomes without initializing the dashboard.
@@ -72,6 +75,8 @@ values and process IDs vary by run.*
   collecting evidence, judged clean, growing, or unreadable, and how fresh the
   last sample is ("sample 0.4s ago · 12 ms · cadence 502 ms"), amber when
   samples go stale; reports add coverage and the monitor's own CPU and memory.
+  The Monitor view also shows host CPU and available physical memory, sampled
+  every five seconds with age and cost. These are host context, not target usage.
 - **Ask why.** Focused views rank growing processes, show each detection
   window's checks behind a verdict, annotate a timeline with your markers, and
   report monitor health, without pausing sampling.
@@ -218,6 +223,16 @@ Once the installation check passes, `draintracer` offers two startup choices:
 Hook selection keeps the program's PID and creation time through attachment.
 If that identity changes or cannot be verified, select the program again.
 An explicit `--pid` selects the process current when attachment begins.
+
+On Windows, tracked PID creation times must match exactly: a sub-10 ms change
+identifies a replacement, which is left untouched by the old target's controls.
+See [process identity verification](docs/process-identities.md) for native
+stability evidence and the limits of this check.
+
+An unreadable current or original creation identity permits observation but
+refuses process control. A later readable PID holder does not automatically
+gain the old target's control authority; attach again with a verified identity.
+An owed resume remains pending until it can be retried safely.
 
 Use **Up/Down** to highlight a startup choice, then **Spacebar** (or Enter)
 to select it. Navigation help appears below the Get Started box. Redirected
@@ -421,6 +436,11 @@ priority and GitHub Actions integration.
 
 ## Tune it to your workload
 
+For repeatable local and CI launches, use `draintracer-workload recipe.json`.
+Recipes select interpreter, working directory, environment, readiness, and
+bounded exercise steps, with optional capped target logs. See the
+[workload recipe guide](docs/workloads.md) for ownership, privacy, and exits.
+
 Copy [examples/drainrc.toml](examples/drainrc.toml) to `.drainrc` in your project.
 From a source checkout, you can also select that example explicitly:
 
@@ -507,6 +527,14 @@ exits `4`. Detection windows are compared by their numeric values, even when
 rounded duration labels look identical. Coverage caveats use recorded whole-session counts when available,
 including wholly unreadable samples, even after chart history is thinned.
 
+Compare repeated runs by adding `--before-run` and `--after-run` for each extra
+report: `draintracer diff a1.json b1.json --before-run a2.json --after-run b2.json`.
+Groups require 2–20 distinct reports per side, at most 128 MiB combined JSON,
+and always enforce strict comparability across every run pair. Output includes
+median and observed min/max drift and peaks. Overlapping noisy drift ranges
+produce an inconclusive result, rather than a favorable single-pair improvement.
+These observed ranges describe the supplied runs; they are not confidence intervals.
+
 Use comparable workloads, durations, warm-ups, and settings. Long sessions
 count evicted event messages separately as `event_counts`; the HTML event
 section shows observed, retained, and discarded totals. They also
@@ -515,9 +543,16 @@ peaks with their times, worst severities, signal episode counts, evaluated
 time, and sample counts stay exact in `session_facts`. Reports include local
 paths and process details. If a stalled consumer overflows the sample queue,
 reports count the discarded detail; peaks, signals, budgets, coverage, and
-sample counts still include every observation. Review reports before sharing. The
-[report guide](docs/reports.md) covers the schema, retention, interpretation,
+sample counts still include every observation. Review reports before sharing.
+Dense-tree exports may thin chart detail further to stay readable by the
+bounded machine contract; first/last points and exact facts remain.
+The [report guide](docs/reports.md) covers the schema, retention, interpretation,
 and comparison exit codes.
+
+Clock adjustments and sampling gaps restart resource windows with fresh
+evidence and appear in warnings and exact monitor diagnostics. Counter coverage
+describes observed samples; it does not establish continuous observation across
+an interruption. Earlier judged signals remain historical evidence.
 
 ## Documentation
 
