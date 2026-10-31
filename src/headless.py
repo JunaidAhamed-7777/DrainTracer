@@ -76,6 +76,7 @@ class HeadlessRunner(MonitorSession):
         fail_on_inconclusive: bool = False,
         fail_on_target_error: bool = False,
         quiet: bool = False,
+        require_full_coverage: bool | None = None,
     ) -> None:
         if fail_on == LeakSeverity.NONE:
             raise ValueError("fail_on must be a leak severity, not NONE")
@@ -92,6 +93,9 @@ class HeadlessRunner(MonitorSession):
         self.fail_on = fail_on
         self.fail_on_inconclusive = fail_on_inconclusive
         self.fail_on_target_error = fail_on_target_error
+        self.require_full_coverage = (
+            self.settings.require_full_coverage if require_full_coverage is None else require_full_coverage
+        )
         self._github_actions = os.environ.get("GITHUB_ACTIONS") == "true"
         self._export_error: str | None = None
         self._run_error: str | None = None
@@ -159,10 +163,15 @@ class HeadlessRunner(MonitorSession):
         try:
             self.start()
         except Exception as exc:
+            self._startup_state = "failed"
+            self._startup_error = str(exc) or type(exc).__name__
+            self._run_error = f"startup failed: {self._startup_error}"
             self._print_line("error", f"Could not start monitoring: {exc}")
             hint = self.startup_hint(exc)
             if hint:
                 self._print_line("info", hint)
+            self._export()
+            self._print_summary()
             return EXIT_ERROR
 
         try:
@@ -173,7 +182,13 @@ class HeadlessRunner(MonitorSession):
         except Exception as exc:
             self._fail("Monitoring", exc)
         finally:
-            self.shutdown()
+            try:
+                self.shutdown()
+            except KeyboardInterrupt:
+                self._interrupted = True
+                self._append_event("Cleanup interrupted; exporting available evidence", "warn")
+            except Exception as exc:  # noqa: BLE001 - export evidence after any cleanup failure
+                self._fail("Cleanup", exc)
         try:
             self.poll()
         except Exception as exc:
@@ -232,6 +247,8 @@ class HeadlessRunner(MonitorSession):
             "breached": self.breached,
             "fail_on_inconclusive": self.fail_on_inconclusive,
             "fail_on_target_error": self.fail_on_target_error,
+            "require_full_coverage": self.require_full_coverage,
+            "exit_code": self.exit_status(),
             "budgets": [check.to_dict() for check in self.budget_checks()],
         }
         if self._run_error is not None:
@@ -245,6 +262,8 @@ class HeadlessRunner(MonitorSession):
         error, then an exceeded budget; the optional policies only apply to
         runs that are otherwise a pass.
         """
+        if self._startup_state == "failed":
+            return EXIT_ERROR
         if self.breached:
             return EXIT_LEAK
         if self._interrupted:
@@ -255,6 +274,8 @@ class HeadlessRunner(MonitorSession):
             return EXIT_BUDGET
         if self.fail_on_target_error and self.target_failed:
             return EXIT_TARGET_ERROR
+        if self.require_full_coverage and not self.full_coverage:
+            return EXIT_INCONCLUSIVE
         if self.fail_on_inconclusive and not self.conclusive:
             return EXIT_INCONCLUSIVE
         return EXIT_PASS
@@ -266,6 +287,8 @@ class HeadlessRunner(MonitorSession):
             text += ", inconclusive runs"
         if self.fail_on_target_error:
             text += ", target errors"
+        if self.require_full_coverage:
+            text += ", incomplete coverage"
         if self.budgets:
             text += ", budgets"
         return text
@@ -447,7 +470,11 @@ class HeadlessRunner(MonitorSession):
         elif status == EXIT_TARGET_ERROR:
             reason = f"the target exited with code {self.manager.exit_code}"
         elif status == EXIT_INCONCLUSIVE:
-            reason = self.inconclusive_reason()
+            if self.require_full_coverage and not self.full_coverage:
+                verdict = "INSUFFICIENT COVERAGE"
+                reason = "full private-byte, handle, and thread coverage was not observed for every live sample"
+            else:
+                reason = self.inconclusive_reason()
         elif status == EXIT_BUDGET:
             reason = "; ".join(check.describe() for check in self.over_budget)
         if status == EXIT_PASS and not self.conclusive:

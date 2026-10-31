@@ -159,6 +159,16 @@ class DispatchTests(unittest.TestCase):
         self.assertEqual(kwargs["fail_on"], LeakSeverity.HIGH)
         self.assertEqual(kwargs["attach_pid"], 4242)
 
+    def test_full_coverage_policy_is_headless_only_and_reaches_the_runner(self) -> None:
+        self.assertIn("--headless", _parse_error(["--target", "app.exe", "--require-full-coverage"]))
+        with mock.patch.object(cli, "HeadlessRunner") as runner:
+            runner.return_value.run.return_value = 3
+            code = cli._main(make_console(), ["--headless", "--pid", "4242", "--no-config",
+                                              "--require-full-coverage"])
+        self.assertEqual(code, 3)
+        self.assertTrue(runner.call_args.kwargs["require_full_coverage"])
+        self.assertTrue(runner.call_args.kwargs["settings"].require_full_coverage)
+
     def test_settings_file_profile_and_flags_layer_in_order(self) -> None:
         import tempfile
         from pathlib import Path
