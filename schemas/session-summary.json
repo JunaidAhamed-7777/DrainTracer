@@ -1,0 +1,427 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/JunaidAhamed-7777/DrainTracer/raw/main/schemas/session-summary.json",
+  "title": "DrainTracer session summary version 1",
+  "type": "object",
+  "required": [
+    "summary_schema",
+    "report_schema",
+    "report_id",
+    "version",
+    "target",
+    "measurement",
+    "monitor_errors",
+    "peaks",
+    "worst_severity",
+    "counts"
+  ],
+  "properties": {
+    "summary_schema": {
+      "const": 1
+    },
+    "report_schema": {
+      "enum": [
+        1,
+        2,
+        3
+      ]
+    },
+    "report_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "version": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "target": {
+      "type": "object",
+      "required": [
+        "path",
+        "mode",
+        "exit_code"
+      ],
+      "properties": {
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "exit_code": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      }
+    },
+    "measurement": {
+      "type": "object",
+      "required": [
+        "detection_ran",
+        "partial_coverage",
+        "result"
+      ],
+      "properties": {
+        "detection_ran": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "partial_coverage": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "result": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "monitor_errors": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "peaks": {
+      "type": "object",
+      "required": [
+        "private_bytes",
+        "rss_bytes",
+        "vms_bytes",
+        "handles",
+        "threads",
+        "cpu_percent",
+        "io_read_bytes_per_sec",
+        "io_write_bytes_per_sec"
+      ],
+      "properties": {
+        "private_bytes": {
+          "type": "object",
+          "required": [
+            "value",
+            "timestamp",
+            "unit",
+            "basis"
+          ],
+          "properties": {
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "timestamp": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "unit": {
+              "const": "bytes"
+            },
+            "basis": {
+              "enum": [
+                "session_facts",
+                "retained_snapshots",
+                "unavailable"
+              ]
+            }
+          }
+        },
+        "rss_bytes": {
+          "type": "object",
+          "required": [
+            "value",
+            "timestamp",
+            "unit",
+            "basis"
+          ],
+          "properties": {
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "timestamp": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "unit": {
+              "const": "bytes"
+            },
+            "basis": {
+              "enum": [
+                "session_facts",
+                "retained_snapshots",
+                "unavailable"
+              ]
+            }
+          }
+        },
+        "vms_bytes": {
+          "type": "object",
+          "required": [
+            "value",
+            "timestamp",
+            "unit",
+            "basis"
+          ],
+          "properties": {
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "timestamp": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "unit": {
+              "const": "bytes"
+            },
+            "basis": {
+              "enum": [
+                "session_facts",
+                "retained_snapshots",
+                "unavailable"
+              ]
+            }
+          }
+        },
+        "handles": {
+          "type": "object",
+          "required": [
+            "value",
+            "timestamp",
+            "unit",
+            "basis"
+          ],
+          "properties": {
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "timestamp": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "unit": {
+              "const": "count"
+            },
+            "basis": {
+              "enum": [
+                "session_facts",
+                "retained_snapshots",
+                "unavailable"
+              ]
+            }
+          }
+        },
+        "threads": {
+          "type": "object",
+          "required": [
+            "value",
+            "timestamp",
+            "unit",
+            "basis"
+          ],
+          "properties": {
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "timestamp": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "unit": {
+              "const": "count"
+            },
+            "basis": {
+              "enum": [
+                "session_facts",
+                "retained_snapshots",
+                "unavailable"
+              ]
+            }
+          }
+        },
+        "cpu_percent": {
+          "type": "object",
+          "required": [
+            "value",
+            "timestamp",
+            "unit",
+            "basis"
+          ],
+          "properties": {
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "timestamp": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "unit": {
+              "const": "percent"
+            },
+            "basis": {
+              "enum": [
+                "session_facts",
+                "retained_snapshots",
+                "unavailable"
+              ]
+            }
+          }
+        },
+        "io_read_bytes_per_sec": {
+          "type": "object",
+          "required": [
+            "value",
+            "timestamp",
+            "unit",
+            "basis"
+          ],
+          "properties": {
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "timestamp": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "unit": {
+              "const": "bytes/second"
+            },
+            "basis": {
+              "enum": [
+                "session_facts",
+                "retained_snapshots",
+                "unavailable"
+              ]
+            }
+          }
+        },
+        "io_write_bytes_per_sec": {
+          "type": "object",
+          "required": [
+            "value",
+            "timestamp",
+            "unit",
+            "basis"
+          ],
+          "properties": {
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "timestamp": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "unit": {
+              "const": "bytes/second"
+            },
+            "basis": {
+              "enum": [
+                "session_facts",
+                "retained_snapshots",
+                "unavailable"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "worst_severity": {
+      "enum": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "critical",
+        null
+      ]
+    },
+    "counts": {
+      "type": "object",
+      "required": [
+        "stored_snapshots",
+        "observed_samples",
+        "chart_stride"
+      ],
+      "properties": {
+        "stored_snapshots": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "observed_samples": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "chart_stride": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

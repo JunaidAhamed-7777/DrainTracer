@@ -170,11 +170,19 @@ class MonitorSession:
         # with live processes, ones missing any (partial, which includes
         # unavailable), and ones with nothing readable (unavailable).
         self._coverage_samples = 0
+        self._measured_samples = 0
+        self._fully_covered_samples = 0
+        self._full_coverage = False
         self._partial_samples = {metric: 0 for metric in SIGNAL_METRICS}
         self._unavailable_samples = {metric: 0 for metric in SIGNAL_METRICS}
         self._unreadable_pids: dict[int, str] = {}
         self._current_unreadable: set[int] = set()
         self._monitor_errors: list[str] = []
+        self._startup_state = "not_started"
+        self._startup_error: str | None = None
+        self._cleanup_state = "not_attempted"
+        self._cleanup_actions = {"detach": 0, "terminate": 0, "kill": 0}
+        self._cleanup_errors: list[str] = []
         self._timeline: deque[TimelineMark] = deque(maxlen=self.TIMELINE_LIMIT)
         self._lifecycle_history: deque[LifecycleEvent] = deque(maxlen=self.LIFECYCLE_LIMIT)
         self._markers: list[TimelineMark] = []
@@ -247,6 +255,11 @@ class MonitorSession:
         return any(self._partial_samples.values())
 
     @property
+    def full_coverage(self) -> bool:
+        """Every collected live sample measured all signal metrics, with no failed samples."""
+        return self._full_coverage
+
+    @property
     def measurement_outcome(self) -> str:
         """``conclusive``, ``partial`` (judged, but some processes unreadable), or ``inconclusive``."""
         if not self.conclusive:
@@ -290,6 +303,10 @@ class MonitorSession:
 
     def outcome_text(self) -> str:
         """How the session left the target: running, exited, or stopped."""
+        if self._cleanup_state == "incomplete":
+            return f"{'attached' if self.attached else 'launched'}, cleanup incomplete"
+        if self._startup_state == "failed":
+            return f"{'attach' if self.attached else 'launch'}, startup failed"
         if self.attached:
             return "attached, " + ("left running" if self._left_running else "no longer running")
         if self.stopped_target:
@@ -360,8 +377,14 @@ class MonitorSession:
             self._accept_snapshot(self.detector.sample_once())
             self.detector.start()
             self._log_start()
-        except BaseException:
-            self._abort_start()
+            self._startup_state = "started"
+        except BaseException as exc:
+            self._startup_state = "failed"
+            self._startup_error = str(exc) or type(exc).__name__
+            try:
+                self._abort_start()
+            except Exception as cleanup_error:  # noqa: BLE001 - preserve the original startup failure
+                self._note_monitor_error(f"startup cleanup failed: {cleanup_error}")
             raise
 
     def _log_start(self) -> None:
@@ -422,11 +445,51 @@ class MonitorSession:
         return None
 
     def _abort_start(self) -> None:
-        self.detector.stop()
-        if self.attached:
-            self.manager.detach()
-        elif self.manager.has_tracked_processes:
-            self.manager.kill()
+        try:
+            self.detector.stop()
+        finally:
+            if self.attached:
+                self._attempt_cleanup("detach")
+            elif self.manager.has_tracked_processes:
+                self._mark_stopping()
+                self._attempt_cleanup("kill")
+            else:
+                self._cleanup_state = "complete"
+
+    def _attempt_cleanup(self, action: str) -> None:
+        """Record ownership actions and failures without changing their policy."""
+        self._cleanup_actions[action] += 1
+        try:
+            getattr(self.manager, action)()
+        except BaseException as exc:
+            error = f"{action}: {str(exc) or type(exc).__name__}"
+            if error not in self._cleanup_errors and len(self._cleanup_errors) < MONITOR_ERROR_LIMIT:
+                self._cleanup_errors.append(error)
+            raise
+        finally:
+            self._cleanup_state = "incomplete" if self.manager.has_tracked_processes else "complete"
+            if self._cleanup_state == "incomplete" and self.manager.last_error:
+                error = f"{action}: {self.manager.last_error}"
+                if error not in self._cleanup_errors and len(self._cleanup_errors) < MONITOR_ERROR_LIMIT:
+                    self._cleanup_errors.append(error)
+
+    def _cleanup_record(self) -> dict[str, Any]:
+        pids = sorted(self.manager.tracked_pids)
+        pending_resume = self.manager.pending_resume_pids
+        retained = pids[:50]
+        return {
+            "state": self._cleanup_state,
+            "ownership": "attached" if self.attached else "launched",
+            "attempted_actions": dict(self._cleanup_actions),
+            "remaining_count": len(pids),
+            "remaining_processes": [
+                {"pid": pid, "create_time": self.manager.created_at(pid),
+                 "resume_required": pid in pending_resume} for pid in retained
+            ],
+            "omitted_processes": len(pids) - len(retained),
+            "resume_required": bool(pending_resume),
+            "errors": list(self._cleanup_errors),
+        }
 
     def shutdown(self) -> None:
         """Stop sampling; terminate launched targets, release attached ones.
@@ -442,13 +505,21 @@ class MonitorSession:
             self.detector.stop()
             if self.attached:
                 self._left_running = self.manager.is_running
-                self.manager.detach()
+                self._attempt_cleanup("detach")
             elif self.manager.is_running or self.manager.has_tracked_processes:
                 self._mark_stopping()
-                self.manager.terminate()
+                self._attempt_cleanup("terminate")
+            else:
+                self._cleanup_state = "complete"
         except BaseException:
             self._force_cleanup()
             raise
+        finally:
+            if self._cleanup_state == "incomplete":
+                self._append_event(
+                    "Cleanup incomplete; tracked processes remain. Inspect outcome.cleanup "
+                    "in the report before considering cleanup complete.", "warn",
+                )
 
     def _mark_stopping(self) -> None:
         """Before ending a tree, note whether that stops the root or only its leftovers.
@@ -475,10 +546,12 @@ class MonitorSession:
                 # Release or kill the target even if the sampler will not stop.
                 if self.attached:
                     self._left_running = self._left_running or self.manager.is_running
-                    self.manager.detach()
+                    self._attempt_cleanup("detach")
                 elif self.manager.is_running or self.manager.has_tracked_processes:
                     self._mark_stopping()
-                    self.manager.kill()
+                    self._attempt_cleanup("kill")
+                else:
+                    self._cleanup_state = "complete"
         except KeyboardInterrupt:
             pass  # A third Ctrl+C: stop trying rather than loop.
 
@@ -527,6 +600,9 @@ class MonitorSession:
         self._last_alert_by_resource = state["latest_alerts"]
         self._judged_resources = state["judged_resources"]
         self._coverage_samples = state["coverage_samples"]
+        self._measured_samples = state["measured_samples"]
+        self._fully_covered_samples = state["fully_covered_samples"]
+        self._full_coverage = state["full_coverage"]
         self._partial_samples = state["partial_samples"]
         self._unavailable_samples = state["unavailable_samples"]
         self._unreadable_pids = state["unreadable_pids"]
@@ -784,6 +860,9 @@ class MonitorSession:
         return {
             "samples": self._coverage_samples,
             "partial": self.partial_coverage,
+            "full": self.full_coverage,
+            "measured_samples": self._measured_samples,
+            "fully_measured_samples": self._fully_covered_samples,
             "metrics": {
                 metric: {
                     "partial_samples": self._partial_samples[metric],
@@ -797,8 +876,12 @@ class MonitorSession:
 
     def _outcome_record(self) -> dict[str, Any]:
         """Target, measurement, and monitor outcomes, kept apart for scripts."""
-        if self.attached:
+        if self._startup_state == "failed" and self._started_at is None:
+            state = "unknown"
+        elif self.attached:
             state = "left_running" if self._left_running else "exited"
+        elif self._cleanup_state == "incomplete" and self.manager.is_running:
+            state = "running"
         elif self._stopped_target:
             state = "stopped"
         elif self.manager.exit_code is not None:
@@ -806,6 +889,8 @@ class MonitorSession:
         else:
             state = "running" if self.manager.is_running else "unknown"
         return {
+            "startup": {"state": self._startup_state, "error": self._startup_error},
+            "cleanup": self._cleanup_record(),
             "target": {
                 "state": state,
                 "exit_code": None if self._stopped_target else self.manager.exit_code,
@@ -816,6 +901,7 @@ class MonitorSession:
                 "result": self.measurement_outcome,
                 "detection_ran": self.conclusive,
                 "partial_coverage": self.partial_coverage,
+                "full_coverage": self.full_coverage,
                 "reason": None if self.conclusive else self.inconclusive_reason(),
                 "coverage": self.coverage_text(),
             },
@@ -1064,6 +1150,9 @@ class MonitorSession:
             record = self._facts.to_dict()
         record["coverage"] = {
             "samples": self._coverage_samples,
+            "full": self.full_coverage,
+            "measured_samples": self._measured_samples,
+            "fully_measured_samples": self._fully_covered_samples,
             "partial_samples": {m: self._partial_samples[m] for m in SIGNAL_METRICS},
             "unavailable_samples": {m: self._unavailable_samples[m] for m in SIGNAL_METRICS},
         }

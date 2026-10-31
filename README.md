@@ -330,6 +330,34 @@ readable fallback when it cannot be read as UTF-8 or displayed.
 
 ## Run a leak check in CI
 
+Use `draintracer doctor --target PATH` to validate the current settings and
+target/report paths before monitoring. It shows configuration origins and
+duration/permission problems without starting or controlling the target.
+`doctor --json` provides a structured diagnostic result. The output-directory
+check writes and removes a temporary probe in the nearest existing directory.
+See [Preflight](docs/preflight.md) for the command and initialization contracts.
+`draintracer init` previews a validated project configuration; add `--write`
+to create it. Existing files are always preserved, and the parent directory
+must already exist.
+
+Use `--no-color` to disable terminal colors in normal or headless runs, or
+`draintracer diff BEFORE.json AFTER.json --no-color` for comparisons. This
+overrides forced color; otherwise Rich follows its normal `NO_COLOR`,
+`FORCE_COLOR`, and terminal detection. Verdict words, unknown readings, and
+text emphasis remain available without relying on color.
+
+`--plain` uses static, unstyled headless text with no screen clearing or live
+redraws. `--quiet` also selects headless mode and suppresses the startup banner,
+routine events, and STAT lines; warnings, signals, errors, and the final summary
+remain visible. Both require `--target` or `--pid`; combine them if needed.
+Inspect progress and the final summary as text, use Ctrl+C or `--timeout` to
+finish, and open the automatically saved JSON/HTML reports. Launched targets
+are cleaned up; attached targets are released. Dashboard Space controls remain
+available in the ordinary interactive mode.
+For comparisons, `diff --plain` prints labeled text without panel borders;
+`diff --quiet` keeps the verdict, caveats, and budget checks. `--json` takes
+precedence over presentation flags and preserves literal report strings.
+
 From the source checkout, use the included stable workload:
 
 ```powershell
@@ -345,10 +373,10 @@ result, rather than forwarding the target's exit code:
 - `0` — no observed signal reached the selected threshold. This includes
   `INCONCLUSIVE` runs that never filled a detection window.
 - `1` — a signal reached the threshold at any point, even if it later cleared.
-- `2` — a usage, startup, monitoring, or report error, unless a higher-priority
-  failing signal or interruption applies.
-- `3` / `4` — only with `--fail-on-inconclusive` (no window judged) or
-  `--fail-on-target-error` (the launched target exited non-zero).
+- `2` — a usage or startup error; after successful startup, a monitoring or
+  report error unless a failing signal or interruption takes precedence.
+- `3` — opted-in inconclusive measurement or incomplete coverage.
+- `4` — only with `--fail-on-target-error`: the launched target exited non-zero.
 - `5` — only with a budget such as `--budget-private 500MB`,
   `--budget-handles 2000`, or `--budget-threads 64`: a peak exceeded it,
   even with no leak signal, because stable usage can still be excessive.
@@ -364,6 +392,12 @@ Headless signal rows label each unjudged resource as inconclusive or unavailable
 `clear` means a window was judged, and earlier signals remain visible.
 The default failure threshold is `high`. Allow enough time after warm-up for
 a detection window to fill, and inspect the verdict as well as the exit code.
+Use `--require-full-coverage` with `--headless` to exit `3` when any live
+sample lacks full private-byte, handle, or thread coverage, including missing
+coverage records or failed samples. Paused samples are excluded; combine it
+with `--fail-on-inconclusive` to also require a judged detection window.
+Reports include structured startup and cleanup results in `outcome`, and
+headless startup or cleanup failures attempt to export available evidence.
 The [headless guide](docs/usage.md#run-without-a-dashboard) covers outcome
 priority and GitHub Actions integration.
 
@@ -419,6 +453,11 @@ update can be written.
 resource trends, events, and process growth after recording.*
 
 Use the JSON reports for scripts and comparisons:
+
+`draintracer-report validate run.json` checks the public report contract;
+`draintracer-report summary run.json` emits a versioned JSON summary without
+loading the terminal UI. See the [schemas and machine-output contract](docs/report-contract.md)
+for supported versions, unknown values, units, and input limits.
 
 ```powershell
 draintracer diff .\before.json .\after.json

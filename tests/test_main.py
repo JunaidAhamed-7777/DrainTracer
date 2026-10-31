@@ -64,6 +64,67 @@ class ParserTests(unittest.TestCase):
 
 
 class DispatchTests(unittest.TestCase):
+    def test_plain_routes_to_static_headless_output_with_no_terminal_sequences(self) -> None:
+        from rich.console import Console
+        from rich.text import Text
+
+        output = io.StringIO()
+        console = Console(file=output, force_terminal=True, color_system="truecolor", width=40)
+        with mock.patch.object(cli, "HeadlessRunner") as runner, \
+                mock.patch.object(cli, "DashboardApp") as dashboard:
+            runner.return_value.run.side_effect = lambda: runner.call_args.kwargs["console"].print(
+                Text("INCONCLUSIVE: handles unavailable", style="bold red on blue")
+            ) or 0
+            code = cli._main(console, ["--plain", "--target", "worker.exe", "--no-config"])
+        self.assertEqual(code, 0)
+        dashboard.assert_not_called()
+        self.assertNotIn("\x1b", output.getvalue())
+        self.assertIn("INCONCLUSIVE: handles unavailable", output.getvalue())
+
+    def test_quiet_implies_headless_and_preserves_target_arguments(self) -> None:
+        with mock.patch.object(cli, "HeadlessRunner") as runner:
+            runner.return_value.run.return_value = 0
+            cli._main(make_console(), ["--quiet", "--target", "worker.exe", "--no-config",
+                                       "--", "--plain", "--quiet"])
+        self.assertTrue(runner.call_args.kwargs["quiet"])
+        self.assertEqual(runner.call_args.kwargs["args"], ["--plain", "--quiet"])
+
+    def test_no_color_reaches_normal_and_headless_shared_console(self) -> None:
+        from rich.ansi import AnsiDecoder
+        from rich.console import Console
+        from rich.text import Text
+
+        for headless in (False, True):
+            with self.subTest(headless=headless):
+                output = io.StringIO()
+                console = Console(file=output, force_terminal=True, color_system="truecolor")
+
+                def render_status(*_args, console=console):
+                    console.print(Text("HIGH signal; unavailable handles", style="bold red on blue"))
+                    return 0
+
+                flags = ["--no-color", "--target", "worker.exe", "--no-config"]
+                if headless:
+                    flags.append("--headless")
+                with mock.patch.object(cli, "_display_title"), \
+                        mock.patch.object(cli, "_run_dashboard", side_effect=render_status), \
+                        mock.patch.object(cli, "_run_headless", side_effect=render_status):
+                    self.assertEqual(cli._main(console, flags), 0)
+                self.assertIn("HIGH signal; unavailable handles", output.getvalue())
+                for line in AnsiDecoder().decode(output.getvalue()):
+                    for span in line.spans:
+                        self.assertIsNone(span.style.color)
+                        self.assertIsNone(span.style.bgcolor)
+
+    def test_target_no_color_argument_does_not_change_monitor_output(self) -> None:
+        console = make_console()
+        initial_policy = console.no_color
+        with mock.patch.object(cli, "_run_headless", return_value=0) as run:
+            cli._main(console, ["--headless", "--target", "worker.exe", "--no-config",
+                                "--", "--no-color"])
+        self.assertEqual(run.call_args.args[1], ["--no-color"])
+        self.assertEqual(console.no_color, initial_policy)
+
     def test_headless_builds_a_runner_from_flags(self) -> None:
         with mock.patch.object(cli, "HeadlessRunner") as runner:
             runner.return_value.run.return_value = 1
@@ -97,6 +158,16 @@ class DispatchTests(unittest.TestCase):
         kwargs = runner.call_args.kwargs
         self.assertEqual(kwargs["fail_on"], LeakSeverity.HIGH)
         self.assertEqual(kwargs["attach_pid"], 4242)
+
+    def test_full_coverage_policy_is_headless_only_and_reaches_the_runner(self) -> None:
+        self.assertIn("--headless", _parse_error(["--target", "app.exe", "--require-full-coverage"]))
+        with mock.patch.object(cli, "HeadlessRunner") as runner:
+            runner.return_value.run.return_value = 3
+            code = cli._main(make_console(), ["--headless", "--pid", "4242", "--no-config",
+                                              "--require-full-coverage"])
+        self.assertEqual(code, 3)
+        self.assertTrue(runner.call_args.kwargs["require_full_coverage"])
+        self.assertTrue(runner.call_args.kwargs["settings"].require_full_coverage)
 
     def test_settings_file_profile_and_flags_layer_in_order(self) -> None:
         import tempfile

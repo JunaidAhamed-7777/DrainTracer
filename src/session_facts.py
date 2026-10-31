@@ -118,6 +118,7 @@ class SessionFacts:
         self._latest_alerts: dict[LeakResource, LeakAlert] = {}
         self._judged_resources: set[LeakResource] = set()
         self._coverage_samples = 0
+        self._fully_covered_samples = 0
         self._partial_samples = dict.fromkeys(_SIGNAL_METRICS, 0)
         self._unavailable_samples = dict.fromkeys(_SIGNAL_METRICS, 0)
         self._unreadable_pids: dict[int, str] = {}
@@ -175,6 +176,13 @@ class SessionFacts:
         live = [p for p in snapshot.processes if p.status != psutil.STATUS_DEAD]
         if live:
             self.measured += 1
+            if all(
+                metric in coverage
+                and coverage[metric].total == len(live)
+                and coverage[metric].measured == len(live)
+                for metric in _SIGNAL_METRICS
+            ):
+                self._fully_covered_samples += 1
             self._observe_peaks(snapshot, live)
         self._observe_signals(snapshot)
         if previous is None:
@@ -191,7 +199,7 @@ class SessionFacts:
     def _observe_peaks(self, snapshot: MetricsSnapshot, live: list) -> None:
         """Peaks only from totals that measured at least one live process."""
         for key in METRIC_KEYS:
-            if not any(process.measured(key) for process in live):
+            if not any(not process.access_denied and process.measured(key) for process in live):
                 continue
             value = snapshot.totals.get(key)
             if value is None:
@@ -263,6 +271,10 @@ class SessionFacts:
             "latest_alerts": dict(self._latest_alerts),
             "judged_resources": set(self._judged_resources),
             "coverage_samples": self._coverage_samples,
+            "measured_samples": self.measured,
+            "fully_covered_samples": self._fully_covered_samples,
+            "full_coverage": self.measured > 0 and not self.failed
+            and self._fully_covered_samples == self.measured,
             "partial_samples": dict(self._partial_samples),
             "unavailable_samples": dict(self._unavailable_samples),
             "unreadable_pids": dict(self._unreadable_pids),
