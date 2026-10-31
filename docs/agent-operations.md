@@ -78,7 +78,8 @@ identities and 128 MiB of checkpoint files, refuses uncertainty or a live known
 launch, and invokes no process-control operation.
 
 Support previews and archive contents are limited to 16 MiB; compressed ZIPs
-are limited to 8 MiB, with at most two selected reports. The output parent must
+are limited to 8 MiB, with at most two selected reports. Archive member dates
+are fixed to 2000-01-01, and member names contain no original report/session IDs. The output parent must
 have a trusted local ancestor chain. A flushed private temporary file is
 published by an atomic, exclusive hard link; filesystems without that operation
 return an error without replacing a destination. Failed writes preserve the

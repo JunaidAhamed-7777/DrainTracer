@@ -310,7 +310,10 @@ def write_support_bundle(document, destination):
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for name, content in files.items():
-            archive.writestr(name, content)
+            member = zipfile.ZipInfo(name, date_time=(2000, 1, 1, 0, 0, 0))
+            member.compress_type = zipfile.ZIP_DEFLATED
+            member.create_system = 0
+            archive.writestr(member, content)
     if buffer.tell() > MAX_BUNDLE_BYTES:
         raise AgentStateError("support archive exceeds its 8 MiB compressed bound")
     destination = verify_trusted_path(destination)

@@ -30,6 +30,8 @@ from src.agent_diagnostics import (
     support_reports,
     write_support_bundle,
 )
+from src.agent_service import AgentPolicy, AgentRegistry
+from src.agent_transport import authenticate, connect
 from src.api import _version
 from src.checkpoints import read_checkpoint
 from src.process_runner import _windows_process_exited
@@ -67,6 +69,8 @@ class SupportPrivacyTests(unittest.TestCase):
         write_support_bundle(document, output)
         with zipfile.ZipFile(output) as archive:
             self.assertEqual(set(archive.namelist()), {"support.json", "report-1.json", "report-1.html"})
+            self.assertTrue(all(member.date_time == (2000, 1, 1, 0, 0, 0) for member in archive.infolist()))
+            self.assertTrue(all(not member.extra and not member.comment for member in archive.infolist()))
             transformed = json.loads(archive.read("report-1.json"))
             self.assertEqual(transformed, document["reports"][0])
             rendered = archive.read("report-1.html").decode("utf-8")
@@ -74,6 +78,19 @@ class SupportPrivacyTests(unittest.TestCase):
             for content in [json.dumps(document), *(archive.read(name).decode("utf-8") for name in archive.namelist())]:
                 for seed in (SECRET, str(NUMERIC_SECRET), privacy_helpers.SECRET, "543219", "1700000123.5"):
                     self.assertNotIn(seed, content)
+
+    def test_freshness_is_monotonic_even_when_wall_clock_moves_backwards(self):
+        registry = AgentRegistry(self.root, AgentPolicy(), session_type=recovery_helpers.FakeSession)
+        with (mock.patch("src.agent_service.process_user_sid", return_value="owner"),
+              mock.patch("src.agent_service.current_user_sid", return_value="owner")):
+            started = registry.handle(recovery_helpers.request("start", {"mode": "attach", "pid": 987654, "create_time": 123.5}))
+        registry.refresh()
+        registry.records[started["result"]["session_id"]].last_progress_clock -= 30
+        with mock.patch("src.agent_service.time.time", return_value=1):
+            result = registry.handle(recovery_helpers.request("diagnostics"))["result"]
+        self.assertFalse(result["fresh"])
+        self.assertFalse(result["ready"])
+        self.assertEqual(len(result["stale_sessions"]), 1)
 
     def test_exclusive_size_checked_atomic_bundle_preserves_existing_and_failed_outputs(self):
         document = support_document(self.diagnostics())
@@ -153,6 +170,18 @@ class NativeOperationsTests(unittest.TestCase):
         self.assertEqual(note.read_text(encoding="utf-8"), SECRET)
         self.assertTrue(all(path.exists() for path in evidence))
         self.assertIsNone(attached.poll())
+
+    def test_accepted_shutdown_survives_a_disconnected_client(self):
+        process, client = self.start_agent()
+        pipe = connect(client.name)
+        try:
+            authenticate(pipe, client.secret, server=False)
+            pipe.send(recovery_helpers.request("shutdown"))
+            self.assertTrue(pipe.receive()["result"]["accepted"])
+        finally:
+            pipe.close()  # Deliberately omit acknowledgement.
+        process.communicate(timeout=20)
+        self.assertEqual(process.returncode, 0)
 
     def test_offline_recovery_reads_matching_prefix_without_pid_access_or_agent_start(self):
         script = self.root / "checkpoint.py"
