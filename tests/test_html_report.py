@@ -164,8 +164,8 @@ class RenderTests(unittest.TestCase):
         payload = json.loads(_data_block(document))
         self.assertEqual(rows[0][0], "Elapsed (seconds)")
         self.assertEqual(float(rows[1][1]), payload["series"]["private"][0])
-        self.assertEqual(rows[2][1:5], ["n/a"] * 4)
-        self.assertEqual(float(rows[2][5]), payload["series"]["cpu"][1])
+        self.assertEqual(rows[2][1:6], ["n/a"] * 5)
+        self.assertIsNone(payload["series"]["cpu"][1])
         self.assertIn('<td class="num">10,485,760</td>', panel)
 
     def test_linux_counter_definitions_and_paths_render_on_either_platform(self) -> None:
