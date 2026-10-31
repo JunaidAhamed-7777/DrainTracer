@@ -17,8 +17,9 @@ from pathlib import Path
 from .report_contract import _check_text_depth, _unique_object
 from .team_client import MAX_UPLOAD, prepare_upload
 from .team_models import TeamError
+from .team_records import validate_record_value
 from .team_security import private_file_lock, secure_directory, verify_data_file
-from .team_transport import Endpoint, SharingError
+from .team_transport import Endpoint, SharingError, decode_message
 
 MAX_QUEUE_BYTES = 32 * 1024 * 1024
 MAX_ENTRIES = 64
@@ -26,6 +27,23 @@ MAX_TTL = 86400
 _UUID = re.compile(r"[0-9a-f]{32}\Z")
 _HASH = re.compile(r"[0-9a-f]{64}\Z")
 _RETRY = {"unavailable", "busy", "storage"}
+
+
+def history_key(repository: str, source_commit: str, workload_id: str) -> str:
+    raw = json.dumps([repository, source_commit, workload_id], ensure_ascii=True, separators=(",", ":")).encode("ascii")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _receipt_params(value, report_ids, ttl_seconds):
+    value = validate_record_value("comparison_receipt", value)
+    if (not isinstance(report_ids, (list, tuple)) or len(report_ids) > 20
+            or any(not isinstance(item, str) or not _UUID.fullmatch(item) for item in report_ids)
+            or len(set(report_ids)) != len(report_ids)
+            or not _number(ttl_seconds) or not 1 <= ttl_seconds <= MAX_TTL):
+        raise SharingError("invalid")
+    return {"kind": "comparison_receipt", "value": value,
+            "key": history_key(value["repository"], value["source_commit"], value["workload_id"]),
+            "report_ids": sorted(report_ids), "ttl_seconds": ttl_seconds}
 
 
 def _number(value):
@@ -73,12 +91,13 @@ class UploadQueue:
                 raise ValueError
             identities = set()
             for item in state["entries"]:
-                if (not isinstance(item, dict) or set(item) != {"id", "digest", "report", "created_at", "expires_at",
+                if (not isinstance(item, dict) or set(item) != {"id", "digest", "payload", "operation", "created_at", "expires_at",
                                                               "attempts", "next_at", "state", "last_error"}
                         or not isinstance(item["id"], str) or not _UUID.fullmatch(item["id"])
                         or item["id"] in identities or not isinstance(item["digest"], str)
-                        or not _HASH.fullmatch(item["digest"]) or not isinstance(item["report"], str)
-                        or len(item["report"]) > (MAX_UPLOAD + 2) // 3 * 4
+                        or not _HASH.fullmatch(item["digest"]) or not isinstance(item["payload"], str)
+                        or item["operation"] not in {"ingest", "create_record"}
+                        or len(item["payload"]) > (MAX_UPLOAD + 2) // 3 * 4
                         or any(not _number(item[key]) for key in ("created_at", "expires_at", "next_at"))
                         or not 0 < item["expires_at"] - item["created_at"] <= MAX_TTL
                         or type(item["attempts"]) is not int or not 0 <= item["attempts"] <= 20
@@ -86,16 +105,24 @@ class UploadQueue:
                         or item["last_error"] not in {None, "unavailable", "busy", "storage", "quota", "unauthorized",
                                                        "forbidden", "not_found", "invalid", "conflict", "certificate"}):
                     raise ValueError
-                decoded = base64.b64decode(item["report"], validate=True)
+                decoded = base64.b64decode(item["payload"], validate=True)
                 if len(decoded) > MAX_UPLOAD or hashlib.sha256(decoded).hexdigest() != item["digest"]:
                     raise ValueError
+                if item["operation"] == "create_record":
+                    if len(decoded) > 128 * 1024:
+                        raise ValueError
+                    params = decode_message(decoded)
+                    if set(params) != {"kind", "value", "key", "report_ids", "ttl_seconds"}:
+                        raise ValueError
+                    if params != _receipt_params(params["value"], params["report_ids"], params["ttl_seconds"]):
+                        raise ValueError
                 identities.add(item["id"])
             for item in state["history"]:
-                if (not isinstance(item, dict) or set(item) != {"id", "state", "report_id"}
+                if (not isinstance(item, dict) or set(item) != {"id", "state", "object_id"}
                         or not isinstance(item["id"], str) or not _UUID.fullmatch(item["id"])
                         or item["state"] not in {"delivered", "expired"}
-                        or (item["report_id"] is not None and (not isinstance(item["report_id"], str)
-                                                              or not _UUID.fullmatch(item["report_id"])) )):
+                        or (item["object_id"] is not None and (not isinstance(item["object_id"], str)
+                                                              or not _UUID.fullmatch(item["object_id"])) )):
                     raise ValueError
             return state
         except (ValueError, TypeError, UnicodeError, RecursionError, OverflowError) as error:
@@ -120,8 +147,8 @@ class UploadQueue:
             temporary.unlink(missing_ok=True)
 
     @staticmethod
-    def _history(state, item, status, report_id=None):
-        state["history"].append({"id": item["id"], "state": status, "report_id": report_id})
+    def _history(state, item, status, object_id=None):
+        state["history"].append({"id": item["id"], "state": status, "object_id": object_id})
         state["history"] = state["history"][-MAX_ENTRIES:]
 
     def _expire(self, state, now):
@@ -135,12 +162,19 @@ class UploadQueue:
         self._history(state, item, "expired")
 
     def enqueue(self, raw: bytes, *, profile="share", ttl_seconds=MAX_TTL):
+        return self._enqueue(prepare_upload(raw, profile=profile), "ingest", ttl_seconds)
+
+    def enqueue_receipt(self, value: dict, *, report_ids=(), ttl_seconds=MAX_TTL):
+        params = _receipt_params(value, report_ids, ttl_seconds)
+        raw = json.dumps(params, ensure_ascii=True, allow_nan=False, separators=(",", ":")).encode("ascii")
+        return self._enqueue(raw, "create_record", ttl_seconds)
+
+    def _enqueue(self, prepared: bytes, operation: str, ttl_seconds):
         if not _number(ttl_seconds) or not 1 <= ttl_seconds <= MAX_TTL:
             raise SharingError("invalid")
-        prepared = prepare_upload(raw, profile=profile)
         now = time.time()
         item = {"id": uuid.uuid4().hex, "digest": hashlib.sha256(prepared).hexdigest(),
-                "report": base64.b64encode(prepared).decode("ascii"), "created_at": now,
+                "payload": base64.b64encode(prepared).decode("ascii"), "operation": operation, "created_at": now,
                 "expires_at": now + ttl_seconds, "attempts": 0, "next_at": 0,
                 "state": "pending", "last_error": None}
         with private_file_lock(self.lock):
@@ -158,7 +192,7 @@ class UploadQueue:
             state = self._load()
             self._expire(state, time.time())
             self._save(state)
-            return {**state, "entries": [{key: value for key, value in item.items() if key != "report"}
+            return {**state, "entries": [{key: value for key, value in item.items() if key != "payload"}
                                          for item in state["entries"]]}
 
     def flush(self, client, *, limit=8, deadline_seconds=60, retry_blocked=False):
@@ -198,10 +232,12 @@ class UploadQueue:
                 if remaining <= 0:
                     break
                 try:
-                    result = client.ingest_prepared(base64.b64decode(item["report"], validate=True), item["id"],
-                                                    timeout=min(10, remaining, lifetime))
-                    report_id = result.get("report_id")
-                    if not isinstance(report_id, str) or not _UUID.fullmatch(report_id):
+                    send = client.ingest_prepared if item["operation"] == "ingest" else client.create_record_prepared
+                    result = send(base64.b64decode(item["payload"], validate=True), item["id"],
+                                  timeout=min(10, remaining, lifetime))
+                    object_id = result.get("report_id" if item["operation"] == "ingest" else "record_id")
+                    if (not isinstance(object_id, str) or not _UUID.fullmatch(object_id)
+                            or result.get("request_id") != item["id"]):
                         raise SharingError("invalid")
                 except (TeamError, SharingError) as error:
                     code = error.code
@@ -211,7 +247,7 @@ class UploadQueue:
                 else:
                     state["entries"].remove(item)
                     state["delivered"] += 1
-                    self._history(state, item, "delivered", report_id)
+                    self._history(state, item, "delivered", object_id)
                 self._save(state)
             self._save(state)
         return {"queue_schema": 1, "attempted": attempted, "pending": len(state["entries"]),

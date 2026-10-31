@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -11,9 +12,10 @@ from pathlib import Path
 from unittest import mock
 
 from test_privacy import SECRET, private_fixture
+from test_team_records import receipt
 
 from src.team_models import TeamError
-from src.team_queue import MAX_ENTRIES, UploadQueue
+from src.team_queue import MAX_ENTRIES, UploadQueue, history_key
 from src.team_security import private_file_lock, secure_directory
 from src.team_transport import Endpoint, SharingError
 
@@ -34,7 +36,12 @@ class DeduplicatingClient:
         if self.lose_reply:
             self.lose_reply = False
             raise SharingError("unavailable")
-        return {"team_schema": 1, "report_id": "b" * 32}
+        return {"team_schema": 1, "report_id": "b" * 32, "request_id": request_id}
+
+    def create_record_prepared(self, raw, request_id, *, timeout):
+        result = self.ingest_prepared(raw, request_id, timeout=timeout)
+        result["record_id"] = result.pop("report_id")
+        return result
 
 
 class DurableQueueTests(unittest.TestCase):
@@ -53,7 +60,8 @@ class DurableQueueTests(unittest.TestCase):
 
     def test_lost_reply_survives_reopen_and_reuses_identical_private_prepared_payload(self):
         job = self.queue.enqueue(self.raw)
-        self.assertNotIn(SECRET.encode(), (self.queue_path / "queue.json").read_bytes())
+        stored = json.loads((self.queue_path / "queue.json").read_bytes())
+        self.assertNotIn(SECRET.encode(), base64.b64decode(stored["entries"][0]["payload"]))
         client = DeduplicatingClient()
         client.lose_reply = True
         failed = self.queue.flush(client)
@@ -69,7 +77,7 @@ class DurableQueueTests(unittest.TestCase):
         self.assertEqual(len(client.accepted), 1)
         self.assertEqual(client.calls[0][:2], client.calls[1][:2])
         self.assertNotIn("entries", result)
-        self.assertEqual(result["history"][0]["report_id"], "b" * 32)
+        self.assertEqual(result["history"][0]["object_id"], "b" * 32)
 
     def test_interrupted_ack_save_keeps_retry_identity_and_prior_valid_journal(self):
         self.queue.enqueue(self.raw)
@@ -161,7 +169,7 @@ class DurableQueueTests(unittest.TestCase):
             self.assertEqual(len(client.calls), 1)
             self.assertEqual(result["expired"], 1)
             self.assertEqual(result["pending"], 0)
-            self.assertIn({"id": second["id"], "state": "expired", "report_id": None}, result["history"])
+            self.assertIn({"id": second["id"], "state": "expired", "object_id": None}, result["history"])
 
     def test_durable_save_exhausting_flush_deadline_does_not_start_a_network_call(self):
         self.queue.enqueue(self.raw)
@@ -179,6 +187,21 @@ class DurableQueueTests(unittest.TestCase):
         self.assertEqual(client.calls, [])
         self.assertEqual(result["pending"], 1)
         self.assertEqual(self.reopen().inspect()["entries"][0]["attempts"], 1)
+
+    def test_comparison_receipts_replay_one_record_with_stable_history_scope(self):
+        value = receipt()
+        self.queue.enqueue_receipt(value)
+        client = DeduplicatingClient()
+        client.lose_reply = True
+        self.assertEqual(self.queue.flush(client)["pending"], 1)
+        result = self.reopen().flush(client, retry_blocked=True)
+        self.assertEqual(result["delivered"], 1)
+        self.assertEqual(len(client.accepted), 1)
+        self.assertEqual(client.calls[0][:2], client.calls[1][:2])
+        params = json.loads(client.calls[-1][0])
+        self.assertEqual(params["value"], value)
+        self.assertEqual(params["key"], history_key(value["repository"], value["source_commit"], value["workload_id"]))
+        self.assertEqual(result["history"][0]["object_id"], "b" * 32)
 
 
 if __name__ == "__main__":

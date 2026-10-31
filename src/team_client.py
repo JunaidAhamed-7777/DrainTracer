@@ -9,7 +9,7 @@ from .privacy import redact_report
 from .report_contract import parse_report
 from .team_models import TeamError
 from .team_security import read_credential_file
-from .team_transport import Endpoint, SharingError, request
+from .team_transport import Endpoint, SharingError, decode_message, request
 
 MAX_UPLOAD = 8 * 1024 * 1024
 ERROR_CODES = {"unauthorized", "forbidden", "not_found", "invalid", "quota", "busy", "storage", "conflict",
@@ -58,3 +58,11 @@ class TeamClient:
             raise SharingError("quota")
         return self.call("ingest", {"report": base64.b64encode(raw).decode("ascii"), "request_id": request_id},
                          timeout=timeout)
+
+    def create_record_prepared(self, raw: bytes, request_id: str, *, timeout=None):
+        if not isinstance(raw, bytes) or len(raw) > 128 * 1024:
+            raise SharingError("quota")
+        params = decode_message(raw)
+        if "request_id" in params:
+            raise SharingError("invalid")
+        return self.call("create_record", {**params, "request_id": request_id}, timeout=timeout)

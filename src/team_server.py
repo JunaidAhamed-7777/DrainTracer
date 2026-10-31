@@ -104,7 +104,7 @@ class TeamDispatcher:
             _params(params)
             return store.purge(actor)
         if operation == "create_record":
-            _params(params, ("kind", "value", "key", "report_ids", "ttl_seconds"), ("kind", "value"))
+            _params(params, ("kind", "value", "key", "report_ids", "ttl_seconds", "request_id"), ("kind", "value"))
             return store.create_record(actor, **params)
         if operation == "read_record":
             _params(params, ("record_id",), ("record_id",))
