@@ -54,13 +54,18 @@ class TeamClient:
     def __init__(self, endpoint: Endpoint, credential_file, *, cafile=None, timeout=10):
         self.endpoint, self.cafile, self.timeout = endpoint, _trusted_ca(cafile), timeout
         self.credential_file = credential_file
+        self._project_id = read_credential_file(self.credential_file)["project_id"]
 
     @property
     def project_id(self):
-        return read_credential_file(self.credential_file)["project_id"]
+        return self._project_id
 
     def call(self, operation: str, params: dict | None = None, *, timeout=None):
         credentials = read_credential_file(self.credential_file)
+        if credentials["project_id"] != self._project_id:
+            # A legitimate atomic credential rotation may race with a queued
+            # operation. Refresh the secret, never its intended destination.
+            raise SharingError("conflict", "Credential project changed; create a client for the intended project")
         reply = request(self.endpoint, {"team_schema": 1, "project_id": credentials["project_id"],
                                        "token": credentials["token"], "operation": operation,
                                        "params": {} if params is None else params},
