@@ -4,13 +4,22 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 import helpers  # noqa: F401
 
+from src.service_exercise import (
+    exercise_authority,
+    exercise_authority_faults,
+    require_fresh_workspace,
+    write_evidence,
+)
 from src.service_operations import ExerciseEvidence, OperatingBudgets, ResourceSampler
 from src.team_models import TeamError
+from src.team_store import TeamStore
 
 
 class OperatingEvidenceTests(unittest.TestCase):
@@ -63,6 +72,26 @@ class OperatingEvidenceTests(unittest.TestCase):
         for value in (True, 0, 4 * 1024**3 + 1):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 OperatingBudgets(sampled_rss_bytes=value)
+
+    def test_actual_authority_fault_drills_preserve_permissions_and_keep_secrets_out_of_evidence(self):
+        with tempfile.TemporaryDirectory(dir=Path.home() if os.name == "nt" else None) as temporary:
+            root = require_fresh_workspace(Path(temporary) / "exercise")
+            evidence = ExerciseEvidence(OperatingBudgets())
+            with TeamStore.create(root / "team") as store:
+                admin, _viewer, _operator = exercise_authority(store, evidence)
+                exercise_authority_faults(store, admin, root, evidence)
+                token = admin._token
+            document = evidence.document()
+            self.assertTrue(document["checks_passed"], document)
+            self.assertEqual(document["rates"]["authorized_read_availability"],
+                             {"successful": 5, "total": 5, "ratio": 1.0})
+            path = write_evidence(root, document)
+            self.assertNotIn(token, path.read_text())
+            self.assertNotIn("injected fixture interruption", path.read_text())
+            with self.assertRaises(FileExistsError):
+                write_evidence(root, document)
+            with self.assertRaises(ValueError):
+                require_fresh_workspace(root)
 
 
 if __name__ == "__main__":
