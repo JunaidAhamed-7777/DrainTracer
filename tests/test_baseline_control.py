@@ -27,6 +27,7 @@ from src.baseline_control import (
 from src.config import MonitorSettings
 from src.diff_command import run_diff
 from src.events import LeakSeverity
+from src.report_diff import Caveat
 
 APPROVAL = {"approved_by": "reviewer", "reason": "Reviewed the repeated controlled workload",
             "source_commit": "a" * 40}
@@ -55,6 +56,7 @@ class BaselineTests(unittest.TestCase):
                                  "cleanup": {"state": "complete", "remaining_count": 0,
                                              "resume_required": False, "errors": []},
                                  "target": {"failed": False}, "monitor_errors": []})
+            data["session_facts"] = {"samples": {"paused": 0}, "monitor": {"clock_adjustments": 0, "sampling_gaps": 0}}
             data["settings"]["thresholds"] = thresholds
             if change:
                 change(data)
@@ -261,6 +263,35 @@ with BaselineStore(sys.argv[1]) as store:
                 with self.subTest(count=len(group)), self.assertRaises(BaselineError):
                     store.promote(group, **APPROVAL)
             self.assertFalse(list(self.store.glob("*.json")))
+
+    def test_unknown_or_lost_temporal_continuity_cannot_be_approved_or_suppressed(self):
+        self.approve(self.reports("a"))
+        for field in ("clock_adjustments", "sampling_gaps", "paused"):
+            for value in (None, True, 1, -1, "0"):
+                def changed(data, field=field, value=value):
+                    section = "samples" if field == "paused" else "monitor"
+                    data["session_facts"][section][field] = value
+                with self.subTest(field=field, value=value), self.assertRaisesRegex(BaselineEvidenceError, "recollect"):
+                    self.reports("timing", change=changed)
+        with self.assertRaises(BaselineEvidenceError):
+            self.reports("legacy", change=lambda data: data.pop("session_facts"))
+        with self.assertRaises(BaselineEvidenceError):
+            self.reports("contradictory", change=lambda data: data["snapshots"][0].update(monitoring_paused=True))
+
+    def test_only_exact_nonblocking_clean_recipe_scope_caveat_is_allowed(self):
+        informational = Caveat("clean recipe platform basics", "Omitted OS location values; recorded-choice scope")
+        with mock.patch("src.baseline_control.comparability_caveats", return_value=(informational,)), \
+                mock.patch("src.repeat_comparison.comparability_caveats", return_value=(informational,)):
+            self.approve(self.reports("clean-a"))
+            with BaselineStore(self.store) as store:
+                code, result = store.check(self.reports("clean-b"), source_commit="b" * 40)
+                self.assertEqual(code, 0)
+                self.assertTrue(result["comparison"]["caveats"])
+                store.promote(self.reports("clean-c"), **APPROVAL)
+        for caveat in (Caveat("different informational scope", "Still a gate"),
+                       Caveat("clean recipe platform basics", "Blocked", "not comparable")):
+            with self.subTest(caveat=caveat), mock.patch("src.baseline_control.comparability_caveats", return_value=(caveat,)), self.assertRaises(BaselineEvidenceError):
+                self.reports("refused")
 
     def test_held_writer_lock_prevents_a_second_writer(self):
         self.approve(self.reports("a"))

@@ -170,6 +170,16 @@ def _provenance(data: Mapping[str, Any]) -> None:
         raise BaselineEvidenceError("baseline requires complete detector sampling and threshold settings")
 
 
+def _gating_caveats(caveats) -> bool:
+    # This sole engine-generated informational qualification records the clean
+    # recipe's platform-basics scope. Every other caveat remains a strict gate.
+    for caveat in caveats:
+        value = caveat if isinstance(caveat, Mapping) else caveat.to_dict()
+        if value.get("kind") != "clean recipe platform basics" or "blocks" not in value or value["blocks"] is not None:
+            return True
+    return False
+
+
 def _eligible(reports: Sequence[LoadedReport]) -> str:
     if not 2 <= len(reports) <= MAX_GROUP_RUNS:
         raise BaselineError(f"provide 2 to {MAX_GROUP_RUNS} independent runs")
@@ -220,6 +230,13 @@ def _eligible(reports: Sequence[LoadedReport]) -> str:
                                               or type(exercise_cleanup.get("remaining_count")) is not int
                                               or exercise_cleanup.get("remaining_count") != 0))):
                 raise BaselineEvidenceError("raw workload outcome, exercise or cleanup is not confirmed complete")
+        facts = _mapping(data.get("session_facts"))
+        monitor, samples = _mapping(facts.get("monitor")), _mapping(facts.get("samples"))
+        quality = (monitor.get("clock_adjustments"), monitor.get("sampling_gaps"), samples.get("paused"))
+        retained = data.get("snapshots")
+        if (any(type(count) is not int or count != 0 for count in quality)
+                or any(sample.get("monitoring_paused") is True for sample in retained or ())):
+            raise BaselineEvidenceError("baseline evidence requires known zero clock adjustments, sampling gaps and paused samples; recollect older evidence")
         _provenance(data)
         if not isinstance(name, str) or not name.strip():
             raise BaselineEvidenceError("baseline evidence requires a declared workload_id")
@@ -233,7 +250,7 @@ def _eligible(reports: Sequence[LoadedReport]) -> str:
         if _mapping(data.get("recovery")).get("partial") or data.get("privacy"):
             raise BaselineEvidenceError("recovered or transformed evidence cannot become a controlled baseline")
     for first, second in combinations(reports, 2):
-        if comparability_caveats(first, second):
+        if _gating_caveats(comparability_caveats(first, second)):
             raise BaselineEvidenceError("runs have compatibility or coverage caveats; inspect strict diff before approval")
     return workload
 
@@ -410,7 +427,7 @@ class BaselineStore:
         comparison = None
         if self.state["revision"]:
             comparison = compare_repeated_reports(self.reports(), reports, budgets=self.state["budgets"])
-            if comparison.caveats or comparison.blocked or comparison.measured_verdict == "inconclusive":
+            if _gating_caveats(comparison.caveats) or comparison.blocked or comparison.measured_verdict == "inconclusive":
                 raise BaselineError("incompatible, insufficient or inconclusive runs cannot replace a baseline")
             if (comparison.measured_verdict in ("regressed", "mixed") or comparison.over_budget) and not accept_regression:
                 raise BaselineError("regression/budget change requires explicit accept_regression approval")
@@ -492,9 +509,9 @@ class BaselineStore:
         for finding in findings:
             finding["suppressed_by"] = [item["sequence"] for item in exceptions if item["active"]
                                          and item["resource"] == finding["resource"] and item["kind"] == finding["kind"]]
-        # Every caveat is a gate here. Exceptions apply only after conclusive
-        # comparison and never turn missing provenance or evidence into a pass.
-        if comparison.caveats or comparison.blocked or comparison.measured_verdict == "inconclusive":
+        # Only the clean-recipe informational scope qualification is allowed.
+        # Suppressions never turn missing provenance or continuity into a pass.
+        if _gating_caveats(comparison.caveats) or comparison.blocked or comparison.measured_verdict == "inconclusive":
             code = 3
         elif any(item["kind"] == "regression" and not item["suppressed_by"] for item in findings):
             code = 1

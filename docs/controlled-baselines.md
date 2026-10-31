@@ -15,7 +15,10 @@ existing one before replacement. Incompatible or insufficient reports cannot be
 promoted, even with a suppression. Recorded startup, cleanup, target, monitor,
 interruption or workload failures make evidence unusable regardless of measured
 coverage. A raw workload record requires completed steps and confirmed exercise
-cleanup. A measured regression, any recorded leak signal, or exceeded budget
+cleanup. Timing-quality fields introduced by the bounded sampling work are a
+prerequisite: clock adjustments, sampling gaps and paused samples must each be
+known zero. Missing legacy counts require recollection; neither approval nor a
+suppression can waive continuity loss. A measured regression, any recorded leak signal, or exceeded budget
 also requires `--accept-regression`, and remains recorded in the audit.
 
 The store copies validated reports under their SHA-256 content identifiers.
@@ -38,7 +41,11 @@ strict repeated-run statistics. Report-sourced peak budgets must agree in all
 approved baseline runs; explicit `--budget-private`, `--budget-handles`, and
 `--budget-threads` replace only the supplied metrics. Unknown peaks and
 inconclusive overlapping ranges cannot pass a controlled check. An approved
-baseline is a policy choice, not proof that a workload is free of leaks.
+baseline is a policy choice, not proof that a workload is free of leaks. The sole
+permitted informational caveat is the engine-generated `clean recipe platform
+basics` with no blocking verdict. It records omitted OS location values for an
+explicitly clean recipe; selected/inherited environment, incomplete platform
+metadata and every other caveat remain gates.
 
 An exceptional `suppress STORE --resource handles --kind regression --expires
 FUTURE_UTC_TIME --approved-by NAME --reason TEXT --source-commit FULL_SHA`
@@ -81,3 +88,8 @@ matched the committed runtime inventory exactly. Clean installation then ran
 the four independent workload recordings and the promotion/check/audit commands
 outside the checkout. A dedicated user approval system, broad calibration study
 and power-loss durability test are not claimed by this local functional check.
+
+Continuity/clean-recipe admission is tested with deterministic counter and caveat
+regressions here. Final native recipe promotion/check and installed real-run
+verification require the combined timing/workload source; those integrated
+checks must pass before publishing this feature.
