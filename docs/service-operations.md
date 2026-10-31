@@ -153,8 +153,13 @@ percentage. RSS remains a sampled lower bound.
   and readable with the same hash/original expiry by two technical credentials.
   A viewer cannot restore; a revoked cached actor stays revoked. Deletion
   invalidates old snapshots/retries, stricter privacy invalidates an older
-  snapshot, and restore is audited. Report/snapshot retention uses an explicitly
-  stepped disposable clock; credential expiry uses actual elapsed time.
+  snapshot, and restore is audited. Report/snapshot retention and cached-credential
+  expiry use separate disposable stores with explicitly stepped fixture clocks.
+  The credential drill commits and authenticates a credential, confirms its
+  protected read, then advances past its returned expiry and requires the same
+  cached actor to be refused. This tests the authority invariant without
+  measuring elapsed credential-expiry latency. Baseline readiness, read,
+  ingestion, cleanup and resource measurements use real clocks.
 - Missing/corrupt/future/unrelated authority fails closed. A missing current
   database is never recreated by restore. An interrupted SQL transaction must
   roll back and reopen under the exact retained authority.
