@@ -222,6 +222,21 @@ with BaselineStore(sys.argv[1]) as store:
         with BaselineStore(self.store) as store, self.assertRaisesRegex(BaselineError, "overrides"):
             store.check(self.reports("b"), source_commit="b" * 40, budgets={"typo": 10})
 
+    def test_completed_workload_requires_known_successful_readiness_steps_and_cleanup(self):
+        def complete(data):
+            data["outcome"]["workload"] = {"state": "complete"}
+            data["workload"] = {"schema": 1, "outcome": {"state": "complete", "readiness": "ready",
+                                  "exercise": [{"index": 1, "state": "complete", "exit_code": 0}],
+                                  "exercise_cleanup": {"state": "complete", "remaining_count": 0}}}
+        self.assertEqual(len(self.reports("success", change=complete)), 2)
+        for field, value in (("readiness", "failed"), ("exercise_cleanup", None),
+                             ("exercise", [{"state": "complete", "exit_code": False}])):
+            def invalid(data, field=field, value=value):
+                complete(data)
+                data["workload"]["outcome"][field] = value
+            with self.subTest(field=field), self.assertRaises(BaselineEvidenceError):
+                self.reports(f"unknown-{field}", change=invalid)
+
     def test_held_writer_lock_prevents_a_second_writer(self):
         self.approve(self.reports("a"))
         with BaselineStore(self.store), self.assertRaises(OSError):
