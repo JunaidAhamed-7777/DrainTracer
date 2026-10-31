@@ -14,6 +14,10 @@ immutable source `68442ce1d1a2a294ff6d6d9c9120aa0154971441`, with matching
 raw checkout SHA-256 bytes and canonical runtime version `v5.4.0`. This is
 historical candidate-source evidence, not a claim that the published v5.4.0
 artifact or a later release was measured under identical full source.
+The [frozen source tree](https://github.com/JunaidAhamed-7777/DrainTracer/tree/68442ce1d1a2a294ff6d6d9c9120aa0154971441)
+remains reachable through the retained
+[`junaid/issue-27-host-budget-proof` branch](https://github.com/JunaidAhamed-7777/DrainTracer/tree/junaid/issue-27-host-budget-proof),
+independently of any later integration cherry-pick IDs.
 
 ## Conditions and complete records
 
