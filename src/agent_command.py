@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import threading
 import uuid
 from pathlib import Path
@@ -87,7 +86,7 @@ class AgentClient:
 
 def build_parser():
     parser = argparse.ArgumentParser(description="Opt-in foreground Windows monitoring agent. Output is JSON.")
-    parser.add_argument("--state-dir", default=str(Path(os.environ.get("LOCALAPPDATA", Path.home())) / "DrainTracerAgent"))
+    parser.add_argument("--state-dir", default=str(Path.home() / ".draintracer-agent"))
     parser.add_argument("--profile", default="default", help="Local endpoint profile, not a monitor configuration profile.")
     commands = parser.add_subparsers(dest="command", required=True)
     server = commands.add_parser("serve", help="Start explicitly in the foreground; stop with Ctrl+C.")

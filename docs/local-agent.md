@@ -14,7 +14,16 @@ user and SYSTEM, rejects remote pipe clients, and refuses a competing first
 pipe instance. The agent state directory and credential have the same private
 permissions. Redirected, network, inherited/public, or differently owned state
 paths are rejected rather than silently repaired. Existing unrelated data is
-preserved. A same-user process or administrator can access the credential or
+preserved. Every existing ancestor is checked before creation and again when
+using state: another principal's DELETE/DELETE_CHILD, ACL/owner changes,
+content writes, or generic mutation rights are refused. Inherit-only ACEs do
+not apply to the ancestor itself; OWNER RIGHTS entries are accepted only after
+independently checking the owner. Current-user, SYSTEM, Administrators and the
+Windows TrustedInstaller service are the trusted mutation principals. Unknown
+ACL forms and public/capability mutation grants fail closed. Choose another
+private parent; the agent never repairs permissions on existing folders.
+Launch roots and selected executable/script files have the same ancestor and
+content-write checks before use. A same-user process or administrator can access the credential or
 change the agent; neither is an isolation boundary.
 
 Each connection performs mutual HMAC-SHA256 authentication with independent,
@@ -24,6 +33,11 @@ diagnostics, or exported in reports. The client requests identification-only
 security quality of service so a pipe server cannot impersonate its client.
 Authentication errors reveal no session data. Requests and replies are bounded
 JSON, never pickle or executable data; incomplete peers have I/O deadlines.
+
+Windows permits a parent's delete-child authority independently of the
+child's DACL; see Microsoft's [file security and access-rights rules](https://learn.microsoft.com/en-us/windows/win32/fileio/file-security-and-access-rights).
+The default uses the profile root rather than a shared temporary directory or
+an application-data ancestor with broader capability mutation permissions.
 
 ## Operations and capabilities
 
@@ -116,7 +130,7 @@ Reports retain the normal [privacy and sharing requirements](privacy.md).
 
 Install the current wheel in a virtual environment. Start the agent explicitly
 in a Windows terminal; its default state directory is
-`%LOCALAPPDATA%\DrainTracerAgent`. The parent of an explicit `--state-dir`
+`~\.draintracer-agent` (the current user profile). The parent of an explicit `--state-dir`
 must already exist. The command creates only its own private leaf, credential,
 and report directory. There is no automatic startup registration.
 

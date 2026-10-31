@@ -61,7 +61,7 @@ class FrameTests(unittest.TestCase):
 @unittest.skipUnless(os.name == "nt", "native Windows local IPC")
 class NativeTransportTests(unittest.TestCase):
     def setUp(self) -> None:
-        temporary = tempfile.TemporaryDirectory()
+        temporary = tempfile.TemporaryDirectory(dir=Path.home(), prefix=".draintracer-agent-test-")
         self.addCleanup(temporary.cleanup)
         self.directory = private_directory(Path(temporary.name) / "agent")
         self.secret = load_secret(self.directory, create=True)
@@ -104,6 +104,18 @@ class NativeTransportTests(unittest.TestCase):
                        check=True, capture_output=True)
         with self.assertRaisesRegex(AgentTransportError, "another principal"):
             load_secret(self.directory)
+
+    def test_public_parent_cannot_replace_a_private_state_leaf(self) -> None:
+        parent = self.directory / "public-parent"
+        parent.mkdir()
+        subprocess.run(["icacls", str(parent), "/grant", "*S-1-1-0:(DC)"], check=True, capture_output=True)
+        destination = parent / "new-state"
+        kernel, _security = _api()
+        with (mock.patch.object(kernel, "CreateDirectoryW") as create,
+              self.assertRaisesRegex(AgentTransportError, "mutate or replace")):
+            private_directory(destination)
+        create.assert_not_called()
+        self.assertFalse(destination.exists())
 
     def test_remote_state_is_rejected_before_directory_creation(self) -> None:
         kernel, _security = _api()

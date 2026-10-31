@@ -90,7 +90,7 @@ class FakeSession:
 
 class RegistryTests(unittest.TestCase):
     def setUp(self):
-        temporary = tempfile.TemporaryDirectory()
+        temporary = tempfile.TemporaryDirectory(dir=Path.home(), prefix=".draintracer-agent-test-")
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.script = self.root / "workload.py"
@@ -231,7 +231,7 @@ class RegistryTests(unittest.TestCase):
 @unittest.skipUnless(os.name == "nt", "authenticated native Windows agent")
 class NativeAgentTests(unittest.TestCase):
     def setUp(self):
-        temporary = tempfile.TemporaryDirectory()
+        temporary = tempfile.TemporaryDirectory(dir=Path.home(), prefix=".draintracer-agent-test-")
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.profile = "accept-" + uuid.uuid4().hex[:16]
@@ -300,6 +300,22 @@ class NativeAgentTests(unittest.TestCase):
         wait_for(lambda: self.client.request("status", {"session_id": session_id})["state"] == "completed")
         from src.process_runner import _windows_process_exited
         wait_for(lambda: not psutil.pid_exists(child_pid) or _windows_process_exited(child_pid))
+
+    def test_other_principal_writable_launch_root_and_file_are_refused(self):
+        public = self.root / "public-root"
+        public.mkdir()
+        subprocess.run(["icacls", str(public), "/grant", "*S-1-1-0:(DC)"], check=True, capture_output=True)
+        with self.assertRaises(AgentError) as root_denied:
+            AgentPolicy(allow_launch=True, launch_roots=(public,))
+        self.assertEqual(root_denied.exception.code, "forbidden")
+        script = self.root / "public-file.py"
+        script.write_text("pass", encoding="utf-8")
+        subprocess.run(["icacls", str(script), "/grant", "*S-1-1-0:(W)"], check=True, capture_output=True)
+        registry = AgentRegistry(self.root, AgentPolicy(allow_launch=True, launch_roots=(self.root,)), session_type=FakeSession)
+        count = len(FakeSession.created)
+        response = registry.handle(request("start", {"mode": "launch", "target": str(script)}))
+        self.assertEqual(response["error"]["code"], "forbidden")
+        self.assertEqual(len(FakeSession.created), count)
 
     def test_reused_pid_identity_fails_without_controlling_target(self):
         target = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], stdin=subprocess.DEVNULL,

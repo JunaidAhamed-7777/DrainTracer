@@ -165,10 +165,65 @@ def local_drive_path(path: str | Path) -> Path:
     return path
 
 
+def verify_trusted_path(path: str | Path) -> Path:
+    """Refuse replacement/content authority held by another non-admin principal.
+
+    A protected child DACL alone does not prevent a parent's DELETE_CHILD
+    right from replacing it. Inspect each existing ancestor as well as the leaf.
+    Read-only/traverse and create-new-child rights alone do not grant authority
+    to replace an existing protected path. Inherit-only ACEs do not apply to
+    the ancestor itself. Deny entries are conservatively not used to broaden
+    the trusted set.
+    """
+    path = local_drive_path(path)
+    if os.name != "nt":
+        return path
+    kernel, security = _api()
+    trusted = {current_user_sid(), "S-1-5-18", "S-1-5-32-544", "S-1-3-4",
+               "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464"}
+    for part in (path, *path.parents):
+        if not part.exists():
+            continue
+        metadata = part.stat(follow_symlinks=False)
+        if getattr(metadata, "st_file_attributes", 0) & 0x400:
+            raise AgentTransportError("agent paths cannot traverse a reparse point")
+        owner, dacl, descriptor = wintypes.LPVOID(), wintypes.LPVOID(), wintypes.LPVOID()
+        result = security.GetNamedSecurityInfoW(str(part), 1, 0x00000005, ctypes.byref(owner),
+                                              None, ctypes.byref(dacl), None, ctypes.byref(descriptor))
+        if result:
+            raise ctypes.WinError(result)
+        try:
+            # OWNER RIGHTS ACEs apply only to the object's owner; its SID
+            # is trusted only after independently validating that owner.
+            if _sid_string(owner) not in trusted - {"S-1-3-4"} or not dacl.value:
+                raise AgentTransportError("agent path has an untrusted owner or unrestricted ancestor ACL")
+            # DELETE, WRITE_DAC, WRITE_OWNER, DELETE_CHILD, WRITE_ATTRIBUTES,
+            # WRITE_EA, GENERIC_WRITE and GENERIC_ALL can replace/mutate a path.
+            unsafe = 0x500D0150
+            if not part.is_dir():
+                unsafe |= 0x00000006  # file WRITE_DATA / APPEND_DATA
+            count = ctypes.c_ushort.from_address(dacl.value + 4).value
+            for index in range(count):
+                ace = wintypes.LPVOID()
+                _check(security.GetAce(dacl, index, ctypes.byref(ace)))
+                kind = ctypes.c_ubyte.from_address(ace.value).value
+                flags = ctypes.c_ubyte.from_address(ace.value + 1).value
+                if flags & 0x08 or kind == 1:  # INHERIT_ONLY or ACCESS_DENIED
+                    continue
+                if kind != 0:
+                    raise AgentTransportError("agent path has an unsupported ancestor ACL entry")
+                mask = wintypes.DWORD.from_address(ace.value + 4).value
+                if mask & unsafe and _sid_string(ace.value + 8) not in trusted:
+                    raise AgentTransportError("another principal can mutate or replace the agent path")
+        finally:
+            kernel.LocalFree(descriptor)
+    return path
+
+
 def verify_private_path(path: Path) -> None:
     """Refuse redirected paths, non-owner files and ACLs granting other users access."""
     kernel, security = _api()
-    path = local_drive_path(path)
+    path = verify_trusted_path(path)
     for part in (path, *path.parents):
         if part.exists() and getattr(part.stat(follow_symlinks=False), "st_file_attributes", 0) & 0x400:
             raise AgentTransportError("agent state cannot traverse a reparse point")
@@ -209,6 +264,9 @@ def private_directory(path: str | Path) -> Path:
     path = local_drive_path(path)
     if not path.parent.is_dir():
         raise AgentTransportError("agent state parent directory must already exist")
+    # Check mutation rights before creation; a private child ACL cannot
+    # override an untrusted parent's authority to replace that child.
+    verify_trusted_path(path.parent)
     # Check ancestors before CreateDirectory, and the final object afterward.
     for part in path.parents:
         if getattr(part.stat(follow_symlinks=False), "st_file_attributes", 0) & 0x400:

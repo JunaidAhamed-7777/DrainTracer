@@ -16,7 +16,12 @@ from typing import Any
 import psutil
 
 from .agent_jobs import AgentProcessManager
-from .agent_transport import current_user_sid, local_drive_path, process_user_sid
+from .agent_transport import (
+    AgentTransportError,
+    current_user_sid,
+    process_user_sid,
+    verify_trusted_path,
+)
 from .api import CommandTimeoutError, Session, SessionOptions
 
 
@@ -56,7 +61,10 @@ def _uuid(value):
 def _local_path(value):
     if not isinstance(value, str) or not value or len(value) > 32767 or "\0" in value:
         raise AgentError("invalid_input", "target path must be a local file path")
-    path = local_drive_path(value)
+    try:
+        path = verify_trusted_path(value)
+    except AgentTransportError as error:
+        raise AgentError("forbidden", str(error)) from error
     for part in (path, *path.parents):
         if part.exists() and getattr(part.stat(follow_symlinks=False), "st_file_attributes", 0) & 0x400:
             raise AgentError("forbidden", "target paths cannot traverse reparse points")
