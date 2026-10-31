@@ -2,16 +2,26 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import os
 import sqlite3
 import time
+import unicodedata
 from contextlib import closing
+from dataclasses import asdict
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from .service_operations import ExerciseEvidence, _require
+from .service_operations import (
+    ExerciseEvidence,
+    OperatingBudgets,
+    ResourceSampler,
+    _require,
+    reference_environment,
+)
 from .team_models import ProjectPolicy
 from .team_security import secure_directory, verify_data_file
 from .team_store import TeamStore
@@ -207,3 +217,163 @@ def write_evidence(root: Path, document: dict) -> Path:
         handle.flush()
         os.fsync(handle.fileno())
     return path
+
+
+def exercise_local_collection(root: Path, evidence: ExerciseEvidence):
+    """Measure a completed local monitor independently of optional transport."""
+    import sys
+
+    from .api import Session, SessionOptions
+    from .report_contract import read_report
+
+    reports = secure_directory(root / "local-reports", create=True)
+    session = Session.launch(getattr(sys, "_base_executable", None) or sys.executable,
+                             ["-c", "import time;time.sleep(.4)"],
+                             options=SessionOptions(sample_interval_ms=100, windows_seconds=(1,),
+                                                    timeout_seconds=5, report_dir=reports))
+    try:
+        session.start()
+        result = evidence.probe("local_monitor_completed", lambda: session.wait(10), timing="cleanup")
+        complete = result is not None and result.startup == "started" and result.cleanup == "complete"
+        evidence.check("local_monitor_cleanup_complete", complete)
+        persisted = (result is not None and result.exports is not None and result.exports.json_path is not None
+                     and result.exports.html_path is not None and result.exports.json_path.is_file()
+                     and result.exports.html_path.is_file())
+        if persisted:
+            read_report(result.exports.json_path)
+        evidence.check("local_monitor_reports_readable", persisted)
+        evidence.rate("local_completed_runs", int(complete), 1)
+        evidence.rate("local_report_persistence", int(persisted), 1)
+        return complete and persisted
+    finally:
+        session.close(timeout=10)
+
+
+def _label(value):
+    if (type(value) is not str or not value or value != value.strip() or len(value) > 256
+            or any(unicodedata.category(character).startswith("C") for character in value)):
+        raise ValueError("Operator and contact must be bounded printable text")
+    return value
+
+
+def run_exercise(workspace, *, operator: str, contact: str, include_agent: bool | None = None,
+                 budgets: OperatingBudgets | None = None, with_transport: bool = False,
+                 certificate=None, key=None, ca=None):
+    """Create only new private fixtures; return a private measured evidence artifact."""
+    from .api import _version
+    from .service_agent_exercise import exercise_agent
+
+    operator, contact = _label(operator), _label(contact)
+    if include_agent is None:
+        include_agent = os.name == "nt"
+    if type(include_agent) is not bool or include_agent and os.name != "nt":
+        raise ValueError("The local agent exercise requires Windows")
+    if budgets is None:
+        budgets = OperatingBudgets()
+    if type(budgets) is not OperatingBudgets:
+        raise ValueError("Operating budgets must be OperatingBudgets")
+    if type(with_transport) is not bool:
+        raise ValueError("Transport extension must be explicitly selected")
+    if with_transport:
+        # Optional extension: no transport import or TLS requirement belongs
+        # to the default local authority/agent operating baseline.
+        from .service_team_exercise import exercise_transport
+        certificate, key, ca = (verify_data_file(path, writable=False) for path in (certificate, key, ca))
+    elif any(path is not None for path in (certificate, key, ca)):
+        raise ValueError("TLS files require the explicit transport extension")
+    root = require_fresh_workspace(workspace)
+    started = datetime.now(timezone.utc).isoformat()
+    evidence = ExerciseEvidence(budgets)
+    restored = False
+    with ResourceSampler() as sampler:
+        sampler.add("driver", os.getpid())
+
+        def team_phase():
+            nonlocal restored
+            store = evidence.probe("team_authority_ready", lambda: TeamStore.create(root / "team"), timing="readiness")
+            if store is None:
+                return False
+            with store:
+                admin, viewer, writer = exercise_authority(store, evidence)
+                exercise_authority_faults(store, admin, root, evidence)
+                restored = exercise_evidence_recovery(store, admin, viewer, writer, root, evidence)
+                transported = exercise_transport(store, admin, root, certificate, key, ca, evidence) if with_transport else True
+                return restored and transported
+
+        team_completed = evidence.probe("team_exercise_completed", team_phase) is True
+        evidence.check("team_exercise_invariants", team_completed)
+        local_completed = evidence.probe("local_collection_exercise_completed", lambda: exercise_local_collection(root, evidence)) is True
+        evidence.check("local_collection_exercise_invariants", local_completed)
+        agent_completed = not include_agent
+        if include_agent:
+            agent_completed = evidence.probe("agent_exercise_completed", lambda: exercise_agent(root, evidence, sampler)) is True
+            evidence.check("agent_exercise_invariants", agent_completed)
+    evidence.resources = sampler.close()
+    document = evidence.document()
+    required_rates = {"authorized_read_availability", "committed_report_durability", "local_completed_runs", "local_report_persistence"}
+    required_timings = {"readiness", "ingest", "read", "cleanup"}
+    if with_transport:
+        required_rates |= {"tls_authorized_read_availability", "durable_queue_recovery"}
+        required_timings.add("upload")
+    if include_agent:
+        required_rates |= {"agent_completed_runs", "agent_report_persistence"}
+        required_timings.add("freshness")
+    complete_observations = (required_rates <= set(document["rates"])
+                             and all(document["rates"][name]["total"] > 0
+                                     and document["rates"][name]["ratio"] == 1 for name in required_rates)
+                             and required_timings <= set(document["timings_seconds"]))
+    gates = {"named_operator": bool(operator), "support_contact": bool(contact), "runbook_identified": True,
+             "successful_restore_exercise": restored, "team_exercise_completed": team_completed,
+             "local_collection_exercise_completed": local_completed,
+             "requested_agent_exercise_completed": agent_completed, "required_observations_complete": complete_observations,
+             "all_checks_and_budgets_passed": document["checks_passed"]}
+    document = {"operations_schema": 1, "version": _version(), "started_at": started,
+                "finished_at": datetime.now(timezone.utc).isoformat(), "operator": operator, "support_contact": contact,
+                "runbook": "https://github.com/JunaidAhamed-7777/DrainTracer/blob/main/docs/service-operations.md",
+                "components": ["team", "local_collection"] + (["agent"] if include_agent else [])
+                + (["transport"] if with_transport else []), "budgets": asdict(budgets),
+                "environment": reference_environment(),
+                "qualifications": ["Disposable local reference; recheck actual deployment prerequisites before a pilot",
+                                   "Retention expiry uses an explicitly stepped fixture clock",
+                                   "Managed restore repairs evidence payloads under current authority; it cannot recover lost authority"]
+                                   + (["TLS service runs in the driver process; driver CPU/RSS includes the service",
+                                       "Acknowledgement loss is injected after a real TLS commit"] if with_transport else []),
+                **document, "readiness_gates": gates, "operating_prerequisites_met": all(gates.values())}
+    return write_evidence(root, document), document
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Measure local reference operations using only a NEW disposable private workspace.")
+    parser.add_argument("--workspace", required=True)
+    parser.add_argument("--operator", required=True, help="Named deployment operator; not a consent or human-pilot record.")
+    parser.add_argument("--contact", required=True)
+    parser.add_argument("--with-transport", action="store_true", help="Explicitly add the optional loopback TLS extension.")
+    parser.add_argument("--certificate", help="With transport: private local TLS certificate with localhost identity.")
+    parser.add_argument("--key", help="With transport: private local TLS key; never copied into evidence.")
+    parser.add_argument("--ca", help="With transport: private local CA/certificate trust file.")
+    parser.add_argument("--components", choices=("team", "all"), default="all" if os.name == "nt" else "team")
+    parser.add_argument("--readiness-seconds", type=float, default=2)
+    parser.add_argument("--freshness-seconds", type=float, default=2)
+    parser.add_argument("--upload-seconds", type=float, default=2)
+    parser.add_argument("--read-seconds", type=float, default=2)
+    parser.add_argument("--cleanup-seconds", type=float, default=20)
+    parser.add_argument("--sampled-rss-mib", type=int, default=256)
+    args = parser.parse_args(argv)
+    try:
+        budgets = OperatingBudgets(args.readiness_seconds, args.freshness_seconds, args.upload_seconds,
+                                    args.read_seconds, args.cleanup_seconds, args.sampled_rss_mib * 1024 * 1024)
+        path, document = run_exercise(args.workspace, operator=args.operator, contact=args.contact,
+                                      certificate=args.certificate, key=args.key, ca=args.ca,
+                                      with_transport=args.with_transport,
+                                      include_agent=args.components == "all", budgets=budgets)
+        print(json.dumps({"operations_schema": 1, "evidence": str(path),
+                          "operating_prerequisites_met": document["operating_prerequisites_met"]}, ensure_ascii=True))
+        return 0 if document["operating_prerequisites_met"] else 2
+    except Exception:  # noqa: BLE001 - command boundary emits only a fixed error, never private failure text
+        print(json.dumps({"operations_schema": 1, "operating_prerequisites_met": False,
+                          "error": {"code": "exercise_failed"}}))
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
