@@ -83,7 +83,7 @@ class _Backups:
                     raise ValueError
                 expected = {row[0] for row in connection.execute("SELECT report_id FROM backup_members WHERE project_id=? AND backup_id=?",
                                                                (actor.project_id, backup_id))}
-                seen, replacements, added = set(), [], 0
+                seen, replacements = set(), []
                 for item in value["reports"]:
                     if type(item) is not dict or set(item) != {"id", "sha256", "report"} or item["id"] in seen:
                         raise ValueError
@@ -100,14 +100,13 @@ class _Backups:
                         raise ValueError
                     summary = _json(session_summary(report))
                     size = len(payload) + len(summary)
-                    added += size - authority["stored_bytes"]
                     replacements.append((payload, summary, size, actor.project_id, report_id))
                 if seen != expected:
                     raise ValueError
             except (ValueError, TypeError, AttributeError, KeyError, RecursionError):
                 raise TeamError("storage", "Snapshot no longer matches live report authority") from None
-            self._admit_bytes(connection, actor.project_id, policy, max(added, 0))
             connection.executemany("UPDATE reports SET payload=?,summary=?,stored_bytes=? WHERE project_id=? AND id=?", replacements)
+            self._admit_bytes(connection, actor.project_id, policy, 0)
             details.update(reports=len(replacements))
             return {"team_schema": 1, "project_id": actor.project_id, "backup_id": backup_id,
                     "restored": len(replacements), "report_ids": sorted(seen)}

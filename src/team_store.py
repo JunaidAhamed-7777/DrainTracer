@@ -182,6 +182,10 @@ class TeamStore(_Governance, _Backups, _Evidence, _Database):
     def _trim_audit(self, connection, project_id, now, policy):
         deleted = connection.execute("DELETE FROM audit_events WHERE project_id=? AND timestamp<=?",
                                      (project_id, now - policy.audit_retention_seconds)).rowcount
+        invalid = connection.execute("SELECT 1 FROM audit_events WHERE project_id=? AND (typeof(stored_bytes)!='integer' OR stored_bytes<0 OR "
+                                     "stored_bytes!=length(CAST(details AS BLOB))+length(CAST(action AS BLOB))+length(CAST(result AS BLOB))+128) LIMIT 1", (project_id,)).fetchone()
+        if invalid:
+            raise TeamError("storage", "Audit accounting does not match retained metadata")
         retained = connection.execute("SELECT sequence,stored_bytes FROM audit_events WHERE project_id=? ORDER BY sequence",
                                       (project_id,)).fetchall()
         count, total = len(retained), sum(item["stored_bytes"] for item in retained)

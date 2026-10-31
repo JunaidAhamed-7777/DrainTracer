@@ -83,6 +83,13 @@ class GovernanceTests(unittest.TestCase):
         self.clock[0] -= 2
         self.assert_code("not_found", self.store.read_record, self.admin, first["record_id"])
 
+    def test_corrupt_record_bytes_cannot_subsidize_evidence_admission(self):
+        record = self.store.create_record(self.admin, "baseline_approval", approval())
+        with self.store.connection() as connection:
+            connection.execute("UPDATE project_records SET stored_bytes=-10000 WHERE id=?", (record["record_id"],))
+        self.assert_code("storage", self.store.ingest, self.admin, fixture.report_bytes())
+        self.assertEqual(self.store.list_reports(self.admin)["reports"], [])
+
     def test_malformed_values_linked_ids_and_record_quota_are_enforced_before_commit(self):
         self.assert_code("invalid", self.store.create_record, self.admin, "baseline_approval", approval(unknown="unsafe"))
         self.assert_code("invalid", self.store.create_record, self.admin, "baseline_approval", approval(), report_ids=["a" * 32, "a" * 32])
