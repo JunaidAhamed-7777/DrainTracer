@@ -165,27 +165,25 @@ class AgentRegistry:
 
     def handle(self, request):
         identity = request.get("id") if isinstance(request, dict) else None
+        digest = None
         try:
             _keys(request, {"protocol", "id", "operation", "params"}, {"protocol", "id", "operation", "params"})
             if type(request["protocol"]) is not int or request["protocol"] != 1:
                 raise AgentError("protocol", "unsupported local agent protocol")
             _uuid(identity)
             operation, params = request["operation"], request["params"]
-            if not isinstance(operation, str) or not isinstance(params, dict):
-                raise AgentError("invalid_input", "operation and parameters have invalid types")
             digest = hashlib.sha256(json.dumps(request, sort_keys=True, allow_nan=False).encode()).hexdigest()
             if identity in self.replies:
                 previous, response = self.replies[identity]
                 if previous != digest:
                     raise AgentError("conflict", "request identity was already used for different parameters")
                 return response
+            if not isinstance(operation, str) or not isinstance(params, dict):
+                raise AgentError("invalid_input", "operation and parameters have invalid types")
             self.refresh()
             result = self._dispatch(operation, params)
             response = {"protocol": 1, "id": identity, "ok": True, "result": result}
-            self.replies[identity] = digest, response
-            while len(self.replies) > 256:
-                self.replies.popitem(last=False)
-            return response
+            return self._remember(identity, digest, response)
         except AgentError as error:
             code, message, may_have_run = error.code, str(error), False
         except CommandTimeoutError as error:
@@ -196,8 +194,19 @@ class AgentRegistry:
             code, message, may_have_run = "target_unavailable", "the requested target is unavailable", False
         except (OSError, RuntimeError, ValueError, TypeError):
             code, message, may_have_run = "operation_failed", "the operation failed; inspect session status and evidence", False
-        return {"protocol": 1, "id": identity, "ok": False,
-                "error": {"code": code, "message": message, "may_have_run": may_have_run}}
+        response = {"protocol": 1, "id": identity, "ok": False,
+                    "error": {"code": code, "message": message, "may_have_run": may_have_run}}
+        # An uncertain control/export is still a completed request identity.
+        # Do not overwrite the original cached reply on conflicting parameters.
+        if digest is not None and (identity not in self.replies or self.replies[identity][0] == digest):
+            return self._remember(identity, digest, response)
+        return response
+
+    def _remember(self, identity, digest, response):
+        self.replies[identity] = digest, response
+        while len(self.replies) > 256:
+            self.replies.popitem(last=False)
+        return response
 
     def _dispatch(self, operation, params):
         if operation == "start":

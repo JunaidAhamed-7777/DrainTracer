@@ -181,6 +181,20 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(exported["reports"], ["evidence.json"])
         self.assertEqual(exported["directory"], str(self.root))
 
+    def test_uncertain_command_reply_is_replayed_without_repeating_side_effects(self):
+        session_id = self.attach()["result"]["session_id"]
+        original = request("export", {"session_id": session_id})
+        with mock.patch.object(FakeSession.created[0], "export", side_effect=CommandTimeoutError(True)) as export:
+            first = self.registry.handle(original)
+            self.assertEqual(first["error"]["code"], "deadline")
+            self.assertTrue(first["error"]["may_have_run"])
+            self.assertEqual(self.registry.handle(original), first)
+            export.assert_called_once()
+            changed = dict(original, params={"session_id": str(uuid.uuid4())})
+            self.assertEqual(self.registry.handle(changed)["error"]["code"], "conflict")
+            self.assertEqual(self.registry.handle(original), first)
+            export.assert_called_once()
+
     def test_input_bounds_and_command_timeout_uncertainty_are_explicit(self):
         invalid = [{"protocol": True}, {"id": "../wrong"}, {"extra": "unsupported"}]
         for overrides in invalid:
