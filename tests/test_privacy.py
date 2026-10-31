@@ -11,7 +11,7 @@ from pathlib import Path
 from helpers import make_alert, make_console, make_process, make_snapshot
 
 from src.privacy import export_private_report, preview_json, redact_report
-from src.report_contract import main, session_summary
+from src.report_contract import ReportContractError, main, session_summary
 from src.session import MonitorSession
 
 SECRET = "SensitiveSeedABC987"
@@ -98,7 +98,8 @@ class PrivacyTests(unittest.TestCase):
                 self.assertNotIn("987654321", json.dumps(transformed))
         report["recovery"] = {"partial": 987654321, "final_outcome_confirmed": None,
                               "exact_through_cutoff": SECRET}
-        self.assertEqual(redact_report(report)["recovery"], {})
+        with self.assertRaises(ReportContractError):
+            redact_report(report)
 
     def test_partial_cleanup_and_startup_evidence_survive_without_raw_diagnostics(self) -> None:
         report = private_fixture()
