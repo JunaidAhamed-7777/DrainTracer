@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
+from . import report_contract
 from .events import LifecycleEvent, MetricCoverage, MetricsSnapshot, ProcessSummary
 
 DEFAULT_REPORT_DIR = "leak_reports/reports"
@@ -200,6 +201,74 @@ def write_text_atomic(
     return path
 
 
+def _within_contract_tokens(value: Any) -> bool:
+    pending = [(value, 0)]
+    count = 0
+    while pending:
+        value, depth = pending.pop()
+        count += 1
+        if (count > report_contract.MAX_REPORT_VALUES or depth > report_contract.MAX_REPORT_DEPTH
+                or isinstance(value, (dict, list, tuple)) and depth >= report_contract.MAX_REPORT_DEPTH):
+            return False
+        if isinstance(value, dict):
+            count += len(value)  # JSON object keys are tokens too.
+            children = value.values()
+        elif isinstance(value, (list, tuple)):
+            children = value
+        else:
+            continue
+        if count + len(pending) + len(value) > report_contract.MAX_REPORT_VALUES:
+            return False
+        pending.extend((child, depth + 1) for child in children)
+    return True
+
+
+def _within_contract_bytes(value: dict[str, Any]) -> bool:
+    encoder = json.JSONEncoder(indent=2, allow_nan=False, default=str)
+    size = 0
+    for part in encoder.iterencode(value):
+        # ensure_ascii is true, and the writer translates LF on Windows.
+        size += len(part) + (part.count("\n") if os.name == "nt" else 0)
+        if size > report_contract.MAX_REPORT_BYTES:
+            return False
+    return True
+
+
+def prepare_report_export(report: dict[str, Any]) -> dict[str, Any]:
+    """Bound chart detail to the public reader while retaining exact session facts.
+
+    The fresh export dictionary is copied; the live history is not changed.
+    Both JSON and HTML must consume the returned dictionary.
+    """
+    result = dict(report)
+    samples = list(result.get("snapshots") or ())
+    result["snapshots"] = samples
+    stride = int(result.get("snapshot_stride") or 1)
+    while True:
+        try:
+            fits = _within_contract_tokens(result) and _within_contract_bytes(result)
+        except ValueError:
+            # Match the JSON writer's established non-finite normalization.
+            result = _finite_only(result)
+            fits = _within_contract_tokens(result) and _within_contract_bytes(result)
+        if fits:
+            return result
+        facts = result.get("session_facts")
+        if (len(samples) <= 2 or not isinstance(facts, dict)
+                or type(facts.get("schema")) is not int or facts["schema"] != 1):
+            raise ValueError("Report exceeds machine-contract export limits; non-chart evidence cannot be omitted")
+        selected = samples[::2]
+        if len(samples) % 2 == 0:
+            selected.append(samples[-1])
+        samples = selected
+        stride *= 2
+        result["snapshots"] = samples
+        result["snapshot_stride"] = stride
+        facts = dict(facts)
+        facts["chart"] = dict(facts.get("chart") or {}, stride=stride, stored=len(samples))
+        result["session_facts"] = facts
+
+
 def write_json_report(report: dict[str, Any], directory: str | Path) -> Path:
     """Store ``report`` as ``<directory>/leak_report_<report_id>.json``.
 
@@ -235,6 +304,7 @@ __all__ = [
     "iso_timestamp",
     "lifecycle_to_dict",
     "new_report_id",
+    "prepare_report_export",
     "process_summary_to_dict",
     "report_directory",
     "report_filename",
