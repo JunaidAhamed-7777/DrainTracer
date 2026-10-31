@@ -337,7 +337,9 @@ python src/main.py --headless --target .\torture\steady.py --timeout 15s --fail-
 ```
 
 Headless mode prints progress, exports reports, and exits when the monitored
-tree finishes or the time limit passes. Its exit code describes the monitor's
+tree exits or the configured time limit expires. Each `STAT` line includes the
+live process count from the accepted snapshot, including unreadable processes.
+Its exit code describes the monitor's
 result, rather than forwarding the target's exit code:
 
 - `0` — no observed signal reached the selected threshold. This includes
