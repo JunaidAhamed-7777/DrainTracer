@@ -50,7 +50,8 @@ old suppressions. They never suppress target/provenance/coverage gates, missing
 metrics, unknown or inconclusive comparisons. The JSON result always includes
 the original findings and the applied/expired exceptions with their reasons.
 
-Output is machine JSON on stdout; failures are JSON errors on stderr. Exit
+Comparison/audit output is machine JSON on stdout; input and store errors are
+JSON errors on stderr. Exit
 codes are 0 for a conclusive pass, 1 for an unsuppressed regression, 2 for an
 input/store error, 3 for incompatible/insufficient/inconclusive evidence, and 4
 for an unsuppressed peak budget. No global detector defaults or calibration
@@ -70,3 +71,13 @@ reported observed overlap, and rejects lost provenance or measurement coverage.
 Deterministic regression fixtures separately verify repeatable failure, strict
 promotion gates, scoped exceptions, atomic failure preservation and audit/hash
 validation. This is functional verification, not broad detector calibration.
+
+Verification on 2026-10-31: the 18 focused baseline tests and all 741 unit tests
+passed on Windows (23 platform skips) and WSL Linux (16 skips). The native
+mid-object-write crash drill exited the writer abruptly, retained the previous
+approval, released its OS lock and completed a subsequent retry. A clean source
+distribution and wheel passed strict metadata checks; the wheel's Python members
+matched the committed runtime inventory exactly. Clean installation then ran
+the four independent workload recordings and the promotion/check/audit commands
+outside the checkout. A dedicated user approval system, broad calibration study
+and power-loss durability test are not claimed by this local functional check.
