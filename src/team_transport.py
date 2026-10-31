@@ -202,6 +202,8 @@ class _Handler(socketserver.BaseRequestHandler):
             response = self.server.dispatch(message)
         except SharingError as error:
             response = {"team_schema": 1, "ok": False, "error": {"code": error.code}}
+        except TimeoutError:
+            response = {"team_schema": 1, "ok": False, "error": {"code": "unavailable"}}
         except (OSError, ValueError, TypeError, RuntimeError):
             response = {"team_schema": 1, "ok": False, "error": {"code": "storage"}}
         send_frame(self.request, response, deadline)
