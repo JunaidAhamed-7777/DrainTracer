@@ -10,6 +10,7 @@ import tempfile
 import time
 import uuid
 from contextlib import contextmanager
+from functools import lru_cache
 from pathlib import Path
 
 from .team_models import StoreLimits, TeamError
@@ -112,6 +113,22 @@ def _metadata_hash(values: dict) -> str:
     return hashlib.sha256(json.dumps(values, sort_keys=True, ensure_ascii=True).encode("utf-8")).hexdigest()
 
 
+def _schema_shape(connection: sqlite3.Connection) -> str:
+    objects = [tuple(row) for row in connection.execute(
+        "SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name")]
+    return hashlib.sha256(json.dumps(objects, ensure_ascii=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+@lru_cache(maxsize=1)
+def _expected_schema_shape() -> str:
+    connection = sqlite3.connect(":memory:")
+    try:
+        connection.executescript(SCHEMA_SQL)
+        return _schema_shape(connection)
+    finally:
+        connection.close()
+
+
 class _Database:
     """No persistent SQLite connection, implicit schema migration or network work."""
 
@@ -129,6 +146,8 @@ class _Database:
                 tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
                 if tables != _TABLES or connection.execute("SELECT 1 FROM sqlite_master WHERE type IN ('view','trigger') LIMIT 1").fetchone():
                     raise TeamError("storage", "Unexpected team authority schema objects")
+                if _schema_shape(connection) != _expected_schema_shape():
+                    raise TeamError("storage", "Team authority schema does not match the supported structure")
                 values = _metadata(connection)
                 if set(values) != {"schema", "schema_hash", "store_id", "limits"} or values["schema"] != "1" or values["schema_hash"] != SCHEMA_HASH:
                     raise TeamError("storage", "Unsupported team authority metadata")
@@ -225,6 +244,7 @@ class _Database:
                 connection.execute("PRAGMA user_version").fetchone()[0] != 1
                 or connection.execute("PRAGMA schema_version").fetchone()[0] != self._schema_cookie
                 or _metadata_hash(_metadata(connection)) != self._metadata_hash
+                or _schema_shape(connection) != _expected_schema_shape()
             ):
                 raise TeamError("storage", "Team authority changed; reopen only after local inspection")
             yield connection
