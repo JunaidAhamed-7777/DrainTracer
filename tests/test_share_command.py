@@ -314,7 +314,8 @@ class ShareCommandTests(unittest.TestCase):
             reservation.bind(("127.0.0.1", 0))
             port = reservation.getsockname()[1]
         bootstrap = "import sys;sys.path.insert(0,sys.argv.pop(1));from src.share_command import main;raise SystemExit(main())"
-        process = subprocess.Popen([getattr(sys, "_base_executable", None) or sys.executable, "-c", bootstrap,
+        interpreter = (getattr(sys, "_base_executable", None) or sys.executable) if os.name == "nt" else sys.executable
+        process = subprocess.Popen([interpreter, "-c", bootstrap,
                 str(Path(__file__).parent.parent), "serve", "--store", str(self.store.directory),
                 "--certificate", str(self.root / "cert.pem"), "--key", str(self.root / "key.pem"),
                 "--operating-evidence", str(path), "--port", str(port)],
