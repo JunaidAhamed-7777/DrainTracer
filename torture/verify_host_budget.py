@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import json
 import math
 import os
 import platform
+import shutil
 import statistics
 import subprocess
 import sys
@@ -62,8 +64,19 @@ def breaches(summary, limits):
 
 
 def source_record():
+    command, directory = "git", str(ROOT)
+    pointer = ROOT / ".git"
+    if sys.platform.startswith("linux") and pointer.is_file() and ":/" in pointer.read_text().replace("\\", "/"):
+        # Windows worktree metadata and CRLF policy belong to Windows Git.
+        # Only provenance uses interop; sampling stays in native Linux Python.
+        command = shutil.which("git.exe")
+        if command is None:
+            raise RuntimeError("Windows worktree source identity requires its owner Git")
+        directory = subprocess.run(["wslpath", "-w", str(ROOT)], check=True, capture_output=True,
+                                   text=True, timeout=10).stdout.strip()
+
     def git(*args):
-        return subprocess.run(["git", *args], cwd=ROOT, check=True, capture_output=True,
+        return subprocess.run([command, "-C", directory, *args], cwd=ROOT, check=True, capture_output=True,
                               text=True, timeout=10).stdout.strip()
 
     if git("status", "--porcelain", "--untracked-files=no"):
@@ -71,7 +84,14 @@ def source_record():
     required = json.loads((ROOT / "runtime-manifest.json").read_bytes())["required_files"]
     paths = sorted(set(required) | {"torture/benchmark_host.py", "torture/verify_host_budget.py",
                                     "docs/host-budget-protocol.md"})
-    return {"commit": git("rev-parse", "HEAD"),
+    tree = ast.parse((ROOT / "src/dashboard.py").read_text(encoding="utf-8"))
+    runtime_version = next(ast.literal_eval(statement.value)
+                           for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "DashboardApp"
+                           for statement in node.body if isinstance(statement, ast.Assign)
+                           and any(isinstance(target, ast.Name) and target.id == "VERSION" for target in statement.targets))
+    if not isinstance(runtime_version, str):
+        raise TypeError("Canonical runtime version is unavailable")
+    return {"commit": git("rev-parse", "HEAD"), "runtime_version": runtime_version,
             "sha256": {path: hashlib.sha256((ROOT / path).read_bytes()).hexdigest() for path in paths}}
 
 
