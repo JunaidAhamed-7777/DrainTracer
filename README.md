@@ -504,6 +504,8 @@ and comparison exit codes.
   growth, inspect coverage, change the workload, and compare exported reports.
 - [Python worker recipe](docs/python-worker.md) — monitor a worker's own
   interpreter environment without importing its dependencies into DrainTracer.
+- [Native and batch recipes](docs/native-and-batch.md) — bounded Windows
+  executable and recursive-launcher investigations with cleanup expectations.
 - [Usage and troubleshooting](docs/usage.md) — launch, attach, controls, warm-up,
   headless operation, and diagnostic logging.
 - [Configuration](docs/configuration.md) — TOML discovery, profiles, thresholds,
