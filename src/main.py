@@ -459,6 +459,8 @@ examples:
   draintracer --headless --target app.exe --workload-id import-1k --operations 1000
   draintracer --headless --target app.exe --budget-private 500MB --budget-handles 2000
   draintracer diff before.json after.json            compare two reports
+  draintracer doctor --target worker.py --json       check setup without starting a target
+  draintracer init                                  preview a validated project config
 """
 
 
@@ -760,6 +762,15 @@ def _main(console: Console, argv: list[str] | None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     if arguments[:1] == ["diff"]:
         return run_diff(arguments[1:], console)
+    if arguments[:1] == ["doctor"]:
+        from .preflight import run_doctor
+
+        return run_doctor(arguments[1:], console, parser_factory=build_parser,
+                          settings_resolver=_resolve_settings)
+    if arguments[:1] == ["init"]:
+        from .preflight import run_init
+
+        return run_init(arguments[1:], console)
     parser = build_parser()
     args = parser.parse_args(arguments)
     if args.no_color:
