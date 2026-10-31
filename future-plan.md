@@ -8,10 +8,13 @@ dates. See the [README](README.md) for the current feature overview,
 changes, and [CONTRIBUTING.md](CONTRIBUTING.md) to propose or help with a
 change.
 
-**Reconciled 2026-10-22** against release v5.2.0. The prioritized assessment in
-[Immediate additions.md](Immediate%20additions.md) is folded in here: its
-implemented items are marked delivered below, and its remaining items are
-tracked in this file rather than in a separate list.
+**Reconciled 2026-10-31** against the linked implementations and recorded
+verification below. Published versions remain in [RELEASES.md](RELEASES.md);
+merged implementation, candidate validation and published-package validation
+are separate states. Historical measurements retain their exact source and
+candidate version; they are not relabeled as a later release's results.
+The assessment in [Immediate additions.md](Immediate%20additions.md) is folded
+in here, with broader unmet goals kept open even when a scoped issue closes.
 
 ## Delivered milestones
 
@@ -86,6 +89,14 @@ tracked in this file rather than in a separate list.
       markers and a view-only freeze, and monitor diagnostics, with decoded
       arrow and paging keys.
 
+13. **Windows and Linux monitoring** — done in v5.4.0
+    - Linux launch/attach/control semantics, USS private memory, open-file-
+      descriptor counts and classification, terminal controls and offline
+      reports, with platform definitions preserved in comparisons.
+    - Windows and Linux CI, real-process/terminal verification and clean
+      distributions. WSL is tested; this is not evidence for macOS or
+      unattended enterprise/service-account deployments.
+
 Later hardening improves process identity checks, orphan discovery,
 bounded report history, error handling, and literal argument forwarding to
 Windows batch targets. The current behavior is documented in
@@ -93,32 +104,64 @@ Windows batch targets. The current behavior is documented in
 
 ## Topics for discussion
 
-- **Distribution:** delivered in v5.1.0 and v5.1.1 (see milestones 10 and
-  11); remaining distribution work is tracked under D1–D3 below.
-- **Release verification:** partly delivered by the v5.1.1 workflow. Still
-  open: a pull-request check, a supported Python/Windows matrix, and
-  real-process runs alongside releases (T1).
-- **Detector calibration:** collect reproducible, bounded examples of slow
-  leaks and legitimate growth to assess defaults and profile guidance.
-- **Deeper attribution:** process-level attribution is delivered (milestone
-  12). Still open: diagnostics that connect a growing process to an
-  allocation source without making routine sampling block or require
-  intrusive instrumentation (O3).
+- **Release verification:** pull-request matrices, bounded real-process cases,
+  retained diagnostics and protected publishing checks are implemented (T1).
+  The maintained consumer action still needs its documented package pin
+  published and installed from PyPI before W3 closes.
+- **Calibration and cost:** repeated growth/non-growth results and profile
+  guidance are recorded (T3). The full observer's frozen timing ceilings
+  failed verification (T5); separate host component passes do not erase them.
+- **First use and demand:** tested guides and accessible evidence are available,
+  while uncoached first-time acceptance and consented user feedback remain
+  open (D3/O2/I6). Synthetic exercises do not establish demand.
+- **Optional sharing:** local access controls and recovery references are
+  implemented. The prepared controlled TLS/CLI slice is separate from hosted
+  comparison pages, pilot-derived objectives or a hosted availability promise.
+- **Deeper attribution:** the representative worker-growth policy is decided
+  (O3). A future tracer needs demonstrated need, privileges/privacy review
+  and measured adapter cost; no adapter has been selected or claimed measured.
 
-Open an issue with the workload, expected behavior, and proposed scope
-before starting a substantial feature. These topics are starting points
-for discussion rather than claims that the functionality already exists.
+### Open original workstreams and bounded starters
+
+Five original human/demand workstreams remain beyond the current delivery
+queue: [#31 first-time walkthrough acceptance](https://github.com/JunaidAhamed-7777/DrainTracer/issues/31),
+[#49 consent-based pilot](https://github.com/JunaidAhamed-7777/DrainTracer/issues/49),
+[#50 demand-led Windows diagnostics](https://github.com/JunaidAhamed-7777/DrainTracer/issues/50),
+[#51 pilot-informed notifications](https://github.com/JunaidAhamed-7777/DrainTracer/issues/51)
+and [#53 broader deployment demand](https://github.com/JunaidAhamed-7777/DrainTracer/issues/53).
+Publication/integration gates for W3/#44 and the scoped S2/#48 implementation
+remain separate from those five. The broader T5, S2 and O1 goals below are
+also not converted into passes by closing narrower implementation issues.
+
+The ten additional good first issues are bounded contributions with verified
+starting points and acceptance checks, not substitutes for those goals:
+
+- [#130 exclude stale modules from direct wheels](https://github.com/JunaidAhamed-7777/DrainTracer/issues/130).
+- [#131 reject ambiguous Windows recipe environment names](https://github.com/JunaidAhamed-7777/DrainTracer/issues/131).
+- [#132 workload command version flag](https://github.com/JunaidAhamed-7777/DrainTracer/issues/132).
+- [#133 preserve operation kind in queue history](https://github.com/JunaidAhamed-7777/DrainTracer/issues/133).
+- [#134 bounded report stdin](https://github.com/JunaidAhamed-7777/DrainTracer/issues/134).
+- [#135 detached snapshot JSON copy](https://github.com/JunaidAhamed-7777/DrainTracer/issues/135).
+- [#136 operating command version flag](https://github.com/JunaidAhamed-7777/DrainTracer/issues/136).
+- [#137 literal backticks in summary report paths](https://github.com/JunaidAhamed-7777/DrainTracer/issues/137).
+- [#138 separate agent request timeout](https://github.com/JunaidAhamed-7777/DrainTracer/issues/138).
+- [#139 non-launching recipe validation](https://github.com/JunaidAhamed-7777/DrainTracer/issues/139).
+
+Choose an existing scoped issue where possible. Propose substantial additional
+work with its workload, expected behavior and bounded verification first.
 
 ## Proposed delivery plan: a dependable developer service
 
-Planning update: **2026-10-21**. The checklist below extends the discussion
+Planning update: **2026-10-31**. The checklist below extends the discussion
 topics into work that can be scoped, implemented, and verified. Phase names
 indicate dependency order, not promised dates or release versions. Keep the
 delivered milestones above as history.
 
-Status as of 2026-10-22: a checked item met its completion criteria; an
-unchecked item with a **Status** note has delivered parts and names what
-remains; every other item is still proposed.
+Status as of 2026-10-31: a checked item has its linked technical implementation
+and recorded verification, with the scope qualifications below. An unchecked
+item retains an unmet goal or publication/pilot gate even if a narrower leaf
+issue is complete. Original **Done when** criteria are preserved. No phase
+name assigns a release date or speculative feature version.
 
 The goal is a tool developers can install quickly, use during an
 investigation, run repeatedly in CI, and eventually access through an
@@ -128,21 +171,20 @@ without changing how their applications run.
 
 ### Starting point and product boundaries
 
-DrainTracer already supports source-based Windows use, launch and PID
-attachment, recursive process tracking, warm-up, profiles, headless checks,
-GitHub Actions annotations and summaries, offline HTML/JSON exports, and
-report comparison. The proposed work strengthens these features rather
-than presenting them as new. Since this plan was written, v5.1.x added an
-installed command, package builds, PyPI publishing, and a Windows release
-workflow, and `main` added the evidence, attribution, and comparison work
-in milestone 12. There is still no pull-request CI check, public SDK, or
-hosted service.
+DrainTracer supports installed and source-based Windows and Linux use,
+launch/PID attachment, recursive process tracking, warm-up, profiles,
+headless checks, offline HTML/JSON and strict/repeated comparisons. The
+shared backend has a documented Python API, an opt-in per-user Windows
+agent, private local team storage, and pull-request/release verification.
+These strengthen the original evidence and ownership contracts. There is
+no hosted production service or automatic report upload.
 
-Keep Windows as the supported monitoring platform until another platform
-has its own tested process and metric semantics. Keep the offline CLI
-useful without an account. Local collection and target execution should
-remain on a developer-controlled machine or organization-owned Windows
-runner, even if reports are later shared through a team service.
+Linux core support shipped in v5.4.0 with its own process and metric
+semantics; it does not inherit Windows counter meanings. Keep the offline
+CLI useful without an account. Execution remains on a developer-controlled
+machine or organization-owned runner. macOS, unattended Windows service
+accounts and broader enterprise deployments need their own evidence and
+maintainers under O4.
 
 An alert remains evidence of sustained growth, not proof of an allocation
 leak. A short, inaccessible, or interrupted run must remain distinguishable
@@ -152,7 +194,7 @@ distinction between launched and attached targets throughout this plan.
 
 ### Phase 1 — Establish trustworthy results and releases (P0)
 
-- [ ] **T1. Automate Windows verification and release checks.** Add a
+- [x] **T1. Automate Windows verification and release checks.** Add a
   repository workflow for compilation, the existing unit suite, report
   script syntax checks, and bounded real-process cases. Define and test
   supported Python/Windows combinations and minimum/current dependencies.
@@ -161,13 +203,13 @@ distinction between launched and attached targets throughout this plan.
   **Done when:** a deliberate detector, report, or cleanup regression blocks
   release, and a clean Windows machine can reproduce the checks from the
   documented source commit.
-  **Status:** partly delivered in v5.1.1. The publishing workflow runs the
-  snapshot check, compilation, the unit suite, and clean-environment wheel
-  verification on Windows with Python 3.10 before any upload. Remaining:
-  pull-request triggers, a Python/Windows matrix, bounded real-process cases
-  (`torture/verify_suite.py`), and failure artifacts with an expiry.
+  **Status:** [Issue #22](https://github.com/JunaidAhamed-7777/DrainTracer/issues/22)
+  and the [development checks](docs/development.md) cover Windows/Linux
+  pull-request matrices, bounded real-process cases, failure diagnostics and
+  clean-distribution verification before publishing. Passing CI is not a
+  claim that every local performance ceiling or workload policy passed.
 
-- [ ] **T2. Make automated outcomes explicit.** Define a structured session
+- [x] **T2. Make automated outcomes explicit.** Define a structured session
   result that separates signal severity, per-resource detection coverage,
   target exit status, monitor/report errors, interruption, and cleanup
   outcome. Add opt-in CI policies for inconclusive checks and failed targets.
@@ -177,15 +219,13 @@ distinction between launched and attached targets throughout this plan.
   target exit `23`, interruption, and a signal followed by an export error,
   without automation parsing terminal messages or treating missing data as
   a measured zero.
-  **Status:** largely delivered on `main`. Reports carry separate `target`,
-  `measurement`, and `monitor_errors` outcomes and per-metric coverage;
-  unreadable counters are unknown rather than zero; `--fail-on-inconclusive`
-  (exit `3`), `--fail-on-target-error` (exit `4`), and budgets (exit `5`)
-  are opt-in with documented precedence. Remaining: an explicit cleanup
-  outcome field, a policy for partial coverage, and policy handling for a
-  failed start (still exit `2`).
+  **Status:** [Issue #23](https://github.com/JunaidAhamed-7777/DrainTracer/issues/23)
+  and the [headless guide](docs/usage.md#run-without-a-dashboard) define typed
+  startup/cleanup, target, measurement and monitor/export outcomes. Full
+  coverage and inconclusive/target-error policies are explicit opt-ins;
+  existing failure precedence and unknown counters remain qualified.
 
-- [ ] **T3. Calibrate detection against repeatable workloads.** Extend the
+- [x] **T3. Calibrate detection against repeatable workloads.** Extend the
   existing bounded fixtures with slow growth, stable caches, repeated
   allocation/recovery, worker churn, and partially inaccessible trees.
   Record workload inputs, machine conditions, settings, valid coverage,
@@ -201,8 +241,14 @@ distinction between launched and attached targets throughout this plan.
   and misleading warnings. Release notes should then describe tested
   scenarios and measured limitations without claiming universal accuracy
   or a confidence percentage.
+  **Status:** [#24 / PR #124](https://github.com/JunaidAhamed-7777/DrainTracer/pull/124)
+  supplies 72 source-pinned native-Windows/WSL runs across twelve scenarios,
+  repeated three times per platform. [Results](docs/calibration-results.md)
+  retain benign cache/startup warnings and slow-growth HIGH-policy misses.
+  Minimum-duration/profile guidance is scoped to those observations; no
+  threshold change, universal accuracy or native-Linux-host claim is made.
 
-- [ ] **T4. Preserve authoritative evidence across long runs.** Keep compact
+- [x] **T4. Preserve authoritative evidence across long runs.** Keep compact
   run summaries, strongest observed signals, and coverage accounting
   independently of thinned chart history. Expose observed/retained sample
   counts, event truncation, queue drops, and gaps. Distinguish exact summary
@@ -212,12 +258,11 @@ distinction between launched and attached targets throughout this plan.
   **Done when:** a long-run test stays within recorded memory/disk limits,
   preserves its strongest signal after thinning, and produces consistent,
   clearly qualified summaries after partial recovery.
-  **Status:** largely delivered on `main`. `session_facts` keeps exact peaks
-  with timestamps, worst severity, episodes, evaluated time, sample counts,
-  and coverage independently of thinning; reports state the chart stride
-  and dropped snapshots, and analysis, HTML, and diffs prefer the exact
-  facts. Remaining: bounded checkpoints for interrupted sessions and
-  explicit event-log truncation counts.
+  **Status:** [#25 / PR #103](https://github.com/JunaidAhamed-7777/DrainTracer/pull/103)
+  adds bounded same-session checkpoints and qualified partial recovery.
+  Producer-owned facts survive queue eviction, and exact event-log eviction
+  counts remain separate from chart thinning. [Report guidance](docs/reports.md)
+  distinguishes complete facts, retained detail and interrupted prefixes.
 
 - [ ] **T5. Measure overhead and stress lifecycle safety.** Benchmark
   sampling time, CPU, memory, handle classification, queue lag, and export
@@ -230,59 +275,94 @@ distinction between launched and attached targets throughout this plan.
   **Done when:** repeatable stress and soak runs meet the agreed budgets,
   cleanup failures are visible, and attached targets are never controlled
   using a stale PID identity or left paused by ordinary shutdown.
-  **Status:** instrumentation delivered on `main`: every snapshot reports
-  requested and achieved cadence, collection time, handle-classification
-  cost and age, failed and dropped samples, and the monitor's own CPU and
-  memory, shown in the monitor view and reports. Remaining: the benchmarks
-  across tree sizes, budgets set from them, and the stress and soak runs.
+  **Status:** the scoped measurement/safety work in
+  [#26 / PR #127](https://github.com/JunaidAhamed-7777/DrainTracer/pull/127)
+  records reference-derived budgets, repeated 1/7/31-process measurements,
+  failure drills and two 30-minute soaks. The broader budget-pass criterion
+  is **not met**: both [verification sets](docs/observer-verification-results.md)
+  retain `budget_failures`, seven timing-ceiling breaches, and an unexpected
+  Windows thread signal. Functional/reader/owned-cleanup quality and CPU/RSS
+  ceilings passed; they do not excuse failed maxima/P95s. Physical sleep/wake,
+  forced kernel PID reuse and production throughput are not established.
+  Preserve the frozen values and source identities; do not rerun or widen
+  ceilings merely to obtain a pass.
 
 **Phase gate:** T1–T5 establish the evidence needed to recommend DrainTracer
 as a regression gate. Installation and documentation work can proceed in
 parallel; claims about reliable checks must wait for measured results.
+**Gate status:** not fully met. T5's recorded timing failures remain a failed
+performance-acceptance result even though its scoped measurement/safety issue
+is complete. Use explicit workload/machine budgets rather than a universal
+reliability claim.
 
 ### Investigation workflow follow-ups (P1, from the product assessment)
 
-These are the items from [Immediate additions.md](Immediate%20additions.md)
-that remain after milestone 12. The validation set and observer-cost
-budgets are tracked under T3 and T5, and the pilot study under O2. Keep
+These follow-ups from [Immediate additions.md](Immediate%20additions.md)
+supplement milestone 12; their statuses distinguish implemented capabilities
+from remaining validation. The validation set and observer-cost budgets are
+tracked under T3 and T5, and the pilot study under O2. Keep
 sampling and evaluation on the detector thread and the TUI as a renderer;
 do not change heuristic thresholds alongside presentation work.
 
-- [ ] **I1. Saved-run comparison view (assessment View 4).** Load a
+- [x] **I1. Saved-run comparison view (assessment View 4).** Load a
   baseline report in the dashboard and show comparability first, then
   changes in growth, peaks, coverage, and signal episodes, reusing
   `report_diff` and its strict semantics. Show per-operation results only
   when both runs recorded operations.
   **Done when:** a non-comparable baseline shows its caveats before any
   improvement label, and the view's verdict matches `draintracer diff`.
+  **Status:** [#35 / PR #115](https://github.com/JunaidAhamed-7777/DrainTracer/pull/115)
+  adds a bounded background-loaded dashboard Compare view using the shared
+  strict engine. Caveats precede verdicts, errors preserve the prior result,
+  and continued real collection plus narrow/literal rendering are tested.
 
-- [ ] **I2. Repeated runs and variability.** Accept several equivalent
+- [x] **I2. Repeated runs and variability.** Accept several equivalent
   reports per side and show the spread of drift and peaks. One rule to
   evaluate: count a change as improved only when the two sides' ranges do
   not overlap.
   **Done when:** noisy repeated runs cannot produce an unqualified
   improvement from a single favorable pair.
+  **Status:** [#36 / PR #110](https://github.com/JunaidAhamed-7777/DrainTracer/pull/110)
+  compares 2–20 independent runs per side using shared conservative ranges.
+  Every within/across-group pair is checked; copied identities and excessive
+  group input are refused. Observed min/max ranges are descriptive, not
+  confidence intervals; W4 reuses the same engine.
 
-- [ ] **I3. Host context for the monitor view (assessment View 5).** Sample
+- [x] **I3. Host context for the monitor view (assessment View 5).** Sample
   host CPU and available memory/commit at a bounded cadence and show it as
   context, never as proof that the target caused pressure.
   **Done when:** the monitor view and reports show host pressure with its
   sampling age, and collection stays within the T5 budgets.
+  **Status:** [#27 / PR #113](https://github.com/JunaidAhamed-7777/DrainTracer/pull/113)
+  samples CPU/available physical memory every five seconds with unknowns,
+  thread priming and monotonic published age. The separate
+  [host component proof](docs/host-budget-results.md) passes three frozen-
+  budget verification replicates per OS at source `68442ce`, retaining the
+  first provenance failure and every reference attempt. Target collection
+  timing excludes this host call; full T5 timing failures remain unchanged.
 
-- [ ] **I4. Timeline and marker follow-ups.** A per-process scope and a
+- [x] **I4. Timeline and marker follow-ups.** A per-process scope and a
   selectable time range beyond the last 240 samples, a label prompt for
   `M` markers (`add_marker(label)` already exists), and markers drawn in
   the HTML report.
   **Done when:** a user can mark "opened document", find it in the timeline
   for one process, and see it in the exported HTML.
+  **Status:** [#28 / PR #114](https://github.com/JunaidAhamed-7777/DrainTracer/pull/114)
+  implements identity-scoped retained timelines, selectable ranges and literal
+  named markers in HTML. Text entry isolates target controls, and retained/
+  thinned history plus view freeze remain distinct from sampling pause.
 
-- [ ] **I5. Investigation summary and next-step guidance (assessment P2).**
+- [x] **I5. Investigation summary and next-step guidance (assessment P2).**
   A compact, redacted summary of what grew, where, and over which interval,
   suitable for an issue or bug report, with handoff guidance to Windows
   Performance Recorder/Analyzer or runtime-specific profilers. Never promise
   a source-code root cause from resource slopes.
   **Done when:** a summary pasted into an issue names the resource, metric,
   contributing process, interval, and coverage, without local secrets.
+  **Status:** [#42 / PR #106](https://github.com/JunaidAhamed-7777/DrainTracer/pull/106)
+  and the [investigation guide](docs/investigation-summary.md) provide a typed
+  redacted summary with resource/interval/coverage and profiler handoff.
+  Bounded identity-free evidence is reused; allocation cause is not inferred.
 
 - [ ] **I6. Specialized Windows views, when real users need them.** GDI and
   USER object counts (via `GetGuiResources`, with failure kept distinct from
@@ -294,6 +374,9 @@ do not change heuristic thresholds alongside presentation work.
   for demonstrated use cases.
   **Done when:** each added view answers a need recorded from a pilot user
   (O2) and has a measured collection cost.
+  **Status:** [#50](https://github.com/JunaidAhamed-7777/DrainTracer/issues/50)
+  remains open. No pilot need, specialized view cost or allocation diagnosis
+  is manufactured from the technical fixture sets.
 
 - [x] **I7. Remaining consistency gaps.** Smaller issues found while
   delivering milestone 12, reconciled on 2026-11-01 in the
@@ -311,6 +394,13 @@ do not change heuristic thresholds alongside presentation work.
   umbrella preserves separate human acceptance and broader performance gates.
   **Done when:** each gap is fixed with a regression test or recorded as an
   intentional limitation in the relevant guide.
+  **Status:** [#29 / PR #129](https://github.com/JunaidAhamed-7777/DrainTracer/pull/129)
+  and the [implementation/decision record](docs/consistency-tracking.md)
+  reconcile the original gaps, including delivered report-sourced budgets
+  under [#37](https://github.com/JunaidAhamed-7777/DrainTracer/issues/37).
+  Positive-growth arithmetic, independent bounded process rankings and the
+  deliberate lifecycle-detail retention limit are explicit. This completion
+  does not resolve any human acceptance or broader performance goal.
 
 ### Phase 2 — Make installation and everyday use accessible (P1)
 
@@ -325,7 +415,7 @@ do not change heuristic thresholds alongside presentation work.
   request help, monitor a bounded sample, export both report formats, and
   uninstall without Git, path editing, or routine elevation.
 
-- [ ] **D2. Add preflight diagnostics and project setup assistance.** Design
+- [x] **D2. Add preflight diagnostics and project setup assistance.** Design
   proposed diagnostic, configuration-validation, and project-init commands.
   Check target/interpreter paths, settings precedence, report-directory
   access, permissions, and whether timeout/warm-up leave enough coverage.
@@ -334,6 +424,10 @@ do not change heuristic thresholds alongside presentation work.
   **Done when:** common setup failures can be diagnosed without starting or
   pausing a real application, and generated profiles pass the same validator
   used by normal monitoring.
+  **Status:** [#30](https://github.com/JunaidAhamed-7777/DrainTracer/issues/30)
+  and the [preflight guide](docs/preflight.md) document `doctor` and preview-
+  first `init`. Configuration/path/coverage checks do not start a target;
+  existing files and checkpoint destinations remain protected.
 
 - [ ] **D3. Provide a guided first useful result and practical recipes.**
   Build a short walkthrough using the included steady and growth fixtures:
@@ -344,8 +438,19 @@ do not change heuristic thresholds alongside presentation work.
   **Done when:** developers unfamiliar with the repository can complete the
   walkthrough and explain clear, signal, and inconclusive outcomes without
   maintainer intervention.
+  **Status:** [#57](https://github.com/JunaidAhamed-7777/DrainTracer/issues/57),
+  [#58](https://github.com/JunaidAhamed-7777/DrainTracer/issues/58),
+  [#59](https://github.com/JunaidAhamed-7777/DrainTracer/issues/59) and
+  [#60](https://github.com/JunaidAhamed-7777/DrainTracer/issues/60) provide the
+  technically checked [walkthrough](docs/first-result.md),
+  [Python worker](docs/python-worker.md), [native/batch](docs/native-and-batch.md)
+  and [service observation](docs/service-observation.md) recipes. Service CI
+  verifies same-identity survival after detach and owned registration cleanup.
+  [#31](https://github.com/JunaidAhamed-7777/DrainTracer/issues/31) remains open
+  until a first-time Windows contributor completes the workflow without
+  coaching; maintainer command validation is not that evidence.
 
-- [ ] **D4. Offer accessible terminal presentation and controls.** Extend
+- [x] **D4. Offer accessible terminal presentation and controls.** Extend
   current narrow-terminal and legacy-encoding support with explicit color
   controls, a static/plain mode, and quiet output. Keep verdicts and missing
   readings understandable without color or animation; document keyboard
@@ -355,26 +460,38 @@ do not change heuristic thresholds alongside presentation work.
   **Done when:** keyboard and screen-reader users can start, inspect,
   interpret, export, and quit a session in plain output and at small terminal
   sizes, with no hidden change to target ownership.
-  **Status:** the view-only freeze shipped on `main` as `F` in the timeline
-  view, leaving `Space` (pause target and sampling) unchanged; evidence
-  states are spelled out in text rather than color alone. Remaining: color
-  controls, a static/plain mode, quiet output, and screen-reader checks.
+  **Status:** [#32](https://github.com/JunaidAhamed-7777/DrainTracer/issues/32)
+  delivers `--no-color`, static `--plain` and `--quiet`, preserving literal
+  text, unknowns and target ownership. [Usage](docs/usage.md) documents the
+  controls; narrow/legacy-codepage and plain-output paths are checked.
+  This does not certify every screen-reader client or fulfill the separate
+  representative-user phase gate.
 
-- [ ] **D5. Make exported evidence accessible without chart interaction.**
+- [x] **D5. Make exported evidence accessible without chart interaction.**
   Add equivalent textual summaries and data tables/downloads for HTML
   charts, labeled controls, visible focus, keyboard navigation, meaningful
   headings, and non-color signal cues. Verify zoom, contrast, and assistive
   technology behavior while keeping reports self-contained and offline.
   **Done when:** the verdict, coverage, trend, units, and relevant process
   evidence can all be read without hovering, dragging, or seeing the chart.
+  **Status:** [#33 / PR #108](https://github.com/JunaidAhamed-7777/DrainTracer/pull/108)
+  and [#62 / PR #107](https://github.com/JunaidAhamed-7777/DrainTracer/pull/107)
+  add static evidence tables/CSV, keyboard range/Zoom controls, labels/focus
+  and tested light/dark contrast. [Recorded accessibility checks](docs/html-accessibility.md)
+  cover semantic fixtures, Chromium and Windows accessibility interfaces,
+  assistive Expand/table-focus behavior and a narrow viewport. No universal
+  screen-reader certification or unobserved native-key activation is claimed.
 
 **Phase gate:** a fresh Windows environment and representative first-time
 users complete the documented workflow using the distributed artifact.
 Usability and accessibility failures feed back into D1–D5 before promotion.
+**Gate status:** the technical guides and recorded accessibility checks are
+available; uncoached first-time acceptance under #31 and representative
+consented feedback under #49 remain outstanding.
 
 ### Phase 3 — Fit developer workflows and stabilize integrations (P2)
 
-- [ ] **W1. Define stable report and machine-output contracts.** Publish a
+- [x] **W1. Define stable report and machine-output contracts.** Publish a
   machine-readable report schema and session-summary contract with supported
   versions, optional fields, units, structured errors, and compatibility
   fixtures. Validate untrusted input with size/depth limits; reject unknown
@@ -384,8 +501,12 @@ Usability and accessibility failures feed back into D1–D5 before promotion.
   **Done when:** a separate consumer can validate supported reports and
   outcomes without Rich, presentation parsing, or undocumented internal
   imports, and malformed reports fail with useful bounded errors.
+  **Status:** [#34](https://github.com/JunaidAhamed-7777/DrainTracer/issues/34)
+  publishes bounded report/summary schemas, fixtures, typed errors and the
+  [validation CLI](docs/report-contract.md). Strict numeric rejection, future-
+  schema refusal and unknown legacy values do not depend on parsing Rich.
 
-- [ ] **W2. Make workload execution reproducible.** Add explicit target
+- [x] **W2. Make workload execution reproducible.** Add explicit target
   interpreter, working-directory, and environment selection with redaction
   rules. Support bounded readiness checks and workload exercise steps so a
   server is measured under actual load after it becomes ready. Offer opt-in
@@ -395,11 +516,12 @@ Usability and accessibility failures feed back into D1–D5 before promotion.
   **Done when:** the same recipe runs locally and in CI with recorded
   provenance, readiness failures are distinct from leak signals, and timeouts
   clean up only the processes that session owns.
-  **Status:** provenance delivered on `main`: reports record workload ID,
-  build, operation count, note, sampling settings, machine details, and a
-  redacted argument count and fingerprint. Remaining: interpreter, working
-  directory, and environment selection, readiness checks, exercise steps,
-  and log capture.
+  **Status:** [#43 / PR #119](https://github.com/JunaidAhamed-7777/DrainTracer/pull/119)
+  and [workload recipes](docs/workloads.md) deliver explicit interpreter/cwd/
+  environment choices, readiness, bounded exercises and opt-in redacted logs.
+  Selected/inherited secret environment values are not recorded or compared;
+  they block strict equivalence. Clean recipes state their limited platform-
+  basics equivalence. Workload failure and owned cleanup remain explicit.
 
 - [ ] **W3. Supply a maintained Windows CI template and reusable action.**
   Build on existing annotations and job summaries with version-pinned setup,
@@ -410,8 +532,15 @@ Usability and accessibility failures feed back into D1–D5 before promotion.
   **Done when:** an example pull request displays a useful leak comparison,
   a short inconclusive check fails under the selected policy, and a failing
   job retains enough evidence to reproduce its result.
+  **Status:** [#44 / PR #120](https://github.com/JunaidAhamed-7777/DrainTracer/pull/120)
+  has the maintained [action/template](docs/ci-workloads.md) and a successful
+  [hosted candidate example](https://github.com/JunaidAhamed-7777/DrainTracer/actions/runs/41207484179)
+  with comparable evidence, opted-in short-run failure and retained artifacts.
+  Keep this item open until the documented exact package pin is published
+  and installed from PyPI. A candidate wheel/hosted fixture is not a
+  published-package installation check.
 
-- [ ] **W4. Turn comparisons into controlled baseline checks.** Extend
+- [x] **W4. Turn comparisons into controlled baseline checks.** Extend
   existing `diff` with workload, source commit, settings, detector version,
   environment, and coverage compatibility checks. Use repeated measurements
   and explicit absolute/relative budgets where justified by T3. Require
@@ -420,14 +549,14 @@ Usability and accessibility failures feed back into D1–D5 before promotion.
   **Done when:** a known regression fails reproducibly, incompatible or
   insufficient runs cannot silently replace a baseline, and an approved
   update records who changed it and why.
-  **Status:** comparison semantics delivered on `main`: classified caveats,
-  qualified verdicts, `diff --strict` (`NOT COMPARABLE` or
-  `INSUFFICIENT COVERAGE`, exit `3`), whole-run peaks, growth per operation,
-  and absolute budgets (exit `4`). Remaining: repeated runs per side with
-  variability, budgets read from the report as well as flags, baseline
-  approval, and scoped suppressions.
+  **Status:** [#37](https://github.com/JunaidAhamed-7777/DrainTracer/issues/37)
+  and [controlled baselines](docs/controlled-baselines.md) implement repeated
+  eligibility, report-budget/flag precedence, audited deliberate promotion
+  and scoped expiring exceptions. Missing provenance, paused/gapped/adjusted
+  sampling and any resource's overlap/unknown evidence cannot be waived;
+  an exception never changes an inconclusive result into a pass.
 
-- [ ] **W5. Publish a small supported Python API.** Expose typed session
+- [x] **W5. Publish a small supported Python API.** Expose typed session
   options/results, launch/attach, cancellation, snapshots/events, and report
   export through the shared backend. Remove requirements for SDK consumers
   to import dashboard classes or initialize a terminal. Define lifecycle
@@ -436,14 +565,22 @@ Usability and accessibility failures feed back into D1–D5 before promotion.
   **Done when:** an external script or test fixture integrates through the
   documented API, handles partial failure, cancels safely, and cannot stall
   sampling with a slow subscriber.
+  **Status:** [#38 / PR #109](https://github.com/JunaidAhamed-7777/DrainTracer/pull/109)
+  publishes the [Python session API](docs/python-api.md), immutable snapshots,
+  explicit launch/attach ownership, context cleanup and isolated callbacks.
+  External-consumer fixtures handle partial outcomes and slow subscribers
+  without initializing a dashboard or blocking collection.
 
 **Phase gate:** T2/T4 and W1 precede automated baseline enforcement; T3
 supplies its calibration evidence. W2/W3 prove a complete CI workflow.
 The same lifecycle and result contracts must serve CLI and SDK users.
+**Gate status:** shared contracts and candidate CI evidence are implemented.
+W3 still requires published-pin installation; source-pinned calibration is
+historical evidence, not a new release-wide accuracy guarantee.
 
 ### Phase 4 — Pilot an optional local Windows service (P3)
 
-- [ ] **L1. Define the service contract and ownership model.** Start with
+- [x] **L1. Define the service contract and ownership model.** Start with
   an explicitly enabled per-user agent backed by W5. Define session IDs,
   start/status/events/export/cancel operations, concurrent-session limits,
   authentication, and error states. Default service attachment to observation;
@@ -453,8 +590,13 @@ The same lifecycle and result contracts must serve CLI and SDK users.
   **Done when:** a documented client can monitor a permitted local target
   through authenticated local IPC without dashboard dependencies, and
   unauthorized clients cannot inspect or control another user's sessions.
+  **Status:** [#39 / PR #111](https://github.com/JunaidAhamed-7777/DrainTracer/pull/111)
+  and the [local agent contract](docs/local-agent.md) define foreground,
+  per-user authenticated Windows IPC, private authority and separate launch/
+  pause/kill capabilities. Attach is observation-only; this installs no
+  unattended service account or network listener.
 
-- [ ] **L2. Implement bounded scheduling and failure recovery.** Define
+- [x] **L2. Implement bounded scheduling and failure recovery.** Define
   session deadlines, queue/concurrency limits, restart policy, persistent
   state, report retention, cancellation, and idempotent requests. Handle
   client disconnects, agent upgrades, denied permissions, and disk exhaustion.
@@ -463,8 +605,13 @@ The same lifecycle and result contracts must serve CLI and SDK users.
   **Done when:** crash/restart and disconnect drills produce explicit final
   or interrupted states, one failed workload cannot stop other sessions,
   and ordinary service shutdown leaves attached targets running and resumed.
+  **Status:** [#40 / PR #112](https://github.com/JunaidAhamed-7777/DrainTracer/pull/112)
+  supplies [bounded scheduling/recovery](docs/agent-recovery.md), admission
+  journaling, idempotent retry semantics and partial checkpoint recovery.
+  Restarts mark old activity interrupted rather than relaunching or adopting
+  a saved PID. Native crash/disconnect and ordinary cleanup are exercised.
 
-- [ ] **L3. Provide a minimal local client and agent diagnostics.** Reuse
+- [x] **L3. Provide a minimal local client and agent diagnostics.** Reuse
   the CLI and accessible reports for session listing, progress, cancellation,
   and evidence retrieval before adding another dashboard. Expose readiness,
   sampling freshness, queue depth, storage use, and a redacted support bundle.
@@ -472,14 +619,22 @@ The same lifecycle and result contracts must serve CLI and SDK users.
   **Done when:** a developer can diagnose an unhealthy agent, recover a
   report, and remove the service without orphaned owned processes or losing
   unrelated application data.
+  **Status:** [#45 / PR #122](https://github.com/JunaidAhamed-7777/DrainTracer/pull/122)
+  and the [operations guide](docs/agent-operations.md) deliver live/offline
+  diagnostics, controlled recovery, stopped-only removal and previewable
+  redacted support bundles. Startup/removal fencing preserves unrelated
+  evidence and never substitutes an unverified PID kill.
 
 **Phase gate:** D1, T5, W1, and W5 are prerequisites. Pilot on controlled
 development machines first. Network exposure and shared hosting require
 the separate privacy and access-control work below.
+**Gate status:** per-user foreground-agent functionality is verified; T5's
+broader performance gate and human pilot acceptance remain open. No unattended
+Windows service-account deployment is implied by the local IPC exercises.
 
 ### Phase 5 — Add optional team evidence sharing (P4)
 
-- [ ] **S1. Make report privacy an explicit export choice.** Provide local
+- [x] **S1. Make report privacy an explicit export choice.** Provide local
   preview and redaction profiles covering paths, process/host identifiers,
   arguments, environment metadata, settings, events, and any captured logs.
   Apply the same transformation to JSON and embedded HTML data. Require
@@ -487,6 +642,11 @@ the separate privacy and access-control work below.
   preserve a useful offline workflow without registration or telemetry.
   **Done when:** seeded secrets and identifying values are absent from all
   redacted outputs and uploads, and users can inspect the result locally.
+  **Status:** [#41 / PR #105](https://github.com/JunaidAhamed-7777/DrainTracer/pull/105)
+  provides typed share/minimal allowlists, local preview and matched JSON/HTML
+  redaction. [Privacy guidance](docs/privacy.md) states what remains and why
+  transformed numeric evidence is not guaranteed anonymous. Unknown fields,
+  raw paths/errors and seeded identifying values are dropped.
 
 - [ ] **S2. Build the smallest useful team service.** Begin with report
   ingestion, projects, run history, approved baselines, and accessible
@@ -497,8 +657,18 @@ the separate privacy and access-control work below.
   **Done when:** two teammates can compare a CI run with an approved baseline,
   retries create one logical run, and a server outage does not interrupt
   local monitoring, report export, or target cleanup.
+  **Status:** the CLI-first controlled TLS scope is prepared in
+  [#48 / PR #141](https://github.com/JunaidAhamed-7777/DrainTracer/pull/141),
+  pending its integration. It adds project-bound clients, a private bounded
+  retry queue and literal comparison receipts keyed to repository/commit/
+  workload. W4 computes the private comparison locally; the service stores
+  an explicitly client-computed claim and does not attest or independently
+  recompute private evidence. Browser comparison pages, hosted private-
+  evidence analysis and a hosted availability promise are not implemented.
+  This broader item remains unchecked; no future service release is claimed
+  published, and technical credentials do not constitute a human pilot.
 
-- [ ] **S3. Establish access control and data lifecycle before sharing.**
+- [x] **S3. Establish access control and data lifecycle before sharing.**
   Threat-model uploads, stored reports, rendered HTML, API access, and
   project boundaries. Add project roles, scoped/revocable credentials,
   audit history, quotas, retention, deletion, and export. Isolate untrusted
@@ -507,6 +677,13 @@ the separate privacy and access-control work below.
   **Done when:** tests prove project/tenant isolation, credential revocation,
   safe rendering, quota enforcement, and deletion under a published backup
   expiry policy. No anonymous public report links are enabled by default.
+  **Status:** [#46 / PR #125](https://github.com/JunaidAhamed-7777/DrainTracer/pull/125)
+  implements [private team authority](docs/team-access.md), transactional
+  project/role/revocation checks, bounded sanitized ingestion, quotas,
+  retention, deletion, logical evidence backups and fail-closed schema/
+  accounting validation. Credentials/deletion authority never roll backward
+  with evidence restore; uploaded HTML is not rendered in an authenticated
+  service. Identity federation remains conditional on demonstrated need.
 
 - [ ] **S4. Add integrations that shorten investigation.** Start with the
   version-control/CI system used by pilot teams. Link regressions to source
@@ -516,6 +693,9 @@ the separate privacy and access-control work below.
   **Done when:** a meaningful new or worsening signal reaches the configured
   destination once, links to authorized evidence, and never exposes private
   report contents through a notification or secret-bearing URL.
+  **Status:** [#51](https://github.com/JunaidAhamed-7777/DrainTracer/issues/51)
+  remains open pending pilot integration choices and a full opt-in delivery/
+  privacy design. No notifications or source-owner routing are claimed.
 
 **Phase gate:** W1/W4 and S1/S3 precede shared project access. S2 can be
 developed privately alongside those controls. Before onboarding external
@@ -525,6 +705,11 @@ O2 pilot acceptance targets before collecting pilot results; mature the
 full objectives in Phase 6. Keep remote arbitrary-command execution outside
 this first service scope; revisit only with a separate design, demand, and
 security review.
+**Gate status:** local privacy/authority and the minimum O1 technical
+reference are implemented. Prepared PR #141 remains an integration gate for
+its controlled TLS slice. Each actual deployment must recheck current
+ownership, permissions and restore evidence; neither that fixture nor a
+future release substitutes for O2 consent or hosted operating results.
 
 ### Phase 6 — Prove service reliability and guide further investment (P5)
 
@@ -538,6 +723,14 @@ security review.
   **Done when:** operators can detect and recover from injected failures,
   verify restored evidence and access controls, and publish realistic support
   expectations before offering production commitments.
+  **Status:** [#47 / PR #126](https://github.com/JunaidAhamed-7777/DrainTracer/pull/126)
+  completes a minimum [synthetic local operating reference](docs/service-operations.md):
+  actual readiness/freshness, explicit completion/read counts, durability,
+  latency/resource samples, injected failures and restored evidence/access/
+  retention checks. A deployment must separately name its current operator,
+  contact, configuration/runbook and recent successful restore exercise.
+  Pilot-derived long-term objectives, staffed response, production availability
+  and consent are not established; the broader item remains unchecked.
 
 - [ ] **O2. Run a design-partner pilot and measure task success.** Recruit
   developers with repeatable Windows workloads and review installation
@@ -558,8 +751,11 @@ security review.
   signals and missed known problems; and whether they return unprompted.
   This needs no hosted service and should guide I1–I6 before more panels
   are added. The pilot size is a proposal, not evidence of demand.
+  **Status:** [#49](https://github.com/JunaidAhamed-7777/DrainTracer/issues/49)
+  remains open. Calibration, operating exercises and two technical credentials
+  are not recruited participants, consent, uncoached task success or demand.
 
-- [ ] **O3. Improve attribution through separately scoped diagnostics.**
+- [x] **O3. Improve attribution through separately scoped diagnostics.**
   Extend per-process history with PID/creation-time identity, lifetime, and
   growth contribution so new-worker accumulation can be distinguished from
   growth in a persistent worker. Evaluate optional runtime/native tracing
@@ -568,13 +764,14 @@ security review.
   **Done when:** a multi-process fixture identifies the growing child across
   churn/PID reuse, and any deeper tracing is opt-in with measured cost and
   no claim that aggregate counters locate allocations.
-  **Status:** per-process attribution delivered on `main`: PID and
-  creation-time identity, bounded histories, ranked contributors per alert, a
-  new-worker versus existing-process split, lifecycle events, exited-process
-  summaries, and the process inspector view. Remaining: optional tracing
-  adapters, and deciding whether growth that comes mostly from new workers
-  should keep full severity (today it is described as such but still
-  raised and can fail a headless run).
+  **Status:** [#52 / PR #128](https://github.com/JunaidAhamed-7777/DrainTracer/pull/128)
+  records 18 representative repeated accumulation/within-worker/churn cases
+  and the [full aggregate severity decision](docs/worker-growth-policy.md),
+  reusing delivered identity/history/contributor evidence. Positive components
+  are distinct from net growth; HIGH-policy misses remain visible. The
+  [tracing scope decision](docs/deeper-tracing-scope.md) evaluates privilege,
+  cost, privacy and blind spots. No adapter is selected absent demonstrated
+  need, and no unmeasured adapter cost or human-pilot result is asserted.
 
 - [ ] **O4. Evaluate broader deployment only against demonstrated demand.**
   Scope unattended Windows service accounts, enterprise/private hosting,
@@ -584,13 +781,19 @@ security review.
   **Done when:** a compatibility prototype and representative workloads
   justify a supported commitment; unsupported platforms remain clearly
   labeled rather than inheriting Windows guarantees.
+  **Status:** [#53](https://github.com/JunaidAhamed-7777/DrainTracer/issues/53)
+  remains open for broader demand and maintainability evidence. Linux core
+  support has already shipped in v5.4.0; WSL measurements do not justify
+  arbitrary native-Linux deployments, macOS, enterprise hosting or unattended
+  Windows service-account guarantees.
 
 ### How to turn this checklist into delivered work
 
-1. D1 has shipped and T2/T4 are largely delivered. Next, finish **T1** and
-   the remaining parts of T2/T4, and schedule calibration (T3) and overhead
-   budgets (T5) together, since both need the validation set. Then complete
-   the first-use and accessibility workflow (D2–D5).
+1. Preserve the measured T5 failures and complete W3's published-package
+   check before claiming their gates passed. Keep S2's broader pages/hosted
+   analysis and O1's pilot-derived objectives open. Prioritize the five
+   original human/demand workstreams and the ten bounded starters above;
+   do not substitute technical fixtures for first-time users or consent.
 2. Before implementation, give each selected item a maintainer/owner, scope,
    dependency links, expected user outcome, acceptance checks, and a size
    estimate. Split tasks that cannot be reviewed independently into smaller
