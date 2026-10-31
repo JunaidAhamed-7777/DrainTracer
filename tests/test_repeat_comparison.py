@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import io
 import json
+import stat
 import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from helpers import make_console
+from rich.console import Console
 from test_report_diff import _experiment, _run
 
 from src.diff_command import EXIT_ERROR, EXIT_NOT_COMPARABLE, EXIT_OVER_BUDGET, run_diff
@@ -103,6 +107,49 @@ class RepeatedComparisonTests(unittest.TestCase):
         self.assertEqual(code, EXIT_ERROR)
         read.assert_not_called()
         self.assertIn("128 MiB", console.file.getvalue())
+
+    def test_cli_rechecks_decoded_size_when_input_changes_after_stat(self) -> None:
+        old, new = self.reports("a", [4, 5]), self.reports("b", [0, 1])
+        console = make_console()
+        with (mock.patch("src.diff_command.Path.stat", return_value=SimpleNamespace(st_mode=stat.S_IFREG, st_size=0)),
+              mock.patch("src.diff_command.MAX_GROUP_BYTES", 16),
+              mock.patch("src.diff_command.compare_repeated_reports") as compare):
+            code = run_diff([str(old[0].path), str(new[0].path), "--before-run", str(old[1].path),
+                             "--after-run", str(new[1].path)], console)
+        self.assertEqual(code, EXIT_ERROR)
+        compare.assert_not_called()
+        self.assertIn("decoded inputs", console.file.getvalue())
+
+    def test_cli_refuses_nonregular_inputs_before_opening_them(self) -> None:
+        old, new = self.reports("a", [4, 5]), self.reports("b", [0, 1])
+        console = make_console()
+        with mock.patch("src.diff_command.load_report") as read:
+            code = run_diff([str(self.folder), str(new[0].path), "--before-run", str(old[1].path),
+                             "--after-run", str(new[1].path)], console)
+        self.assertEqual(code, EXIT_ERROR)
+        read.assert_not_called()
+        self.assertIn("ordinary report files", console.file.getvalue())
+
+    def test_repeated_plain_and_quiet_keep_static_evidence_and_literal_json(self) -> None:
+        old = self.reports("a", [4, 5], experiment=_experiment(workload_id=":rocket:"))
+        new = self.reports("b", [0, 1], experiment=_experiment(workload_id=":rocket:"))
+        arguments = [str(old[0].path), str(new[0].path), "--before-run", str(old[1].path),
+                     "--after-run", str(new[1].path)]
+        for flags in (("--plain",), ("--plain", "--quiet")):
+            output = io.StringIO()
+            console = Console(file=output, force_terminal=True, color_system="truecolor", width=80)
+            self.assertEqual(run_diff([*arguments, *flags], console), 0)
+            text = output.getvalue()
+            self.assertIn("VERDICT", text)
+            self.assertNotIn("\x1b", text)
+            self.assertNotIn("─", text)
+            self.assertEqual("drift A" in text, "--quiet" not in flags)
+        changed = self.reports("c", [0, 1], experiment=_experiment(workload_id=":smile:"))
+        console = make_console()
+        self.assertEqual(run_diff([str(old[0].path), str(changed[0].path), "--before-run", str(old[1].path),
+                                   "--after-run", str(changed[1].path), "--json", "--plain", "--quiet"], console),
+                         EXIT_NOT_COMPARABLE)
+        self.assertIn(":rocket:", json.dumps(json.loads(console.file.getvalue())))
 
     def test_cli_json_exposes_spread_and_checks_largest_after_peak(self) -> None:
         old, new = self.reports("a", [4, 5]), self.reports("b", [0, 1])

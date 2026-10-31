@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import stat
 from pathlib import Path
 
 from rich import box
@@ -220,10 +221,20 @@ def _run_repeated_diff(args, console: Console) -> int:
         if not 2 <= 1 + len(args.before_run) <= MAX_GROUP_RUNS or not 2 <= 1 + len(args.after_run) <= MAX_GROUP_RUNS:
             raise DiffError("Supply 2-20 reports on each side using --before-run and --after-run.")
         paths = [args.before, *args.before_run, args.after, *args.after_run]
-        if sum(Path(path).stat().st_size for path in paths) > MAX_GROUP_BYTES:
+        file_info = [Path(path).stat() for path in paths]
+        if any(not stat.S_ISREG(info.st_mode) for info in file_info):
+            raise DiffError("Repeated inputs must be ordinary report files.")
+        if sum(info.st_size for info in file_info) > MAX_GROUP_BYTES:
             raise DiffError("Repeated inputs exceed the combined 128 MiB JSON limit; use smaller reports or fewer runs.")
-        before = [load_report(path) for path in [args.before, *args.before_run]]
-        after = [load_report(path) for path in [args.after, *args.after_run]]
+        before, after = [], []
+        decoded_bytes = 0
+        for group, names in ((before, [args.before, *args.before_run]), (after, [args.after, *args.after_run])):
+            for path in names:
+                report = load_report(path)
+                decoded_bytes += len(json.dumps(report.data, separators=(",", ":"), allow_nan=False).encode("utf-8"))
+                if decoded_bytes > MAX_GROUP_BYTES:
+                    raise DiffError("Repeated decoded inputs exceed the combined 128 MiB JSON limit.")
+                group.append(report)
         budgets = {metric: getattr(args, option) for metric, option in BUDGET_OPTIONS.items()
                    if getattr(args, option) is not None}
         comparison = compare_repeated_reports(before, after, budgets=budgets)
@@ -232,9 +243,9 @@ def _run_repeated_diff(args, console: Console) -> int:
         return EXIT_ERROR
     if args.json:
         console.print(json.dumps(comparison.to_dict(), indent=2, allow_nan=False), markup=False,
-                      highlight=False, soft_wrap=True)
+                      highlight=False, emoji=False, soft_wrap=True)
     else:
-        console.print(render_repeated_comparison(comparison))
+        console.print(render_repeated_comparison(comparison, plain=args.plain, quiet=args.quiet))
     if comparison.blocked:
         return EXIT_NOT_COMPARABLE
     if comparison.over_budget:
@@ -242,14 +253,18 @@ def _run_repeated_diff(args, console: Console) -> int:
     return EXIT_REGRESSION if args.fail_on_regression and comparison.verdict in {REGRESSED, MIXED} else EXIT_OK
 
 
-def render_repeated_comparison(comparison: RepeatedComparison) -> RenderableType:
-    parts: list[RenderableType] = [Text("REPEATED RUN COMPARISON", style=f"bold {PALETTE.accent}"),
-                                  Text(f"A: {len(comparison.before)} runs; B: {len(comparison.after)} runs"),
-                                  Text(f"COMPARABILITY: {comparison.comparability.upper()}", style="bold")]
+def render_repeated_comparison(comparison: RepeatedComparison, *, plain: bool = False,
+                               quiet: bool = False) -> RenderableType:
+    parts: list[RenderableType] = [] if quiet else [
+        Text("REPEATED RUN COMPARISON", style=f"bold {PALETTE.accent}"),
+        Text(f"A: {len(comparison.before)} runs; B: {len(comparison.after)} runs"),
+    ]
+    parts.append(Text(f"COMPARABILITY: {comparison.comparability.upper()}", style="bold"))
     parts += [Text(f"{item['before']} / {item['after']}: {item['message']}", style=PALETTE.warn)
               for item in comparison.caveats]
-    parts.append(Text(RULE, style=PALETTE.muted))
-    for item in comparison.resources:
+    if not quiet:
+        parts.append(Text(RULE, style=PALETTE.muted))
+    for item in (() if quiet else comparison.resources):
         def spread(resource, values, drift: bool = False) -> str:
             show = format_drift if drift else format_amount
             return (f"median {show(resource, values.median)} "
@@ -260,7 +275,7 @@ def render_repeated_comparison(comparison: RepeatedComparison) -> RenderableType
     parts += [Text(check.describe(), style=PALETTE.warn if check.exceeded else PALETTE.muted)
               for check in comparison.budgets]
     parts.append(Text(f"VERDICT: {comparison.verdict_label.upper()}", style="bold"))
-    return Panel(Group(*parts), border_style=PALETTE.border)
+    return Group(*parts) if plain or quiet else Panel(Group(*parts), border_style=PALETTE.border)
 
 
 # Below this many columns the per-resource table no longer fits.

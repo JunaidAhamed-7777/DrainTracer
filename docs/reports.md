@@ -19,9 +19,12 @@ draintracer diff a1.json b1.json --before-run a2.json --before-run a3.json --aft
 Each group needs 2–20 reports. Paths and recorded report IDs must be distinct
 across both groups: the same run cannot supply either side's evidence twice.
 Legacy reports without IDs cannot prove independence; collect separate runs
-and preserve their original files. Combined source JSON
-is limited to 128 MiB before loading; the ordinary per-report validation still
-applies. Repeated mode always checks strict comparability for every within-group
+and preserve their original files. Ordinary source file sizes and canonical
+decoded JSON must each fit a combined 128 MiB; decoded size is checked as each
+report loads, including when a file changes after its initial size check.
+The ordinary per-report validation still applies. `--plain`, `--quiet`,
+`--no-color`, and complete `--json` output also apply to repeated comparisons.
+Repeated mode always checks strict comparability for every within-group
 and across-group pair. Every caveat retains its run labels, such as A2/B3, and
 blocks a strict claim when the ordinary comparison engine would block it.
 
