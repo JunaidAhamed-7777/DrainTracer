@@ -677,7 +677,10 @@ class MonitorViewTests(ViewRenderingMixin, unittest.TestCase):
             text = " ".join(render_text(app).split())
         self.assertIn("0.0% of host capacity", text)
         self.assertIn("0.0 B available physical", text)
-        self.assertIn("2.0s old; 0.25 ms", text)
+        self.assertIn("2.0s old at sample; 0.25 ms", text)
+        with mock.patch("src.view_monitor.time.time", return_value=7002):
+            rows_after_clock_step = dict(app._monitor_host_rows())
+        self.assertIn("2.0s old at sample", rows_after_clock_step["Age / cost"])
         report = app.build_report()
         self.assertEqual(report["session_facts"]["monitor"]["host_context"]["age_seconds"], 2)
         document = render_html_report(report)
