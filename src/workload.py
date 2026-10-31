@@ -432,6 +432,7 @@ class WorkloadRunner(HeadlessRunner):
 
     def build_report(self) -> dict:
         report = super().build_report()
+        report["outcome"]["workload"] = {"state": self.workflow["state"]}
         report["workload"] = self.recipe.provenance() | {
             "outcome": self.workflow, "logs": [log.record() for log in self._logs]}
         return report

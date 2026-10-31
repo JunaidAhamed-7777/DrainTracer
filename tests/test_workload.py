@@ -170,6 +170,16 @@ class RecipeTests(unittest.TestCase):
         report = json.loads(runner._last_report.read_text(encoding="utf-8"))
         self.assertEqual(report["workload"]["outcome"]["readiness"], "failed")
         self.assertIn("Readiness timed out", report["workload"]["outcome"]["failure"])
+        self.assertEqual(report["outcome"]["workload"]["state"], "failed")
+
+        from src.privacy import redact_report
+        from src.report_contract import session_summary
+
+        shared = redact_report(report)
+        self.assertNotIn("workload", shared)
+        self.assertEqual(shared["outcome"]["workload"], {"state": "failed"})
+        self.assertEqual(session_summary(shared)["workload_state"], "failed")
+        self.assertIn("WORKLOAD FAILED", runner._last_html_report.read_text(encoding="utf-8"))
 
     def test_exercise_timeout_cleans_its_own_child_and_target(self) -> None:
         (self.folder / "exercise.py").write_text(

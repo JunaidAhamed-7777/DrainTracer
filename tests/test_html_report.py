@@ -59,6 +59,15 @@ def _data_block(document: str) -> str:
 
 
 class RenderTests(unittest.TestCase):
+    def test_incomplete_workflow_qualifies_banner_without_erasing_signal_evidence(self) -> None:
+        for state, label in (("failed", "WORKLOAD FAILED"), ("interrupted", "WORKLOAD INTERRUPTED"),
+                             ("running", "WORKLOAD INCOMPLETE"), ("future-state", "WORKLOAD INCOMPLETE")):
+            with self.subTest(state=state):
+                document = html.unescape(render_html_report(_report(outcome={"workload": {"state": state}})))
+                self.assertIn(f"<title>DrainTracer · worker.exe · {label}</title>", document)
+                self.assertIn("highest retained leak signal is HIGH", document)
+                self.assertIn("Resource measurements below describe only the evidence collected", document)
+
     def test_partial_coverage_qualifies_verdict_and_resource_cards(self) -> None:
         from helpers import make_denied
 

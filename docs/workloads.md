@@ -99,6 +99,10 @@ exercise processes cannot consume the monitor's keyboard input.
 Readiness or exercise failure returns **6**, before any leak/budget verdict,
 and retained evidence is exported with a failed workload outcome. Ctrl+C
 returns **130**. Invalid recipes and target startup errors return **2**.
+HTML keeps the failed/interrupted workflow above the resource evidence rather
+than presenting a completed-run verdict. The typed `outcome.workload.state`
+also survives privacy transformation and appears as `workload_state` in the
+machine summary; raw recipe provenance and log-file paths are removed there.
 Once the workflow completes, ordinary headless leak, budget, target-error,
 and inconclusive policies apply. A short successful recipe can still lack a
 judged leak window; choose a sufficiently long timeout and strict CI policies.

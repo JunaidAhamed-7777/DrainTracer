@@ -89,6 +89,8 @@ def summary_schema() -> dict[str, Any]:
                                            "partial_coverage": {"type": ["boolean", "null"]},
                                            "result": nullable_string}},
             "monitor_errors": {"type": ["array", "null"], "items": {"type": "string"}},
+            "workload_state": {"enum": [None, "not_started", "starting", "running", "complete", "failed",
+                                         "interrupted", "monitor_error", "startup_failed"]},
             "peaks": {"type": "object", "required": list(METRIC_UNITS), "properties": {
                 metric: {"type": "object", "required": ["value", "timestamp", "unit", "basis"],
                          "properties": {"value": {"type": ["number", "null"]},
@@ -282,6 +284,7 @@ def session_summary(report: dict[str, Any]) -> dict[str, Any]:
                                                             _object(report.get("coverage")).get("partial")),
                         "result": measurement.get("result")},
         "monitor_errors": _object(report.get("outcome")).get("monitor_errors"),
+        "workload_state": _object(_object(report.get("outcome")).get("workload")).get("state"),
         "peaks": result_peaks,
         "worst_severity": max(known, key=SEVERITIES.index) if known else None,
         "counts": {"stored_snapshots": len(report["snapshots"]), "observed_samples": observed,

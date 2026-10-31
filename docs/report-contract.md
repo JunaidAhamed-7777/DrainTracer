@@ -67,6 +67,12 @@ Export I/O failures use error code `export_failed`. See the
 
 ## Summary version 1
 
+`workload_state` is the optional recipe-execution state, or `null` for a report
+without that outcome. `failed`, `interrupted`, or another unfinished state
+qualifies resource evidence; leak-free samples do not establish a completed
+workload. Privacy copies preserve this typed state while dropping execution
+paths, selected environment names, and log metadata.
+
 The [session-summary JSON Schema](../schemas/session-summary.json) defines
 `summary_schema: 1`. Every listed top-level field is present; unavailable
 values are `null`:
