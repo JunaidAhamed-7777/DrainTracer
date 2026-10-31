@@ -502,6 +502,8 @@ and comparison exit codes.
 
 - [First result walkthrough](docs/first-result.md) — install, measure bounded
   growth, inspect coverage, change the workload, and compare exported reports.
+- [Python worker recipe](docs/python-worker.md) — monitor a worker's own
+  interpreter environment without importing its dependencies into DrainTracer.
 - [Usage and troubleshooting](docs/usage.md) — launch, attach, controls, warm-up,
   headless operation, and diagnostic logging.
 - [Configuration](docs/configuration.md) — TOML discovery, profiles, thresholds,
