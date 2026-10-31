@@ -191,7 +191,7 @@ class LoadTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "deep.json"
             path.write_text("{}", encoding="utf-8")
-            with mock.patch("src.report_diff.json.loads", side_effect=RecursionError):
+            with mock.patch("src.report_contract.json.loads", side_effect=RecursionError):
                 with self.assertRaisesRegex(DiffError, "JSON nested too deeply to be a report"):
                     load_report(path)
 
@@ -310,6 +310,16 @@ class EquivalenceTests(unittest.TestCase):
                 self.assertTrue(ordinary.qualified)
                 self.assertIn(f"windows {first!r}s vs {second!r}s", " | ".join(ordinary.warnings))
                 self.assertEqual(self._compare(before, after, strict=True).verdict, NOT_COMPARABLE)
+
+    def test_checkpoint_prefixes_are_qualified_even_with_complete_metric_coverage(self) -> None:
+        before = _run()
+        for metadata in ({"recovery": {"partial": True}}, {"checkpoint": {"schema": 1}}):
+            with self.subTest(metadata=metadata):
+                after = _run(**metadata)
+                ordinary = self._compare(before, after)
+                self.assertTrue(ordinary.qualified)
+                self.assertIn("recovered checkpoint", [item.kind for item in ordinary.caveats])
+                self.assertEqual(self._compare(before, after, strict=True).verdict, INSUFFICIENT_COVERAGE)
 
     def test_equivalent_numeric_windows_remain_comparable(self) -> None:
         before, after = _run(), _run()

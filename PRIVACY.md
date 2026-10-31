@@ -1,6 +1,6 @@
 # Privacy policy
 
-Effective and last updated: **28 October 2026**.
+Effective and last updated: **30 October 2026**.
 
 This policy describes the official DrainTracer project maintained by
 [Junaid Ahamed](https://github.com/JunaidAhamed-7777) (the "maintainer", "we", or
@@ -20,7 +20,10 @@ channels. Read it with the [terms](TERMS.md) and
   or share a report.
 - Monitoring records can contain personal or confidential information,
   especially in paths, process names, labels, event messages, and logs.
-  Existing redaction is limited; reports are not anonymous by default.
+  Reports are not anonymous by default. Explicit `share` and `minimal`
+  privacy profiles create local copies with paths/free text removed,
+  pseudonymous process identities, shifted dates, and an allowlist of
+  evidence fields. Resource patterns can still identify a workload.
 - Exported JSON and HTML, diagnostic logs, and CI output remain where you or
   your environment save them until removed under your own retention settings.
 - The maintainer receives monitoring evidence only if you or someone with
@@ -109,6 +112,16 @@ an export at the end of the run, including handled interruptions. The default
 root is `leak_reports/reports` relative to the working directory; settings or
 `--report-dir` can select another location. Configuration-relative paths are
 explained in the [configuration guide](docs/configuration.md).
+
+Optional `--checkpoint PATH` writes a bounded local recovery file at the chosen
+cadence. It contains report data plus a session UUID, monitor and target process
+identities, cutoff/write timestamps, and a corruption checksum. The UUID links
+checkpoints within that session; it is not an installation or user identifier.
+The current session replaces its earlier checkpoint atomically, while a new
+session refuses an existing file. Recovery creates additional explicitly partial
+JSON/HTML reports without attaching to or controlling a process. Checkpoints and
+their lock sidecars remain until you remove them; they have no automatic expiry,
+encryption, or anonymization. Review them as carefully as ordinary reports.
 
 Setting `DRAINTRACER_LOG` enables a local diagnostic file containing error
 messages, timestamps, logger/thread names, and tracebacks. These can reveal

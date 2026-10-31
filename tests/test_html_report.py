@@ -59,6 +59,40 @@ def _data_block(document: str) -> str:
 
 
 class RenderTests(unittest.TestCase):
+    def test_checkpoint_reports_never_present_a_complete_clear_verdict(self) -> None:
+        for flags in ({"recovery": {"partial": True, "exact_through_cutoff": True,
+                                     "final_outcome_confirmed": False}}, {"checkpoint": {"schema": 1}}):
+            with self.subTest(flags=flags):
+                report = _report(**flags)
+                document = render_html_report(report)
+                self.assertIn("Partial checkpoint evidence", document)
+                self.assertIn("HIGH / PARTIAL", document)
+                self.assertIn("<title>DrainTracer · worker.exe · HIGH / PARTIAL</title>", document)
+                self.assertIn("The missing tail, final outcome, and cleanup are unknown.", document)
+                self.assertIn("unknown after checkpoint", document)
+                report["snapshots"] = []
+                report["detection_ran"] = False
+                empty = render_html_report(report)
+                self.assertIn("Partial checkpoint evidence", empty)
+                self.assertIn("<title>DrainTracer · worker.exe · PARTIAL</title>", empty)
+                verdict = re.search(r'<section class="verdict.*?</section>', empty, re.DOTALL).group(0)
+                self.assertNotIn("CLEAR", verdict)
+
+    def test_event_counts_name_discarded_messages_separately(self) -> None:
+        document = render_html_report(_report(event_counts={"observed": 8, "retained": 2, "dropped": 6}))
+        self.assertIn("8 observed; 2 retained; 6 discarded from this event log.", document)
+        self.assertIn("Launched worker.exe", document)
+
+    def test_legacy_or_invalid_event_counts_are_not_fabricated(self) -> None:
+        for counts in (None, {"observed": True, "retained": 2, "dropped": 0},
+                       {"observed": 2, "retained": 2, "dropped": -1},
+                       {"observed": 10, "retained": 2, "dropped": 0},
+                       {"observed": 10, "retained": 3, "dropped": 7}):
+            with self.subTest(counts=counts):
+                document = render_html_report(_report(event_counts=counts))
+                self.assertIn("Event retention counts unavailable for this report.", document)
+                self.assertIn("Launched worker.exe", document)
+
     def test_partial_coverage_qualifies_verdict_and_resource_cards(self) -> None:
         from helpers import make_denied
 
@@ -329,7 +363,7 @@ class RenderTests(unittest.TestCase):
         self.assertIn("Launched old.exe", legacy)
         self.assertIn("No leak signals", legacy)
         empty = render_html_report({})
-        self.assertIn("No events were recorded.", empty)
+        self.assertIn("No event messages are retained in this report.", empty)
         self.assertIn("No process measurements were recorded.", empty)
         self.assertNotIn("Monitor diagnostics", legacy)
 

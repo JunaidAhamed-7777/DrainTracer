@@ -1,0 +1,9 @@
+{
+  "report_schema": 3,
+  "report_id": "coverage-v3",
+  "target_path": "worker.exe",
+  "detection_ran": true,
+  "outcome": {"measurement": {"result": "partial", "partial_coverage": true}, "monitor_errors": []},
+  "session_facts": {"peaks": {"private_bytes": {"value": 600000000, "timestamp": 1000}}, "signals": {"memory": {"worst": "high"}}, "samples": {"collected": 100}, "chart": {"stride": 16}},
+  "snapshots": [{"timestamp": 1001, "processes": [{"pid": 100, "handles": 0, "unmeasured": ["handles"]}], "totals": {"private_bytes": 10000000, "handles": 0}, "coverage": {"handles": {"measured": 0, "total": 1}}, "severity": "none"}]
+}
