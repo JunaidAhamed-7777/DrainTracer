@@ -233,7 +233,12 @@ def _verify_private_acl(path: Path, *, inherited: bool = False) -> None:
     if result:
         raise ctypes.WinError(result)
     try:
-        if _sid_string(owner) != current_user_sid() or not dacl.value:
+        user_sid = current_user_sid()
+        owner_sid = _sid_string(owner)
+        privileged = {"S-1-5-18", "S-1-5-32-544",
+                      "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464"}
+        allowed_owners = {user_sid} | privileged if inherited else {user_sid}
+        if owner_sid not in allowed_owners or not dacl.value:
             raise AgentTransportError("agent state has an unexpected owner or unrestricted ACL")
         control, revision = wintypes.WORD(), wintypes.DWORD()
         _check(security.GetSecurityDescriptorControl(descriptor, ctypes.byref(control), ctypes.byref(revision)))
@@ -241,10 +246,9 @@ def _verify_private_acl(path: Path, *, inherited: bool = False) -> None:
             raise AgentTransportError("agent state ACL must not inherit permissions")
         # ACL header: revision, reserved, size, ACE count, reserved.
         count = ctypes.c_ushort.from_address(dacl.value + 4).value
-        allowed = {current_user_sid(), "S-1-5-18"}
+        allowed = {user_sid, "S-1-5-18"}
         if inherited:
-            allowed |= {"S-1-5-32-544", "S-1-3-4",
-                        "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464"}
+            allowed |= privileged | {"S-1-3-4"}
         owner_allowed = False
         for index in range(count):
             ace = wintypes.LPVOID()
@@ -255,9 +259,9 @@ def _verify_private_acl(path: Path, *, inherited: bool = False) -> None:
             if sid not in allowed:
                 raise AgentTransportError("agent state grants another principal access")
             flags = ctypes.c_ubyte.from_address(ace.value + 1).value
-            owner_allowed |= sid in {current_user_sid(), "S-1-3-4"} and not flags & 0x08
+            owner_allowed |= (sid == user_sid or sid == "S-1-3-4" and owner_sid == user_sid) and not flags & 0x08
         if not owner_allowed:
-            raise AgentTransportError("agent state does not grant its owner access")
+            raise AgentTransportError("agent state does not grant the current user access")
     finally:
         kernel.LocalFree(descriptor)
 
@@ -270,10 +274,13 @@ def verify_private_path(path: Path) -> None:
 def verify_private_data_path(path: Path) -> None:
     """Validate inherited SQLite/report sidecars without granting public read.
 
-    The owner must remain the current user and all ancestors must be trusted.
-    Inherited ACLs and OWNER RIGHTS are accepted only for that verified owner;
-    SYSTEM, Administrators and TrustedInstaller remain the explicit privileged
-    OS boundary. No ACL is changed, and any other principal's ACE is refused.
+    Data owners may be the current user, SYSTEM, Administrators or
+    TrustedInstaller, matching the existing privileged OS trust boundary.
+    Elevated tokens can naturally create Administrators-owned inherited files.
+    The DACL must still explicitly grant current-user access (OWNER RIGHTS
+    counts only for a current-user owner) and refuse every untrusted principal.
+    Protected directories and credentials retain their stricter current-user
+    owner check. No ACL or owner is changed; all ancestors must be trusted.
     """
     _verify_private_acl(path, inherited=True)
 
