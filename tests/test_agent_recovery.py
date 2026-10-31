@@ -14,6 +14,7 @@ from unittest import mock
 
 import helpers  # noqa: F401
 import psutil
+from live_checkpoint_wait import wait_for_checkpoint
 from test_agent_service import FakeSession, request, wait_for
 
 from src.agent_command import AgentClient
@@ -211,11 +212,13 @@ class NativeRecoveryTests(unittest.TestCase):
         session_id = started["session_id"]
         checkpoint = self.state / "checkpoints" / (session_id + ".json")
         wait_for(lambda: child_file.exists() and checkpoint.exists())
-        wait_for(lambda: read_checkpoint(checkpoint, app_version=_version())["session_facts"]["samples"]["taken"] >= 5)
+        wait_for_checkpoint(checkpoint, writer=process, samples=5, session_id=session_id)
         target = client.request("status", {"session_id": session_id})["target_identity"]
         child_pid = int(child_file.read_text())
         process.kill()
         process.communicate(timeout=5)
+        saved = read_checkpoint(checkpoint, app_version=_version(), session_id=session_id)
+        self.assertGreaterEqual(saved["session_facts"]["samples"]["taken"], 5)
         wait_for(lambda: not psutil.pid_exists(target["pid"]) or _windows_process_exited(target["pid"]))
         wait_for(lambda: not psutil.pid_exists(child_pid) or _windows_process_exited(child_pid))
         _new_process, client = self.start_agent(allow_launch=True)
@@ -242,11 +245,13 @@ class NativeRecoveryTests(unittest.TestCase):
         first_path = self.state / "checkpoints" / (first + ".json")
         second_path = self.state / "checkpoints" / (second + ".json")
         wait_for(lambda: first_path.exists() and second_path.exists())
-        original = read_checkpoint(first_path, app_version=_version(), session_id=first)
-        other = read_checkpoint(second_path, app_version=_version(), session_id=second)
+        original = wait_for_checkpoint(first_path, writer=process, samples=1, session_id=first)
+        other = wait_for_checkpoint(second_path, writer=process, samples=1, session_id=second)
         self.assertEqual(original["checkpoint"]["writer_identity"], other["checkpoint"]["writer_identity"])
         process.kill()
         process.communicate(timeout=5)
+        for path, identity in ((first_path, first), (second_path, second)):
+            read_checkpoint(path, app_version=_version(), session_id=identity)
         journal = self.state / "agent-state.json"
         saved = json.loads(journal.read_text(encoding="utf-8"))
         first_record = next(item for item in saved["sessions"] if item["session_id"] == first)

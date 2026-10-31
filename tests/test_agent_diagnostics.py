@@ -21,6 +21,7 @@ import helpers  # noqa: F401
 import psutil
 import test_agent_recovery as recovery_helpers
 import test_privacy as privacy_helpers
+from live_checkpoint_wait import wait_for_checkpoint
 
 from src.agent_command import main
 from src.agent_diagnostics import (
@@ -296,10 +297,12 @@ else:
                                                "sample_interval_ms": 100, "windows_seconds": [1]})["session_id"]
         source = self.state / "checkpoints" / (session_id + ".json")
         recovery_helpers.wait_for(source.exists)
-        recovery_helpers.wait_for(lambda: read_checkpoint(source, app_version=_version())["session_facts"]["samples"]["taken"] >= 2)
+        wait_for_checkpoint(source, writer=process, samples=2, session_id=session_id)
         root_pid = client.request("status", {"session_id": session_id})["target_identity"]["pid"]
         process.kill()
         process.communicate(timeout=5)
+        saved = read_checkpoint(source, app_version=_version(), session_id=session_id)
+        self.assertGreaterEqual(saved["session_facts"]["samples"]["taken"], 2)
         recovery_helpers.wait_for(lambda: not psutil.pid_exists(root_pid) or _windows_process_exited(root_pid))
         output = self.root / "recovered"
         output.mkdir()
