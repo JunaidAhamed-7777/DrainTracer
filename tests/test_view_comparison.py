@@ -142,8 +142,8 @@ class ComparisonViewTests(unittest.TestCase):
                 worker = self.app._comparison_worker
                 self.assertTrue(self.app._comparison_loading)
                 output = render_text(self.app)
-                self.assertIn("Wait for the current comparison worker to finish before retrying.", output)
-                self.assertNotIn("Press B to choose another report", output)
+                self.assertIn("Wait for the current comparison to finish before retrying.", output)
+                self.assertNotIn("Press B", output)
                 self.app._request_comparison(self.baseline)
                 start.assert_called_once()
                 self.assertIs(self.app._comparison_worker, worker)

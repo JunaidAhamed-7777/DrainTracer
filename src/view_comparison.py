@@ -137,13 +137,14 @@ class ComparisonViewMixin:
                 parts.append(Text("Loading/comparing baseline; sampling continues.", style=self.palette.muted))
             if self._comparison_error:
                 parts.append(Text(f"Baseline unavailable: {self._comparison_error}", style=self.palette.danger))
-                hint = ("Wait for the current comparison worker to finish before retrying."
+                hint = ("Wait for the current comparison to finish before retrying."
                         if self._comparison_loading else
                         "Press B to choose another report; the previous comparison is retained.")
                 parts.append(Text(hint))
             comparison = self._comparison
             if comparison is None:
-                parts.append(Text("Press B and enter a saved JSON report path. Monitoring continues."))
+                if not self._comparison_loading:
+                    parts.append(Text("Press B and enter a saved JSON report path. Monitoring continues."))
             else:
                 parts.append(Text(f"COMPARABILITY: {comparison.comparability.upper()} (same rules as diff --strict)",
                                   style=f"bold {self.palette.warn if comparison.blocked else self.palette.ok}"))
