@@ -47,6 +47,7 @@ from .report import (
     new_report_id,
     coverage_to_dict,
     process_summary_to_dict,
+    prepare_report_export,
     report_directory,
     snapshot_to_dict,
     write_json_report,
@@ -997,7 +998,7 @@ class MonitorSession:
         effort: if it cannot be rendered or written, the JSON report still
         stands and the failure is logged.
         """
-        report = self.build_report()
+        report = prepare_report_export(self.build_report())
         directory = report_directory(report, self.report_dir)
         path = write_json_report(report, directory)
         self._last_report = path
@@ -1016,6 +1017,8 @@ class MonitorSession:
             report["outcome"] = self._outcome_record()
             try:
                 # Atomically replace the same report, retaining the first JSON if this fails.
+                report = prepare_report_export(report)
+                self._last_report_data = report
                 write_json_report(report, directory)
             except Exception as update_error:  # noqa: BLE001 - preserve the usable first JSON
                 message = f"Could not record HTML export failure in JSON: {update_error}"
@@ -1148,6 +1151,8 @@ class MonitorSession:
     def chart_thinning_text(self) -> str | None:
         """``chart thinned 1:N, summary facts exact`` once history was thinned, else ``None``."""
         stride = self._snapshot_history.stride
+        if self._last_report_data is not None:
+            stride = max(stride, self._last_report_data.get("snapshot_stride", 1))
         if stride <= 1:
             return None
         return f"report chart thinned 1:{stride}; peaks, signals and counts stay exact"

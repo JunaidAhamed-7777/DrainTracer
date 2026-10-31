@@ -498,6 +498,8 @@ time, and sample counts stay exact in `session_facts`. Reports include local
 paths and process details. If a stalled consumer overflows the sample queue,
 reports count the discarded detail; peaks, signals, budgets, coverage, and
 sample counts still include every observation. Review reports before sharing.
+Dense-tree exports may thin chart detail further to stay readable by the
+bounded machine contract; first/last points and exact facts remain.
 The [report guide](docs/reports.md) covers the schema, retention, interpretation,
 and comparison exit codes.
 
