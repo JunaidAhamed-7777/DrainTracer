@@ -558,8 +558,19 @@ def _workload_caveats(before: dict, after: dict) -> list[Caveat]:
                               "or capture choices differ or are incomplete", NOT_COMPARABLE))
     # Matching names and source kinds do not establish matching secret values.
     # Do not turn their deliberately omitted values into a false strict pass.
-    caveats.append(Caveat("recipe environment", "workload environment values are intentionally "
-                          "unrecorded, so their equivalence cannot be verified", NOT_COMPARABLE))
+    def clean_environment(item):
+        environment = item.get("environment")
+        return (isinstance(environment, dict)
+                and set(environment) == {"mode", "selected", "platform_basics", "values_recorded", "values_compared"}
+                and environment.get("mode") == "selected" and environment.get("selected") == []
+                and environment.get("values_recorded") is False and environment.get("values_compared") is False
+                and isinstance(environment.get("platform_basics"), list)
+                and all(isinstance(name, str) and name in {"SystemRoot", "WINDIR", "COMSPEC", "PATHEXT", "TEMP", "TMP"}
+                        for name in environment["platform_basics"]))
+
+    if not all(clean_environment(item) for item in (old, new)):
+        caveats.append(Caveat("recipe environment", "workload environment values are intentionally "
+                              "unrecorded, so their equivalence cannot be verified", NOT_COMPARABLE))
     for label, item in (("A", old), ("B", new)):
         outcome = item.get("outcome")
         if not isinstance(outcome, dict) or outcome.get("state") != "complete":

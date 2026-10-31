@@ -69,10 +69,17 @@ before publishing any evidence.
 
 Comparisons flag differing or missing recipe execution choices and unfinished
 workflows. Because environment values are deliberately absent, even matching
-recipes receive a warning and strict comparisons withhold an equivalence
-verdict. An ordinary comparison still shows measured differences with that
+recipes with selected variables or inherited environments receive a warning
+and strict comparisons withhold an equivalence verdict. An ordinary comparison still shows measured differences with that
 qualification; independently verify the private environments before drawing
 conclusions. A recipe fingerprint does not override this limit.
+
+An explicitly clean recipe (`inherit_environment: false` and no selected
+variables) can pass strict recipe equivalence when its recorded execution choices
+match. Its only inherited values are the named Windows platform basics above;
+their locations are not compared. Use a controlled runner and equivalent machine
+conditions. This records comparable execution choices, not proof that the OS or
+application contents are identical.
 
 ## Readiness, ownership, and exits
 

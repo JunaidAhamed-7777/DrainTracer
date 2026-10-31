@@ -460,6 +460,19 @@ class RecipeComparabilityTests(unittest.TestCase):
                 self.assertTrue(result.blocked)
                 self.assertTrue(any(item.kind in {"recipe", "recipe outcome"} for item in result.caveats))
 
+    def test_explicit_clean_environment_can_compare_without_private_selected_values(self) -> None:
+        clean = {"mode": "selected", "selected": [], "platform_basics": [],
+                 "values_recorded": False, "values_compared": False}
+        report = _run(workload=self.recipe(environment=clean))
+        result = compare_reports(self._load("a.json", report), self._load("b.json", report), strict=True)
+        self.assertFalse(result.blocked)
+        for environment in ({**clean, "mode": "inherit"}, {**clean, "selected": [{"name": "TOKEN", "source": "literal"}]},
+                            {**clean, "future": "unknown"}, {**clean, "platform_basics": ["PRIVATE_TOKEN"]}):
+            with self.subTest(environment=environment):
+                report = _run(workload=self.recipe(environment=environment))
+                result = compare_reports(self._load("a.json", report), self._load("b.json", report), strict=True)
+                self.assertTrue(result.blocked)
+
 
 class PeakAndBudgetTests(unittest.TestCase):
     setUp = ComparisonTests.setUp
