@@ -256,6 +256,20 @@ class DispatchTests(unittest.TestCase):
 
 
 class StartupDispatchTests(unittest.TestCase):
+    def test_title_falls_back_when_the_artwork_is_not_utf8(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            title = Path(folder) / "TITLE.txt"
+            title.write_bytes(bytes((255, 254, 253)))
+            with mock.patch.object(cli, "resource_path", return_value=title):
+                self.assertEqual(cli._load_title_art(), "DRAINTRACER")
+                console = make_console()
+                with console.capture() as capture:
+                    cli._display_title(console)
+                self.assertIn("DRAINTRACER", capture.get())
+            title.write_text("  DRAINTRACER ▓  \n", encoding="utf-8")
+            with mock.patch.object(cli, "resource_path", return_value=title):
+                self.assertEqual(cli._load_title_art(), "DRAINTRACER ▓")
+
     def test_title_shows_each_update_result_below_the_version(self) -> None:
         from rich.console import Console
 
@@ -334,6 +348,7 @@ class StartupDispatchTests(unittest.TestCase):
         kwargs = app.call_args.kwargs
         self.assertEqual(kwargs["attach_pid"], 4242)
         self.assertEqual(kwargs["timeout"], 120.0)
+        self.assertEqual(kwargs["attach_create_time"], 10.0)
         self.assertEqual(kwargs["report_dir"], "out")
         self.assertIs(kwargs["console"], console)
         self.assertIsNone(kwargs["settings"].source)

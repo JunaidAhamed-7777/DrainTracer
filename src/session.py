@@ -98,6 +98,7 @@ class MonitorSession:
         attach_pid: int | None = None,
         timeout: float | None = None,
         settings: MonitorSettings | None = None,
+        attach_create_time: float | None = None,
     ) -> None:
         if timeout is not None and not timeout > 0:
             raise ValueError("timeout must be a positive number of seconds")
@@ -107,6 +108,7 @@ class MonitorSession:
         self.timeout = timeout
         self._deadline: float | None = None
         self.attach_pid = attach_pid
+        self.attach_create_time = attach_create_time
         if attach_pid is not None:
             self.target_path = target_path or describe_pid(attach_pid)
             self.manager = ProcessManager(None)
@@ -360,7 +362,7 @@ class MonitorSession:
         """
         try:
             if self.attached:
-                self.manager.attach(self.attach_pid)
+                self.manager.attach(self.attach_pid, expected_create_time=self.attach_create_time)
             else:
                 self.manager.start()
             self._root_pid = self.manager.root_pid
@@ -998,6 +1000,15 @@ class MonitorSession:
         except Exception as exc:  # never lose the JSON report to a rendering bug
             self._append_event(f"HTML report failed: {exc}", "error")
             self._note_monitor_error(f"HTML report failed: {exc}")
+            report["outcome"] = self._outcome_record()
+            try:
+                # Atomically replace the same report, retaining the first JSON if this fails.
+                write_json_report(report, directory)
+            except Exception as update_error:  # noqa: BLE001 - preserve the usable first JSON
+                message = f"Could not record HTML export failure in JSON: {update_error}"
+                self._append_event(message, "error")
+                self._note_monitor_error(message)
+                report["outcome"] = self._outcome_record()
         return path
 
     def build_report(self) -> dict[str, Any]:

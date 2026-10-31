@@ -537,14 +537,14 @@ class ProcessesViewMixin:
             parts.append(f"seen {summary.samples:,} samples")
         return sep.join(parts)
 
-    def _parent_text(self, ppid: int | None) -> str:
+    def _parent_text(self, ppid: int | None) -> Text:
         if ppid is None:
-            return "none recorded"
+            return Text("none recorded")
         snapshot = self.snapshot
         parent = next((p for p in snapshot.processes if p.pid == ppid), None) if snapshot else None
         if parent is not None:
-            return f"PID {ppid} {parent.name}"
-        return f"PID {ppid} (outside the monitored tree or exited)"
+            return Text(f"PID {ppid} {parent.name}")
+        return Text(f"PID {ppid} (outside the monitored tree or exited)")
 
     def _live_detail_rows(self, grid: Table, row: InspectorRow, process: ProcessMetrics,
                           sep: str) -> None:

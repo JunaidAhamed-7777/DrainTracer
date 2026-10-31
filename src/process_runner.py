@@ -392,12 +392,13 @@ class ProcessManager:
             self._start_poll_thread()
             return self._root_pid
 
-    def attach(self, pid: int) -> int:
+    def attach(self, pid: int, *, expected_create_time: float | None = None) -> int:
         """Track an already running process (and its descendants) by PID.
 
         Attached processes are never terminated implicitly: ``detach()``
         releases them, and only an explicit ``kill()``/``terminate()`` ends
-        them.
+        them. A picker-supplied creation time must still match before tracking
+        begins; direct PID attachment selects the process current at attachment.
         """
         with self._lock:
             if self.is_running:
@@ -406,6 +407,7 @@ class ProcessManager:
                 raise ProcessNotFoundError(f"Invalid PID: {pid}")
             if pid == os.getpid():
                 raise ProcessManagerError("DrainTracer cannot attach to itself.")
+            proc = None
             try:
                 proc = psutil.Process(pid)
                 if not proc.is_running() or proc.status() == psutil.STATUS_ZOMBIE:
@@ -417,6 +419,20 @@ class ProcessManager:
                 # as unavailable rather than failing the attach.
                 pass
 
+            created = None
+            if proc is not None:
+                try:
+                    created = proc.create_time()
+                except (psutil.NoSuchProcess, psutil.ZombieProcess) as exc:
+                    raise ProcessNotFoundError(f"No running process with PID {pid}") from exc
+                except (psutil.AccessDenied, OSError):
+                    pass
+            if expected_create_time is not None:
+                if created is None:
+                    raise ProcessAccessDeniedError(f"Cannot verify the selected identity for PID {pid}")
+                if created != expected_create_time:
+                    raise ProcessNotFoundError(f"PID {pid} changed since selection; select the program again")
+
             self._process = None
             self._linux_session_id = None
             self._root_pid = pid
@@ -424,8 +440,9 @@ class ProcessManager:
             self._identities.clear()
             self._depths = {pid: 0}
             self._parents = {pid: None}
-            self._remember_identity(pid)
-            self._root_created = self._identities.get(pid)
+            if created is not None:
+                self._identities[pid] = created
+            self._root_created = created
             self._departed.clear()
             self._monitor = _monitor_chain()
             self._paused = False

@@ -290,6 +290,19 @@ class ProcessesViewTests(ViewRenderingMixin, unittest.TestCase):
         app._proc_query = "10"
         self.assertEqual(self._pids(app), [100])
 
+    def test_parent_names_render_as_literal_text(self) -> None:
+        for name in ("[red]worker.exe", "[link=https://example.test]parent[/link]", "[/bold]"):
+            with self.subTest(name=name):
+                app = _app(140, 60)
+                sample_trees(app, [[make_process(100, name=name), _worker(2)]] * 2)
+                app._proc_selected = (2, 2.0)
+                parent = app._parent_text(100)
+                self.assertEqual(parent.plain, f"PID 100 {name}")
+                self.assertEqual(parent.spans, [])
+                with app.console.capture() as capture:
+                    app.console.print(app._render_process_detail(app._selected_row(app._inspector_rows())))
+                self.assertIn(f"PID 100 {name}", " ".join(capture.get().split()))
+
     def test_filter_hides_a_retained_selection_without_claiming_it_exited(self) -> None:
         for identity in ((100, 1.0), (1, 1.0)):
             with self.subTest(identity=identity):
@@ -566,6 +579,33 @@ class TimelineViewTests(ViewRenderingMixin, unittest.TestCase):
         app._handle_key("F")
         self.assertFalse(app.timeline_frozen)
         self.assertIn("30 samples", render_text(app))
+
+    def test_frozen_caption_distinguishes_new_samples_from_retention_loss(self) -> None:
+        app = _app()
+        sample_trees(app, [[make_process(100)]] * 3)
+        app._toggle_freeze()
+        sample_trees(app, [[make_process(100)]] * 2, start=3)
+        text = app._decimation_text(3, 1, 1).plain
+        self.assertIn("2 newer samples collected while frozen", text)
+        self.assertNotIn("earlier samples", text)
+
+    def test_retention_caption_uses_the_sample_count_at_freeze(self) -> None:
+        class Limited(DashboardApp):
+            HISTORY_LIMIT = 2
+
+        app = Limited("worker.exe", console=make_console())
+        sample_trees(app, [[make_process(100)]] * 3)
+        app._toggle_freeze()
+        sample_trees(app, [[make_process(100)]] * 2, start=3)
+        text = app._decimation_text(2, 1, 1).plain
+        self.assertIn("2 newer samples collected while frozen", text)
+        self.assertIn("earlier samples are not charted here", text)
+        self.assertIn("report charts may be thinned; session facts remain exact", text)
+        self.assertNotIn("keep the whole session", text)
+        app._toggle_freeze()
+        text = app._decimation_text(2, 1, 1).plain
+        self.assertNotIn("while frozen", text)
+        self.assertIn("earlier samples are not charted here", text)
 
     def test_paused_samples_leave_a_gap_and_a_mark(self) -> None:
         from helpers import make_snapshot

@@ -39,7 +39,9 @@ The event log and session summary show the actual filenames.
 
 Both formats are written through temporary sibling files followed by a
 rename. If HTML rendering or writing fails, the JSON report is retained and
-the error is logged. An in-progress dashboard export can have
+the error is logged and recorded in the JSON outcome through an atomic update.
+If that update also fails, the original JSON remains usable and the session
+logs the update failure. An in-progress dashboard export can have
 `session_ended_at: null` because monitoring has not ended yet.
 
 ## Read the HTML report
@@ -58,6 +60,9 @@ The report includes:
 
 - A verdict and each resource's strongest observed signal, net growth,
   drift, and peak. `INCONCLUSIVE` means no detection window ever filled.
+  `PARTIAL` qualifies signal-free results when readings are missing;
+  `UNAVAILABLE` identifies resources with no readable live-process samples.
+  Observed signal severity remains visible alongside coverage qualifications.
 - Memory, handles, handle categories, threads, and CPU charts. Hover for
   values, drag to zoom, and use legend entries to toggle series.
 - Markers where signals appeared or escalated, warm-up and pause bands,
@@ -69,7 +74,9 @@ The report includes:
 
 Growth is the last measured value minus the first. Drift is a regression
 slope over measured samples. With a warm-up, growth, drift, and resource
-card peaks use post-warm-up samples; charts and the overall RSS/CPU peaks
+card peaks use post-warm-up samples. Thinned resource cards say `retained
+peak` because their stored samples can miss a short spike; exact whole-run
+peaks remain in the Session card and JSON session facts. Charts and the overall RSS/CPU peaks
 include startup. Charts break across missing readings rather than
 interpreting a paused or failed sample as a measured zero.
 
