@@ -466,8 +466,12 @@ class RecipeComparabilityTests(unittest.TestCase):
         report = _run(workload=self.recipe(environment=clean))
         result = compare_reports(self._load("a.json", report), self._load("b.json", report), strict=True)
         self.assertFalse(result.blocked)
+        self.assertEqual(result.caveats[0].kind, "clean recipe platform basics")
+        self.assertIsNone(result.caveats[0].blocks)
         for environment in ({**clean, "mode": "inherit"}, {**clean, "selected": [{"name": "TOKEN", "source": "literal"}]},
-                            {**clean, "future": "unknown"}, {**clean, "platform_basics": ["PRIVATE_TOKEN"]}):
+                            {**clean, "future": "unknown"}, {**clean, "platform_basics": ["PRIVATE_TOKEN"]},
+                            {**clean, "selected": None}, {**clean, "selected": ""}, {**clean, "selected": False},
+                            {**clean, "platform_basics": ["TEMP", "TEMP"]}):
             with self.subTest(environment=environment):
                 report = _run(workload=self.recipe(environment=environment))
                 result = compare_reports(self._load("a.json", report), self._load("b.json", report), strict=True)

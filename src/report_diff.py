@@ -566,11 +566,16 @@ def _workload_caveats(before: dict, after: dict) -> list[Caveat]:
                 and environment.get("values_recorded") is False and environment.get("values_compared") is False
                 and isinstance(environment.get("platform_basics"), list)
                 and all(isinstance(name, str) and name in {"SystemRoot", "WINDIR", "COMSPEC", "PATHEXT", "TEMP", "TMP"}
-                        for name in environment["platform_basics"]))
+                        for name in environment["platform_basics"])
+                and len(environment["platform_basics"]) == len(set(environment["platform_basics"])))
 
     if not all(clean_environment(item) for item in (old, new)):
         caveats.append(Caveat("recipe environment", "workload environment values are intentionally "
                               "unrecorded, so their equivalence cannot be verified", NOT_COMPARABLE))
+    else:
+        caveats.append(Caveat("clean recipe platform basics", "clean recipes have no selected private environment "
+                              "values; platform basic locations are omitted, so equivalence covers recorded execution "
+                              "choices rather than the complete OS state"))
     for label, item in (("A", old), ("B", new)):
         outcome = item.get("outcome")
         if not isinstance(outcome, dict) or outcome.get("state") != "complete":
