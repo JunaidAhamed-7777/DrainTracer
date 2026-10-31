@@ -328,6 +328,9 @@ duration/permission problems without starting or controlling the target.
 `doctor --json` provides a structured diagnostic result. The output-directory
 check writes and removes a temporary probe in the nearest existing directory.
 See [Preflight](docs/preflight.md) for the command and initialization contracts.
+`draintracer init` previews a validated project configuration; add `--write`
+to create it. Existing files are always preserved, and the parent directory
+must already exist.
 
 Use `--no-color` to disable terminal colors in normal or headless runs, or
 `draintracer diff BEFORE.json AFTER.json --no-color` for comparisons. This

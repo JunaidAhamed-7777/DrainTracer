@@ -765,6 +765,10 @@ def _main(console: Console, argv: list[str] | None) -> int:
 
         return run_doctor(arguments[1:], console, parser_factory=build_parser,
                           settings_resolver=_resolve_settings)
+    if arguments[:1] == ["init"]:
+        from .preflight import run_init
+
+        return run_init(arguments[1:], console)
     parser = build_parser()
     args = parser.parse_args(arguments)
     if args.no_color:

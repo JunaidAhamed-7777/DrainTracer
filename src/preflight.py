@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sys
@@ -11,14 +12,96 @@ from pathlib import Path
 import psutil
 from rich.text import Text
 
-from .config import ConfigError
+from .config import resolve_settings
 from .events import LeakResource
 from .process_runner import ProcessManager, ProcessManagerError
 from .theme import plain_console
 
+INIT_CONFIG = '''# DrainTracer project settings. Command-line flags override these values.
+sample_interval = "500ms"
+windows = ["10s", "30s", "60s"]
+warmup = "0s"
+report_dir = "leak_reports/reports"
+
+# Select explicitly with --profile ci for bounded headless checks.
+[profiles.ci]
+timeout = "2m"
+fail_on = "medium"
+fail_on_inconclusive = true
+fail_on_target_error = true
+'''
+
+
+def _validate_generated_config():
+    """Use the normal file loader for both generated base and CI profile."""
+    with tempfile.TemporaryDirectory(prefix="draintracer-init-check-") as directory:
+        source = Path(directory) / ".drainrc.toml"
+        source.write_text(INIT_CONFIG, encoding="utf-8")
+        resolve_settings(config_path=source, discover=False)
+        resolve_settings(config_path=source, profile="ci", discover=False)
+
+
+def run_init(arguments, console):
+    """Preview by default; exclusive file creation never replaces project data."""
+    parser = argparse.ArgumentParser(prog="draintracer init", description="Preview a validated project configuration.")
+    parser.add_argument("--path", default=".drainrc.toml", help="New configuration destination (parent must exist).")
+    parser.add_argument("--write", action="store_true", help="Create the file; existing files are never overwritten.")
+    parser.add_argument("--json", action="store_true", help="Emit initialization schema 1, including the preview.")
+    parser.add_argument("--plain", action="store_true", help="Disable terminal styling.")
+    parser.add_argument("--no-color", action="store_true", help="Disable terminal colors.")
+    parser.add_argument("--quiet", action="store_true", help="Show only the result, without the template.")
+    args = parser.parse_args(arguments)
+    if args.no_color:
+        console.no_color = True
+    if args.plain:
+        console = plain_console(console)
+    result = {"initialization_schema": 1, "path": args.path, "content": INIT_CONFIG,
+              "written": False, "partial_file": False, "error": None}
+    created = False
+    try:
+        if "\0" in args.path:
+            raise ValueError("the destination path contains a null character")
+        destination = Path(args.path).absolute()
+        result["path"] = str(destination)
+        _validate_generated_config()
+        if not destination.parent.is_dir():
+            raise OSError("the destination's parent directory must exist")
+        if args.write:
+            with destination.open("x", encoding="utf-8", newline="\n") as handle:
+                created = True
+                handle.write(INIT_CONFIG)
+                handle.flush()
+                os.fsync(handle.fileno())
+            result["written"] = True
+    except FileExistsError:
+        result["error"] = "Refusing to overwrite an existing file; choose a new --path."
+    except (ValueError, OSError, RuntimeError) as error:
+        result["error"] = str(error)
+        result["partial_file"] = created
+        if created:
+            result["error"] += " The new file may be partial; inspect it before retrying."
+    if args.json:
+        print(json.dumps(result, allow_nan=False), file=console.file)
+    elif result["error"]:
+        console.print(Text(f"ERROR: {result['error']}"))
+    else:
+        label = "CREATED" if result["written"] else "PREVIEW"
+        console.print(Text(f"{label}: {result['path']}"))
+        if not args.quiet:
+            console.print(Text(INIT_CONFIG))
+        if not result["written"]:
+            console.print(Text("Pass --write to create this file; existing files are never overwritten."))
+    return 2 if result["error"] else 0
+
 
 def _check(checks, name, state, message):
     checks.append({"check": name, "state": state, "message": message})
+
+
+def _resolved_path(value):
+    if "\0" in str(value):
+        raise ValueError("the path contains a null character")
+    return Path(value).resolve()
 
 
 def settings_record(settings):
@@ -30,7 +113,7 @@ def settings_record(settings):
     values = {name: getattr(settings, name) for name in names if hasattr(settings, name)}
     values["fail_on"] = settings.fail_on.value
     values["windows"] = list(settings.windows)
-    values["report_dir"] = str(Path(settings.report_dir).resolve())
+    values["report_dir"] = str(_resolved_path(settings.report_dir))
     values["budgets"] = dict(settings.budgets)
     values["thresholds"] = {
         resource.value: {
@@ -52,7 +135,7 @@ def settings_record(settings):
 
 def _report_access(path: str, checks):
     try:
-        directory = Path(path).resolve()
+        directory = _resolved_path(path)
         nearest = directory
         while not nearest.exists() and nearest.parent != nearest:
             nearest = nearest.parent
@@ -65,14 +148,14 @@ def _report_access(path: str, checks):
         suffix = "" if directory.exists() else " The report directory does not exist yet."
         _check(checks, "report_directory", "ok",
                f"Temporary create/write/remove succeeded in {nearest}.{suffix}")
-    except (OSError, RuntimeError) as error:
+    except (ValueError, OSError, RuntimeError) as error:
         _check(checks, "report_directory", "error",
                f"Choose a writable report directory: {error}")
 
 
 def _target_access(target: str, arguments: list[str], checks):
     try:
-        path = Path(target).resolve()
+        path = _resolved_path(target)
         if not path.is_file():
             _check(checks, "target", "error", f"Target is not an existing file: {path}")
             return
@@ -90,7 +173,7 @@ def _target_access(target: str, arguments: list[str], checks):
             _check(checks, "target", "error", f"Target is not executable; check its execute permissions: {path}")
             return
         _check(checks, "target", "ok", f"Target file exists: {path}")
-    except (OSError, RuntimeError, ProcessManagerError) as error:
+    except (ValueError, OSError, RuntimeError, ProcessManagerError) as error:
         _check(checks, "target", "error", f"Target cannot be used: {error}")
 
 
@@ -150,7 +233,7 @@ def run_doctor(arguments, console, *, parser_factory, settings_resolver):
             _pid_access(args.pid, checks)
         else:
             _check(checks, "target", "warning", "No target or PID supplied; only settings and output access were checked.")
-    except (ConfigError, OSError, RuntimeError) as error:
+    except (ValueError, OSError, RuntimeError) as error:
         _check(checks, "settings", "error", str(error))
     result = {"diagnostic_schema": 1, "settings": record, "checks": checks,
               "target_controlled": False}

@@ -13,6 +13,7 @@ from helpers import make_console
 
 from src import main as cli
 from src import preflight
+from src.config import resolve_settings
 
 
 class DoctorTests(unittest.TestCase):
@@ -106,6 +107,83 @@ class DoctorTests(unittest.TestCase):
         self.assertIn("RESULT READY", text)
         self.assertNotIn("thresholds", text)
         self.assertNotIn("\x1b", text)
+
+    def test_invalid_paths_produce_structured_diagnostics(self) -> None:
+        for arguments in (("--target", "invalid\0.py"), ("--report-dir", "invalid\0directory")):
+            with self.subTest(arguments=arguments):
+                code, text = self._run(*arguments, "--json")
+                self.assertEqual(code, 2)
+                self.assertTrue(any(check["state"] == "error" for check in json.loads(text)["checks"]))
+
+
+class InitializationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+
+    def _run(self, destination, *arguments):
+        console = make_console()
+        code = cli._main(console, ["init", "--path", str(destination), "--json", *arguments])
+        return code, json.loads(console.file.getvalue())
+
+    def test_default_preview_has_no_project_side_effects_or_process_actions(self) -> None:
+        destination = self.root / ".drainrc.toml"
+        with mock.patch("src.process_runner.subprocess.Popen") as launched:
+            code, result = self._run(destination)
+        launched.assert_not_called()
+        self.assertEqual(code, 0)
+        self.assertFalse(result["written"])
+        self.assertIn("[profiles.ci]", result["content"])
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_written_base_and_profile_pass_the_normal_validator(self) -> None:
+        destination = self.root / ".drainrc.toml"
+        code, result = self._run(destination, "--write")
+        self.assertEqual(code, 0)
+        self.assertTrue(result["written"])
+        self.assertEqual(resolve_settings(config_path=destination).windows, (10.0, 30.0, 60.0))
+        self.assertEqual(resolve_settings(config_path=destination, profile="ci").timeout, 120.0)
+
+    def test_existing_file_is_not_replaced_even_with_the_same_content(self) -> None:
+        destination = self.root / ".drainrc.toml"
+        for content in ("private existing settings", preflight.INIT_CONFIG):
+            destination.write_text(content, encoding="utf-8")
+            code, result = self._run(destination, "--write")
+            self.assertEqual(code, 2)
+            self.assertIn("Refusing to overwrite", result["error"])
+            self.assertEqual(destination.read_text(encoding="utf-8"), content)
+
+    def test_invalid_template_or_missing_parent_never_creates_a_project_file(self) -> None:
+        destination = self.root / ".drainrc.toml"
+        with mock.patch.object(preflight, "INIT_CONFIG", "unknown_setting = 1"):
+            code, result = self._run(destination, "--write")
+        self.assertEqual(code, 2)
+        self.assertFalse(destination.exists())
+        code, result = self._run(self.root / "absent" / ".drainrc.toml", "--write")
+        self.assertEqual(code, 2)
+        self.assertIn("parent", result["error"])
+        self.assertFalse((self.root / "absent").exists())
+
+    def test_preview_checks_parent_and_rejects_null_paths(self) -> None:
+        for destination in (self.root / "absent" / ".drainrc.toml", "invalid\0.toml"):
+            with self.subTest(destination=destination):
+                code, result = self._run(destination)
+                self.assertEqual(code, 2)
+                self.assertFalse(result["written"])
+                self.assertFalse(result["partial_file"])
+                self.assertTrue(result["error"])
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_failed_new_file_write_is_explicit_and_does_not_delete_user_data(self) -> None:
+        destination = self.root / ".drainrc.toml"
+        with mock.patch.object(preflight.os, "fsync", side_effect=OSError("disk full")):
+            code, result = self._run(destination, "--write")
+        self.assertEqual(code, 2)
+        self.assertTrue(result["partial_file"])
+        self.assertFalse(result["written"])
+        self.assertIn("inspect it before retrying", result["error"])
+        self.assertTrue(destination.exists())
 
 
 if __name__ == "__main__":
