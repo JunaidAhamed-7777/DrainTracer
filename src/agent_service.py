@@ -212,6 +212,7 @@ class AgentRegistry:
                              deadline=item["deadline"], checkpoint=item["checkpoint"],
                              writer_identity=item["writer_identity"], identity_status=item["identity_status"])
             if record.state in {"accepted", "starting", "running", "stopping", "interrupted"}:
+                already_interrupted = record.state == "interrupted"
                 record.state, record.result = "interrupted", self._interrupted_result()
                 # A first atomic checkpoint can precede the next journal flush.
                 # Only its assigned path and exact writer identity may fill in
@@ -224,7 +225,8 @@ class AgentRegistry:
                     except (OSError, ValueError):
                         pass  # An absent/corrupt prefix is disclosed by export.
                 record.identity_status = self._check_target_identity(record)
-                record.updated_at = now
+                if not already_interrupted:
+                    record.updated_at = now
                 record.event("interrupted", identity_status=record.identity_status)
             self.records[record.identity] = record
         while len(self.records) > self.policy.max_records:
@@ -431,10 +433,10 @@ class AgentRegistry:
                     html_path = write_html_report(report, directory)
                     record.exports = tuple(map(str, (json_path, html_path)))
                 except (OSError, ValueError, TypeError) as error:
-                    record.updated_at, self._dirty = time.time(), True
+                    self._dirty = True
                     self._persist(force=True)
                     raise AgentError("storage", "recovered report export failed; checkpoint and any saved JSON were preserved") from error
-                record.updated_at, self._dirty = time.time(), True
+                self._dirty = True
                 if not self._persist(force=True):
                     raise AgentError("storage", "recovered evidence saved but journal update failed")
             elif record.result is None:

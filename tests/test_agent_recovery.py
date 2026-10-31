@@ -53,9 +53,9 @@ class DurableRegistryTests(unittest.TestCase):
     def start_request(self):
         return request("start", {"mode": "attach", "pid": 987654, "create_time": 123.5})
 
-    def restart(self):
+    def restart(self, *, retention_seconds=7 * 86400):
         self.journal.close()
-        self.journal = AgentJournal(self.directory, app_version="v5.4.0", owner=self.owner)
+        self.journal = AgentJournal(self.directory, app_version="v5.4.0", owner=self.owner, retention_seconds=retention_seconds)
         self.registry = AgentRegistry(self.reports, AgentPolicy(), session_type=FakeSession, journal=self.journal)
 
     def test_intent_is_durable_before_start_and_replayed_after_restart_without_new_backend(self):
@@ -91,6 +91,24 @@ class DurableRegistryTests(unittest.TestCase):
         self.assertEqual(len(self.registry.records), 0)
         self.assertIsNotNone(self.registry.storage_error)
         self.assertTrue(self.registry.handle(self.start_request())["ok"])
+
+    def test_repeated_restarts_do_not_extend_interrupted_record_retention(self):
+        self.journal.retention_seconds = 10
+        with mock.patch("src.agent_service.time.time", return_value=1000):
+            started = self.registry.handle(self.start_request())
+        identity = started["result"]["session_id"]
+        for clock in (1005, 1010, 1014):
+            with mock.patch("src.agent_service.time.time", return_value=clock):
+                self.restart(retention_seconds=10)
+            record = self.registry.records[identity]
+            self.assertEqual(record.state, "interrupted")
+            self.assertEqual(record.updated_at, 1005)
+            self.assertEqual(self.journal.snapshot()["sessions"][0]["updated_at"], 1005)
+        with mock.patch("src.agent_service.time.time", return_value=1016):
+            self.restart(retention_seconds=10)
+        self.assertNotIn(identity, self.registry.records)
+        self.assertEqual(self.journal.snapshot()["sessions"], [])
+        self.assertEqual(len(FakeSession.created), 1)
 
     def test_reused_pid_is_diagnostic_only_and_never_restores_control(self):
         started = self.registry.handle(self.start_request())

@@ -85,3 +85,11 @@ The inventory reads at most 4,096 non-redirected entries with four directory
 levels. No file is deleted automatically. A previously unobserved active
 record is marked interrupted on its first restart even when older than the
 retention period. Its fresh interrupted record then follows retention.
+
+Every agent record UUID is assigned before backend startup and is also the
+checkpoint's internal session UUID. Recovery checks that identity in addition
+to the private assigned filename, writer identity, target identity and checksum;
+a valid checkpoint from another session of the same writer is refused even
+when a pending launch's PID was not yet journaled. Re-inspecting an already
+interrupted record or exporting its prefix does not reset its original terminal
+timestamp or extend metadata retention. No process authority is reconstructed.
