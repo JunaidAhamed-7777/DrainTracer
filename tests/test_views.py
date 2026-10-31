@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import tempfile
 import unittest
 from dataclasses import replace
+from pathlib import Path
 
 from helpers import make_console, make_denied, make_process, render_text, sample_trees
 
+from src.config import resolve_settings
 from src.dashboard import DashboardApp
-from src.keys import DOWN, ESCAPE
+from src.keys import DOWN, ESCAPE, PAGE_DOWN
 
 MB = 1024 * 1024
 # The sizes every view must fill exactly, and the legacy code page to check.
@@ -173,6 +176,40 @@ class NavigationTests(unittest.TestCase):
         output = render_text(app)
         self.assertIn("VIEWS", output)
         self.assertIn("Monitor: sampling cadence", output)
+
+    def test_profile_budgets_remain_readable_in_scrolled_narrow_legacy_help(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "settings.toml"
+            source.write_text('[profiles.ci]\nbudget_private = "500MB"\n'
+                              'budget_handles = 2000\nbudget_threads = 64\n', encoding="utf-8")
+            settings = resolve_settings(config_path=source, profile="ci", discover=False)
+        for width in (40, 80, 120):
+            with self.subTest(width=width):
+                app = DashboardApp("worker.exe", settings=settings,
+                                   console=make_console(width, 24, LEGACY))
+                app._handle_key("?")
+                pages = []
+                for _ in range(30):
+                    output = render_text(app)
+                    output.encode(LEGACY)
+                    self.assertEqual(len(output.splitlines()), 24)
+                    self.assertTrue(all(len(line) <= width for line in output.splitlines()))
+                    pages.append(output)
+                    if "end of help" in output:
+                        break
+                    app._handle_key(PAGE_DOWN)
+                text = " ".join(" ".join(line.strip(" |") for page in pages
+                                         for line in page.splitlines()).split())
+                for value in ("500.0 MB", "2,000", "64", "Budgets", "without enforcing them"):
+                    self.assertIn(value, text)
+                self.assertFalse(app.detector.is_paused)
+
+    def test_help_names_absent_budgets_without_zero_ceilings(self) -> None:
+        app = _app(120, 100)
+        app._handle_key("?")
+        output = render_text(app)
+        self.assertIn("none configured", output)
+        self.assertNotIn("Budget checks", output)
 
 
 class ProcessesViewTests(ViewRenderingMixin, unittest.TestCase):

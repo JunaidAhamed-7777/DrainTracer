@@ -283,6 +283,9 @@ Use the target's own file logging when needed. See the
 - `O` — open the latest HTML export.
 - `M` — add a numbered marker (`marker N`) to the event log, timeline, and report.
 - `?` / `H` — show help and active settings; arrows scroll it, `Esc` closes it.
+  Configured budgets appear with their units. The dashboard displays ceilings;
+  headless runs and report comparisons enforce them. CLI budget flags require
+  headless mode.
   While help is open, only scrolling, closing help, and view selection are active.
   Close it before using target controls, exporting, or quitting.
 
