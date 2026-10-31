@@ -41,7 +41,7 @@ class Evidence:
         identity = f"command-{len(self.commands):03d}"
         started = time.monotonic()
         try:
-            result = subprocess.run(arguments, **kwargs)
+            result = subprocess.run(arguments, check=kwargs.pop("check", False), **kwargs)
         except subprocess.TimeoutExpired as error:
             result = SimpleNamespace(returncode=None, stdout=error.stdout or b"", stderr=error.stderr or b"")
             self.record(identity, arguments, result, started)
