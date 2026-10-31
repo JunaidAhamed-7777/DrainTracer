@@ -94,7 +94,7 @@ def verify(output, fixtures, source_commit):
         # refusals from the already-reviewed installed controlled-workload proof.
         import verify_controlled_workload as recipes
         subprocess_module = recipes.subprocess
-        recipes.subprocess = SimpleNamespace(run=evidence.observe)
+        recipes.subprocess = SimpleNamespace(run=evidence.observe, DEVNULL=subprocess.DEVNULL)
         try:
             quality = recipes.verify_controlled_workload(python, root, os.environ.copy(), source_commit)
         finally:
