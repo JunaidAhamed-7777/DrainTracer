@@ -319,11 +319,15 @@ def session_summary(report: dict[str, Any]) -> dict[str, Any]:
 def main(argv: list[str] | None = None) -> int:
     """Machine-only stdout; structured failures go to stderr with exit status 2."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("validate", "summary", "schema", "redact"))
+    parser.add_argument("action", choices=("validate", "summary", "schema", "redact", "investigate"))
     parser.add_argument("path", nargs="?")
     parser.add_argument("--kind", choices=("report", "summary"), default="report")
     parser.add_argument("--profile", choices=("share", "minimal"), default="share")
     parser.add_argument("--output-dir", help="write a redacted JSON/HTML pair; otherwise preview JSON only")
+    parser.add_argument("--resource", choices=("memory", "handles", "threads"))
+    parser.add_argument("--runtime", choices=("unknown", "python", "dotnet", "native"), default="unknown")
+    parser.add_argument("--format", choices=("json", "text"), default="json",
+                        help="text is available for the investigate action")
     args = parser.parse_args(argv)
     try:
         if args.action == "schema":
@@ -332,7 +336,12 @@ def main(argv: list[str] | None = None) -> int:
             if not args.path:
                 raise ReportContractError("a report path is required")
             report = read_report(args.path)
-            if args.action == "redact":
+            if args.action == "investigate":
+                from .investigation import investigation_summary
+
+                result = investigation_summary(report, profile=args.profile, resource=args.resource,
+                                               runtime=args.runtime)
+            elif args.action == "redact":
                 from .privacy import export_private_report, redact_report
 
                 if args.output_dir:
@@ -344,7 +353,9 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 result = (session_summary(report) if args.action == "summary" else
                           {"validation_schema": 1, "valid": True, "report_schema": report.get("report_schema", 1)})
-        print(json.dumps(result, allow_nan=False))
+        if args.format == "text" and args.action != "investigate":
+            raise ReportContractError("--format text requires the investigate action")
+        print(result["text"] if args.format == "text" else json.dumps(result, allow_nan=False))
         return 0
     except (ReportContractError, ValueError, OSError) as exc:
         code = "export_failed" if isinstance(exc, OSError) else "invalid_report"

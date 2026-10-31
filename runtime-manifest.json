@@ -28,6 +28,7 @@
     "src/headless.py",
     "src/history.py",
     "src/html_report.py",
+    "src/investigation.py",
     "src/keys.py",
     "src/leak_detector.py",
     "src/main.py",
