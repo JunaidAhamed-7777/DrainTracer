@@ -297,6 +297,12 @@ class ProcessManager:
         return self._paused
 
     @property
+    def pending_resume_pids(self) -> frozenset[int]:
+        """Processes suspended by DrainTracer whose resume is still owed."""
+        with self._lock:
+            return frozenset(self._suspended_pids)
+
+    @property
     def last_error(self) -> str | None:
         return self._last_error
 

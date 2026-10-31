@@ -622,6 +622,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Exit 4 when a launched target exits by itself with a non-zero code.",
     )
+    headless.add_argument(
+        "--require-full-coverage",
+        action="store_true",
+        default=None,
+        help="Exit 3 unless every live sample measured private bytes, handles, and threads fully.",
+    )
     for metric, option in BUDGET_OPTIONS.items():
         what = "a size such as 500MB" if metric == "private_bytes" else "a positive whole count"
         headless.add_argument(
@@ -655,7 +661,7 @@ def _resolve_settings(args: argparse.Namespace) -> MonitorSettings:
         overrides["timeout"] = args.timeout
     if args.fail_on is not None:
         overrides["fail_on"] = LeakSeverity(args.fail_on)
-    for key in ("fail_on_inconclusive", "fail_on_target_error"):
+    for key in ("fail_on_inconclusive", "fail_on_target_error", "require_full_coverage"):
         if getattr(args, key) is not None:
             overrides[key] = getattr(args, key)
     if args.report_dir is not None:
@@ -789,6 +795,7 @@ def _main(console: Console, argv: list[str] | None) -> int:
     for flag, value in (
         ("--fail-on-inconclusive", args.fail_on_inconclusive),
         ("--fail-on-target-error", args.fail_on_target_error),
+        ("--require-full-coverage", args.require_full_coverage),
     ):
         if value and not args.headless:
             parser.error(f"{flag} only applies with --headless")
@@ -917,6 +924,7 @@ def _run_headless(
         settings=settings,
         fail_on_inconclusive=settings.fail_on_inconclusive,
         fail_on_target_error=settings.fail_on_target_error,
+        require_full_coverage=settings.require_full_coverage,
         quiet=args.quiet,
     )
     try:
