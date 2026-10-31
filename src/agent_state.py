@@ -148,6 +148,8 @@ def _validate(data, *, app_version, owner):
 def read_agent_state(directory: Path, *, app_version: str, owner: str):
     """Read-only, bounded inspection; never acquire writer ownership or rewrite state."""
     path = verify_trusted_path(directory / "agent-state.json")
+    if os.name == "nt":
+        verify_private_data_path(path)
     try:
         with path.open("rb") as handle:
             raw = handle.read(MAX_STATE_BYTES + 1)

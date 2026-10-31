@@ -25,6 +25,7 @@ from .agent_state import (
 from .agent_transport import (
     current_user_sid,
     load_secret,
+    verify_private_data_path,
     verify_private_path,
     verify_trusted_path,
 )
@@ -96,6 +97,7 @@ def _record(directory, session_id):
 
 def assigned_checkpoint(directory, record):
     path = verify_trusted_path(Path(directory) / "checkpoints" / record["checkpoint"])
+    verify_private_data_path(path)
     report = read_checkpoint(path, app_version=_version())
     metadata = report["checkpoint"]
     if metadata["writer_identity"] != record["writer_identity"]:
@@ -306,6 +308,7 @@ def support_reports(directory, session_ids):
         existing = next((name for name in record["reports"] if name.endswith(".json")), None)
         if existing is not None:
             path = verify_trusted_path(Path(directory) / "reports" / relative_report(existing))
+            verify_private_data_path(path)
             reports.append(read_report(path))
         else:
             reports.append(recover_session(directory, session_id))
