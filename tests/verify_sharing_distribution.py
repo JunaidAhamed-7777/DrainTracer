@@ -111,7 +111,7 @@ def verify(output, fixtures, source_commit):
         cert, key = certificates / "cert.pem", certificates / "key.pem"
         _code, ops_receipt = evidence.run([ops, "--workspace", root / "operating-baseline", "--operator", "Synthetic reference owner",
                       "--contact", "Local verification only", "--readiness-seconds", "10"])
-        operating = Path(ops_receipt["evidence"])
+        baseline_operating = Path(ops_receipt["evidence"])
         if not ops_receipt["operating_prerequisites_met"]:
             raise RuntimeError("Actual operating baseline failed")
         # This second retained artifact exercises actual lost-ACK replay,
@@ -121,9 +121,15 @@ def verify(output, fixtures, source_commit):
                       "--certificate", cert, "--key", key, "--ca", cert])
         if not extension["operating_prerequisites_met"]:
             raise RuntimeError("Actual transport recovery exercise failed")
+        operating = Path(extension["evidence"])
         store, admin = root / "authority", root / "admin.json"
         evidence.run([team, "--store", store, "init"])
         evidence.run([team, "--store", store, "bootstrap", "synthetic-sharing", "--credential-output", admin])
+        evidence.run([share, "serve", "--store", store, "--certificate", cert, "--key", key,
+                      "--operating-evidence", baseline_operating], codes=(2,))
+        refusal = json.loads((root / f"{evidence.commands[-1]['id']}.stderr").read_bytes())
+        if refusal.get("error", {}).get("code") != "invalid":
+            raise RuntimeError("Local-only operating evidence was not explicitly refused")
         with socket.socket() as reservation:
             reservation.bind(("127.0.0.1", 0))
             port = reservation.getsockname()[1]
@@ -194,6 +200,7 @@ def verify(output, fixtures, source_commit):
                       local_check_code=check_code, comparison_outcome=prepared["outcome"],
                       record_id=identity, baseline_revision=prepared["baseline_revision"],
                       public_metrics=prepared["metrics"], current_operating_evidence=str(operating),
+                      local_baseline_evidence=str(baseline_operating),
                       transport_recovery_evidence=extension["evidence"], sanitized_reports=len(report_ids))
         return root / "proof.json"
     except BaseException:
