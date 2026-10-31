@@ -200,8 +200,6 @@ class AgentJournal:
         try:
             verify_trusted_path(self.path)
             if self.path.exists():
-                if os.name == "nt":
-                    verify_private_data_path(self.path)
                 self.data = read_agent_state(directory, app_version=app_version, owner=owner)
             else:
                 self.data = {"schema": 1, "protocol": 1, "version": app_version, "owner": owner,
