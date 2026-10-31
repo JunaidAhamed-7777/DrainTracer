@@ -75,10 +75,12 @@ class HeadlessRunner(MonitorSession):
         settings: MonitorSettings | None = None,
         fail_on_inconclusive: bool = False,
         fail_on_target_error: bool = False,
+        quiet: bool = False,
         require_full_coverage: bool | None = None,
     ) -> None:
         if fail_on == LeakSeverity.NONE:
             raise ValueError("fail_on must be a leak severity, not NONE")
+        self.quiet = quiet
         super().__init__(
             target_path,
             args=args,
@@ -302,6 +304,8 @@ class HeadlessRunner(MonitorSession):
 
     def _print_line(self, level: str, message: str | Text) -> None:
         tag, color = _LEVEL_TAGS.get(level, _LEVEL_TAGS["info"])
+        if self.quiet and tag in {"OK", "INFO", "STAT"}:
+            return
         line = Text.assemble(
             (self._format_duration(self._uptime()), PALETTE.muted),
             "  ",
@@ -312,6 +316,10 @@ class HeadlessRunner(MonitorSession):
         self.console.print(line, soft_wrap=True)
 
     def _print_banner(self) -> None:
+        if self.quiet:
+            for warning in replace(self.settings, timeout=self.timeout).warnings():
+                self._print_line("warn", warning)
+            return
         sep = self.glyphs.sep
         if self.attached:
             action = f"attaching to PID {self.attach_pid}"
@@ -342,8 +350,27 @@ class HeadlessRunner(MonitorSession):
         for warning in replace(self.settings, timeout=self.timeout).warnings():
             self._print_line("warn", warning)
 
+    def _metric_text(self, metric: str, *, peak: bool = False) -> str:
+        if peak:
+            highest = self.facts.peak(metric)
+            value = highest[0] if highest is not None else None
+        else:
+            snapshot = self.snapshot
+            coverage = (snapshot.coverage or {}).get(metric) if snapshot is not None else None
+            measured = snapshot is not None and any(
+                not process.access_denied and process.measured(metric)
+                for process in snapshot.processes
+            )
+            value = snapshot.totals.get(metric) if measured and (
+                coverage is None or coverage.measured > 0
+            ) else None
+        if value is None:
+            return "n/a"
+        if metric.endswith("_bytes"):
+            return self._format_bytes(value)
+        return f"{value:.1f}%" if metric == "cpu_percent" else f"{int(value):,}"
+
     def _print_progress(self) -> None:
-        totals = self._totals()
         sep = self.glyphs.sep
         snapshot = self.snapshot
         counts = snapshot.process_counts if snapshot is not None else None
@@ -364,12 +391,12 @@ class HeadlessRunner(MonitorSession):
             signal = self._evidence_text(self.snapshot) or signal
         self._print_line(
             "stat",
-            f"cpu {totals.get('cpu_percent', 0.0):.1f}% {sep} "
+            f"cpu {self._metric_text('cpu_percent')} {sep} "
             # Private bytes first: they drive the memory signal; RSS is context.
-            f"private {self._format_bytes(totals.get('private_bytes', 0.0))} {sep} "
-            f"rss {self._format_bytes(totals.get('rss_bytes', 0.0))} {sep} "
-            f"handles {int(totals.get('handles', 0.0)):,} {sep} "
-            f"threads {int(totals.get('threads', 0.0)):,} {sep} "
+            f"private {self._metric_text('private_bytes')} {sep} "
+            f"rss {self._metric_text('rss_bytes')} {sep} "
+            f"handles {self._metric_text('handles')} {sep} "
+            f"threads {self._metric_text('threads')} {sep} "
             f"{processes} live process{'es' if processes != 1 else ''} {sep} "
             f"signal {signal}",
         )
@@ -462,10 +489,10 @@ class HeadlessRunner(MonitorSession):
             ("measured", self._measurement_text()),
             ("duration", f"{self._format_duration(self._uptime())} {sep} "
                          f"{self._sample_count:,} samples"),
-            ("peaks", f"private {self._format_bytes(self._peaks['private_bytes'])} {sep} "
-                      f"RSS (working set) {self._format_bytes(self._peaks['rss_bytes'])} {sep} "
-                      f"{int(self._peaks['handles']):,} handles {sep} "
-                      f"{int(self._peaks['threads']):,} threads"),
+            ("peaks", f"private {self._metric_text('private_bytes', peak=True)} {sep} "
+                      f"RSS (working set) {self._metric_text('rss_bytes', peak=True)} {sep} "
+                      f"{self._metric_text('handles', peak=True)} handles {sep} "
+                      f"{self._metric_text('threads', peak=True)} threads"),
             ("signals", self.signals_text()),
         ]
         checks = self.budget_checks()

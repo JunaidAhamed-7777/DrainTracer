@@ -26,6 +26,46 @@ from src.events import LeakSeverity
 
 
 class DiffCommandTests(unittest.TestCase):
+    def test_plain_diff_has_text_labels_and_no_terminal_controls(self) -> None:
+        from rich.console import Console
+
+        output = io.StringIO()
+        console = Console(file=output, force_terminal=True, color_system="truecolor", width=40)
+        code = run_diff([str(self.leaky), str(self.fixed), "--plain"], console)
+        self.assertEqual(code, EXIT_OK)
+        text = output.getvalue()
+        self.assertNotIn("\x1b", text)
+        self.assertIn("VERDICT IMPROVED", text)
+        self.assertIn("memory: signal HIGH to NONE", text)
+        self.assertNotIn("│", text)
+
+    def test_quiet_diff_keeps_blocking_caveats_and_json_takes_precedence(self) -> None:
+        report = _run(0.0)
+        report["target_path"] = "other:warning:.exe"
+        self.fixed.write_text(json.dumps(report), encoding="utf-8")
+        code, text = self._run(str(self.leaky), str(self.fixed), "--quiet", "--strict")
+        self.assertEqual(code, EXIT_NOT_COMPARABLE)
+        self.assertIn("Caveat:", text)
+        self.assertIn("VERDICT NOT COMPARABLE", text)
+        self.assertNotIn("memory: signal", text)
+        code, text = self._run(str(self.leaky), str(self.fixed), "--json", "--plain", "--quiet")
+        self.assertEqual(code, EXIT_OK)
+        self.assertEqual(json.loads(text)["after"]["target"], "other:warning:.exe")
+
+    def test_no_color_overrides_forced_color_without_losing_verdict_words(self) -> None:
+        from rich.ansi import AnsiDecoder
+        from rich.console import Console
+
+        output = io.StringIO()
+        console = Console(file=output, force_terminal=True, color_system="truecolor", width=100)
+        code = run_diff([str(self.leaky), str(self.fixed), "--no-color"], console)
+        self.assertEqual(code, EXIT_OK)
+        self.assertIn("IMPROVED", output.getvalue())
+        for line in AnsiDecoder().decode(output.getvalue()):
+            for span in line.spans:
+                self.assertIsNone(span.style.color)
+                self.assertIsNone(span.style.bgcolor)
+
     def test_count_budget_flags_reject_fractional_limits(self) -> None:
         for flag in ("--budget-handles", "--budget-threads"):
             with self.subTest(flag=flag):

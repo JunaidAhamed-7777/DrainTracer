@@ -107,6 +107,36 @@ def verify_distribution(wheel: Path) -> str:
         _run([str(python), "-c", ("import sys; from draintracer.agent_command import AgentClient; "
               "assert 'draintracer.dashboard' not in sys.modules; "
               "assert 'draintracer.main' not in sys.modules")], cwd=cwd, environment=environment)
+        team_command = scripts / ("draintracer-team.exe" if os.name == "nt" else "draintracer-team")
+        _require(team_command.is_file(), "Installing the wheel did not create the team command.")
+        team_help = _run([str(team_command), "--help"], cwd=cwd, environment=environment)
+        _require("bootstrap" in team_help and "record-create" in team_help, "The installed team command is unavailable.")
+        _run([str(python), "-c", """import json, os, sys, tempfile
+from pathlib import Path
+from uuid import uuid4
+from draintracer.team_store import TeamStore, TeamError
+assert 'draintracer.dashboard' not in sys.modules
+with tempfile.TemporaryDirectory(dir=Path.home() if os.name == 'nt' else None, prefix='.draintracer-installed-team-') as temporary:
+    with TeamStore.create(Path(temporary) / 'store') as store:
+        issued = store.bootstrap_project('installed-check')
+        actor = store.authenticate(issued['token'], issued['project_id'])
+        key = uuid4().hex
+        raw = json.dumps({'report_schema':3,'snapshots':[],'target_path':'private-installed-target'}).encode()
+        report = store.ingest(actor, raw, request_id=key)
+        assert store.ingest(actor, raw, request_id=key)['report_id'] == report['report_id']
+        assert b'private-installed-target' not in store.export_report(actor, report['report_id'])
+        backup = store.backup(actor)
+        assert store.restore(actor, backup['backup_id'])['restored'] == 1
+        store.delete_report(actor, report['report_id'])
+        assert store.list_backups(actor)['backups'] == []
+        try:
+            store.ingest(actor, raw, request_id=key)
+        except TeamError as error:
+            assert error.code == 'conflict'
+        else:
+            raise RuntimeError('Deleted installed evidence was replayed')
+assert 'draintracer.dashboard' not in sys.modules
+"""], cwd=cwd, environment=environment)
         diff_help = _run([str(command), "diff", "--help"], cwd=cwd, environment=environment)
         _require("--fail-on-regression" in diff_help, "The installed diff command is unavailable.")
 
@@ -163,21 +193,25 @@ def verify_distribution(wheel: Path) -> str:
 from draintracer.api import Session, SessionOptions
 from draintracer.report_contract import validate_report
 assert 'draintracer.dashboard' not in sys.modules
-options = SessionOptions(sample_interval_ms=100, windows_seconds=(1,), timeout_seconds=1.2,
-                         report_dir='api-reports')
+options = SessionOptions(sample_interval_ms=100, windows_seconds=(1,), warmup_seconds=2,
+                         timeout_seconds=4, report_dir='api-reports')
 with Session.launch('bounded_worker.py', options=options) as session:
     result = session.wait()
 validate_report(session.report())
 assert 'draintracer.dashboard' not in sys.modules
 print(json.dumps({'reason': result.reason, 'cleanup': result.cleanup, 'errors': result.errors,
                   'samples': session.status.sample_count, 'code': result.exit_code,
+                  'measurement': result.measurement,
                   'json': str(result.exports.json_path), 'html': str(result.exports.html_path)}))
 """], cwd=cwd, environment=environment,
         ))
         _require(api_probe["reason"] == "timeout" and api_probe["cleanup"] == "complete",
                  "The supported API did not complete ownership cleanup.")
-        _require(api_probe["code"] == 0 and not api_probe["errors"] and api_probe["samples"] >= 4,
-                 "The supported API failed to collect a bounded real session.")
+        _require(api_probe["code"] == 0 and not api_probe["errors"] and api_probe["samples"] >= 4
+                 and api_probe["measurement"] == "conclusive",
+                 "The supported API failed to collect a judged bounded session "
+                 f"(code={api_probe['code']}, samples={api_probe['samples']}, measurement={api_probe['measurement']}, "
+                 f"errors={str(api_probe['errors'])[:500]}).")
         _require(Path(api_probe["json"]).is_file() and Path(api_probe["html"]).is_file(),
                  "The supported API did not export a complete report pair.")
     return version

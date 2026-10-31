@@ -1,5 +1,12 @@
 # Public report and machine-output contracts
 
+`draintracer.report_contract.parse_report(raw: bytes)` validates an immutable
+UTF-8 upload in memory with the same byte, depth, token, value and schema limits
+as `read_report(path)`. It touches no files. A sharing service can apply its
+server privacy profile before persisting anything, rather than staging an
+unredacted upload on disk. Both functions return JSON-native report dictionaries
+and raise `ReportContractError` for unusable input.
+
 DrainTracer reads report schemas **1, 2, and 3**. A report without
 `report_schema` is schema 1. Future, zero, fractional, string, and Boolean
 schema versions are rejected explicitly. Empty snapshots are valid evidence
@@ -64,6 +71,13 @@ returns their paths as JSON. These explicit exports may import report
 rendering dependencies; validate/summary/schema remain standard-library-only.
 Export I/O failures use error code `export_failed`. See the
 [privacy guide](privacy.md) for the transformations and review limits.
+
+`investigate INPUT` emits `investigation_schema: 1`, containing a copyable
+privacy-transformed `text` summary. It accepts `--resource`, `--runtime`,
+and `--profile`; `--format text` explicitly selects plain-text stdout for
+this action. Its default remains JSON. See the
+[investigation summary guide](investigation-summary.md) for evidence fields
+and profiler handoff.
 
 ## Summary version 1
 
