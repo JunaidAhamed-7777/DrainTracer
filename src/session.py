@@ -48,6 +48,7 @@ from .report import (
     coverage_to_dict,
     iso_timestamp,
     new_report_id,
+    prepare_report_export,
     process_summary_to_dict,
     prepare_report_export,
     report_directory,

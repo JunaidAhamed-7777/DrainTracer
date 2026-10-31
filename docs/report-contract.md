@@ -72,8 +72,19 @@ rendering dependencies; validate/summary/schema remain standard-library-only.
 Export I/O failures use error code `export_failed`. See the
 [privacy guide](privacy.md) for the transformations and review limits.
 
+`investigate INPUT` emits `investigation_schema: 1`, containing a copyable
+privacy-transformed `text` summary. It accepts `--resource`, `--runtime`,
+and `--profile`; `--format text` explicitly selects plain-text stdout for
+this action. Its default remains JSON. See the
+[investigation summary guide](investigation-summary.md) for evidence fields
+and profiler handoff.
+
 ## Summary version 1
 
+`measurement.clock_adjustments` and `measurement.sampling_gaps` retain the
+exact temporal-reset counts when present, or `null` for legacy unknowns. A
+judged result and readable observed counters can coexist with an interruption;
+check these counts before treating a run as continuous baseline evidence.
 `workload_state` is the optional recipe-execution state, or `null` for a report
 without that outcome. `failed`, `interrupted`, or another unfinished state
 qualifies resource evidence; leak-free samples do not establish a completed

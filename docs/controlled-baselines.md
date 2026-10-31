@@ -113,3 +113,9 @@ The combined native suite passed 903 tests (25 platform skips). The source and
 isolated wheel passed strict metadata checks and exact runtime-file inventory.
 `tests/verify_controlled_workload.py` repeats the installed eight-run proof;
 ordinary installed baseline runs also receive a two-second startup warm-up.
+
+The same clean candidate wheel also passed all eight installed recipe runs on
+WSL Linux: each recorded 41 samples with zero timing/paused counters, clean
+promotion/check returned `unchanged`/0, and selected/inherited groups were
+refused without changing the audit. Native Windows and Linux counter semantics
+remain qualified by their recorded platform provenance.

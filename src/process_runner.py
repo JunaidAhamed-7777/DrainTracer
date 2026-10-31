@@ -379,7 +379,6 @@ class ProcessManager:
                     name: stream for name in ("stdout", "stderr")
                     if (stream := getattr(self._process, name, None)) is not None
                 }
-
             except PermissionError as exc:
                 self._last_error = str(exc)
                 raise ProcessAccessDeniedError(

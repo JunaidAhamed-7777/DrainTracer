@@ -10,12 +10,13 @@
 
 <h1 align="center">DrainTracer</h1>
 
-[Controlled local baselines](docs/controlled-baselines.md) add deliberate
-repeated-run approvals, reviewable audit history, report-sourced budgets and
-scoped expiring exceptions for reproducible regression checks.
 Python integrations can use the [supported session API](docs/python-api.md)
 for launch/attach, immutable snapshots, bounded subscriptions, cancellation,
 and explicit cleanup/export outcomes without initializing the dashboard.
+
+[Controlled local baselines](docs/controlled-baselines.md) add deliberate
+repeated-run approvals, reviewable audit history, report-sourced budgets and
+scoped expiring exceptions for reproducible regression checks.
 
 <p align="center">
   <strong>Release series: v5.4.0</strong> ·
@@ -237,6 +238,12 @@ An unreadable current or original creation identity permits observation but
 refuses process control. A later readable PID holder does not automatically
 gain the old target's control authority; attach again with a verified identity.
 An owed resume remains pending until it can be retried safely.
+The [lifecycle stress evidence and crash policy](docs/observer-stress-results.md)
+describe tested failure handling, polling limits, and the boundary when abrupt
+monitor termination prevents normal cleanup.
+The [observer verification and native soak](docs/observer-verification-results.md)
+record measured costs, unchanged local budget failures, and the unexpected
+Windows thread warning with their source and machine limits.
 
 Use **Up/Down** to highlight a startup choice, then **Spacebar** (or Enter)
 to select it. Navigation help appears below the Get Started box. Redirected
@@ -463,6 +470,9 @@ tables show `PRIVATE`; RSS (working set), CPU, and I/O provide context, and
 neither memory counter alone proves an allocation leak. Read the
 [configuration reference](docs/configuration.md) for discovery, precedence, and
 units, and [working-principle.md](working-principle.md) for the detection math.
+The [repeated Windows/Linux calibration](docs/calibration-results.md) records
+tested warning delays, benign startup/cache warnings, slow-growth misses,
+coverage, and duration/profile guidance with reproducible aggregate evidence.
 
 ## Save and compare evidence
 
@@ -495,6 +505,10 @@ update can be written.
 resource trends, events, and process growth after recording.*
 
 Use the JSON reports for scripts and comparisons:
+
+`draintracer-report investigate run.json --runtime python --format text`
+creates a privacy-transformed, copyable [investigation summary](docs/investigation-summary.md)
+with resource/window/contributor/coverage evidence and relevant profiler next steps.
 
 Preview an explicit privacy transformation locally with
 `draintracer-report redact run.json --profile share`; add

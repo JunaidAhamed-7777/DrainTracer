@@ -88,8 +88,6 @@ def build_diff_parser() -> argparse.ArgumentParser:
         "before", metavar="BEFORE", help="The earlier report (leak_report_<UUID>.json)."
     )
     parser.add_argument("after", metavar="AFTER", help="The later report to compare against it.")
-    parser.add_argument("--report-budgets", action="store_true",
-                        help="Use BEFORE budgets as defaults; explicit budget flags override supplied metrics.")
     parser.add_argument("--no-color", action="store_true", help="Disable terminal colors, including forced color.")
     parser.add_argument("--plain", action="store_true", help="Print unstyled text without panel or table borders.")
     parser.add_argument("--quiet", action="store_true", help="Print only the verdict, caveats, and budget checks.")
@@ -98,6 +96,8 @@ def build_diff_parser() -> argparse.ArgumentParser:
                         help="Add an earlier run; grouped comparisons require 2-20 runs on each side.")
     parser.add_argument("--after-run", action="append", default=[], metavar="REPORT",
                         help="Add a later run; grouped comparisons always enforce strict comparability.")
+    parser.add_argument("--report-budgets", action="store_true",
+                        help="Use BEFORE report budgets as defaults; explicit budget flags override each supplied metric.")
     parser.add_argument(
         "--json",
         action="store_true",
