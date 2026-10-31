@@ -57,7 +57,7 @@ class ExerciseEvidence:
         try:
             result = action()
             passed = expected_code is None
-        except (ValueError, OSError, RuntimeError, AssertionError) as error:
+        except Exception as error:  # noqa: BLE001 - preserve every failed fixture probe without private exception text
             # Only an explicitly expected machine code can count as a safe
             # refusal. Unexpected errors remain failures with no source text.
             code = getattr(error, "code", None)
@@ -140,7 +140,15 @@ class ResourceSampler:
             self._stop.wait(0.02)
 
     def __enter__(self):
-        self._thread.start()
+        try:
+            self._thread.start()
+        except BaseException:
+            # Context-manager __exit__ is not called when __enter__ fails,
+            # including an interrupted/partially successful Thread.start.
+            self._stop.set()
+            if self._thread.ident is not None:
+                self._thread.join(2)
+            raise
         return self
 
     def close(self):

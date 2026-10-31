@@ -47,11 +47,11 @@ def exercise_agent(root: Path, evidence: ExerciseEvidence, sampler: ResourceSamp
                                 "--profile", profile, "serve", "--allow-launch", "--launch-root", str(root),
                                 "--max-timeout", "60"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                stderr=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW)
-    sampler.add("agent", process.pid)
     client = None
     crashed = False
     accepted, completed, durable = 0, 0, 0
     try:
+        sampler.add("agent", process.pid)
         def connect_ready():
             nonlocal client
             if process.poll() is not None:
