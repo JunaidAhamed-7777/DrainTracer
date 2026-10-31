@@ -45,6 +45,7 @@
     "src/startup.py",
     "src/stats.py",
     "src/team_backups.py",
+    "src/team_command.py",
     "src/team_database.py",
     "src/team_evidence.py",
     "src/team_governance.py",
