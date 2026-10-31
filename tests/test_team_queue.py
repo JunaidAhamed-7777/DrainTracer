@@ -27,7 +27,7 @@ class DeduplicatingClient:
     def __init__(self):
         self.calls, self.accepted, self.lose_reply = [], {}, False
 
-    def ingest_prepared(self, raw, request_id, *, timeout):
+    def ingest_prepared(self, raw, request_id, *, timeout, deadline=None, expires_at=None):
         self.calls.append((raw, request_id, timeout))
         digest = hashlib.sha256(raw).hexdigest()
         if request_id in self.accepted and self.accepted[request_id] != digest:
@@ -38,8 +38,8 @@ class DeduplicatingClient:
             raise SharingError("unavailable")
         return {"team_schema": 1, "report_id": "b" * 32, "request_id": request_id}
 
-    def create_record_prepared(self, raw, request_id, *, timeout):
-        result = self.ingest_prepared(raw, request_id, timeout=timeout)
+    def create_record_prepared(self, raw, request_id, *, timeout, deadline=None, expires_at=None):
+        result = self.ingest_prepared(raw, request_id, timeout=timeout, deadline=deadline, expires_at=expires_at)
         result["record_id"] = result.pop("report_id")
         return result
 
@@ -156,7 +156,7 @@ class DurableQueueTests(unittest.TestCase):
         client = DeduplicatingClient()
         ingest = client.ingest_prepared
 
-        def slow_first(raw, request_id, *, timeout):
+        def slow_first(raw, request_id, *, timeout, deadline=None, expires_at=None):
             self.assertLessEqual(timeout, 1)
             clock[0] = 1002
             return ingest(raw, request_id, timeout=timeout)

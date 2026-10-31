@@ -9,6 +9,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from src.team_transport import (
     ALPN,
@@ -49,6 +50,34 @@ class DecoderTests(unittest.TestCase):
         self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
         self.assertGreaterEqual(context.minimum_version, ssl.TLSVersion.TLSv1_2)
         self.assertIsNone(context.keylog_filename)
+
+    def test_invalid_deadline_numbers_are_fixed_errors_before_preparation(self):
+        endpoint = Endpoint.parse("tls://localhost:8443")
+        for options in ({"timeout": 10**2000}, {"timeout": True}, {"timeout": float("nan")},
+                        {"deadline": float("inf")}, {"expires_at": 10**2000}):
+            with self.subTest(options=list(options)), mock.patch("src.team_transport.client_context") as context:
+                with self.assertRaises(SharingError) as refused:
+                    request(endpoint, {}, **options)
+                self.assertEqual(refused.exception.code, "invalid")
+                context.assert_not_called()
+
+    def test_serialization_and_trust_preparation_cannot_restart_the_budget(self):
+        endpoint = Endpoint.parse("tls://localhost:8443")
+        for preparation in ("encode_message", "client_context"):
+            clock = [1000.0]
+
+            def exhaust(*_args, clock=clock, preparation=preparation, **_kwargs):
+                clock[0] += 2
+                return b"{}" if preparation == "encode_message" else mock.Mock()
+
+            with (self.subTest(preparation=preparation),
+                  mock.patch("src.team_transport.time.monotonic", side_effect=lambda clock=clock: clock[0]),
+                  mock.patch(f"src.team_transport.{preparation}", side_effect=exhaust),
+                  mock.patch("src.team_transport.socket.create_connection") as connect):
+                with self.assertRaises(SharingError) as refused:
+                    request(endpoint, {}, timeout=1)
+                self.assertEqual(refused.exception.code, "unavailable")
+                connect.assert_not_called()
 
 
 class TLSRoundTripTests(unittest.TestCase):
@@ -135,6 +164,26 @@ class TLSRoundTripTests(unittest.TestCase):
                 self.assertEqual(decode_message(bytes(body))["error"]["code"], "unavailable")
             self.assertLess(time.monotonic() - started, 1.8)
         self.assertEqual(self.received, [])
+
+    def test_expiry_after_real_handshake_prevents_the_credential_frame(self):
+        context = client_context(FIXTURES / "cert.pem")
+        completed = []
+
+        class SlowHandshake:
+            def wrap_socket(self, *args, **kwargs):
+                secured = context.wrap_socket(*args, **kwargs)
+                completed.append(True)
+                time.sleep(0.15)
+                return secured
+
+        with (mock.patch("src.team_transport.client_context", return_value=SlowHandshake()),
+              self.assertRaises(SharingError) as refused):
+            request(self.endpoint, {"token": "must-never-reach-dispatch"}, timeout=1,
+                    expires_at=time.time() + 0.1)
+        self.assertEqual(refused.exception.code, "unavailable")
+        self.assertEqual(completed, [True])
+        self.assertEqual(self.received, [])
+        self.assertTrue(request(self.endpoint, {}, cafile=FIXTURES / "cert.pem")["ok"])
 
 
 if __name__ == "__main__":
