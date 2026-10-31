@@ -363,7 +363,7 @@ class ProcessManager:
                 popen_kwargs["start_new_session"] = True
 
             try:
-                self._process = subprocess.Popen(command, **popen_kwargs)
+                self._process = self._spawn_process(command, popen_kwargs)
             except PermissionError as exc:
                 self._last_error = str(exc)
                 raise ProcessAccessDeniedError(
@@ -391,6 +391,10 @@ class ProcessManager:
             self._exit_code = None
             self._start_poll_thread()
             return self._root_pid
+
+    def _spawn_process(self, command, popen_kwargs):
+        """Private launch seam for the opt-in agent's job-bound process adapter."""
+        return subprocess.Popen(command, **popen_kwargs)
 
     def attach(self, pid: int, *, expected_create_time: float | None = None) -> int:
         """Track an already running process (and its descendants) by PID.
