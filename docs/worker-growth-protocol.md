@@ -61,3 +61,18 @@ Windows and WSL may share the host with the observer verification/soak and
 development. Record this condition and initial CPU/memory; these are not
 isolated performance measurements. Keep resource limits and failed evidence.
 Two-second smoke mode only checks orchestration and is not policy evidence.
+
+From a clean source checkout with dependencies installed, collect each platform
+using its own Python and a distinct new destination:
+
+```powershell
+python torture/worker_policy.py --output torture/reports/worker-policy-windows.json
+```
+
+```sh
+python torture/worker_policy.py --output torture/reports/worker-policy-linux.json
+```
+
+Existing records are refused. Aggregate checkpoints are atomic, and Ctrl+C
+stops the sequence after owned cleanup even when an earlier HIGH determines
+the individual run's exit code.
