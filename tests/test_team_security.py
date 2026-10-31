@@ -51,6 +51,7 @@ class PrivatePathTests(unittest.TestCase):
 
     def test_malformed_duplicate_or_oversize_credential_file_is_never_accepted(self):
         path = self.private / "credentials.json"
+        write_credential_file(path, {"team_credentials_schema": 1, "project_id": "a", "token": "x"})
         for payload in (b"\xff", b" " * 8193,
                         b'{"team_credentials_schema":1,"project_id":"a","token":"x","token":"y"}',
                         json.dumps({"team_credentials_schema": True, "project_id": "a", "token": "x"}).encode()):
