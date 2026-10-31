@@ -16,13 +16,18 @@ from typing import Any
 import psutil
 
 from .agent_jobs import AgentProcessManager
+from .agent_state import AgentStateError
 from .agent_transport import (
     AgentTransportError,
     current_user_sid,
     process_user_sid,
+    verify_private_data_path,
     verify_trusted_path,
 )
-from .api import CommandTimeoutError, Session, SessionOptions
+from .api import CommandTimeoutError, Session, SessionOptions, _version
+from .checkpoints import read_checkpoint, recovered_report
+from .html_report import write_html_report
+from .report import report_directory, write_json_report
 
 
 class AgentError(ValueError):
@@ -110,6 +115,16 @@ class _Record:
     last_api_state: str = ""
     last_measurement: str = "inconclusive"
     last_full_coverage: bool = False
+    request_id: str = ""
+    request_digest: str = ""
+    requested_at: float = 0.0
+    updated_at: float = 0.0
+    target_pid: int | None = None
+    create_time: float | None = None
+    deadline: float = 0.0
+    checkpoint: str = ""
+    writer_identity: dict = field(default_factory=dict)
+    identity_status: str = "not_checked"
 
     def event(self, kind, **values):
         self.event_count += 1
@@ -123,7 +138,7 @@ class AgentRegistry:
     detached immutable status values; requests never touch sampling internals.
     """
 
-    def __init__(self, reports: Path, policy: AgentPolicy, *, session_type=Session):
+    def __init__(self, reports: Path, policy: AgentPolicy, *, session_type=Session, journal=None, checkpoints=None):
         self.reports = reports
         self.policy = policy
         self.session_type = session_type
@@ -131,6 +146,130 @@ class AgentRegistry:
         self.replies: OrderedDict[str, tuple[str, dict]] = OrderedDict()
         self.started = time.monotonic()
         self.stopping = False
+        self.journal, self.checkpoints = journal, checkpoints
+        self.storage_error = None
+        self.storage_inventory = None
+        self._persist_next = 0.0
+        self._dirty = False
+        self.tombstones: OrderedDict[str, dict] = OrderedDict()
+        self._writer_identity = {"pid": os.getpid(), "create_time": psutil.Process().create_time()}
+        if journal is not None:
+            self._restore()
+
+    @staticmethod
+    def _interrupted_result():
+        return {"reason": "interrupted", "exit_code": None, "startup": "unknown", "cleanup": "unknown",
+                "measurement": "inconclusive", "full_coverage": False, "target_exit_code": None,
+                "errors": [], "error_count": 0}
+
+    def _check_target_identity(self, record):
+        if record.target_pid is None or record.create_time is None:
+            return "unknown"
+        try:
+            target = psutil.Process(record.target_pid)
+            if target.create_time() != record.create_time:
+                return "reused"
+            if not target.is_running() or target.status() == psutil.STATUS_ZOMBIE:
+                return "exited"
+            if process_user_sid(record.target_pid) != current_user_sid():
+                return "unavailable"
+            return "identity_matches"
+        except (psutil.NoSuchProcess, psutil.ZombieProcess):
+            return "exited"
+        except (psutil.AccessDenied, OSError):
+            return "unavailable"
+
+    def _checkpoint_report(self, record):
+        if self.checkpoints is None:
+            raise AgentError("evidence_unavailable", "no recovery checkpoint directory is configured")
+        source = self.checkpoints / record.checkpoint
+        verify_private_data_path(source)
+        raw = read_checkpoint(source, app_version=_version(), session_id=record.identity)
+        metadata = raw["checkpoint"]
+        if metadata["writer_identity"] != record.writer_identity:
+            raise AgentError("evidence_unavailable", "checkpoint writer identity does not match the session")
+        target = metadata["target_identity"]
+        if record.target_pid is not None and (target["pid"] != record.target_pid or target["create_time"] != record.create_time):
+            raise AgentError("evidence_unavailable", "checkpoint target identity does not match the session")
+        return source, raw
+
+    def _restore(self):
+        saved = self.journal.snapshot()
+        now = time.time()
+        for item in saved["tombstones"]:
+            if item["expires_at"] > now:
+                self.tombstones[item["request_id"]] = item
+        for item in saved["sessions"]:
+            if (item["state"] in {"completed", "failed", "interrupted"}
+                    and item["updated_at"] < now - self.journal.retention_seconds):
+                continue
+            record = _Record(item["session_id"], item["mode"], None, state=item["state"], result=item["result"],
+                             exports=tuple(str(self.reports / path) for path in item["reports"]),
+                             last_samples=item["sample_count"], last_measurement=item["measurement"],
+                             last_full_coverage=item["full_coverage"], request_id=item["request_id"],
+                             request_digest=item["request_digest"], requested_at=item["requested_at"],
+                             updated_at=item["updated_at"], target_pid=item["pid"], create_time=item["create_time"],
+                             deadline=item["deadline"], checkpoint=item["checkpoint"],
+                             writer_identity=item["writer_identity"], identity_status=item["identity_status"])
+            if record.state in {"accepted", "starting", "running", "stopping", "interrupted"}:
+                already_interrupted = record.state == "interrupted"
+                record.state, record.result = "interrupted", self._interrupted_result()
+                # A first atomic checkpoint can precede the next journal flush.
+                # Only its assigned path and exact writer identity may fill in
+                # missing launch identity; it never restores process authority.
+                if record.target_pid is None:
+                    try:
+                        _source, checkpoint = self._checkpoint_report(record)
+                        identity = checkpoint["checkpoint"]["target_identity"]
+                        record.target_pid, record.create_time = identity["pid"], identity["create_time"]
+                    except (OSError, ValueError):
+                        pass  # An absent/corrupt prefix is disclosed by export.
+                record.identity_status = self._check_target_identity(record)
+                if not already_interrupted:
+                    record.updated_at = now
+                record.event("interrupted", identity_status=record.identity_status)
+            self.records[record.identity] = record
+        while len(self.records) > self.policy.max_records:
+            self.records.popitem(last=False)
+        if not self._persist(force=True):
+            raise AgentError("storage", "agent could not save interruption state; prior journal preserved")
+
+    def _saved_record(self, record):
+        return {"session_id": record.identity, "mode": record.mode, "state": record.state,
+                "request_id": record.request_id, "request_digest": record.request_digest,
+                "requested_at": record.requested_at, "updated_at": record.updated_at,
+                "pid": record.target_pid, "create_time": record.create_time, "deadline": record.deadline,
+                "checkpoint": record.checkpoint, "writer_identity": dict(record.writer_identity),
+                "sample_count": max(0, record.last_samples), "measurement": record.last_measurement,
+                "full_coverage": record.last_full_coverage, "result": record.result,
+                "reports": self._report_names(record.exports), "identity_status": record.identity_status}
+
+    def _persist(self, *, force=False):
+        if self.journal is None:
+            return True
+        if not force and (not self._dirty or time.monotonic() < self._persist_next):
+            return True
+        now = time.time()
+        self.tombstones = OrderedDict((key, value) for key, value in self.tombstones.items() if value["expires_at"] > now)
+        try:
+            self.journal.write([self._saved_record(record) for record in self.records.values()], list(self.tombstones.values()))
+        except (OSError, ValueError, TypeError) as error:
+            self.storage_error = str(error)[:512]
+            self._persist_next = time.monotonic() + 1
+            return False
+        self.storage_error = None
+        self._persist_next, self._dirty = time.monotonic() + 1, False
+        return True
+
+    def _require_storage(self):
+        if self.journal is not None:
+            try:
+                self.storage_inventory = self.journal.inventory()
+                if not self.storage_inventory["admission_available"]:
+                    raise AgentStateError("agent storage reached its admission high-water limit")
+            except (OSError, AgentStateError) as error:
+                self.storage_error = str(error)[:512]
+                raise AgentError("storage", "agent storage cannot admit new writes; existing evidence preserved") from error
 
     def _export_paths(self, value):
         if value is None:
@@ -153,6 +292,10 @@ class AgentRegistry:
                              measurement=status.measurement, full_coverage=status.full_coverage)
                 record.last_samples, record.last_api_state = status.sample_count, status.state
                 record.last_measurement, record.last_full_coverage = status.measurement, status.full_coverage
+                if status.snapshot is not None:
+                    record.target_pid = status.snapshot.root_pid
+                    record.create_time = status.snapshot.root_create_time
+                record.updated_at, self._dirty = time.time(), True
             result = record.session.wait(0)
             if result is not None:
                 record.state = "failed" if result.reason == "failed" else "completed"
@@ -167,8 +310,10 @@ class AgentRegistry:
                 # The bounded registry keeps tiny final metadata, not the API
                 # session's complete report and retained immutable snapshot.
                 record.session = None
+                record.updated_at, self._dirty = time.time(), True
             elif status.state in {"starting", "running", "stopping"}:
                 record.state = status.state
+        self._persist()
 
     def _status(self, record):
         status = record.session.status if record.session is not None else None
@@ -176,6 +321,8 @@ class AgentRegistry:
                 "sample_count": status.sample_count if status else max(0, record.last_samples),
                 "measurement": status.measurement if status else record.last_measurement,
                 "full_coverage": status.full_coverage if status else record.last_full_coverage, "result": record.result,
+                "identity_status": record.identity_status, "last_observed_at": record.updated_at,
+                "target_identity": {"pid": record.target_pid, "create_time": record.create_time},
                 "reports": self._report_names(record.exports)}
 
     def handle(self, request):
@@ -195,8 +342,18 @@ class AgentRegistry:
                 return response
             if not isinstance(operation, str) or not isinstance(params, dict):
                 raise AgentError("invalid_input", "operation and parameters have invalid types")
+            if operation == "start":
+                prior = self.tombstones.get(identity)
+                retained = next((value for value in self.records.values() if value.request_id == identity), None)
+                if prior is not None or retained is not None:
+                    previous = prior["digest"] if prior is not None else retained.request_digest
+                    session_id = prior["session_id"] if prior is not None else retained.identity
+                    if previous != digest:
+                        raise AgentError("conflict", "start identity was already used for different parameters")
+                    return self._remember(identity, digest, {"protocol": 1, "id": identity, "ok": True,
+                                                           "result": {"accepted": True, "session_id": session_id}})
             self.refresh()
-            result = self._dispatch(operation, params)
+            result = self._dispatch(operation, params, identity=identity, digest=digest)
             response = {"protocol": 1, "id": identity, "ok": True, "result": result}
             return self._remember(identity, digest, response)
         except AgentError as error:
@@ -223,9 +380,9 @@ class AgentRegistry:
             self.replies.popitem(last=False)
         return response
 
-    def _dispatch(self, operation, params):
+    def _dispatch(self, operation, params, *, identity, digest):
         if operation == "start":
-            return self._start(params)
+            return self._start(params, request_id=identity, digest=digest)
         if operation == "status":
             _keys(params, {"session_id", "offset", "limit"})
             if "session_id" in params:
@@ -234,7 +391,9 @@ class AgentRegistry:
             offset = _integer(params.get("offset", 0), "offset", 0, self.policy.max_records)
             limit = _integer(params.get("limit", 32), "limit", 1, 32)
             records = list(self.records.values())[offset:offset + limit]
-            return {"ready": not self.stopping, "uptime_seconds": round(time.monotonic() - self.started, 3),
+            return {"ready": (not self.stopping and self.storage_error is None
+                              and (self.storage_inventory is None or self.storage_inventory["admission_available"])),
+                    "storage_error": self.storage_error, "storage": self.storage_inventory, "uptime_seconds": round(time.monotonic() - self.started, 3),
                     "active_sessions": sum(record.result is None for record in self.records.values()),
                     "session_limit": self.policy.max_sessions, "queue_depth": 0,
                     "retained_records": len(self.records),
@@ -258,9 +417,35 @@ class AgentRegistry:
             record.session.cancel()
             return {"accepted": True, "session_id": record.identity}
         if operation == "export":
-            if record.result is None:
+            if record.state == "interrupted":
+                self._require_storage()
+                try:
+                    source, checkpoint = self._checkpoint_report(record)
+                    report = recovered_report(source, app_version=_version(), session_id=checkpoint["session_id"])
+                except (OSError, ValueError) as error:
+                    if isinstance(error, AgentError):
+                        raise
+                    raise AgentError("evidence_unavailable", "no intact matching checkpoint is available; interrupted state preserved") from error
+                try:
+                    directory = report_directory(report, self.reports)
+                    json_path = write_json_report(report, directory)
+                    record.exports = (str(json_path),)
+                    html_path = write_html_report(report, directory)
+                    record.exports = tuple(map(str, (json_path, html_path)))
+                except (OSError, ValueError, TypeError) as error:
+                    self._dirty = True
+                    self._persist(force=True)
+                    raise AgentError("storage", "recovered report export failed; checkpoint and any saved JSON were preserved") from error
+                self._dirty = True
+                if not self._persist(force=True):
+                    raise AgentError("storage", "recovered evidence saved but journal update failed")
+            elif record.result is None:
+                self._require_storage()
                 exported = record.session.export(timeout=5)
                 record.exports = self._export_paths(exported)
+                record.updated_at, self._dirty = time.time(), True
+                if not self._persist(force=True):
+                    raise AgentError("storage", "evidence saved but the journal update failed")
                 if exported.errors:
                     raise AgentError("storage", "report export failed; inspect session status and storage")
             return {"directory": str(self.reports), "reports": self._report_names(record.exports)}
@@ -281,7 +466,7 @@ class AgentRegistry:
         except KeyError as error:
             raise AgentError("unknown_session", "session identity is not retained by this agent") from error
 
-    def _start(self, params):
+    def _start(self, params, *, request_id, digest):
         if self.stopping:
             raise AgentError("unavailable", "the agent is stopping")
         _keys(params, {"mode", "pid", "create_time", "target", "args", "timeout_seconds", "sample_interval_ms",
@@ -302,10 +487,14 @@ class AgentRegistry:
         windows = tuple(_number(value, "window", 1, 3600) for value in windows)
         warmup = _number(params.get("warmup_seconds", 0), "warmup_seconds", 0, 3600)
         mode = params["mode"]
+        identity = str(uuid.uuid4())
+        self._require_storage()
         options = SessionOptions(sample_interval_ms=interval, windows_seconds=windows,
                                  warmup_seconds=warmup, timeout_seconds=timeout, report_dir=self.reports,
                                  allow_pause=self.policy.allow_pause and mode == "launch",
-                                 allow_kill=self.policy.allow_kill)
+                                 allow_kill=self.policy.allow_kill,
+                                 checkpoint=str(self.checkpoints / (identity + ".json")) if self.checkpoints else None,
+                                 checkpoint_interval_seconds=1.0)
         if mode == "attach":
             if "target" in params or "args" in params:
                 raise AgentError("invalid_input", "attach does not accept launch fields")
@@ -313,7 +502,7 @@ class AgentRegistry:
             created = _number(params.get("create_time"), "create_time", 0.000001, 2**53)
             if pid == os.getpid() or process_user_sid(pid) != current_user_sid():
                 raise AgentError("forbidden", "attachment requires another process owned by the current user")
-            session = self.session_type.attach(pid, create_time=created, options=options)
+            session = self.session_type.attach(pid, create_time=created, options=options, _checkpoint_session_id=identity)
         elif mode == "launch":
             if "pid" in params or "create_time" in params:
                 raise AgentError("invalid_input", "launch does not accept attachment fields")
@@ -328,20 +517,41 @@ class AgentRegistry:
             if (not isinstance(args, list) or len(args) > 64
                     or any(not isinstance(value, str) or len(value) > 4096 or "\0" in value for value in args)):
                 raise AgentError("invalid_input", "target arguments must be at most 64 bounded literal strings")
-            session = self.session_type.launch(path, args=args, options=options, _manager_factory=AgentProcessManager)
+            session = self.session_type.launch(path, args=args, options=options, _manager_factory=AgentProcessManager,
+                                               _checkpoint_session_id=identity)
         else:
             raise AgentError("invalid_input", "mode must be attach or launch")
-        if retired is not None:
-            del self.records[retired]
-        identity = str(uuid.uuid4())
-        record = _Record(identity, mode, session)
+        retired_record = self.records.pop(retired) if retired is not None else None
+        now = time.time()
+        record = _Record(identity, mode, session, request_id=request_id, request_digest=digest,
+                         requested_at=now, updated_at=now, target_pid=params.get("pid"),
+                         create_time=params.get("create_time"), deadline=now + timeout,
+                         checkpoint=identity + ".json", writer_identity=dict(self._writer_identity))
         self.records[identity] = record
         record.event("accepted", mode=mode)
+        retention = self.journal.retention_seconds if self.journal is not None else 7 * 86400
+        previous_tombstones = self.tombstones.copy()
+        self.tombstones[request_id] = {"request_id": request_id, "digest": digest,
+                                       "session_id": identity, "expires_at": now + retention}
+        while len(self.tombstones) > 256:
+            self.tombstones.popitem(last=False)
+        self._dirty = True
+        if not self._persist(force=True):
+            del self.records[identity]
+            self.tombstones = previous_tombstones
+            if retired_record is not None:
+                self.records[retired] = retired_record
+                self.records.move_to_end(retired, last=False)
+            raise AgentError("storage", "start was refused before launch because admission state could not be saved")
         try:
             session.start()
-        except (OSError, RuntimeError, ValueError):
-            del self.records[identity]
-            raise
+        except (OSError, RuntimeError, ValueError) as error:
+            record.state, record.result = "failed", self._interrupted_result()
+            record.result.update(reason="failed", exit_code=2, startup="failed", cleanup="not_attempted",
+                                 errors=[str(error)[:512]], error_count=1)
+            record.session = None
+            self._dirty = True
+            self._persist(force=True)
         return {"accepted": True, "session_id": identity}
 
     def close(self, timeout=10):
@@ -354,5 +564,6 @@ class AgentRegistry:
             if record.result is None:
                 record.session.close(timeout=max(0, deadline - time.monotonic()))
         self.refresh()
+        self._persist(force=True)
         return all(record.result is not None and record.result["cleanup"] in {"complete", "not_attempted"}
                    for record in self.records.values())
