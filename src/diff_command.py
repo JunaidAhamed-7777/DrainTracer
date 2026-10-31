@@ -14,6 +14,7 @@ from rich.table import Table
 from rich.text import Text
 
 from .analysis import severity_rank
+from .baseline_control import report_budget_defaults
 from .budgets import BUDGET_OPTIONS, parse_budget
 from .events import METRIC_LABELS
 from .repeat_comparison import (
@@ -96,6 +97,8 @@ def build_diff_parser() -> argparse.ArgumentParser:
                         help="Add an earlier run; grouped comparisons require 2-20 runs on each side.")
     parser.add_argument("--after-run", action="append", default=[], metavar="REPORT",
                         help="Add a later run; grouped comparisons always enforce strict comparability.")
+    parser.add_argument("--report-budgets", action="store_true",
+                        help="Use BEFORE report budgets as defaults; explicit budget flags override each supplied metric.")
     parser.add_argument(
         "--json",
         action="store_true",
@@ -158,11 +161,11 @@ def run_diff(argv: list[str], console: Console) -> int:
         console.print(Text.assemble(("Diff error: ", "bold red"), str(exc)))
         return EXIT_ERROR
     try:
-        budgets = {
+        budgets = {**(report_budget_defaults([before]) if args.report_budgets else {}), **{
             metric: getattr(args, option)
             for metric, option in BUDGET_OPTIONS.items()
             if getattr(args, option) is not None
-        }
+        }}
         comparison = compare_reports(before, after, strict=args.strict, budgets=budgets)
     except Exception as exc:  # a report that parses but defeats the analysis
         console.print(Text.assemble(("Diff error: ", "bold red"), f"could not compare: {exc}"))
@@ -239,8 +242,9 @@ def _run_repeated_diff(args, console: Console) -> int:
                 if decoded_bytes > MAX_GROUP_BYTES:
                     raise DiffError("Repeated decoded inputs exceed the combined 128 MiB JSON limit.")
                 group.append(report)
-        budgets = {metric: getattr(args, option) for metric, option in BUDGET_OPTIONS.items()
-                   if getattr(args, option) is not None}
+        budgets = {**(report_budget_defaults(before) if args.report_budgets else {}),
+                   **{metric: getattr(args, option) for metric, option in BUDGET_OPTIONS.items()
+                      if getattr(args, option) is not None}}
         comparison = compare_repeated_reports(before, after, budgets=budgets)
     except (DiffError, OSError, ValueError, TypeError) as exc:
         console.print(Text(f"Diff error: {exc}", style="bold red"))
