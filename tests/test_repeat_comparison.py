@@ -74,6 +74,15 @@ class RepeatedComparisonTests(unittest.TestCase):
             with self.subTest(before=len(before), after=len(after)), self.assertRaises(DiffError):
                 compare_repeated_reports(before, after)
 
+    def test_reused_evidence_across_sides_cannot_appear_independent(self) -> None:
+        old, new = self.reports("a", [4, 5]), self.reports("b", [0, 1])
+        with self.assertRaisesRegex(DiffError, "independent runs on both sides"):
+            compare_repeated_reports(old, [old[0], new[0]])
+        copied = dict(new[0].data)
+        copied["report_id"] = old[0].data["report_id"]
+        with self.assertRaisesRegex(DiffError, "report ID"):
+            compare_repeated_reports(old, [replace(new[0], data=copied), new[1]])
+
     def test_missing_drift_remains_unknown_and_blocks_the_group(self) -> None:
         old, new = self.reports("a", [4, 5]), self.reports("b", [0, 1])
         resources = dict(new[0].summary.resources)

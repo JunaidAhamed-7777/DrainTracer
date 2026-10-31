@@ -114,12 +114,12 @@ def compare_repeated_reports(
     if not 2 <= len(before) <= MAX_GROUP_RUNS or not 2 <= len(after) <= MAX_GROUP_RUNS:
         raise DiffError(f"Repeated comparisons need 2 to {MAX_GROUP_RUNS} runs on each side.")
     old, new = tuple(before), tuple(after)
-    for label, reports in (("A", old), ("B", new)):
-        paths = [report.path.resolve() for report in reports]
-        identifiers = [value for report in reports
-                       if isinstance(value := report.data.get("report_id"), str) and value]
-        if len(set(paths)) != len(paths) or len(set(identifiers)) != len(identifiers):
-            raise DiffError(f"Group {label} repeats a report path or report ID; collect independent runs.")
+    reports = (*old, *new)
+    paths = [report.path.resolve() for report in reports]
+    identifiers = [value for report in reports
+                   if isinstance(value := report.data.get("report_id"), str) and value]
+    if len(set(paths)) != len(paths) or len(set(identifiers)) != len(identifiers):
+        raise DiffError("Repeated groups reuse a report path or report ID; collect independent runs on both sides.")
     caveats: list[dict[str, Any]] = []
     pairs = [(f"{label}{i + 1}", f"{label}{j + 1}", first, second)
              for label, reports in (("A", old), ("B", new))
