@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import threading
 import uuid
 from pathlib import Path
@@ -112,6 +113,8 @@ def build_parser():
     parser = argparse.ArgumentParser(description="Opt-in foreground Windows monitoring agent. Output is JSON.")
     parser.add_argument("--state-dir", default=str(Path.home() / ".draintracer-agent"))
     parser.add_argument("--profile", default="default", help="Local endpoint profile, not a monitor configuration profile.")
+    parser.add_argument("--request-timeout", type=float, default=15.0,
+                        help="Client request timeout in seconds (0 < value <= 60; default: 15).")
     commands = parser.add_subparsers(dest="command", required=True)
     server = commands.add_parser("serve", help="Start explicitly in the foreground; stop with Ctrl+C.")
     server.add_argument("--allow-launch", action="store_true")
@@ -160,6 +163,8 @@ def build_parser():
 def main(argv=None):
     args = build_parser().parse_args(argv)
     try:
+        if not math.isfinite(args.request_timeout) or not 0 < args.request_timeout <= 60:
+            raise AgentError("invalid_input", "request timeout must be finite, greater than zero, and at most 60 seconds")
         if args.command == "serve":
             policy = AgentPolicy(allow_launch=args.allow_launch, allow_pause=args.allow_pause,
                                  allow_kill=args.allow_kill, launch_roots=tuple(map(Path, args.launch_root)),
@@ -205,7 +210,7 @@ def main(argv=None):
                 result = remove_control_files(args.state_dir, apply=args.apply)
             print(json.dumps(result, indent=2, ensure_ascii=True, allow_nan=False))
             return 0
-        client = AgentClient(args.state_dir, profile=args.profile)
+        client = AgentClient(args.state_dir, profile=args.profile, timeout=args.request_timeout)
         if args.command == "stop":
             print(json.dumps(client.request("shutdown"), indent=2, ensure_ascii=True))
             return 0
