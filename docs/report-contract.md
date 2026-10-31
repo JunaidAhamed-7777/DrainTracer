@@ -1,5 +1,12 @@
 # Public report and machine-output contracts
 
+`draintracer.report_contract.parse_report(raw: bytes)` validates an immutable
+UTF-8 upload in memory with the same byte, depth, token, value and schema limits
+as `read_report(path)`. It touches no files. A sharing service can apply its
+server privacy profile before persisting anything, rather than staging an
+unredacted upload on disk. Both functions return JSON-native report dictionaries
+and raise `ReportContractError` for unusable input.
+
 DrainTracer reads report schemas **1, 2, and 3**. A report without
 `report_schema` is schema 1. Future, zero, fractional, string, and Boolean
 schema versions are rejected explicitly. Empty snapshots are valid evidence
@@ -58,6 +65,20 @@ and `summary_schema()` return the published schemas as dictionaries.
 These names form the supported report-consumer API; they do not expose
 monitor lifecycle control.
 
+`redact INPUT --profile share|minimal` previews a privacy-transformed report
+as JSON. `--output-dir DIRECTORY` writes a transformed JSON/HTML pair and
+returns their paths as JSON. These explicit exports may import report
+rendering dependencies; validate/summary/schema remain standard-library-only.
+Export I/O failures use error code `export_failed`. See the
+[privacy guide](privacy.md) for the transformations and review limits.
+
+`investigate INPUT` emits `investigation_schema: 1`, containing a copyable
+privacy-transformed `text` summary. It accepts `--resource`, `--runtime`,
+and `--profile`; `--format text` explicitly selects plain-text stdout for
+this action. Its default remains JSON. See the
+[investigation summary guide](investigation-summary.md) for evidence fields
+and profiler handoff.
+
 ## Summary version 1
 
 The [session-summary JSON Schema](../schemas/session-summary.json) defines
@@ -84,6 +105,14 @@ values are `null`:
   and chart stride when recorded. Retained count is never substituted for
   an unknown whole-session count.
 
+The optional `recovery` object contains only the Boolean evidence flags
+`partial`, `exact_through_cutoff`, and `final_outcome_confirmed`. A recovered
+checkpoint is an exact recorded prefix with an unknown tail and final
+outcome. Its counts and peaks must not be presented as a completed session.
+The summary also marks a raw checkpoint as partial even when its `recovery`
+flags are absent. Older ordinary summaries may omit `recovery` entirely;
+that absence does not establish a complete outcome.
+
 Memory counters use bytes; handles/threads use counts; CPU uses percent;
 I/O rates use bytes/second. Memory and handle definitions remain platform
 specific: consult `experiment.environment` for Windows private bytes versus
@@ -108,3 +137,11 @@ The public schema describes shape and meaning; byte/token/depth limits are
 additional ingestion requirements. No field can instruct the validator to
 execute code, follow a URL, or load another file. Summaries preserve paths
 and identifiers: use the explicit privacy export workflow before sharing.
+
+Ordinary `read_report` validation checks report shape and ingestion bounds.
+Checkpoint consumers must additionally use `checkpoints.read_checkpoint`
+for checkpoint schema, writer-version, session/process-identity consistency,
+cutoff, 128-sample bound, and checksum validation. A checksum detects
+corruption; it does not authenticate the writer. The supported
+[`recover` command](reports.md#checkpoint-recovery) performs these
+checks before exporting new JSON and HTML, without reopening any process.

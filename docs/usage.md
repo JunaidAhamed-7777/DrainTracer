@@ -297,6 +297,15 @@ The dashboard adapts to narrow and short terminals and uses ASCII fallbacks
 for legacy encodings. A real interactive terminal is needed for controls;
 use headless mode when redirecting output or running in CI.
 
+## Preserve interrupted-run evidence
+
+To preserve evidence during a long run, add `--checkpoint PATH` and optionally
+`--checkpoint-interval 5s` to either monitoring mode. Use a new checkpoint path
+for each session. After interruption, `draintracer recover PATH --report-dir
+recovered` exports the saved prefix without controlling any process. The report
+remains partial; see [checkpoint recovery](reports.md#checkpoint-recovery) for
+bounds, validation, failure behavior, and comparison qualification.
+
 ## Exclude startup growth
 
 ```powershell

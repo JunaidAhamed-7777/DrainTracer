@@ -1,15 +1,22 @@
 
 :root{color-scheme:dark;--bg:#16161e;--surface:#1f2335;--surface-2:#292e42;--border:#3b4261;
---grid:#2a2f45;--text:#c0caf5;--muted:#8089b3;--accent:#7aa2f7;--accent-alt:#bb9af7;
+--grid:#2a2f45;--text:#c0caf5;--muted:#8e97bf;--accent:#7aa2f7;--accent-alt:#bb9af7;
 --cyan:#7dcfff;--teal:#73daca;--ok:#9ece6a;--low:#e0af68;--medium:#ff9e64;--high:#f7768e;
 --critical:#ff4f6d;--on-badge:#16161e;--paused:rgba(128,137,179,.16);--marker:#ff4f6d}
 @media (prefers-color-scheme:light){:root{color-scheme:light;--bg:#f4f5fa;--surface:#ffffff;
 --surface-2:#eef0f7;--border:#d4d8e8;--grid:#e8ebf3;--text:#1f2335;--muted:#5d6488;
---accent:#2e5bd8;--accent-alt:#8a4fd6;--cyan:#0b7fa6;--teal:#138a78;--ok:#3d8b2a;
---low:#a8700b;--medium:#c45a10;--high:#d0324f;--critical:#a3001f;--on-badge:#ffffff;
+--accent:#2e5bd8;--accent-alt:#8a4fd6;--cyan:#0b7fa6;--teal:#138a78;--ok:#347b24;
+--low:#946108;--medium:#b2500d;--high:#d0324f;--critical:#a3001f;--on-badge:#ffffff;
 --paused:rgba(93,100,136,.12);--marker:#d0324f}}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
+:root{scrollbar-color:var(--muted) var(--surface);scrollbar-width:auto}
+*::-webkit-scrollbar{width:12px;height:12px}
+*::-webkit-scrollbar-track{background:var(--surface)}
+*::-webkit-scrollbar-thumb{background:var(--muted);border:3px solid var(--surface);border-radius:8px}
+*::-webkit-scrollbar-thumb:hover{background:var(--text)}
+*::-webkit-scrollbar-thumb:active{background:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 body{margin:0;background:var(--bg);color:var(--text);
 font:14px/1.5 "Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif}
 .wrap{max-width:1180px;margin:0 auto;padding:28px 20px 40px}
@@ -52,6 +59,16 @@ gap:6px 16px;margin-bottom:8px}
 .reset{padding:4px 12px;border:1px solid var(--border);border-radius:8px;
 background:var(--surface-2);color:var(--text);font:inherit;cursor:pointer}
 .reset:hover,.reset:focus-visible{border-color:var(--accent)}
+.chart-range{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.chart-range[hidden]{display:none}
+.chart-range input{width:110px;max-width:100%;padding:5px 8px;border:1px solid var(--muted);
+border-radius:6px;background:var(--surface-2);color:var(--text);font:inherit}
+.chart-range input[aria-invalid="true"]{border-color:var(--high)}
+.chart-range [role="status"]{flex-basis:100%;min-height:1.5em;margin:0;color:var(--muted)}
+.signal-zoom{border:0;padding:0;background:none;color:var(--accent);font:inherit;
+text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.signal-zoom:hover{text-decoration-thickness:2px}
+.reset{border-color:var(--muted)}
 .chart{padding-top:10px;border-top:1px solid var(--grid)}
 .chart:first-child{border-top:0;padding-top:0}
 .chart-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin:4px 0}
@@ -103,6 +120,12 @@ box-shadow:0 8px 24px rgba(0,0,0,.25);font-size:12.5px;pointer-events:none}
 .tip-signal{margin-top:6px;color:var(--sev);font-weight:700}
 .tip-message{margin-top:2px;color:var(--muted)}
 .table-scroll{overflow-x:auto}
+.table-scroll:focus-visible{outline-offset:-2px}
+.sample-data>summary{cursor:pointer;font-weight:600;color:var(--text)}
+.sample-data>summary:focus-visible,.download:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+.sample-data[open]>summary{margin-bottom:10px}
+.download{color:var(--accent);text-underline-offset:3px}
+.download:hover{text-decoration-thickness:2px}
 table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
 th,td{padding:7px 10px;border-bottom:1px solid var(--grid);text-align:left;vertical-align:top}
 th{color:var(--muted);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
@@ -121,3 +144,5 @@ footer p{margin:2px 0}
 .latest{width:100%;margin-left:0}.verdict{align-items:flex-start}}
 @media print{body{background:#fff;color:#000}.reset,.hint{display:none}
 .panel,.card,.verdict{break-inside:avoid}}
+@media (forced-colors:active){:root{scrollbar-color:auto}.badge{border:1px solid CanvasText}
+:focus-visible{outline-color:Highlight}.line{stroke:CanvasText}}
