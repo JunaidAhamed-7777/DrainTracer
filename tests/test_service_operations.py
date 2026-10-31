@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
 import helpers  # noqa: F401
+import psutil
 
 from src.service_agent_exercise import exercise_agent
 from src.service_exercise import (
@@ -17,6 +20,7 @@ from src.service_exercise import (
     exercise_authority_faults,
     exercise_evidence_recovery,
     require_fresh_workspace,
+    run_exercise,
     write_evidence,
 )
 from src.service_operations import ExerciseEvidence, OperatingBudgets, ResourceSampler
@@ -67,6 +71,20 @@ class OperatingEvidenceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             sampler.add("arbitrary", os.getpid())
 
+    def test_sampler_partial_context_entry_stops_the_actual_started_thread(self):
+        sampler = ResourceSampler()
+        start = sampler._thread.start
+
+        def interrupted_start():
+            start()
+            raise RuntimeError("injected after actual sampler start")
+
+        with (mock.patch.object(sampler._thread, "start", side_effect=interrupted_start),
+              self.assertRaises(RuntimeError), sampler):
+            self.fail("context entry should fail")
+        self.assertTrue(sampler._stop.is_set())
+        self.assertFalse(sampler._thread.is_alive())
+
     def test_invalid_or_unbounded_budgets_are_refused(self):
         for value in (True, float("nan"), float("inf"), 0, -1, 61):
             with self.subTest(value=value), self.assertRaises(ValueError):
@@ -110,6 +128,49 @@ class OperatingEvidenceTests(unittest.TestCase):
             self.assertEqual(document["rates"]["agent_completed_runs"],
                              {"successful": 2, "total": 2, "ratio": 1.0})
             self.assertGreater(document["resources"]["agent"]["samples"], 0)
+
+
+    def test_public_complete_exercise_writes_private_readiness_evidence_and_preserves_failures(self):
+        with tempfile.TemporaryDirectory(dir=Path.home() if os.name == "nt" else None) as temporary:
+            # The baseline must run with the entire optional transport absent.
+            blocked = {f"src.{name}": None for name in
+                       ("team_client", "team_transport", "team_queue", "team_server", "service_team_exercise")}
+            with mock.patch.dict(sys.modules, blocked):
+                path, document = run_exercise(Path(temporary) / "exercise", operator="Fixture operator", contact="Local reference",
+                                               include_agent=False)
+            self.assertTrue(document["operating_prerequisites_met"], document)
+            self.assertEqual(document["components"], ["team", "local_collection"])
+            self.assertEqual(document["rates"]["local_completed_runs"]["successful"], 1)
+            self.assertNotIn("upload", document["timings_seconds"])
+            self.assertNotIn("tls_authorized_read_availability", document["rates"])
+            self.assertEqual(json.loads(path.read_bytes()), document)
+            with mock.patch("src.service_exercise.exercise_authority", side_effect=OSError("private failure SECRET")):
+                failed_path, failed = run_exercise(Path(temporary) / "failed", operator="Fixture operator", contact="Local reference",
+                                                   include_agent=False)
+            self.assertFalse(failed["operating_prerequisites_met"])
+            self.assertFalse(failed["readiness_gates"]["required_observations_complete"])
+            self.assertNotIn("SECRET", failed_path.read_text())
+
+    @unittest.skipUnless(os.name == "nt", "actual owned Windows agent handle")
+    def test_agent_is_reaped_when_resource_identity_query_fails_after_spawn(self):
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temporary:
+            root = require_fresh_workspace(Path(temporary) / "exercise")
+            evidence, sampler, spawned = ExerciseEvidence(OperatingBudgets()), ResourceSampler(), []
+            popen = subprocess.Popen
+
+            def capture(*args, **kwargs):
+                process = popen(*args, **kwargs)
+                spawned.append(process)
+                return process
+
+            with (mock.patch("src.service_agent_exercise.subprocess.Popen", side_effect=capture),
+                  mock.patch.object(sampler, "add", side_effect=psutil.AccessDenied(os.getpid())),
+                  self.assertRaises(psutil.AccessDenied)):
+                exercise_agent(root, evidence, sampler)
+            self.assertEqual(len(spawned), 1)
+            self.assertIsNotNone(spawned[0].poll(), "owned foreground agent leaked after resource query failure")
+
+
 
 
 if __name__ == "__main__":
