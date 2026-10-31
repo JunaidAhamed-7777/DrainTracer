@@ -91,10 +91,23 @@ class ComparisonViewMixin:
             except Exception as exc:  # noqa: BLE001 - isolate malformed files from the UI.
                 self._comparison_results.put_nowait((None, None, str(exc)))
 
-        self._comparison_worker = threading.Thread(target=work, name="DrainTracerBaseline", daemon=True)
-        self._comparison_worker.start()
+        worker = None
+        try:
+            worker = threading.Thread(target=work, name="DrainTracerBaseline", daemon=True)
+            self._comparison_worker = worker
+            worker.start()
+        except Exception as exc:  # noqa: BLE001 - a failed worker must not disable the view.
+            self._comparison_error = f"Could not start baseline comparison: {exc}"
+            # A lost start acknowledgement can leave a live or completed worker.
+            # Keep its ownership until the normal result drain permits a retry.
+            if worker is None or (worker.ident is None and not worker.is_alive()
+                                  and self._comparison_results.empty()):
+                self._comparison_loading = False
+                self._comparison_worker = None
 
     def _drain_comparison_result(self) -> None:
+        if self._comparison_worker is not None and self._comparison_worker.is_alive():
+            return
         try:
             baseline, comparison, error = self._comparison_results.get_nowait()
         except Empty:

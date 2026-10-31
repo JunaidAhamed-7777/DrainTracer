@@ -97,6 +97,94 @@ class ComparisonViewTests(unittest.TestCase):
             self.assertIs(self.app._comparison, previous)
             self.assertIn("Baseline unavailable", render_text(self.app))
 
+    def test_worker_start_failure_preserves_evidence_and_allows_retry(self) -> None:
+        self.app._request_comparison(self.baseline)
+        self.complete()
+        baseline, previous = self.app._baseline_report, self.app._comparison
+        for operation in ("src.view_comparison.threading.Thread",
+                          "src.view_comparison.threading.Thread.start"):
+            with self.subTest(operation=operation), \
+                    mock.patch(operation, side_effect=RuntimeError("[red]thread unavailable")):
+                self.app._request_comparison(None)
+            self.assertFalse(self.app._comparison_loading)
+            self.assertIsNone(self.app._comparison_worker)
+            self.assertIs(self.app._baseline_report, baseline)
+            self.assertIs(self.app._comparison, previous)
+            self.app.console = make_console(140, 40, "cp437")
+            output = render_text(self.app)
+            self.assertIn("[red]thread unavailable", output)
+            output.encode("cp437")
+        self.app._request_comparison(None)
+        self.complete()
+        self.assertIsNone(self.app._comparison_error)
+
+    def test_uncertain_started_worker_blocks_overlapping_retry(self) -> None:
+        entered, release = threading.Event(), threading.Event()
+        real_start = threading.Thread.start
+
+        def start_then_raise(worker):
+            real_start(worker)
+            raise RuntimeError("start acknowledgement lost")
+
+        def wait_then_load(path):
+            entered.set()
+            if not release.wait(3):
+                raise TimeoutError("test worker was not released")
+            return load_report(path)
+
+        with mock.patch("src.view_comparison.load_report", side_effect=wait_then_load), \
+                mock.patch.object(threading.Thread, "start", autospec=True,
+                                  side_effect=start_then_raise) as start:
+            try:
+                self.app._request_comparison(self.baseline)
+                self.assertTrue(entered.wait(1))
+                worker = self.app._comparison_worker
+                self.assertTrue(self.app._comparison_loading)
+                self.app._request_comparison(self.baseline)
+                start.assert_called_once()
+                self.assertIs(self.app._comparison_worker, worker)
+            finally:
+                release.set()
+                self.complete()
+        self.assertFalse(self.app._comparison_loading)
+        self.assertIsNone(self.app._comparison_error)
+        self.assertIsNotNone(self.app._comparison)
+        self.app._request_comparison(None)
+        self.complete()
+
+    def test_worker_start_keyboard_interrupt_propagates(self) -> None:
+        with mock.patch("src.view_comparison.threading.Thread.start", side_effect=KeyboardInterrupt), \
+                self.assertRaises(KeyboardInterrupt):
+            self.app._request_comparison(self.baseline)
+
+    def test_queued_result_keeps_worker_owned_until_it_exits(self) -> None:
+        queued, release = threading.Event(), threading.Event()
+        real_thread = threading.Thread
+
+        def build_worker(**options):
+            target = options["target"]
+
+            def hold_after_result():
+                target()
+                queued.set()
+                release.wait(3)
+
+            return real_thread(**{**options, "target": hold_after_result})
+
+        with mock.patch("src.view_comparison.threading.Thread", side_effect=build_worker) as factory:
+            try:
+                self.app._request_comparison(self.baseline)
+                self.assertTrue(queued.wait(1))
+                self.app._drain_comparison_result()
+                self.assertTrue(self.app._comparison_loading)
+                self.assertIsNone(self.app._comparison)
+                self.app._request_comparison(self.baseline)
+                factory.assert_called_once()
+            finally:
+                release.set()
+                self.complete()
+        self.assertIsNotNone(self.app._comparison)
+
     def test_path_editor_captures_target_keys_and_cancels(self) -> None:
         self.app._handle_key("b")
         with mock.patch.object(self.app.manager, "kill") as kill, \
