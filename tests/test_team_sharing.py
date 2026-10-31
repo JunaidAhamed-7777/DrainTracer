@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import subprocess
 import tempfile
 import threading
 import time
@@ -183,6 +184,17 @@ class SharedEvidenceTests(unittest.TestCase):
                 self.reader.call("whoami")
             self.assertEqual(refused.exception.code, "certificate")
             authenticate.assert_not_called()
+
+    def test_custom_trust_bundle_with_untrusted_write_permission_is_refused_before_network(self):
+        if os.name == "nt":
+            subprocess.run(["icacls", str(self.cert), "/grant", "*S-1-1-0:(W)"], check=True, capture_output=True)
+        else:
+            self.cert.chmod(0o666)
+        with mock.patch("src.team_client.request", side_effect=AssertionError("unsafe trust reached network")) as network:
+            with self.assertRaises(SharingError) as refused:
+                self.reader.call("whoami")
+            self.assertEqual(refused.exception.code, "certificate")
+            network.assert_not_called()
 
 
 if __name__ == "__main__":
