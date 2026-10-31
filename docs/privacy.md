@@ -20,6 +20,14 @@ mode that skips the check, or enforce your own network restrictions. Offline
 interactive monitoring continues if the request cannot complete. A target
 application's own network traffic is independent of DrainTracer.
 
+`doctor` and `init` also skip the update check. Doctor performs local,
+read-only target/PID checks and a temporary output-access probe; it does
+not execute the target or send diagnostics. Its output contains local
+paths, configuration origins, profile names, and numeric settings, so review
+it before sharing. It excludes experiment free text, target arguments, and
+environment values. `init` previews locally and writes a new configuration
+only with `--write`; an existing file is never overwritten.
+
 Pip installation, manual upgrades, Git fetch/pull, an accepted checkout
 repair, and opening external links can also contact providers. Writing to
 a shared or synchronized directory, enabling CI output/artifact publication,
@@ -202,3 +210,18 @@ For reviewers maintaining this guide:
 Changes to these data flows should trigger review of this guide and
 [PRIVACY.md](../PRIVACY.md). Proposed hosted sharing and user research need
 additional implementation and notices; these documents do not implement them.
+
+## Optional local agent support
+
+The opt-in agent stores a private credential, scheduling journal, checkpoints
+and reports beneath a verified local user-controlled path. Its authenticated
+pipe is local and never uploads evidence. `diagnose` is private operational
+output and may contain local session/process identities, paths and error text;
+do not paste it unreviewed. `support` previews an explicitly typed redacted
+document, excludes credentials and raw operational metadata, and can include
+up to two explicitly chosen privacy-transformed reports. JSON and offline HTML
+share the same transformed report object. Archive creation requires `--out`;
+there is no automatic publication. Numerical evidence can still identify a
+workload. Removal previews/applies only known control files after shutdown;
+reports, checkpoints and unrelated application files are preserved. See
+[agent operations](agent-operations.md) before sharing or removing data.

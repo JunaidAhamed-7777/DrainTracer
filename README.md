@@ -87,6 +87,10 @@ values and process IDs vary by run.*
   severity, optional policies and absolute budgets, GitHub Actions
   annotations, and a job summary.
 
+Opt-in [local team storage](docs/team-access.md) adds project-scoped roles,
+revocable credentials, server-side report privacy, retention, controlled logical
+snapshots and explicitly client-computed comparison receipts.
+
 ## Get started
 
 You need **Windows 10/11 or Linux** and **Python 3.10+**. Windows examples
@@ -287,6 +291,9 @@ Use the target's own file logging when needed. See the
 - `O` — open the latest HTML export.
 - `M` — add a numbered marker (`marker N`) to the event log, timeline, and report.
 - `?` / `H` — show help and active settings; arrows scroll it, `Esc` closes it.
+  Configured budgets appear with their units. The dashboard displays ceilings;
+  headless runs and report comparisons enforce them. CLI budget flags require
+  headless mode.
   While help is open, only scrolling, closing help, and view selection are active.
   Close it before using target controls, exporting, or quitting.
 
@@ -333,6 +340,36 @@ encodings. Startup artwork still comes from [TITLE.txt](TITLE.txt), with a
 readable fallback when it cannot be read as UTF-8 or displayed.
 
 ## Run a leak check in CI
+
+Use `draintracer doctor --target PATH` to validate the current settings and
+target/report paths before monitoring. It shows configuration origins and
+duration/permission problems without starting or controlling the target.
+Checkpoint paths and cadence include their origins; existing checkpoint
+destinations are blocked without creating directories or writer locks.
+`doctor --json` provides a structured diagnostic result. The output-directory
+check writes and removes a temporary probe in the nearest existing directory.
+See [Preflight](docs/preflight.md) for the command and initialization contracts.
+`draintracer init` previews a validated project configuration; add `--write`
+to create it. Existing files are always preserved, and the parent directory
+must already exist.
+
+Use `--no-color` to disable terminal colors in normal or headless runs, or
+`draintracer diff BEFORE.json AFTER.json --no-color` for comparisons. This
+overrides forced color; otherwise Rich follows its normal `NO_COLOR`,
+`FORCE_COLOR`, and terminal detection. Verdict words, unknown readings, and
+text emphasis remain available without relying on color.
+
+`--plain` uses static, unstyled headless text with no screen clearing or live
+redraws. `--quiet` also selects headless mode and suppresses the startup banner,
+routine events, and STAT lines; warnings, signals, errors, and the final summary
+remain visible. Both require `--target` or `--pid`; combine them if needed.
+Inspect progress and the final summary as text, use Ctrl+C or `--timeout` to
+finish, and open the automatically saved JSON/HTML reports. Launched targets
+are cleaned up; attached targets are released. Dashboard Space controls remain
+available in the ordinary interactive mode.
+For comparisons, `diff --plain` prints labeled text without panel borders;
+`diff --quiet` keeps the verdict, caveats, and budget checks. `--json` takes
+precedence over presentation flags and preserves literal report strings.
 
 From the source checkout, use the included stable workload:
 
@@ -550,3 +587,34 @@ from a second terminal to observe a same-user process, then `status`, `events`,
 launch, launch pause/resume, and explicit kill require separate server flags.
 See the [local agent contract and commands](docs/local-agent.md) for private
 state permissions, limits, trusted launch roots, cleanup, and failure states.
+
+The optional agent saves bounded admission state before starting a session.
+After restart it marks old active sessions interrupted and can export their
+latest intact checkpoint as partial evidence; it never retries a launch or
+reattaches automatically. See [agent scheduling and recovery](docs/agent-recovery.md)
+for retention, storage admission limits, and failure semantics.
+
+`draintracer-agent diagnose` exposes live readiness/freshness/queue/storage or
+read-only offline state. `recover SESSION_UUID` previews an intact partial
+checkpoint; add `--out-dir DIRECTORY` to save it. `stop` requests ordinary
+cleanup, and `remove` previews stopped-only control-file removal while keeping
+evidence and unrelated data. `support` previews typed, redacted diagnostics;
+add up to two explicit `--include-report SESSION_UUID` selections and `--out
+PATH.zip` for an exclusive local archive. Nothing is uploaded. Follow the
+[agent operations guide](docs/agent-operations.md) for installation, upgrade,
+rollback, removal, privacy review, and command bounds.
+
+Agent removal and startup share a permanent private control fence. An interrupted
+removal blocks startup until an explicit removal retry validates and finishes
+it; reports, checkpoints, unrelated files, and the harmless fence file remain.
+
+`draintracer-ops` measures a disposable local operating reference with a named
+operator/contact. Its default local baseline exercises ingestion, committed
+durability, authority/permission/retention refusals, sanitized restoration and
+local collection; Windows also measures agent freshness, completed
+runs, cleanup and crash-prefix recovery. It writes bounded private readiness
+evidence with explicit counts and local budgets. See the
+[operating objectives and recovery runbook](docs/service-operations.md) for the
+new-workspace command, limits, explicit optional `--with-transport` TLS extension
+and deployment prerequisites. A passing fixture
+is not a hosted SLA, live deployment approval, human consent or pilot result.

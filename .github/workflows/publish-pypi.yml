@@ -24,6 +24,7 @@ jobs:
   linux:
     name: Verify Linux (Python ${{ matrix.python }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -67,6 +68,7 @@ jobs:
   build:
     name: Verify and build on Windows
     runs-on: windows-latest
+    timeout-minutes: 20
     defaults:
       run:
         shell: pwsh
@@ -78,6 +80,8 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.10"
+      - name: Install minimum supported runtime dependencies
+        run: python -m pip install psutil==5.9.0 rich==13.7.0 tomli==1.1.0
       - name: Install application and build tools
         run: python -m pip install . build twine
       - name: Verify the release tag
@@ -109,6 +113,8 @@ jobs:
         run: python .github/run_check.py javascript node --check leak_reports/frames/report.js
       - name: Run regression tests
         run: python .github/run_check.py regression python -m unittest discover -s tests
+      - name: Run bounded Windows workloads
+        run: python .github/run_check.py workloads python torture/verify_suite.py
       - name: Build wheel and source distribution
         run: python -m build
       - name: Validate package metadata
@@ -131,9 +137,51 @@ jobs:
           if-no-files-found: warn
           retention-days: 3
 
+  windows-current:
+    name: Verify Windows current (Python 3.14, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.release_tag || github.ref }}
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.14"
+      - name: Install current dependencies and build tools
+        run: python -m pip install . build
+      - name: Verify runtime snapshot
+        run: python .github/run_check.py snapshot python -m unittest discover -s tests -p test_installation.py
+      - name: Compile source
+        run: python .github/run_check.py compilation python -m compileall -q src
+      - name: Validate report JavaScript
+        run: python .github/run_check.py javascript node --check leak_reports/frames/report.js
+      - name: Run regression tests
+        run: python .github/run_check.py regression python -m unittest discover -s tests
+      - name: Run bounded Windows workloads
+        run: python .github/run_check.py workloads python torture/verify_suite.py
+      - name: Build distributions
+        run: python -m build
+      - name: Verify wheel in a clean environment
+        shell: pwsh
+        run: python tests/verify_distribution.py (Get-ChildItem dist/*.whl).FullName
+      - name: Upload bounded failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: failure-${{ matrix.os }}-current-${{ github.run_id }}
+          path: ${{ runner.temp }}/draintracer-checks/*.log
+          if-no-files-found: warn
+          retention-days: 3
+
   publish:
     name: Publish verified distributions
-    needs: [build, linux]
+    needs: [build, linux, windows-current]
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment:

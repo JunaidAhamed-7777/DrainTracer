@@ -9,6 +9,7 @@ import uuid
 from pathlib import Path
 
 from .agent_service import AgentError, AgentPolicy, AgentRegistry
+from .agent_state import AgentJournal, AgentStateError, acquire_control_fence
 from .agent_transport import (
     AgentTransportError,
     PipeListener,
@@ -18,15 +19,33 @@ from .agent_transport import (
     pipe_name,
     private_directory,
 )
+from .api import _version
 
 
 class AgentServer:
-    def __init__(self, state_directory, *, profile="default", policy=None):
+    def __init__(self, state_directory, *, profile="default", policy=None,
+                 retention_seconds=7 * 86400, max_storage_bytes=512 * 1024 * 1024):
         self.directory = private_directory(state_directory)
-        self.secret = load_secret(self.directory, create=True)
-        self.reports = private_directory(self.directory / "reports")
-        self.registry = AgentRegistry(self.reports, policy or AgentPolicy())
-        self.listener = PipeListener(pipe_name(profile))
+        self._fence = acquire_control_fence(self.directory)
+        try:
+            if (self.directory / "agent-removal.json").exists():
+                raise AgentStateError("an interrupted removal must be explicitly completed before startup")
+            self.secret = load_secret(self.directory, create=True)
+            self.reports = private_directory(self.directory / "reports")
+            self.checkpoints = private_directory(self.directory / "checkpoints")
+            from .agent_transport import current_user_sid
+            self.journal = AgentJournal(self.directory, app_version=_version(), owner=current_user_sid(),
+                                        retention_seconds=retention_seconds, max_storage_bytes=max_storage_bytes)
+            try:
+                self.registry = AgentRegistry(self.reports, policy or AgentPolicy(), journal=self.journal,
+                                              checkpoints=self.checkpoints)
+                self.listener = PipeListener(pipe_name(profile))
+            except BaseException:
+                self.journal.close()
+                raise
+        except BaseException:
+            self._fence.close()
+            raise
         self.rejected_connections = 0
 
     def serve(self, stop: threading.Event):
@@ -50,17 +69,22 @@ class AgentServer:
                     self.rejected_connections += 1
                 finally:
                     self.listener.disconnect()
+                    if self.registry.stopping:
+                        stop.set()
         finally:
             try:
                 clean = self.registry.close(timeout=15)
             finally:
                 self.listener.close()
+                self.journal.close()
+                self._fence.close()
         return clean
 
 
 class AgentClient:
     def __init__(self, state_directory, *, profile="default", timeout=15.0):
-        self.secret = load_secret(Path(state_directory))
+        self.directory = Path(state_directory).absolute()
+        self.secret = load_secret(self.directory)
         self.name = pipe_name(profile)
         self.timeout = timeout
 
@@ -97,6 +121,8 @@ def build_parser():
     server.add_argument("--max-sessions", type=int, default=4)
     server.add_argument("--max-records", type=int, default=64)
     server.add_argument("--max-timeout", type=float, default=3600)
+    server.add_argument("--retention-days", type=float, default=7)
+    server.add_argument("--storage-limit-mib", type=int, default=512)
     start = commands.add_parser("start")
     target = start.add_mutually_exclusive_group(required=True)
     target.add_argument("--pid", type=int)
@@ -115,6 +141,17 @@ def build_parser():
     events.add_argument("session_id")
     events.add_argument("--cursor", type=int, default=0)
     events.add_argument("--limit", type=int, default=100)
+    commands.add_parser("diagnose", help="Read live readiness/storage or inspect offline state without controlling targets.")
+    commands.add_parser("stop", help="Request ordinary authenticated shutdown; inspect diagnostics for completed cleanup.")
+    recover = commands.add_parser("recover", help="Preview a matching checkpoint without starting the agent.")
+    recover.add_argument("session_id")
+    recover.add_argument("--out-dir")
+    remove = commands.add_parser("remove", help="Preview known control-file removal; preserve evidence and unrelated files.")
+    remove.add_argument("--apply", action="store_true")
+    support = commands.add_parser("support", help="Preview redacted support data; no upload.")
+    support.add_argument("--privacy-profile", choices=("minimal", "share"), default="minimal")
+    support.add_argument("--include-report", action="append", default=[], metavar="SESSION_UUID")
+    support.add_argument("--out", help="Create a new local ZIP archive exclusively.")
     for operation in ("cancel", "export", "pause", "resume", "kill"):
         commands.add_parser(operation).add_argument("session_id")
     return parser
@@ -128,7 +165,9 @@ def main(argv=None):
                                  allow_kill=args.allow_kill, launch_roots=tuple(map(Path, args.launch_root)),
                                  max_sessions=args.max_sessions, max_records=args.max_records,
                                  max_timeout=args.max_timeout)
-            server = AgentServer(args.state_dir, profile=args.profile, policy=policy)
+            server = AgentServer(args.state_dir, profile=args.profile, policy=policy,
+                                 retention_seconds=args.retention_days * 86400,
+                                 max_storage_bytes=args.storage_limit_mib * 1024 * 1024)
             stop = threading.Event()
             print(json.dumps({"agent": "ready", "protocol": 1, "profile": args.profile}), flush=True)
             try:
@@ -139,7 +178,37 @@ def main(argv=None):
                             for record in server.registry.records.values())
             print(json.dumps({"agent": "stopped", "cleanup_complete": clean}), flush=True)
             return 0 if clean else 2
+        if args.command in {"diagnose", "recover", "remove", "support"}:
+            from .agent_diagnostics import (
+                inspect_agent,
+                recover_session,
+                remove_control_files,
+                support_document,
+                support_reports,
+                write_support_bundle,
+            )
+            if args.command in {"diagnose", "support"}:
+                try:
+                    client = AgentClient(args.state_dir, profile=args.profile, timeout=1.0)
+                except (AgentTransportError, OSError, ValueError):
+                    client = None
+                diagnostics = inspect_agent(args.state_dir, client)
+                if args.command == "diagnose":
+                    print(json.dumps(diagnostics, indent=2, ensure_ascii=True, allow_nan=False))
+                    return 0 if diagnostics["ready"] else 2
+                document = support_document(diagnostics, support_reports(args.state_dir, args.include_report),
+                                            profile=args.privacy_profile)
+                result = write_support_bundle(document, args.out) if args.out else document
+            elif args.command == "recover":
+                result = recover_session(args.state_dir, args.session_id, args.out_dir)
+            else:
+                result = remove_control_files(args.state_dir, apply=args.apply)
+            print(json.dumps(result, indent=2, ensure_ascii=True, allow_nan=False))
+            return 0
         client = AgentClient(args.state_dir, profile=args.profile)
+        if args.command == "stop":
+            print(json.dumps(client.request("shutdown"), indent=2, ensure_ascii=True))
+            return 0
         params = {}
         if args.command == "start":
             params = {"mode": "attach" if args.pid is not None else "launch", "timeout_seconds": args.timeout,
