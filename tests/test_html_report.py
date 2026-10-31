@@ -67,12 +67,14 @@ class RenderTests(unittest.TestCase):
                 document = render_html_report(report)
                 self.assertIn("Partial checkpoint evidence", document)
                 self.assertIn("HIGH / PARTIAL", document)
+                self.assertIn("<title>DrainTracer · worker.exe · HIGH / PARTIAL</title>", document)
                 self.assertIn("The missing tail, final outcome, and cleanup are unknown.", document)
                 self.assertIn("unknown after checkpoint", document)
                 report["snapshots"] = []
                 report["detection_ran"] = False
                 empty = render_html_report(report)
                 self.assertIn("Partial checkpoint evidence", empty)
+                self.assertIn("<title>DrainTracer · worker.exe · PARTIAL</title>", empty)
                 verdict = re.search(r'<section class="verdict.*?</section>', empty, re.DOTALL).group(0)
                 self.assertNotIn("CLEAR", verdict)
 
