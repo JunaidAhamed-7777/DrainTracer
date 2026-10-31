@@ -97,7 +97,8 @@ class ExitStatusTests(unittest.TestCase):
         self.assertEqual(
             runner.build_report()["headless"],
             {"fail_on": "medium", "breached": True, "fail_on_inconclusive": False,
-             "fail_on_target_error": False, "budgets": []},
+             "fail_on_target_error": False, "require_full_coverage": False,
+             "exit_code": EXIT_LEAK, "budgets": []},
         )
 
     def test_a_budget_exceeded_by_the_first_sample_is_logged_after_the_launch(self) -> None:
@@ -348,10 +349,91 @@ class EndToEndTests(unittest.TestCase):
 
     def test_missing_target_is_an_error(self) -> None:
         runner = HeadlessRunner(
-            str(self.root / "missing.exe"), console=make_console(), report_dir=self.root
+            str(self.root / "missing.exe"), console=make_console(), report_dir=self.root / "reports"
         )
         self.assertEqual(runner.run(), EXIT_ERROR)
         self.assertIn("Could not start monitoring", _output(runner))
+        outcome = self._report()["outcome"]
+        self.assertEqual(outcome["startup"]["state"], "failed")
+        self.assertEqual(outcome["cleanup"]["state"], "complete")
+        self.assertEqual(self._report()["headless"]["exit_code"], EXIT_ERROR)
+
+    def test_target_exit_23_keeps_target_and_coverage_policies_distinct(self) -> None:
+        from src.headless import EXIT_TARGET_ERROR
+
+        runner = self._runner("raise SystemExit(23)\n", fail_on_target_error=True,
+                              require_full_coverage=True)
+        self.assertEqual(runner.run(), EXIT_TARGET_ERROR)
+        report = self._report()
+        self.assertEqual(report["outcome"]["target"]["exit_code"], 23)
+        self.assertEqual(report["outcome"]["cleanup"]["state"], "complete")
+        self.assertEqual(report["headless"]["exit_code"], EXIT_TARGET_ERROR)
+
+    def test_cleanup_exception_still_exports_available_evidence(self) -> None:
+        from src.process_runner import ProcessManagerError
+
+        runner = HeadlessRunner(str(self.root / "worker.exe"), console=make_console(),
+                                report_dir=self.root / "reports")
+        runner.manager._tracked_pids = {4242}
+        runner.manager._identities = {4242: 10.0}
+        with (
+            mock.patch.object(runner, "start"),
+            mock.patch.object(runner, "_monitor"),
+            mock.patch.object(runner.manager, "terminate", side_effect=ProcessManagerError("terminate denied")),
+            mock.patch.object(runner.manager, "kill", side_effect=ProcessManagerError("kill denied")),
+            self.assertLogs("src.headless", "ERROR"),
+        ):
+            self.assertEqual(runner.run(), EXIT_ERROR)
+        outcome = self._report()["outcome"]
+        self.assertIn("cleanup failed: kill denied", outcome["monitor_errors"])
+        self.assertEqual(outcome["cleanup"]["state"], "incomplete")
+        self.assertEqual(outcome["cleanup"]["attempted_actions"],
+                         {"detach": 0, "terminate": 1, "kill": 1})
+        self.assertEqual(outcome["cleanup"]["remaining_processes"],
+                         [{"pid": 4242, "create_time": 10.0, "resume_required": False}])
+
+    def test_failed_start_remains_exit_two_even_after_an_initial_signal(self) -> None:
+        runner = self._runner("pass")
+        with (
+            mock.patch.object(runner.manager, "start"),
+            mock.patch.object(runner.detector, "sample_once", return_value=make_snapshot(
+                alerts=(make_alert(severity=LeakSeverity.HIGH),),
+            )),
+            mock.patch.object(runner.detector, "start", side_effect=RuntimeError("sampler startup failed")),
+        ):
+            self.assertEqual(runner.run(), EXIT_ERROR)
+        report = self._report()
+        self.assertEqual(report["outcome"]["startup"]["state"], "failed")
+        self.assertTrue(report["headless"]["breached"])
+        self.assertEqual(report["headless"]["exit_code"], EXIT_ERROR)
+
+    def test_nonthrowing_cleanup_survivors_preserve_the_default_exit_policy(self) -> None:
+        runner = HeadlessRunner(str(self.root / "worker.exe"), console=make_console(),
+                                report_dir=self.root / "reports")
+        runner.manager._tracked_pids = {4242}
+        runner.manager._identities = {4242: 10.0}
+        with (
+            mock.patch.object(runner, "start"),
+            mock.patch.object(runner, "_monitor"),
+            mock.patch.object(runner.manager, "terminate"),
+        ):
+            self.assertEqual(runner.run(), EXIT_PASS)
+        cleanup = self._report()["outcome"]["cleanup"]
+        self.assertEqual(cleanup["state"], "incomplete")
+        self.assertEqual(cleanup["attempted_actions"]["terminate"], 1)
+        self.assertEqual(cleanup["remaining_processes"],
+                         [{"pid": 4242, "create_time": 10.0, "resume_required": False}])
+        self.assertIn("Cleanup incomplete", _output(runner))
+
+    def test_cleanup_records_pending_resume_even_if_pause_was_interrupted(self) -> None:
+        runner = self._runner("pass")
+        runner.manager._tracked_pids = {4242}
+        runner.manager._identities = {4242: 10.0}
+        runner.manager._suspended_pids = {4242}
+        runner.manager._paused = False  # An interruption can precede pause's final state update.
+        cleanup = runner.build_report()["outcome"]["cleanup"]
+        self.assertTrue(cleanup["resume_required"])
+        self.assertTrue(cleanup["remaining_processes"][0]["resume_required"])
 
 
 class PolicyTests(unittest.TestCase):
@@ -397,6 +479,94 @@ class PolicyTests(unittest.TestCase):
             self.assertIn("the target exited with code 3", _output(runner))
             runner._stopped_target = True  # DrainTracer ended it: not the target's failure
             self.assertEqual(runner.exit_status(), EXIT_PASS)
+
+    def test_full_coverage_is_opt_in_and_requires_known_coverage_of_every_metric(self) -> None:
+        from helpers import make_denied, make_process
+
+        from src.headless import EXIT_INCONCLUSIVE
+
+        runner = self._runner(require_full_coverage=True)
+        runner.detector._detection_started = True
+        runner._accept_snapshot(make_snapshot())  # Old or missing coverage is unknown.
+        self.assertFalse(runner.full_coverage)
+        self.assertEqual(runner.exit_status(), EXIT_INCONCLUSIVE)
+        runner._print_summary()
+        self.assertIn("INSUFFICIENT COVERAGE", _output(runner))
+        runner = self._runner(require_full_coverage=True)
+        full = make_snapshot(timestamp=0, measured_coverage=True)
+        runner._accept_snapshot(full)
+        self.assertTrue(runner.full_coverage)
+        self.assertEqual(runner.exit_status(), EXIT_PASS)
+        runner._accept_snapshot(make_snapshot(timestamp=1, processes=(
+            make_process(100), make_denied(200),
+        ), measured_coverage=True))
+        runner._accept_snapshot(make_snapshot(timestamp=2, measured_coverage=True))
+        self.assertFalse(runner.full_coverage)
+        self.assertEqual(runner.exit_status(), EXIT_INCONCLUSIVE)
+        self.assertFalse(runner.build_report()["outcome"]["measurement"]["full_coverage"])
+
+    def test_full_coverage_excludes_pauses_but_rejects_failed_or_missing_metric_samples(self) -> None:
+        from dataclasses import replace
+
+        from src.headless import EXIT_INCONCLUSIVE
+
+        runner = self._runner(require_full_coverage=True)
+        runner._accept_snapshot(make_snapshot(timestamp=0, measured_coverage=True))
+        runner._accept_snapshot(make_snapshot(timestamp=1, paused=True))
+        self.assertEqual(runner.exit_status(), EXIT_PASS)
+        runner._accept_snapshot(make_snapshot(timestamp=2, metadata={"sampling_error": "denied"}))
+        self.assertEqual(runner.exit_status(), EXIT_INCONCLUSIVE)
+        runner = self._runner(require_full_coverage=True)
+        sample = make_snapshot(measured_coverage=True)
+        coverage = dict(sample.coverage)
+        del coverage["threads"]
+        runner._accept_snapshot(replace(sample, coverage=coverage))
+        self.assertFalse(runner.full_coverage)
+        self.assertEqual(runner.exit_status(), EXIT_INCONCLUSIVE)
+
+    def test_strict_coverage_keeps_existing_failure_precedence(self) -> None:
+        from src.headless import EXIT_TARGET_ERROR
+
+        runner = self._runner(require_full_coverage=True, fail_on_target_error=True)
+        runner._accept_snapshot(make_snapshot())
+        with self._exit_code(runner, 23):
+            self.assertEqual(runner.exit_status(), EXIT_TARGET_ERROR)
+            runner._interrupted = True
+            self.assertEqual(runner.exit_status(), EXIT_INTERRUPTED)
+            runner._accept_snapshot(make_snapshot(alerts=(make_alert(severity=LeakSeverity.HIGH),)))
+            runner._export_error = "disk full"
+            self.assertEqual(runner.exit_status(), EXIT_LEAK)
+
+    def test_strict_coverage_preserves_a_dropped_only_partial_sample(self) -> None:
+        from helpers import make_denied
+
+        from src.events import MetricsStream
+        from src.headless import EXIT_INCONCLUSIVE
+
+        runner = self._runner(require_full_coverage=True)
+        runner.detector.stream = MetricsStream(max_queue_size=2, facts=runner.facts)
+        runner.detector.stream.publish(make_snapshot(timestamp=0, processes=(make_denied(100),),
+                                                     measured_coverage=True))
+        for stamp in range(1, 4):
+            runner.detector.stream.publish(make_snapshot(timestamp=stamp, measured_coverage=True))
+        runner.poll()
+        self.assertEqual(runner.exit_status(), EXIT_INCONCLUSIVE)
+        coverage = runner.build_report()["coverage"]
+        self.assertEqual(coverage["measured_samples"], 4)
+        self.assertEqual(coverage["fully_measured_samples"], 3)
+
+    def test_full_coverage_and_warmup_judgement_are_separate_requirements(self) -> None:
+        from dataclasses import replace
+
+        from src.headless import EXIT_INCONCLUSIVE
+
+        runner = self._runner(require_full_coverage=True, fail_on_inconclusive=True)
+        runner.detector.warmup_seconds = 30.0
+        runner._accept_snapshot(replace(make_snapshot(measured_coverage=True), warming_up=True))
+        self.assertTrue(runner.full_coverage)
+        self.assertFalse(runner.conclusive)
+        self.assertEqual(runner.exit_status(), EXIT_INCONCLUSIVE)
+        self.assertIn("warm-up never finished", runner.inconclusive_reason())
 
     def test_summary_separates_target_measurement_and_errors(self) -> None:
         from helpers import make_denied, make_process

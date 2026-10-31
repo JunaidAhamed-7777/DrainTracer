@@ -58,7 +58,6 @@ from .units import format_bytes, format_clock, format_duration
 HISTORY_KEYS = ("cpu_percent", "rss_bytes", "private_bytes", "handles", "threads")
 SIGNAL_METRICS = tuple(RESOURCE_METRICS.values())
 # Bounds for session-long records that grow with the target's behaviour.
-UNREADABLE_PID_LIMIT = 50
 MONITOR_ERROR_LIMIT = 20
 MEASUREMENT_CONCLUSIVE = "conclusive"
 MEASUREMENT_PARTIAL = "partial"
@@ -99,6 +98,7 @@ class MonitorSession:
         attach_pid: int | None = None,
         timeout: float | None = None,
         settings: MonitorSettings | None = None,
+        attach_create_time: float | None = None,
     ) -> None:
         if timeout is not None and not timeout > 0:
             raise ValueError("timeout must be a positive number of seconds")
@@ -108,6 +108,7 @@ class MonitorSession:
         self.timeout = timeout
         self._deadline: float | None = None
         self.attach_pid = attach_pid
+        self.attach_create_time = attach_create_time
         if attach_pid is not None:
             self.target_path = target_path or describe_pid(attach_pid)
             self.manager = ProcessManager(None)
@@ -117,12 +118,12 @@ class MonitorSession:
             self.target_path = str(Path(target_path).resolve())
             self.manager = ProcessManager(self.target_path, args=args)
         self.console = console or Console()
+        self._facts = SessionFacts()
         self.detector = LeakDetector(
             self.manager,
-            # Sampling continues while the main thread is stalled, for
-            # example on a console paused by a text selection. Keep as many
-            # snapshots as the session would, so none are dropped meanwhile.
-            stream=MetricsStream(max_queue_size=self.SNAPSHOT_LIMIT),
+            # Detail retention is bounded during a stalled main thread.
+            # Publisher-owned facts preserve exact summaries before eviction.
+            stream=MetricsStream(max_queue_size=self.SNAPSHOT_LIMIT, facts=self._facts),
             sample_interval_ms=self.settings.sample_interval_ms,
             window_seconds=self.settings.windows,
             thresholds=self.settings.thresholds,
@@ -142,7 +143,6 @@ class MonitorSession:
         self._snapshot_history = SnapshotHistory(self.SNAPSHOT_LIMIT)
         # Exact peaks, episodes and counts from every snapshot, which the
         # thinned history above cannot promise.
-        self._facts = SessionFacts()
         # Diagnostics from the newest snapshot of any kind: a failed sample
         # keeps the last good snapshot on screen but still reports its count.
         self._diagnostics: MonitorDiagnostics | None = None
@@ -153,6 +153,7 @@ class MonitorSession:
         self._handle_types: dict[str, int] | None = None
         self._last_sampling_error: str | None = None
         self._worst_severity = LeakSeverity.NONE
+        self._judged_resources: set[LeakResource] = set()
         self._sample_count = 0
         self._started_at: float | None = None
         self._ended_at: float | None = None
@@ -168,11 +169,19 @@ class MonitorSession:
         # with live processes, ones missing any (partial, which includes
         # unavailable), and ones with nothing readable (unavailable).
         self._coverage_samples = 0
+        self._measured_samples = 0
+        self._fully_covered_samples = 0
+        self._full_coverage = False
         self._partial_samples = {metric: 0 for metric in SIGNAL_METRICS}
         self._unavailable_samples = {metric: 0 for metric in SIGNAL_METRICS}
         self._unreadable_pids: dict[int, str] = {}
         self._current_unreadable: set[int] = set()
         self._monitor_errors: list[str] = []
+        self._startup_state = "not_started"
+        self._startup_error: str | None = None
+        self._cleanup_state = "not_attempted"
+        self._cleanup_actions = {"detach": 0, "terminate": 0, "kill": 0}
+        self._cleanup_errors: list[str] = []
         self._timeline: deque[TimelineMark] = deque(maxlen=self.TIMELINE_LIMIT)
         self._lifecycle_history: deque[LifecycleEvent] = deque(maxlen=self.LIFECYCLE_LIMIT)
         self._markers: list[TimelineMark] = []
@@ -217,7 +226,7 @@ class MonitorSession:
     @property
     def conclusive(self) -> bool:
         """Whether a leak window was ever judged, so a clean result means something."""
-        return self.detector.detection_started
+        return self.detector.detection_started or bool(self._judged_resources)
 
     def inconclusive_reason(self) -> str:
         """Why no leak window was judged, for summaries of clean runs."""
@@ -243,6 +252,11 @@ class MonitorSession:
     def partial_coverage(self) -> bool:
         """Whether a signal metric missed some live processes on any sample."""
         return any(self._partial_samples.values())
+
+    @property
+    def full_coverage(self) -> bool:
+        """Every collected live sample measured all signal metrics, with no failed samples."""
+        return self._full_coverage
 
     @property
     def measurement_outcome(self) -> str:
@@ -288,6 +302,10 @@ class MonitorSession:
 
     def outcome_text(self) -> str:
         """How the session left the target: running, exited, or stopped."""
+        if self._cleanup_state == "incomplete":
+            return f"{'attached' if self.attached else 'launched'}, cleanup incomplete"
+        if self._startup_state == "failed":
+            return f"{'attach' if self.attached else 'launch'}, startup failed"
         if self.attached:
             return "attached, " + ("left running" if self._left_running else "no longer running")
         if self.stopped_target:
@@ -344,7 +362,7 @@ class MonitorSession:
         """
         try:
             if self.attached:
-                self.manager.attach(self.attach_pid)
+                self.manager.attach(self.attach_pid, expected_create_time=self.attach_create_time)
             else:
                 self.manager.start()
             self._root_pid = self.manager.root_pid
@@ -354,8 +372,14 @@ class MonitorSession:
             self._accept_snapshot(self.detector.sample_once())
             self.detector.start()
             self._log_start()
-        except BaseException:
-            self._abort_start()
+            self._startup_state = "started"
+        except BaseException as exc:
+            self._startup_state = "failed"
+            self._startup_error = str(exc) or type(exc).__name__
+            try:
+                self._abort_start()
+            except Exception as cleanup_error:  # noqa: BLE001 - preserve the original startup failure
+                self._note_monitor_error(f"startup cleanup failed: {cleanup_error}")
             raise
 
     def _log_start(self) -> None:
@@ -416,11 +440,51 @@ class MonitorSession:
         return None
 
     def _abort_start(self) -> None:
-        self.detector.stop()
-        if self.attached:
-            self.manager.detach()
-        elif self.manager.has_tracked_processes:
-            self.manager.kill()
+        try:
+            self.detector.stop()
+        finally:
+            if self.attached:
+                self._attempt_cleanup("detach")
+            elif self.manager.has_tracked_processes:
+                self._mark_stopping()
+                self._attempt_cleanup("kill")
+            else:
+                self._cleanup_state = "complete"
+
+    def _attempt_cleanup(self, action: str) -> None:
+        """Record ownership actions and failures without changing their policy."""
+        self._cleanup_actions[action] += 1
+        try:
+            getattr(self.manager, action)()
+        except BaseException as exc:
+            error = f"{action}: {str(exc) or type(exc).__name__}"
+            if error not in self._cleanup_errors and len(self._cleanup_errors) < MONITOR_ERROR_LIMIT:
+                self._cleanup_errors.append(error)
+            raise
+        finally:
+            self._cleanup_state = "incomplete" if self.manager.has_tracked_processes else "complete"
+            if self._cleanup_state == "incomplete" and self.manager.last_error:
+                error = f"{action}: {self.manager.last_error}"
+                if error not in self._cleanup_errors and len(self._cleanup_errors) < MONITOR_ERROR_LIMIT:
+                    self._cleanup_errors.append(error)
+
+    def _cleanup_record(self) -> dict[str, Any]:
+        pids = sorted(self.manager.tracked_pids)
+        pending_resume = self.manager.pending_resume_pids
+        retained = pids[:50]
+        return {
+            "state": self._cleanup_state,
+            "ownership": "attached" if self.attached else "launched",
+            "attempted_actions": dict(self._cleanup_actions),
+            "remaining_count": len(pids),
+            "remaining_processes": [
+                {"pid": pid, "create_time": self.manager.created_at(pid),
+                 "resume_required": pid in pending_resume} for pid in retained
+            ],
+            "omitted_processes": len(pids) - len(retained),
+            "resume_required": bool(pending_resume),
+            "errors": list(self._cleanup_errors),
+        }
 
     def shutdown(self) -> None:
         """Stop sampling; terminate launched targets, release attached ones.
@@ -436,13 +500,21 @@ class MonitorSession:
             self.detector.stop()
             if self.attached:
                 self._left_running = self.manager.is_running
-                self.manager.detach()
+                self._attempt_cleanup("detach")
             elif self.manager.is_running or self.manager.has_tracked_processes:
                 self._mark_stopping()
-                self.manager.terminate()
+                self._attempt_cleanup("terminate")
+            else:
+                self._cleanup_state = "complete"
         except BaseException:
             self._force_cleanup()
             raise
+        finally:
+            if self._cleanup_state == "incomplete":
+                self._append_event(
+                    "Cleanup incomplete; tracked processes remain. Inspect outcome.cleanup "
+                    "in the report before considering cleanup complete.", "warn",
+                )
 
     def _mark_stopping(self) -> None:
         """Before ending a tree, note whether that stops the root or only its leftovers.
@@ -469,18 +541,22 @@ class MonitorSession:
                 # Release or kill the target even if the sampler will not stop.
                 if self.attached:
                     self._left_running = self._left_running or self.manager.is_running
-                    self.manager.detach()
+                    self._attempt_cleanup("detach")
                 elif self.manager.is_running or self.manager.has_tracked_processes:
                     self._mark_stopping()
-                    self.manager.kill()
+                    self._attempt_cleanup("kill")
+                else:
+                    self._cleanup_state = "complete"
         except KeyboardInterrupt:
             pass  # A third Ctrl+C: stop trying rather than loop.
 
     def poll(self) -> int:
         """Apply every snapshot published since the last poll; return how many."""
         snapshots = self.detector.stream.drain()
+        already_observed = self.detector.stream.facts is self._facts
         for snapshot in snapshots:
-            self._accept_snapshot(snapshot)
+            self._accept_snapshot(snapshot, already_observed=already_observed)
+        self._sync_facts()
         return len(snapshots)
 
     def _warn_if_inaccessible(self) -> None:
@@ -507,10 +583,35 @@ class MonitorSession:
     # Snapshot intake and the event log
     # ------------------------------------------------------------------
 
-    def _accept_snapshot(self, snapshot: MetricsSnapshot) -> None:
-        self._facts.observe(snapshot)
+    def _sync_facts(self, state: dict[str, Any] | None = None) -> None:
+        """Copy publisher-owned totals; queue retention affects only detail."""
+        if state is None:
+            state = self._facts.session_state()
+        self._sample_count = state["samples"]
+        for key in HISTORY_KEYS:
+            self._peaks[key] = state["peaks"].get(key, 0.0)
+        self._worst_severity = state["worst"]
+        self._worst_by_resource = state["worst_by_resource"]
+        self._last_alert_by_resource = state["latest_alerts"]
+        self._judged_resources = state["judged_resources"]
+        self._coverage_samples = state["coverage_samples"]
+        self._measured_samples = state["measured_samples"]
+        self._fully_covered_samples = state["fully_covered_samples"]
+        self._full_coverage = state["full_coverage"]
+        self._partial_samples = state["partial_samples"]
+        self._unavailable_samples = state["unavailable_samples"]
+        self._unreadable_pids = state["unreadable_pids"]
+        for error in state["errors"]:
+            self._note_monitor_error(error)
+        if self._diagnostics is not None:
+            self._diagnostics = replace(self._diagnostics, dropped_snapshots=state["dropped"])
+
+    def _accept_snapshot(self, snapshot: MetricsSnapshot, *, already_observed: bool = False) -> None:
+        if not already_observed:
+            self._facts.observe(snapshot)
         if snapshot.diagnostics is not None:
             self._diagnostics = snapshot.diagnostics
+        self._sync_facts()
         # Per-process summaries describe the latest state only; keeping them
         # on every stored snapshot would multiply memory by the tree size.
         self._snapshot_history.append(
@@ -540,22 +641,12 @@ class MonitorSession:
             )
 
         if not snapshot.monitoring_paused:
-            self._sample_count += 1
             for key in HISTORY_KEYS:
                 value = float(snapshot.totals.get(key, 0.0))
                 self._history[key].append((snapshot.timestamp, value))
-                self._peaks[key] = max(self._peaks[key], value)
             if snapshot.handle_types is not None:
                 self._handle_types = dict(snapshot.handle_types)
             self._track_coverage(snapshot, first=previous is None)
-
-        if severity_rank(snapshot.severity) > severity_rank(self._worst_severity):
-            self._worst_severity = snapshot.severity
-        for alert in snapshot.alerts:
-            self._last_alert_by_resource[alert.resource] = alert
-            worst = self._worst_by_resource.get(alert.resource, LeakSeverity.NONE)
-            if severity_rank(alert.severity) > severity_rank(worst):
-                self._worst_by_resource[alert.resource] = alert.severity
 
         if previous and snapshot.process_alive is False and previous.process_alive:
             code = self.manager.exit_code
@@ -729,31 +820,18 @@ class MonitorSession:
         return f"mostly {who}" if top.share > 0.5 else f"largest {who} ({top.share:.0%})"
 
     def _track_coverage(self, snapshot: MetricsSnapshot, first: bool) -> None:
-        """Count partial samples and log processes that become (un)readable.
+        """Log processes that become (un)readable in retained snapshots.
 
-        A snapshot with no live process has nothing to measure, so it is
-        not counted as missing coverage. The first sample is not logged
-        here: the start-up messages already report what could not be read.
+        Exact coverage counts come from publisher-owned facts. The first
+        sample is not logged here: start-up already reports unreadable PIDs.
         """
         coverage = snapshot.coverage
         if not coverage:
             return
-        live = [coverage[m] for m in SIGNAL_METRICS if m in coverage and coverage[m].total > 0]
-        if live:
-            self._coverage_samples += 1
-        for item in live:
-            if item.measured < item.total:
-                self._partial_samples[item.metric] += 1
-            if item.measured == 0:
-                self._unavailable_samples[item.metric] += 1
-
         names = {process.pid: process.name for process in snapshot.processes}
         unreadable = {
             pid for m in SIGNAL_METRICS if m in coverage for pid in coverage[m].unmeasured_pids
         }
-        for pid in sorted(unreadable):
-            if pid not in self._unreadable_pids and len(self._unreadable_pids) < UNREADABLE_PID_LIMIT:
-                self._unreadable_pids[pid] = names.get(pid, "")
         if not first:
             for pid in sorted(unreadable - self._current_unreadable):
                 self._append_event(
@@ -777,6 +855,9 @@ class MonitorSession:
         return {
             "samples": self._coverage_samples,
             "partial": self.partial_coverage,
+            "full": self.full_coverage,
+            "measured_samples": self._measured_samples,
+            "fully_measured_samples": self._fully_covered_samples,
             "metrics": {
                 metric: {
                     "partial_samples": self._partial_samples[metric],
@@ -790,8 +871,12 @@ class MonitorSession:
 
     def _outcome_record(self) -> dict[str, Any]:
         """Target, measurement, and monitor outcomes, kept apart for scripts."""
-        if self.attached:
+        if self._startup_state == "failed" and self._started_at is None:
+            state = "unknown"
+        elif self.attached:
             state = "left_running" if self._left_running else "exited"
+        elif self._cleanup_state == "incomplete" and self.manager.is_running:
+            state = "running"
         elif self._stopped_target:
             state = "stopped"
         elif self.manager.exit_code is not None:
@@ -799,6 +884,8 @@ class MonitorSession:
         else:
             state = "running" if self.manager.is_running else "unknown"
         return {
+            "startup": {"state": self._startup_state, "error": self._startup_error},
+            "cleanup": self._cleanup_record(),
             "target": {
                 "state": state,
                 "exit_code": None if self._stopped_target else self.manager.exit_code,
@@ -809,6 +896,7 @@ class MonitorSession:
                 "result": self.measurement_outcome,
                 "detection_ran": self.conclusive,
                 "partial_coverage": self.partial_coverage,
+                "full_coverage": self.full_coverage,
                 "reason": None if self.conclusive else self.inconclusive_reason(),
                 "coverage": self.coverage_text(),
             },
@@ -912,10 +1000,21 @@ class MonitorSession:
         except Exception as exc:  # never lose the JSON report to a rendering bug
             self._append_event(f"HTML report failed: {exc}", "error")
             self._note_monitor_error(f"HTML report failed: {exc}")
+            report["outcome"] = self._outcome_record()
+            try:
+                # Atomically replace the same report, retaining the first JSON if this fails.
+                write_json_report(report, directory)
+            except Exception as update_error:  # noqa: BLE001 - preserve the usable first JSON
+                message = f"Could not record HTML export failure in JSON: {update_error}"
+                self._append_event(message, "error")
+                self._note_monitor_error(message)
+                report["outcome"] = self._outcome_record()
         return path
 
     def build_report(self) -> dict[str, Any]:
         """Assemble the report dictionary for the session so far."""
+        state, facts = self._facts.capture()
+        self._sync_facts(state)
         return {
             "report_id": new_report_id(),
             "report_schema": REPORT_SCHEMA,
@@ -944,11 +1043,11 @@ class MonitorSession:
             "settings": self._settings_record(),
             "experiment": self._experiment_record(),
             "warmup": self._warmup_record(),
-            "detection_ran": self.detector.detection_started,
+            "detection_ran": self.conclusive,
             "coverage": self._coverage_record(),
             "outcome": self._outcome_record(),
             "processes": self._processes_record(),
-            "session_facts": self._facts_record(),
+            "session_facts": self._facts_record(facts),
             # User markers: when the user said something happened (timing only).
             "markers": self._markers_record(),
             # Samples taken, and how many the snapshot list skips between
@@ -1034,11 +1133,15 @@ class MonitorSession:
         """How many samples each stored chart point stands for (1: none thinned)."""
         return self._snapshot_history.stride
 
-    def _facts_record(self) -> dict[str, Any]:
+    def _facts_record(self, record: dict[str, Any] | None = None) -> dict[str, Any]:
         """Session facts plus coverage and how much the stored chart was thinned."""
-        record = self._facts.to_dict()
+        if record is None:
+            record = self._facts.to_dict()
         record["coverage"] = {
             "samples": self._coverage_samples,
+            "full": self.full_coverage,
+            "measured_samples": self._measured_samples,
+            "fully_measured_samples": self._fully_covered_samples,
             "partial_samples": {m: self._partial_samples[m] for m in SIGNAL_METRICS},
             "unavailable_samples": {m: self._unavailable_samples[m] for m in SIGNAL_METRICS},
         }

@@ -63,6 +63,7 @@ _LAYER_KEYS = (
     "fail_on",
     "fail_on_inconclusive",
     "fail_on_target_error",
+    "require_full_coverage",
     "report_dir",
     "thresholds",
     "workload_id",
@@ -74,7 +75,7 @@ _LAYER_KEYS = (
     "budget_threads",
 )
 # Optional headless policies; all default to off so exit codes stay unchanged.
-_POLICY_KEYS = ("fail_on_inconclusive", "fail_on_target_error")
+_POLICY_KEYS = ("fail_on_inconclusive", "fail_on_target_error", "require_full_coverage")
 # Experiment labels recorded in reports; free text except the operation count.
 _LABEL_KEYS = ("workload_id", "build", "note")
 _ROOT_KEYS = (*_LAYER_KEYS, "profiles", "default_profile")
@@ -110,6 +111,7 @@ class MonitorSettings:
     budgets: Mapping[str, float] = field(default_factory=lambda: MappingProxyType({}))
     profile: str | None = None
     source: Path | None = None
+    require_full_coverage: bool = False
 
     @property
     def experiment(self) -> ExperimentInfo:
