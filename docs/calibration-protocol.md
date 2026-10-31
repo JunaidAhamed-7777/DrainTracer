@@ -52,21 +52,25 @@ both growth and non-growth results, including observed misses and warnings.
    500 ms, with child lifetimes 750 ms and a cap of four active children.
    The parent owns/reaps them and attempts cleanup on exit. Record discovery
    limits; a 500 ms sample cannot guarantee seeing every short-lived worker.
-7. **Slow memory growth:** `memory_leak.py`, 0.25 MiB each 500 ms (0.5 MiB/s),
+7. **Fast memory growth:** `memory_leak.py`, 2 MiB each 250 ms (8 MiB/s),
+   capped at 128 MiB. Record first warnings during the growing prefix; after
+   the cap it is a plateau rather than continuing growth. This fast-memory
+   control was added to the protocol before starting measured collection.
+8. **Slow memory growth:** `memory_leak.py`, 0.25 MiB each 500 ms (0.5 MiB/s),
    maximum 48 MiB. This remains below the cap for the measured 75 s. Record
    the first warning and HIGH threshold delay separately; absence of HIGH is
    a known-policy miss for this workload, not a clean result.
-8. **File-handle growth:** `handle_leak.py`, ten files each 250 ms, cap 800.
+9. **File-handle growth:** `handle_leak.py`, ten files each 250 ms, cap 800.
    Growth stops at the cap; distinguish an early warning from later plateau
    behavior. Linux counts file descriptors rather than Windows handles.
-9. **Thread growth:** `thread_leak.py`, one blocked worker each 250 ms,
+10. **Thread growth:** `thread_leak.py`, one blocked worker each 250 ms,
    cap 80. Growth likewise stops at the cap; it is not an infinite leak.
-10. **Partial access:** a stable root and one stable child, 1 MiB each. Inject
+11. **Partial access:** a stable root and one stable child, 1 MiB each. Inject
     `psutil.AccessDenied` into memory reads for the owned root only; preserve
     normal child sampling. This is explicitly a deterministic permission
     fault injection, not a claim to reproduce every operating-system ACL.
     Unknown/partial memory must remain qualified rather than look clear/full.
-11. **Larger tree:** `process_tree.py`, depth 3, fan-out 2, 1 MiB each: fifteen
+12. **Larger tree:** `process_tree.py`, depth 3, fan-out 2, 1 MiB each: fifteen
     logical Python processes. Record actual maximum discovery and coverage,
     rather than assuming all children appear in the first sample.
 
