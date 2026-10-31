@@ -67,6 +67,13 @@ cannot prove that environments match. Ordinary report settings retain the
 resolved sampling and outcome policies. Review [privacy guidance](privacy.md)
 before publishing any evidence.
 
+Comparisons flag differing or missing recipe execution choices and unfinished
+workflows. Because environment values are deliberately absent, even matching
+recipes receive a warning and strict comparisons withhold an equivalence
+verdict. An ordinary comparison still shows measured differences with that
+qualification; independently verify the private environments before drawing
+conclusions. A recipe fingerprint does not override this limit.
+
 ## Readiness, ownership, and exits
 
 Readiness waits for a new regular file created by your workload. Choose a fresh

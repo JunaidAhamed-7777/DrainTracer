@@ -424,6 +424,33 @@ class EquivalenceTests(unittest.TestCase):
                                _run(experiment=_experiment(args=())), strict=True)
         self.assertEqual(result.caveats, ())
 
+class RecipeComparabilityTests(unittest.TestCase):
+    setUp = ComparisonTests.setUp
+    _load = ComparisonTests._load
+
+    @staticmethod
+    def recipe(**changes):
+        return {"schema": 1, "command": {"target": "worker.py", "interpreter": "python"},
+                "cwd": ".", "timeout_seconds": 60, "readiness": {"kind": "none"},
+                "exercise": [], "log_capture": {"enabled": False},
+                "environment": {"mode": "selected", "values_recorded": False},
+                "outcome": {"state": "complete"}} | changes
+
+    def test_equal_recipe_names_cannot_prove_equal_private_environment_values(self) -> None:
+        report = _run(workload=self.recipe())
+        result = compare_reports(self._load("a.json", report), self._load("b.json", report), strict=True)
+        self.assertEqual(result.verdict, NOT_COMPARABLE)
+        self.assertIn("intentionally unrecorded", " | ".join(result.warnings))
+
+    def test_missing_changed_and_failed_recipe_provenance_is_qualified(self) -> None:
+        for other in (None, self.recipe(cwd="elsewhere"), self.recipe(outcome={"state": "failed"})):
+            with self.subTest(other=other):
+                result = compare_reports(self._load("a.json", _run(workload=self.recipe())),
+                                         self._load("b.json", _run(workload=other)), strict=True)
+                self.assertTrue(result.blocked)
+                self.assertTrue(any(item.kind in {"recipe", "recipe outcome"} for item in result.caveats))
+
+
 class PeakAndBudgetTests(unittest.TestCase):
     setUp = ComparisonTests.setUp
     _load = ComparisonTests._load

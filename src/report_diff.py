@@ -491,6 +491,7 @@ def comparability_caveats(before: LoadedReport, after: LoadedReport) -> list[Cav
         add("target", f"the reports monitored different targets ({before.name} and {after.name})",
             NOT_COMPARABLE)
     caveats.extend(_experiment_caveats(before.experiment, after.experiment))
+    caveats.extend(_workload_caveats(before.data, after.data))
     for label, report in (("A", before), ("B", after)):
         if isinstance(report.data.get("privacy"), Mapping):
             add("privacy", f"report {label} was privacy transformed; original target and workload "
@@ -534,6 +535,31 @@ def comparability_caveats(before: LoadedReport, after: LoadedReport) -> list[Cav
             "the runs measured different environments (" + "; ".join(machine) + "), "
             "so absolute peaks may differ for reasons other than the change",
             NOT_COMPARABLE if counters_differ else None)
+    return caveats
+
+
+def _workload_caveats(before: dict, after: dict) -> list[Caveat]:
+    """Recipe metadata records execution choices, never environment values."""
+    old, new = before.get("workload"), after.get("workload")
+    if old is None and new is None:
+        return []
+    if not all(isinstance(item, dict) and item.get("schema") == 1 for item in (old, new)):
+        return [Caveat("recipe", "both reports need supported workload execution provenance",
+                       NOT_COMPARABLE)]
+    caveats = []
+    keys = ("command", "cwd", "timeout_seconds", "readiness", "exercise", "log_capture", "environment")
+    if any(key not in old or key not in new or old[key] != new[key] for key in keys):
+        caveats.append(Caveat("recipe", "workload launch, readiness, exercise, environment selection, "
+                              "or capture choices differ or are incomplete", NOT_COMPARABLE))
+    # Matching names and source kinds do not establish matching secret values.
+    # Do not turn their deliberately omitted values into a false strict pass.
+    caveats.append(Caveat("recipe environment", "workload environment values are intentionally "
+                          "unrecorded, so their equivalence cannot be verified", NOT_COMPARABLE))
+    for label, item in (("A", old), ("B", new)):
+        outcome = item.get("outcome")
+        if not isinstance(outcome, dict) or outcome.get("state") != "complete":
+            caveats.append(Caveat("recipe outcome", f"report {label} has no completed workload outcome",
+                                  INSUFFICIENT_COVERAGE))
     return caveats
 
 
