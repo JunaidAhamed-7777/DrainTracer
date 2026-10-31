@@ -260,6 +260,20 @@ class WarmupEventTests(unittest.TestCase):
 
 
 class StreamTests(unittest.TestCase):
+    def test_event_eviction_counts_are_exact_without_changing_order(self) -> None:
+        class TinyEventSession(_Session):
+            EVENT_LIMIT = 3
+
+        session = TinyEventSession("worker.exe", console=make_console())
+        for index in range(8):
+            session._append_event(f"event {index}")
+        report = session.build_report()
+        self.assertEqual(report["event_counts"], {"observed": 8, "retained": 3, "dropped": 5})
+        self.assertEqual([event["message"] for event in report["event_log"]],
+                         ["event 5", "event 6", "event 7"])
+        self.assertEqual(len(session._events), 3)
+        self.assertEqual(report["sample_count"], 0)
+
     def test_a_stalled_main_thread_loses_no_samples(self) -> None:
         from helpers import make_alert, make_snapshot
 
