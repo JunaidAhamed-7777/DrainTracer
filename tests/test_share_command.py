@@ -12,12 +12,15 @@ import unittest
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 import helpers  # noqa: F401
 from test_team_evidence import report_bytes
+from test_team_receipts import check_result
 
 from src import share_command
+from src.team_receipts import prepare_receipt
 from src.team_security import secure_directory, write_credential_file
 from src.team_server import make_server
 from src.team_store import TeamStore
@@ -182,6 +185,89 @@ class ShareCommandTests(unittest.TestCase):
         self.assertEqual((code, errors), (0, ""))
         self.assertNotIn("SECRET", output)
         self.assertIn("[credential]", output)
+
+
+    def test_typed_receipt_queue_filtered_history_pagination_and_literal_comparison(self):
+        repository = "<b>Owner/Repo</b>"
+        approval = self.store.create_record(self.actor, "baseline_approval",
+                    {"record_schema": 1, "repository": repository, "workload_id": "workload", "source_commit": "a" * 40,
+                     "baseline_revision": 1, "audit_head": "b" * 64, "note": ""})
+        receipt = prepare_receipt(check_result(), repository=repository, workload_id="workload", approval_id=approval["record_id"])
+        path = self.private_json("receipt.json", receipt)
+        with self.server() as args:
+            for _index in range(2):
+                self.assertEqual(self.call([*args, "enqueue-comparison", "--queue", self.root / "receipts", path])[0], 0)
+            self.assertEqual(self.call([*args, "flush", "--queue", self.root / "receipts"])[0], 0)
+            filters = ["history", "--repository", repository, "--source-commit", "c" * 40, "--workload-id", "workload", "--limit", "1"]
+            code, output, _errors = self.call([*args, *filters])
+            first = json.loads(output)
+            self.assertEqual(code, 0)
+            self.assertEqual(len(first["records"]), 1)
+            self.assertIsNotNone(first["next_cursor"])
+            code, output, _errors = self.call([*args, *filters, "--cursor", first["next_cursor"]])
+            second = json.loads(output)
+            self.assertEqual(code, 0)
+            self.assertNotEqual(first["records"][0]["record_id"], second["records"][0]["record_id"])
+            code, text, _errors = self.call([*args, "comparison", first["records"][0]["record_id"], "--text"])
+            self.assertEqual(code, 0)
+            self.assertIn(repository, text)
+            self.assertIn("Client-computed", text)
+            self.assertNotIn("\x1b", text)
+
+    def test_offline_w4_check_uses_actual_store_workload_and_preserves_inconclusive_exit(self):
+        result = check_result()
+        result.update(exit_code=3, passed=False)
+        result["comparison"]["measured_verdict"] = "inconclusive"
+        result["comparison"]["resources"]["memory"].update(verdict="unknown", drift_after={"median": None})
+        store = mock.MagicMock()
+        store.__enter__.return_value = store
+        store.state = {"workload_id": "actual-controlled-workload"}
+        store.check.return_value = (3, result)
+        runs = object()
+        module = SimpleNamespace(BaselineStore=mock.Mock(return_value=store), load_runs=mock.Mock(return_value=runs))
+        output = self.root / "prepared.json"
+        with (mock.patch.dict("sys.modules", {"src.baseline_control": module}),
+              mock.patch("src.team_client.request", side_effect=AssertionError("unexpected network"))):
+            code, text, errors = self.call(["prepare-comparison", self.root / "baseline", "--run", self.root / "run.json",
+                            "--repository", "Owner/Repo", "--source-commit", "c" * 40,
+                            "--approval-id", "d" * 32, "--output", output])
+        self.assertEqual((code, errors), (3, ""))
+        self.assertEqual(json.loads(text)["check_exit_code"], 3)
+        value = json.loads(output.read_bytes())
+        self.assertEqual(value["workload_id"], "actual-controlled-workload")
+        self.assertEqual(value["outcome"], "inconclusive")
+        self.assertNotIn("PrivateSeed123", output.read_text())
+        store.check.assert_called_once_with(runs, source_commit="c" * 40)
+
+    def test_approve_baseline_validates_local_store_before_sending_stable_retry_identity(self):
+        validated = []
+        store = mock.MagicMock()
+        store.__enter__.return_value = store
+        store.state = {"workload_id": "actual-workload", "revision": 1}
+        store.audit = [{"action": "promote", "source_commit": "a" * 40, "digest": "b" * 64}]
+        store.reports.side_effect = lambda: validated.append(True)
+        module = SimpleNamespace(BaselineStore=mock.Mock(return_value=store))
+        with (mock.patch.dict("sys.modules", {"src.baseline_control": module}),
+              mock.patch("src.share_command.TeamClient.call", return_value={"record_id": "d" * 32}) as call):
+            code, _output, _errors = self.call(["--endpoint", "tls://localhost:8443", "--credentials", self.credential,
+                    "approve-baseline", self.root / "baseline", "--repository", "Owner/Repo", "--request-id", "e" * 32])
+        self.assertEqual(code, 0)
+        self.assertEqual(validated, [True])
+        operation, parameters = call.call_args.args
+        self.assertEqual(operation, "create_record")
+        self.assertEqual(parameters["request_id"], "e" * 32)
+        self.assertEqual(parameters["value"]["workload_id"], "actual-workload")
+
+    def test_serve_interrupt_closes_listener_without_bootstrap_and_returns130(self):
+        path = self.private_json("operating.json", evidence_document())
+        listener = mock.Mock()
+        listener.serve_forever.side_effect = KeyboardInterrupt
+        with mock.patch("src.team_server.make_server", return_value=listener):
+            code, output, errors = self.call(["serve", "--store", self.store.directory, "--certificate", self.root / "cert.pem",
+                                 "--key", self.root / "key.pem", "--operating-evidence", path])
+        self.assertEqual((code, errors), (130, ""))
+        self.assertTrue(json.loads(output)["listening"])
+        listener.server_close.assert_called_once()
 
 
 if __name__ == "__main__":
