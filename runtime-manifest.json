@@ -45,6 +45,7 @@
     "src/team_transport.py",
     "src/startup.py",
     "src/stats.py",
+    "src/team_models.py",
     "src/theme.py",
     "src/units.py",
     "src/updates.py",
