@@ -109,6 +109,10 @@ The output is checkpointed atomically after every run. Snapshot age at
 consumption includes collection time and scheduling; it is not a pure queue
 latency measurement. Each target's first warning is timed from monitor launch,
 not from an independently instrumented allocation event.
+The sequence stops when the individual runner reports interruption even if
+a preceding HIGH warning retains exit-code precedence for that run. Historical
+completed datasets keep their original source hashes and are not relabeled
+after this orchestration correction.
 
 Minimum useful durations must account for requested cadence, valid sample
 coverage, warm-up, and the longest intended window. A 60-second window needs
