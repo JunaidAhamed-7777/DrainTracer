@@ -29,6 +29,7 @@ from src.agent_transport import (
     pipe_name,
     private_directory,
     process_user_sid,
+    verify_private_data_path,
     verify_private_path,
 )
 
@@ -104,6 +105,19 @@ class NativeTransportTests(unittest.TestCase):
                        check=True, capture_output=True)
         with self.assertRaisesRegex(AgentTransportError, "another principal"):
             load_secret(self.directory)
+
+    def test_inherited_data_files_accept_only_verified_owner_and_privileged_principals(self) -> None:
+        inherited = self.directory / "database.sqlite3"
+        inherited.write_bytes(b"private database placeholder")
+        verify_private_data_path(inherited)
+        with tempfile.NamedTemporaryFile(dir=self.directory, delete=False) as temporary:
+            temporary.write(b"private temporary or SQLite sidecar")
+            protected = Path(temporary.name)
+        verify_private_data_path(protected)
+        subprocess.run(["icacls", str(inherited), "/grant", "*S-1-1-0:(R)"], check=True, capture_output=True)
+        with self.assertRaisesRegex(AgentTransportError, "another principal"):
+            verify_private_data_path(inherited)
+        self.assertEqual(inherited.read_bytes(), b"private database placeholder")
 
     def test_public_parent_cannot_replace_a_private_state_leaf(self) -> None:
         parent = self.directory / "public-parent"

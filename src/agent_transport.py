@@ -220,8 +220,8 @@ def verify_trusted_path(path: str | Path) -> Path:
     return path
 
 
-def verify_private_path(path: Path) -> None:
-    """Refuse redirected paths, non-owner files and ACLs granting other users access."""
+def _verify_private_acl(path: Path, *, inherited: bool = False) -> None:
+    """Shared confidentiality check; inherited data files retain trusted principals only."""
     kernel, security = _api()
     path = verify_trusted_path(path)
     for part in (path, *path.parents):
@@ -237,11 +237,14 @@ def verify_private_path(path: Path) -> None:
             raise AgentTransportError("agent state has an unexpected owner or unrestricted ACL")
         control, revision = wintypes.WORD(), wintypes.DWORD()
         _check(security.GetSecurityDescriptorControl(descriptor, ctypes.byref(control), ctypes.byref(revision)))
-        if not control.value & 0x1000:  # SE_DACL_PROTECTED
+        if not inherited and not control.value & 0x1000:  # SE_DACL_PROTECTED
             raise AgentTransportError("agent state ACL must not inherit permissions")
         # ACL header: revision, reserved, size, ACE count, reserved.
         count = ctypes.c_ushort.from_address(dacl.value + 4).value
         allowed = {current_user_sid(), "S-1-5-18"}
+        if inherited:
+            allowed |= {"S-1-5-32-544", "S-1-3-4",
+                        "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464"}
         owner_allowed = False
         for index in range(count):
             ace = wintypes.LPVOID()
@@ -251,11 +254,28 @@ def verify_private_path(path: Path) -> None:
             sid = _sid_string(ace.value + 8)
             if sid not in allowed:
                 raise AgentTransportError("agent state grants another principal access")
-            owner_allowed |= sid == current_user_sid()
+            flags = ctypes.c_ubyte.from_address(ace.value + 1).value
+            owner_allowed |= sid in {current_user_sid(), "S-1-3-4"} and not flags & 0x08
         if not owner_allowed:
             raise AgentTransportError("agent state does not grant its owner access")
     finally:
         kernel.LocalFree(descriptor)
+
+
+def verify_private_path(path: Path) -> None:
+    """Require a protected current-user/SYSTEM state or credential object."""
+    _verify_private_acl(path)
+
+
+def verify_private_data_path(path: Path) -> None:
+    """Validate inherited SQLite/report sidecars without granting public read.
+
+    The owner must remain the current user and all ancestors must be trusted.
+    Inherited ACLs and OWNER RIGHTS are accepted only for that verified owner;
+    SYSTEM, Administrators and TrustedInstaller remain the explicit privileged
+    OS boundary. No ACL is changed, and any other principal's ACE is refused.
+    """
+    _verify_private_acl(path, inherited=True)
 
 
 def private_directory(path: str | Path) -> Path:
