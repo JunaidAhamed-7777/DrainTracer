@@ -248,6 +248,14 @@ read-only repository access. Each job also runs
 or invalid report JavaScript fails CI instead of silently skipping it.
 The publication job runs only for a release tag or a manual release request;
 pull requests do not receive its publishing permissions.
+Failed verification jobs upload a diagnostic bundle for three days. It contains
+only the last 256 KiB of each snapshot, compilation, JavaScript, regression,
+or bounded-workload check's combined output, with a truncation notice when
+needed. Logs stream normally to Actions and keep the command's failure status.
+The upload uses an explicit log-file allowlist in the runner's temporary
+directory; it excludes environment dumps, credentials, and user target reports.
+Successful jobs do not upload this bundle. Missing logs produce an upload
+warning without hiding the original failed check.
 Run both Windows and Linux checks before claiming support for both platforms;
 mocked platform tests do not replace native integration tests.
 

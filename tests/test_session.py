@@ -26,7 +26,99 @@ def _wait_for(predicate, timeout: float = 15.0) -> bool:
     return predicate()
 
 
+class ReportExportTests(unittest.TestCase):
+    def test_html_failure_is_recorded_in_json_and_cached_report(self) -> None:
+        import json
+
+        from helpers import make_snapshot
+
+        for failure in (OSError("disk full"), RuntimeError("render failed")):
+            with self.subTest(failure=str(failure)), tempfile.TemporaryDirectory() as temp:
+                session = _Session("worker.exe", console=make_console(), report_dir=temp)
+                session._accept_snapshot(make_snapshot())
+                with mock.patch("src.session.write_html_report", side_effect=failure):
+                    path = session.export_log()
+                saved = json.loads(path.read_text(encoding="utf-8"))
+                self.assertEqual(saved["outcome"]["monitor_errors"],
+                                 [f"HTML report failed: {failure}"])
+                self.assertEqual(saved["outcome"], session._last_report_data["outcome"])
+                self.assertEqual(path.stem, f"leak_report_{session._last_report_id}")
+                self.assertIsNone(session._last_html_report)
+
+    def test_missing_html_assets_are_recorded_in_json(self) -> None:
+        import json
+
+        from src import html_report
+
+        with tempfile.TemporaryDirectory() as temp:
+            session = _Session("worker.exe", console=make_console(), report_dir=temp)
+            html_report._load_frame.cache_clear()
+            self.addCleanup(html_report._load_frame.cache_clear)
+            with mock.patch.object(html_report, "_FRAME_DIR", Path(temp) / "missing"):
+                path = session.export_log()
+            saved = json.loads(path.read_text(encoding="utf-8"))
+            self.assertTrue(any(error.startswith("HTML report failed:")
+                                for error in saved["outcome"]["monitor_errors"]))
+
+    def test_failed_atomic_update_preserves_first_json(self) -> None:
+        import json
+        import os
+
+        real_replace = os.replace
+        replacements = 0
+
+        def fail_second_replace(source, destination):
+            nonlocal replacements
+            replacements += 1
+            if replacements == 2:
+                raise OSError("disk full while updating outcome")
+            return real_replace(source, destination)
+
+        with tempfile.TemporaryDirectory() as temp:
+            session = _Session("worker.exe", console=make_console(), report_dir=temp)
+            with mock.patch("src.session.write_html_report", side_effect=OSError("no HTML")), \
+                    mock.patch("src.report.os.replace", side_effect=fail_second_replace):
+                path = session.export_log()
+            saved = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(saved["outcome"]["monitor_errors"], [])
+            self.assertIn("HTML report failed: no HTML", session.monitor_errors)
+            self.assertTrue(any(error.startswith("Could not record HTML export failure in JSON:")
+                                for error in session.monitor_errors))
+            self.assertEqual(list(Path(temp).rglob("*.tmp")), [])
+            self.assertEqual(saved["report_id"], session._last_report_id)
+
+
 class SettingsTests(unittest.TestCase):
+    def test_selected_identity_reaches_the_manager_before_sampling(self) -> None:
+        from helpers import make_snapshot
+
+        from src.dashboard import DashboardApp
+
+        session = DashboardApp(None, attach_pid=4242, attach_create_time=10.0,
+                               console=make_console())
+        with (
+            mock.patch.object(session.manager, "attach") as attach,
+            mock.patch.object(session.detector, "sample_once", return_value=make_snapshot()),
+            mock.patch.object(session.detector, "start"),
+        ):
+            session.start()
+        attach.assert_called_once_with(4242, expected_create_time=10.0)
+
+    def test_rejected_selection_never_starts_sampling(self) -> None:
+        from src.process_runner import ProcessNotFoundError
+
+        session = _Session(None, attach_pid=4242, attach_create_time=10.0,
+                           console=make_console())
+        with (
+            mock.patch.object(session.manager, "attach", side_effect=ProcessNotFoundError("changed")),
+            mock.patch.object(session.detector, "sample_once") as sample,
+            mock.patch.object(session.detector, "start") as start,
+            self.assertRaises(ProcessNotFoundError),
+        ):
+            session.start()
+        sample.assert_not_called()
+        start.assert_not_called()
+
     def test_settings_configure_the_detector_and_reach_reports(self) -> None:
         from dataclasses import replace
 
@@ -454,6 +546,51 @@ class SessionLifecycleTests(unittest.TestCase):
         for timeout in (0, -1.0):
             with self.assertRaises(ValueError):
                 _Session("C:/targets/worker.exe", console=make_console(), timeout=timeout)
+
+
+class PartialPauseCleanupTests(unittest.TestCase):
+    def test_shutdown_retries_partial_pause_without_losing_suspended_identities(self) -> None:
+        from src.process_runner import ProcessManager, ProcessManagerError
+
+        for recovered in (False, True):
+            with self.subTest(recovered=recovered):
+                session = _Session(None, attach_pid=101, console=make_console())
+                manager = session.manager
+                manager._root_pid = 101
+                manager._attached = True
+                manager._tracked_pids = {101, 102}
+                manager._identities = {101: 10.0, 102: 20.0}
+                manager._depths = {101: 0, 102: 1}
+                resume_attempts = 0
+
+                def resume_known_identity(pid, manager=manager, recovered=recovered):
+                    nonlocal resume_attempts
+                    resume_attempts += 1
+                    self.assertEqual(pid, 101)
+                    self.assertEqual(manager._identities[pid], 10.0)
+                    return recovered and resume_attempts == 3
+
+                with (
+                    mock.patch.object(ProcessManager, "is_running", new_callable=mock.PropertyMock,
+                                      return_value=True),
+                    mock.patch.object(manager, "_refresh_tracked_pids"),
+                    mock.patch.object(manager, "_start_poll_thread"),
+                    mock.patch.object(manager, "_suspend_pid", side_effect=[True, False]),
+                    mock.patch.object(manager, "_resume_pid", side_effect=resume_known_identity),
+                    mock.patch.object(session.detector, "stop"),
+                ):
+                    self.assertFalse(manager.pause())
+                    self.assertTrue(manager.is_paused)
+                    with self.assertRaisesRegex(ProcessManagerError, "Cannot detach"):
+                        session.shutdown()
+                self.assertEqual(resume_attempts, 3)
+                if recovered:
+                    self.assertFalse(manager.is_paused)
+                    self.assertFalse(manager.has_tracked_processes)
+                else:
+                    self.assertTrue(manager.is_paused)
+                    self.assertEqual(manager._suspended_pids, {101})
+                    self.assertEqual(manager._identities, {101: 10.0, 102: 20.0})
 
 
 class CoverageTests(unittest.TestCase):
