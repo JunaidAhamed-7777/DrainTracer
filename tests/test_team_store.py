@@ -83,6 +83,16 @@ class AuthorityTests(unittest.TestCase):
         self.assert_code("quota", limited.bootstrap_project, "extra")
         self.assertEqual(len(limited.list_credentials(actor)["credentials"]), 1)
 
+    def test_project_deletion_revokes_cached_actors_and_local_recovery_cannot_undo_it(self):
+        other = self.store.issue_credential(self.admin, "viewer")
+        actor = self.store.authenticate(other["token"], self.project)
+        self.assertTrue(self.store.delete_project(self.admin)["deleted"])
+        self.assert_code("unauthorized", self.store.whoami, actor)
+        self.assert_code("unauthorized", self.store.whoami, self.admin)
+        self.assert_code("not_found", self.store.recover_admin, self.project)
+        self.assertIsNotNone(self.store.list_projects_local()["projects"][0]["deleted_at"])
+        self.assertEqual(self.store.purge_local()["purged"], {"reports": 0, "records": 0, "backups": 0})
+
     def test_audit_is_bounded_with_exact_omission_counts_and_no_secrets(self):
         limited = TeamStore.create(Path(self.temp.name) / "small-audit", limits=StoreLimits(max_audit_events=2),
                                    _clock=lambda: self.clock[0])

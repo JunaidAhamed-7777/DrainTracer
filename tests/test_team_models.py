@@ -12,7 +12,7 @@ from src.team_models import Actor, ProjectPolicy, StoreLimits, TeamError, _make_
 class ModelTests(unittest.TestCase):
     def test_limits_are_finite_bounded_and_coherent(self):
         for changes in ({"max_projects": True}, {"max_upload_bytes": 0}, {"max_records": 1025},
-                        {"busy_timeout_seconds": float("nan")}, {"max_sqlite_bytes": 513 * 1024 * 1024},
+                        {"busy_timeout_seconds": float("nan")}, {"busy_timeout_seconds": 10 ** 10000}, {"max_sqlite_bytes": 513 * 1024 * 1024},
                         {"max_project_bytes": 129 * 1024 * 1024}):
             with self.subTest(changes=changes), self.assertRaises(TeamError):
                 StoreLimits(**changes)

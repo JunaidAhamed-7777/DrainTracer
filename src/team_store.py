@@ -219,6 +219,8 @@ class TeamStore(_Governance, _Backups, _Evidence, _Database):
                           credential_ttl: float = MAX_CREDENTIAL_TTL) -> dict:
         """OS-local administration only; transports must not expose this method."""
         name = text(name, "name", 128)
+        if policy is not None and type(policy) is not ProjectPolicy:
+            raise TeamError("invalid", "policy must be ProjectPolicy")
         policy = (policy or ProjectPolicy()).resolved(self.limits)
         with self.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -254,6 +256,46 @@ class TeamStore(_Governance, _Backups, _Evidence, _Database):
                             {"revoked": removed, "credential_id": issued["credential"]["id"]}, now, policy)
                 connection.commit()
                 return issued
+            except BaseException:
+                connection.rollback()
+                raise
+
+    def list_projects_local(self) -> dict:
+        """OS-local administration; never expose this method through a transport."""
+        with self.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            rows = connection.execute("SELECT id,name,created_at,deleted_at FROM projects ORDER BY id").fetchall()
+            connection.commit()
+            return {"team_schema": 1, "store_id": self.store_id, "projects": [
+                {"project_id": row["id"], "name": row["name"], "created_at": _iso(row["created_at"]),
+                 "deleted_at": _iso(row["deleted_at"]) if row["deleted_at"] is not None else None} for row in rows]}
+
+    def delete_project(self, actor: Actor) -> dict:
+        """Delete project evidence and revoke every credential in one transaction."""
+        with self._authorized(actor, "admin", action="project_delete") as (connection, _row, _policy, now):
+            reports = [row[0] for row in connection.execute("SELECT id FROM reports WHERE project_id=?", (actor.project_id,))]
+            for report_id in reports:
+                self._remove_report(connection, actor.project_id, report_id, "deleted")
+            connection.execute("DELETE FROM backups WHERE project_id=?", (actor.project_id,))
+            records = [row[0] for row in connection.execute("SELECT id FROM project_records WHERE project_id=?", (actor.project_id,))]
+            self._remove_records(connection, actor.project_id, records)
+            connection.execute("DELETE FROM credentials WHERE project_id=?", (actor.project_id,))
+            connection.execute("UPDATE projects SET deleted_at=? WHERE id=?", (now, actor.project_id))
+            return {"team_schema": 1, "project_id": actor.project_id, "deleted": True}
+
+    def purge_local(self) -> dict:
+        """OS-local scheduled maintenance can expire inactive projects' retained data."""
+        with self.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                now, counts = self._now(), {"reports": 0, "records": 0, "backups": 0}
+                for row in connection.execute("SELECT * FROM projects").fetchall():
+                    policy = self._policy(row)
+                    removed = self._purge(connection, row["id"], now, policy)
+                    for key in counts:
+                        counts[key] += removed[key]
+                connection.commit()
+                return {"team_schema": 1, "store_id": self.store_id, "purged": counts}
             except BaseException:
                 connection.rollback()
                 raise
