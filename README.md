@@ -13,6 +13,9 @@
 [Controlled local baselines](docs/controlled-baselines.md) add deliberate
 repeated-run approvals, reviewable audit history, report-sourced budgets and
 scoped expiring exceptions for reproducible regression checks.
+Python integrations can use the [supported session API](docs/python-api.md)
+for launch/attach, immutable snapshots, bounded subscriptions, cancellation,
+and explicit cleanup/export outcomes without initializing the dashboard.
 
 <p align="center">
   <strong>Release series: v5.4.0</strong> ·
@@ -586,3 +589,13 @@ whole report. Review both JSON and embedded HTML data before sharing.
 ## License
 
 [MIT](LICENSE) · Copyright © 2026 Junaid Ahamed.
+
+### Optional foreground Windows agent
+
+`draintracer-agent serve` starts an authenticated, per-user local agent explicitly.
+Use `draintracer-agent start --pid PID --create-time CREATION_TIME --timeout 30`
+from a second terminal to observe a same-user process, then `status`, `events`,
+`export`, or `cancel` its session UUID. Attachments default to observation;
+launch, launch pause/resume, and explicit kill require separate server flags.
+See the [local agent contract and commands](docs/local-agent.md) for private
+state permissions, limits, trusted launch roots, cleanup, and failure states.

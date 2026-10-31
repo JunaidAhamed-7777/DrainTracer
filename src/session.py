@@ -18,10 +18,10 @@ from .config import MonitorSettings
 from .events import (
     RESOURCE_METRICS,
     LeakAlert,
-    LifecycleEvent,
-    LifecycleKind,
     LeakResource,
     LeakSeverity,
+    LifecycleEvent,
+    LifecycleKind,
     MetricsSnapshot,
     MetricsStream,
     MonitorDiagnostics,
@@ -45,9 +45,9 @@ from .process_runner import (
 from .report import (
     DEFAULT_REPORT_DIR,
     REPORT_SCHEMA,
+    coverage_to_dict,
     iso_timestamp,
     new_report_id,
-    coverage_to_dict,
     process_summary_to_dict,
     report_directory,
     snapshot_to_dict,
@@ -69,6 +69,27 @@ LIFECYCLE_DETAIL_LIMIT = 3
 # Windows errors for files that cannot be started as programs: bad image,
 # bad format, wrong signature, or the wrong machine type.
 _NOT_A_PROGRAM = {129, 191, 193, 216}
+
+
+def session_exit_code(*, startup_failed: bool, signal_breached: bool, cancelled: bool,
+                      monitor_failed: bool, over_budget: bool, target_failed: bool,
+                      inconclusive: bool) -> int:
+    """Apply the same outcome precedence for CLI and Python integrations."""
+    if startup_failed:
+        return 2
+    if signal_breached:
+        return 1
+    if cancelled:
+        return 130
+    if monitor_failed:
+        return 2
+    if over_budget:
+        return 5
+    if target_failed:
+        return 4
+    if inconclusive:
+        return 3
+    return 0
 
 
 class MonitorSession:
@@ -1325,4 +1346,4 @@ class MonitorSession:
     _format_duration = staticmethod(format_clock)
 
 
-__all__ = ["HISTORY_KEYS", "MonitorSession"]
+__all__ = ["HISTORY_KEYS", "MonitorSession", "session_exit_code"]
