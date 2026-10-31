@@ -454,6 +454,11 @@ resource trends, events, and process growth after recording.*
 
 Use the JSON reports for scripts and comparisons:
 
+`draintracer-report validate run.json` checks the public report contract;
+`draintracer-report summary run.json` emits a versioned JSON summary without
+loading the terminal UI. See the [schemas and machine-output contract](docs/report-contract.md)
+for supported versions, unknown values, units, and input limits.
+
 ```powershell
 draintracer diff .\before.json .\after.json
 draintracer diff .\before.json .\after.json --fail-on-regression
