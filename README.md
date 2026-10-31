@@ -229,6 +229,9 @@ An owed resume remains pending until it can be retried safely.
 The [lifecycle stress evidence and crash policy](docs/observer-stress-results.md)
 describe tested failure handling, polling limits, and the boundary when abrupt
 monitor termination prevents normal cleanup.
+The [observer verification and native soak](docs/observer-verification-results.md)
+record measured costs, unchanged local budget failures, and the unexpected
+Windows thread warning with their source and machine limits.
 
 Use **Up/Down** to highlight a startup choice, then **Spacebar** (or Enter)
 to select it. Navigation help appears below the Get Started box. Redirected

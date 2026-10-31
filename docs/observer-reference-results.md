@@ -103,3 +103,8 @@ refuses overwriting records. Reference collection and budget derivation are
 not final soak acceptance. Additional native identity tests remain part of
 source review; the [failure-drill evidence](observer-stress-results.md) records
 its distinct source and test boundaries.
+
+The [complete verification and 30-minute soak results](observer-verification-results.md)
+preserve all frozen-ceiling failures and the unexpected Windows thread signal.
+The original budgets are unchanged; reference completion does not imply they
+passed subsequent verification.
