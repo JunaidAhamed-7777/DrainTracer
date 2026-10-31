@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import io
 import json
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
+from helpers import make_console
 from test_report_diff import _experiment, _run
 
 from src.baseline_control import (
@@ -16,8 +19,10 @@ from src.baseline_control import (
     BaselineEvidenceError,
     BaselineStore,
     load_runs,
+    main,
 )
 from src.config import MonitorSettings
+from src.diff_command import run_diff
 
 APPROVAL = {"approved_by": "reviewer", "reason": "Reviewed the repeated controlled workload",
             "source_commit": "a" * 40}
@@ -178,6 +183,54 @@ class BaselineTests(unittest.TestCase):
             reader.assert_not_called()
         with self.assertRaises(BaselineError):
             load_runs([reports[0].path, reports[0].path])
+
+    def test_cli_promotes_checks_and_prints_a_reviewable_audit(self):
+        old, later = self.reports("a"), self.reports("b", (3, 3))
+        runs = [item for report in old for item in ("--run", str(report.path))]
+        out, error = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(error):
+            code = main(["promote", str(self.store), *runs, "--approved-by", "reviewer",
+                         "--reason", "Reviewed steady import", "--source-commit", "a" * 40])
+        self.assertEqual(code, 0, error.getvalue())
+        self.assertEqual(json.loads(out.getvalue())["revision"], 1)
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = main(["check", str(self.store), *[item for report in later for item in ("--run", str(report.path))],
+                         "--source-commit", "b" * 40])
+        self.assertEqual(code, 1)
+        self.assertFalse(json.loads(out.getvalue())["passed"])
+        before = (self.store / "baseline.json").read_bytes()
+        out = io.StringIO()
+        with redirect_stdout(out):
+            self.assertEqual(main(["audit", str(self.store)]), 0)
+        self.assertEqual(json.loads(out.getvalue())["audit"][0]["approved_by"], "reviewer")
+        self.assertEqual((self.store / "baseline.json").read_bytes(), before)
+
+    def test_cli_invalid_input_is_structured_stderr_and_partial_evidence_is_code_three(self):
+        out, error = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(error):
+            self.assertEqual(main(["check", str(self.store)]), 2)
+        self.assertFalse(out.getvalue())
+        self.assertEqual(json.loads(error.getvalue())["exit_code"], 2)
+        reports = self.reports("a")
+        data = json.loads(reports[0].path.read_text(encoding="utf-8"))
+        data["outcome"]["measurement"]["full_coverage"] = False
+        reports[0].path.write_text(json.dumps(data), encoding="utf-8")
+        error = io.StringIO()
+        with redirect_stderr(error):
+            code = main(["check", str(self.store), "--run", str(reports[0].path), "--run", str(reports[1].path),
+                         "--source-commit", "b" * 40])
+        self.assertEqual(code, 3)
+        self.assertEqual(json.loads(error.getvalue())["exit_code"], 3)
+
+    def test_diff_report_budget_opt_in_and_explicit_override(self):
+        old, later = self.reports("a", budgets={"handles": 150}), self.reports("b")
+        args = [str(old[0].path), str(later[0].path), "--json"]
+        self.assertEqual(run_diff(args, make_console()), 0)
+        output = make_console()
+        self.assertEqual(run_diff([*args, "--report-budgets"], output), 4)
+        self.assertTrue(json.loads(output.file.getvalue())["over_budget"])
+        self.assertEqual(run_diff([*args, "--report-budgets", "--budget-handles", "300"], make_console()), 0)
 
 
 if __name__ == "__main__":

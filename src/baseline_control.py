@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import os
 import re
 import stat
+import sys
 import tempfile
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta, timezone
@@ -15,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from .analysis import RESOURCES, SIGNAL_TOTALS, finite, summarize
-from .budgets import check_budgets, parse_budget
+from .budgets import BUDGET_OPTIONS, check_budgets, parse_budget
 from .repeat_comparison import MAX_GROUP_BYTES, MAX_GROUP_RUNS, compare_repeated_reports
 from .report_contract import _check_text_depth, _unique_object, read_report
 from .report_diff import LoadedReport, comparability_caveats, load_report
@@ -446,4 +448,69 @@ class BaselineStore:
         self.close()
 
 
-__all__ = ["BaselineError", "BaselineEvidenceError", "BaselineStore", "load_runs", "report_budget_defaults"]
+class _Parser(argparse.ArgumentParser):
+    def error(self, message):
+        raise BaselineError(message)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = _Parser(prog="draintracer-baseline", description=__doc__)
+    commands = parser.add_subparsers(dest="command", required=True)
+    for command in ("promote", "check", "suppress", "audit"):
+        child = commands.add_parser(command)
+        child.add_argument("store", type=Path)
+        if command in ("promote", "check"):
+            child.add_argument("--run", action="append", required=True, type=Path,
+                               help="A report from an independent run; provide 2-20.")
+        if command != "audit":
+            child.add_argument("--source-commit", required=True, help="Declared full source commit hash for this action.")
+        if command in ("promote", "suppress"):
+            child.add_argument("--approved-by", required=True, help="Declared approver; access policy is enforced externally.")
+            child.add_argument("--reason", required=True)
+        if command == "promote":
+            child.add_argument("--accept-regression", action="store_true",
+                               help="Explicitly acknowledge a worse or already over-budget baseline.")
+        if command == "suppress":
+            child.add_argument("--resource", choices=RESOURCES, required=True)
+            child.add_argument("--kind", choices=("regression", "budget"), required=True)
+            child.add_argument("--expires", required=True, help="UTC ISO-8601 expiry, at most 90 days away.")
+        if command == "check":
+            for metric, option in BUDGET_OPTIONS.items():
+                child.add_argument(f"--{option.replace('_', '-')}", dest=option,
+                                   help=f"Override the approved {metric} peak budget for this check.")
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    try:
+        args = build_parser().parse_args(argv)
+        runs = load_runs(args.run) if args.command in ("promote", "check") else None
+        with BaselineStore(args.store, create=args.command == "promote") as store:
+            if args.command == "promote":
+                result = store.promote(runs, approved_by=args.approved_by, reason=args.reason,
+                                       source_commit=args.source_commit, accept_regression=args.accept_regression)
+                code = 0
+            elif args.command == "suppress":
+                result = store.suppress(resource=args.resource, kind=args.kind, expires=args.expires,
+                                        approved_by=args.approved_by, reason=args.reason, source_commit=args.source_commit)
+                code = 0
+            elif args.command == "check":
+                budgets = {metric: parse_budget(metric, value) for metric, option in BUDGET_OPTIONS.items()
+                           if (value := getattr(args, option)) is not None}
+                code, result = store.check(runs, source_commit=args.source_commit, budgets=budgets)
+            else:
+                result = {"baseline_schema": 1, "state": store.state, "audit": store.audit}
+                code = 0
+        print(json.dumps(result, ensure_ascii=True, allow_nan=False))
+        return code
+    except (OSError, ValueError, TypeError, RuntimeError) as error:
+        code = 3 if isinstance(error, BaselineEvidenceError) else 2
+        print(json.dumps({"baseline_schema": 1, "error": str(error), "exit_code": code}, ensure_ascii=True), file=sys.stderr)
+        return code
+
+
+__all__ = ["BaselineError", "BaselineEvidenceError", "BaselineStore", "load_runs", "main", "report_budget_defaults"]
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
