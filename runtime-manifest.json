@@ -43,6 +43,7 @@
     "src/report_diff.py",
     "src/resources.py",
     "src/running_processes.py",
+    "src/service_operations.py",
     "src/session.py",
     "src/session_facts.py",
     "src/startup.py",
