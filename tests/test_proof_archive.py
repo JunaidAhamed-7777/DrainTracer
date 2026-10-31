@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import stat
+import struct
 import tempfile
 import unittest
 import zipfile
@@ -101,6 +102,33 @@ class ProofArchiveTests(unittest.TestCase):
         with mock.patch.object(proof_archive, "MAX_UNCOMPRESSED_BYTES", 10), self.assertRaises(ValueError):
             proof_archive.entries(self.archive, COMMIT)
         self.assertFalse((self.root / "source").exists())
+
+    def test_inconsistent_directory_count_and_trailing_data_fail_before_extraction(self):
+        self.archive_with(["first", "second"])
+        original = self.archive.read_bytes()
+        forged = bytearray(original)
+        end = forged.rfind(b"PK\x05\x06")
+        struct.pack_into("<2H", forged, end + 8, 1, 1)
+        for raw in (bytes(forged), original + b"trailing", original[:-1]):
+            self.archive.write_bytes(raw)
+            with self.subTest(length=len(raw)), self.assertRaises(ValueError):
+                proof_archive.extract(self.archive, self.root / "source", COMMIT)
+            self.assertFalse((self.root / "source").exists())
+
+    def test_bad_crc_leaves_only_its_failed_private_attempt_without_overwrite_or_cleanup(self):
+        with zipfile.ZipFile(self.archive, "w", compression=zipfile.ZIP_STORED) as archive:
+            archive.comment = COMMIT.encode()
+            archive.writestr("fixture.txt", b"fixture")
+        raw = bytearray(self.archive.read_bytes())
+        name, extra = struct.unpack_from("<2H", raw, 26)
+        raw[30 + name + extra] ^= 1
+        self.archive.write_bytes(raw)
+        output = self.root / "source"
+        with self.assertRaises(zipfile.BadZipFile):
+            proof_archive.extract(self.archive, output, COMMIT)
+        self.assertTrue((output / "fixture.txt").is_file())
+        with self.assertRaises(FileExistsError):
+            proof_archive.extract(self.archive, output, COMMIT)
 
 
 if __name__ == "__main__":
