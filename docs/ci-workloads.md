@@ -105,7 +105,10 @@ zero remaining owned processes. The first short fixture was rejected because
 its two-second warm-up equaled its duration; the corrected fixture explicitly
 uses zero warm-up and tests the intended inconclusive policy.
 
-The linked PR workflow repeats these assertions on a hosted Windows runner and
-retains each artifact, including the intentionally failed short check. Technical
-fixture validation does not establish user-pilot acceptance or a production
-workload's detection accuracy.
+The [hosted Windows run](https://github.com/JunaidAhamed-7777/DrainTracer/actions/runs/41205949586)
+also passed. Its three downloaded artifacts contained 65 growing samples
+(exit `1`), 64 steady samples (exit `0`), and eight short-run samples (exit `3`,
+no judged window). The strict comparison was comparable and improved, with
+memory resolved. Every artifact retained the matching JSON/HTML pair, machine
+summary and zero remaining owned processes. Technical fixture validation does
+not establish user-pilot acceptance or a production workload's detection accuracy.
