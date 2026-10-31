@@ -112,6 +112,11 @@ truncated SHA-256 fingerprint for launch comparisons. A predictable argument
 can be checked by guessing and hashing it; the fingerprint is not a secure
 way to conceal a secret.
 
+Monitor diagnostics include host CPU utilization, available/total physical
+memory, and the host reading's timestamp, age and collection cost. The detector
+collects these locally at most once every five seconds; they are saved with
+reports and are not attributed to the target. No new network request is involved.
+
 Experiment labels pass through pattern-based removal of secret-looking
 assignments, flags, URL credentials, and Basic/Bearer credentials. Arbitrary
 names, paths, tokens in unexpected formats, configuration profile names,

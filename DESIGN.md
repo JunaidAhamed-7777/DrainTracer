@@ -95,6 +95,10 @@ Tables own horizontal scrolling; they never constrain page height.
 - Render UI on the main thread and keep monitoring independent of network work.
 - Verify keyboard cancellation, narrow widths, redirected input, and legacy output.
 
+The Monitor view is scrollable with Up/Down, Page Up/Down and Home/End, so all
+diagnostics remain reachable in narrow terminals. Host pressure is labeled as
+whole-host context, with unknown readings, sample age and collection cost.
+
 Repeated report comparisons display strict comparability and run-specific caveats
 before resource differences. They use medians with observed ranges, state the
 conservative decision rule, and preserve unknown values. Text remains readable
