@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -128,6 +129,51 @@ class OperatingEvidenceTests(unittest.TestCase):
             self.assertEqual(document["rates"]["agent_completed_runs"],
                              {"successful": 2, "total": 2, "ratio": 1.0})
             self.assertGreater(document["resources"]["agent"]["samples"], 0)
+
+    @unittest.skipUnless(os.name == "nt", "real single-instance Windows pipe admission")
+    def test_fast_readiness_probe_does_not_limit_later_admission_during_bounded_pipe_hold(self):
+        from src.agent_command import AgentClient
+        from src.agent_transport import authenticate, connect
+
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temporary:
+            root = require_fresh_workspace(Path(temporary) / "exercise")
+            evidence = ExerciseEvidence(OperatingBudgets(readiness_seconds=10, cleanup_seconds=20))
+            request, held, timers, calls = AgentClient.request, [], [], []
+
+            def controlled(client, operation, params=None, **kwargs):
+                calls.append((operation, client.timeout))
+                result = request(client, operation, params, **kwargs)
+                if operation == "diagnostics" and not held:
+                    # Authenticated idle peer owns the sole instance, for a
+                    # known 750 ms below the server's existing 3 s I/O bound.
+                    # No start/control request is sent on this connection.
+                    pipe = connect(client.name, timeout=3)
+                    held.append(pipe)
+                    authenticate(pipe, client.secret, server=False)
+                    release = threading.Timer(0.75, pipe.close)
+                    release.daemon = True
+                    timers.append(release)
+                    release.start()
+                return result
+
+            try:
+                with ResourceSampler() as sampler, mock.patch.object(AgentClient, "request", controlled):
+                    sampler.add("driver", os.getpid())
+                    self.assertTrue(exercise_agent(root, evidence, sampler))
+                evidence.resources = sampler.close()
+            finally:
+                try:
+                    for timer in timers:
+                        timer.cancel()
+                        if timer.ident is not None:
+                            timer.join(2)
+                finally:
+                    for pipe in held:
+                        pipe.close()
+            self.assertEqual(calls[0], ("diagnostics", 0.3))
+            self.assertTrue(all(timeout == 15.0 for operation, timeout in calls if operation != "diagnostics"))
+            self.assertTrue(evidence.document()["checks_passed"], evidence.document())
+            self.assertEqual(evidence.document()["rates"]["agent_completed_runs"]["successful"], 2)
 
 
     def test_public_complete_exercise_writes_private_readiness_evidence_and_preserves_failures(self):
