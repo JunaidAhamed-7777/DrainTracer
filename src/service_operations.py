@@ -80,6 +80,7 @@ class ExerciseEvidence:
     def document(self):
         timings = {name: _distribution(values) for name, values in self.timings.items()}
         limits = {"readiness": self.budgets.readiness_seconds, "freshness": self.budgets.freshness_seconds,
+                  "ingest": self.budgets.upload_seconds,
                   "upload": self.budgets.upload_seconds, "read": self.budgets.read_seconds,
                   "cleanup": self.budgets.cleanup_seconds}
         checks = {name: bool(timings.get(name, {}).get("samples"))

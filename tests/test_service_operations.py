@@ -14,6 +14,7 @@ import helpers  # noqa: F401
 from src.service_exercise import (
     exercise_authority,
     exercise_authority_faults,
+    exercise_evidence_recovery,
     require_fresh_workspace,
     write_evidence,
 )
@@ -78,8 +79,9 @@ class OperatingEvidenceTests(unittest.TestCase):
             root = require_fresh_workspace(Path(temporary) / "exercise")
             evidence = ExerciseEvidence(OperatingBudgets())
             with TeamStore.create(root / "team") as store:
-                admin, _viewer, _operator = exercise_authority(store, evidence)
+                admin, viewer, operator = exercise_authority(store, evidence)
                 exercise_authority_faults(store, admin, root, evidence)
+                self.assertTrue(exercise_evidence_recovery(store, admin, viewer, operator, root, evidence))
                 token = admin._token
             document = evidence.document()
             self.assertTrue(document["checks_passed"], document)
