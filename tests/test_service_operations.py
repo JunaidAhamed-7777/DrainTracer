@@ -162,11 +162,14 @@ class OperatingEvidenceTests(unittest.TestCase):
                     self.assertTrue(exercise_agent(root, evidence, sampler))
                 evidence.resources = sampler.close()
             finally:
-                for timer in timers:
-                    timer.cancel()
-                    timer.join(2)
-                for pipe in held:
-                    pipe.close()
+                try:
+                    for timer in timers:
+                        timer.cancel()
+                        if timer.ident is not None:
+                            timer.join(2)
+                finally:
+                    for pipe in held:
+                        pipe.close()
             self.assertEqual(calls[0], ("diagnostics", 0.3))
             self.assertTrue(all(timeout == 15.0 for operation, timeout in calls if operation != "diagnostics"))
             self.assertTrue(evidence.document()["checks_passed"], evidence.document())
