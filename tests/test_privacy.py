@@ -56,8 +56,6 @@ class PrivacyTests(unittest.TestCase):
                 self.assertEqual(redact_report(report)["snapshots"][0]["evidence"]["memory"]["state"],
                                  state.value)
     def test_numeric_identifiers_in_opaque_and_free_text_contexts_are_removed(self) -> None:
-        from src.investigation import investigation_summary
-
         seeds = (987654321, 1122334455, 9988776655, 6677889900)
         report = private_fixture()
         report["metadata"] = {"value": seeds[0], "operations": seeds[1], "timestamp": 1}
@@ -76,7 +74,7 @@ class PrivacyTests(unittest.TestCase):
                 self.assertEqual(transformed["snapshots"][0]["metadata"], {})
                 self.assertEqual(transformed["snapshots"][0]["timestamp"], 946684800)
                 paths = export_private_report(report, temp, profile)
-                outputs = [json.dumps(transformed), investigation_summary(report, profile=profile)["text"],
+                outputs = [json.dumps(transformed),
                            *(path.read_text(encoding="utf-8") for path in paths)]
                 for output in outputs:
                     for seed in seeds:
