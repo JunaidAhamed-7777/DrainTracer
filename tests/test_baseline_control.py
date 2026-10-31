@@ -236,6 +236,31 @@ with BaselineStore(sys.argv[1]) as store:
                 data["workload"]["outcome"][field] = value
             with self.subTest(field=field), self.assertRaises(BaselineEvidenceError):
                 self.reports(f"unknown-{field}", change=invalid)
+        def missing_cleanup(data):
+            complete(data)
+            data["workload"]["outcome"].pop("exercise_cleanup")
+        with self.assertRaises(BaselineEvidenceError):
+            self.reports("unconfirmed-exercise-cleanup", change=missing_cleanup)
+        def no_exercise(data):
+            missing_cleanup(data)
+            data["workload"]["outcome"]["exercise"] = []
+        self.assertEqual(len(self.reports("no-exercise", change=no_exercise)), 2)
+
+    def test_declared_window_bounds_are_checked_before_pairwise_comparability(self):
+        for windows in ([10] * 9, [0], [3601], [0.1]):
+            with self.subTest(windows=windows), \
+                    mock.patch("src.baseline_control.comparability_caveats") as compare, \
+                    self.assertRaises(BaselineEvidenceError):
+                self.reports("windows", change=lambda data, windows=windows: data["settings"].update(windows_seconds=windows))
+            compare.assert_not_called()
+
+    def test_direct_programmatic_admission_is_bounded_before_writing_evidence(self):
+        reports = self.reports("a")
+        with BaselineStore(self.store, create=True) as store:
+            for group in ([], reports[:1], reports * 11):
+                with self.subTest(count=len(group)), self.assertRaises(BaselineError):
+                    store.promote(group, **APPROVAL)
+            self.assertFalse(list(self.store.glob("*.json")))
 
     def test_held_writer_lock_prevents_a_second_writer(self):
         self.approve(self.reports("a"))
