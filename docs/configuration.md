@@ -140,6 +140,12 @@ Changing them preserves the positive-slope, monotonicity, recovery, and
 window-coverage checks described in
 [working-principle.md](../working-principle.md).
 
+Use the [repeated calibration results](calibration-results.md) to understand
+tested duration and policy limits. The default HIGH policy missed the tested
+slow-memory growth within 75 seconds, while LOW also warned on benign cache
+filling. Keep matched growth and non-growth controls before choosing a
+workload profile; example profiles do not carry an accuracy guarantee.
+
 Durations accept numeric seconds or strings such as `"250ms"`, `"90s"`,
 `"5m"`, and `"1h30m"`. Memory amounts accept bytes or strings such as
 `"512KB"`, `"50MB"`, and `"1.5GiB"`. Units are binary throughout
