@@ -137,7 +137,16 @@ bounded allowlist, not a guarantee that every application-specific value is
 non-sensitive.
 
 An entry expires within one day and has at most twenty attempts. Each flush
-handles at most eight entries within a maximum sixty-second budget. Transient
+handles at most eight entries with a maximum sixty-second network budget. Its
+original monotonic deadline and each entry's expiry cover credential reads,
+serialization, trust loading, connection, handshake and the credential frame;
+preparation never restarts that budget. A deadline prevents starting a socket
+or sending credentials after it expires. Socket I/O uses the remaining budget.
+Synchronous local OS preparation and journal fsync cannot be preempted, so the
+whole command can take longer than the declared network budget; it then retains
+a live entry for explicit retry or removes an expired entry with an expiry
+history record, without claiming delivery. An already committed request whose
+reply was lost remains uncertain; expiry does not undo a server commit. Transient
 failures retain the same UUID and payload for a later explicit flush;
 terminal authorization/input failures become blocked. Inspect and correct the
 cause before `--retry-blocked`. A full queue refuses admission. Queue/status or

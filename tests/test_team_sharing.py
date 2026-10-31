@@ -190,6 +190,48 @@ class SharedEvidenceTests(unittest.TestCase):
         self.assertEqual(queue.flush(self.writer)["delivered"], 1)
         self.assertEqual(len(self.reader.call("list_reports")["reports"]), 1)
 
+    def test_delayed_preparation_cannot_start_a_socket_after_flush_deadline_or_entry_expiry(self):
+        from src import team_client, team_transport
+
+        for preparation in ("credential", "trust"):
+            for bound in ("deadline", "expiry"):
+                with self.subTest(preparation=preparation, bound=bound):
+                    queue = UploadQueue(self.root / f"queue-{preparation}-{bound}", self.actor.project_id,
+                                        self.endpoint, create=True)
+                    job = queue.enqueue(self.raw, ttl_seconds=1 if bound == "expiry" else 10)
+                    count_before = len(self.store.list_reports(self.actor)["reports"])
+                    target = ("src.team_client.read_credential_file" if preparation == "credential"
+                              else "src.team_transport.client_context")
+                    original = (team_client.read_credential_file if preparation == "credential"
+                                else team_transport.client_context)
+
+                    def delayed(*args, original=original, bound=bound, **kwargs):
+                        time.sleep(1.1 if bound == "expiry" else 0.35)
+                        return original(*args, **kwargs)
+
+                    with (mock.patch(target, side_effect=delayed) as prepare,
+                          mock.patch("src.team_transport.socket.create_connection",
+                                     wraps=team_transport.socket.create_connection) as connect):
+                        result = queue.flush(self.writer, deadline_seconds=3 if bound == "expiry" else 0.25)
+                    prepare.assert_called_once()
+                    connect.assert_not_called()
+                    self.assertEqual(result["delivered"], 0)
+                    self.assertEqual(len(self.store.list_reports(self.actor)["reports"]), count_before)
+                    if bound == "expiry":
+                        self.assertEqual((result["expired"], result["pending"]), (1, 0))
+                        self.assertIn({"id": job["id"], "state": "expired", "object_id": None}, result["history"])
+                        queue.enqueue(self.raw, ttl_seconds=10)
+                    else:
+                        self.assertEqual((result["expired"], result["pending"]), (0, 1))
+                        self.assertEqual(queue.inspect()["entries"][0]["last_error"], "unavailable")
+                    # A fresh valid budget works after either failed preparation;
+                    # a live entry retains its original idempotency identity.
+                    retried = queue.flush(self.writer, deadline_seconds=3, retry_blocked=True)
+                    self.assertEqual((retried["delivered"], retried["pending"]), (1, 0))
+                    if bound == "deadline":
+                        self.assertEqual(retried["history"][-1]["id"], job["id"])
+                    self.assertEqual(len(self.store.list_reports(self.actor)["reports"]), count_before + 1)
+
     def test_outage_leaves_local_monitoring_export_and_cleanup_independent(self):
         queue = UploadQueue(self.root / "queue", self.actor.project_id, self.endpoint, create=True)
         queue.enqueue(self.raw)
