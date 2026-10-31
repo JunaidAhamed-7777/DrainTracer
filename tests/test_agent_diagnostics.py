@@ -79,6 +79,18 @@ class SupportPrivacyTests(unittest.TestCase):
                 for seed in (SECRET, str(NUMERIC_SECRET), privacy_helpers.SECRET, "543219", "1700000123.5"):
                     self.assertNotIn(seed, content)
 
+    def test_unavailable_agent_cli_support_preview_creates_no_state_and_omits_raw_failure(self):
+        missing = self.root / SECRET
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            code = main(["--state-dir", str(missing), "support"])
+        self.assertEqual(code, 0)
+        document = json.loads(output.getvalue())
+        self.assertEqual(document["diagnostics"]["mode"], "unavailable")
+        self.assertTrue(document["diagnostics"]["diagnostic_error_present"])
+        self.assertNotIn(SECRET, output.getvalue())
+        self.assertFalse(missing.exists())
+        self.assertEqual(list(self.root.iterdir()), [])
+
     def test_freshness_is_monotonic_even_when_wall_clock_moves_backwards(self):
         registry = AgentRegistry(self.root, AgentPolicy(), session_type=recovery_helpers.FakeSession)
         with (mock.patch("src.agent_service.process_user_sid", return_value="owner"),
@@ -135,6 +147,9 @@ class NativeOperationsTests(unittest.TestCase):
         self.assertTrue(health["fresh"])
         self.assertEqual(health["queue_depth"], 0)
         self.assertEqual(health["active_sessions"], 2)
+        with contextlib.redirect_stdout(io.StringIO()) as cli_output:
+            self.assertEqual(main(["--state-dir", str(self.state), "--profile", self.profile, "diagnose"]), 0)
+        self.assertEqual(json.loads(cli_output.getvalue())["mode"], "live")
         with self.assertRaises(ValueError):
             remove_control_files(self.state, apply=True)
         with contextlib.redirect_stdout(io.StringIO()) as output:
@@ -151,6 +166,12 @@ class NativeOperationsTests(unittest.TestCase):
         reports = support_reports(self.state, [launched])
         document = support_document(offline, reports)
         write_support_bundle(document, self.root / "safe-support.zip")
+        with contextlib.redirect_stdout(io.StringIO()) as cli_output:
+            self.assertEqual(main(["--state-dir", str(self.state), "--profile", self.profile, "support",
+                                   "--include-report", launched, "--privacy-profile", "minimal",
+                                   "--out", str(self.root / "cli-support.zip")]), 0)
+        self.assertEqual(json.loads(cli_output.getvalue())["privacy"]["profile"], "minimal")
+        self.assertTrue((self.root / "cli-support.zip").is_file())
         note = self.state / "unrelated-note.txt"
         note.write_text(SECRET, encoding="utf-8")
         evidence = set((self.state / "reports").rglob("*.json")) | set((self.state / "checkpoints").glob("*.json"))
