@@ -247,6 +247,16 @@ class ChartPayloadTests(unittest.TestCase):
 
 
 class CoverageAnalysisTests(unittest.TestCase):
+    def test_counter_unknowns_fill_missing_coverage_without_hiding_measured_zero(self) -> None:
+        from dataclasses import replace
+
+        process = replace(make_process(100), cpu_percent=0, unmeasured=("cpu_percent",))
+        report = _report(_snap(1, processes=(process,), measured_coverage=True),
+                         _snap(2, processes=(replace(process, unmeasured=()),), measured_coverage=True))
+        payload = chart_payload(report)
+        self.assertEqual(payload["series"]["cpu"], [None, 0.0])
+        self.assertIsNotNone(payload["series"]["private"][0])
+
     def test_unreadable_totals_are_gaps_not_zeros(self) -> None:
         from helpers import make_denied
 

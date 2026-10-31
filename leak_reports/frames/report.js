@@ -59,6 +59,21 @@
   let view = full.slice();
   const hidden = new Set();
   const resetButton = document.getElementById("reset-zoom");
+  const rangeForm = document.getElementById("range-controls");
+  const rangeStart = document.getElementById("zoom-start");
+  const rangeEnd = document.getElementById("zoom-end");
+  const rangeStatus = document.getElementById("range-status");
+  function syncRange() {
+    if (!rangeForm || !rangeStart || !rangeEnd || !rangeStatus) return;
+    rangeForm.hidden = false;
+    for (const field of [rangeStart, rangeEnd]) {
+      field.min = String(full[0]); field.max = String(full[1]);
+      field.removeAttribute("aria-invalid");
+    }
+    rangeStart.value = String(Number(view[0].toFixed(3)));
+    rangeEnd.value = String(Number(view[1].toFixed(3)));
+    rangeStatus.textContent = "Charts show " + rangeStart.value + " to " + rangeEnd.value + " seconds.";
+  }
 
   const CHARTS = [
     // minSpan keeps small noise on a large baseline from filling the chart.
@@ -377,6 +392,25 @@
       y2: m.top + plotHeight, class: "axis" }, svg);
 
     chart.markers = [];
+    // User annotations are independent of leak signals and survive chart thinning.
+    const markerLabelEnds = [-Infinity, -Infinity, -Infinity];
+    for (const [index, marker] of (data.user_markers || []).entries()) {
+      if (!Number.isFinite(marker.t) || marker.t < a || marker.t > b) continue;
+      const cx = x(marker.t);
+      const label = String(marker.label || "marker");
+      const description = label + " at +" + elapsed(marker.t) + " (timing, not cause)";
+      const group = svgNode("g", { role: "img", "aria-label": description }, svg);
+      svgNode("title", {}, group).textContent = description;
+      svgNode("line", { x1: cx, x2: cx, y1: m.top, y2: m.top + plotHeight,
+        class: "user-marker" }, group);
+      const row = index % 3;
+      const labelX = Math.max(m.left, Math.min(cx + 3, m.left + plotWidth - 100));
+      if (labelX > markerLabelEnds[row] + 6) {
+        svgNode("text", { x: labelX, y: m.top + 11 + row * 12, class: "user-marker-label" },
+          group).textContent = label.length > 18 ? label.slice(0, 18) + "…" : label;
+        markerLabelEnds[row] = labelX + 100;
+      }
+    }
     const signal = def.series[0];
     if (scale && def.resource && def.markers !== false && !isHidden(def, signal)) {
       for (const marker of data.markers || []) {
@@ -423,11 +457,13 @@
     if (start < full[0]) { end += full[0] - start; start = full[0]; }
     if (end > full[1]) { start -= end - full[1]; end = full[1]; }
     view = [Math.max(full[0], start), Math.min(full[1], end)];
+    syncRange();
     hideCross();
     drawAll();
   }
   function resetZoom() {
     view = full.slice();
+    syncRange();
     hideCross();
     drawAll();
   }
@@ -569,19 +605,35 @@
     row.addEventListener("mouseleave", hideCross);
     const end = Number(row.getAttribute("data-t1"));
     if (!Number.isFinite(end)) continue;
-    row.tabIndex = 0;
     const zoom = () => {
       const pad = Math.max(5, (end - start) * 0.25, step * 4);
       zoomTo(start - pad, end + pad);
       const trends = document.getElementById("trends");
-      if (trends) trends.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (trends) trends.scrollIntoView({
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+        block: "start" });
     };
-    row.addEventListener("click", zoom);
-    row.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") { event.preventDefault(); zoom(); }
-    });
+    const button = row.querySelector(".signal-zoom");
+    if (button) button.addEventListener("click", zoom);
   }
-  if (resetButton) resetButton.addEventListener("click", resetZoom);
+  if (rangeForm) rangeForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const start = Number(rangeStart.value), end = Number(rangeEnd.value);
+    const validStart = rangeStart.value.trim() !== "" && Number.isFinite(start) && start >= full[0];
+    const validEnd = rangeEnd.value.trim() !== "" && Number.isFinite(end) && end <= full[1];
+    if (!validStart || !validEnd || start >= end) {
+      rangeStart.setAttribute("aria-invalid", String(!validStart || start >= end));
+      rangeEnd.setAttribute("aria-invalid", String(!validEnd || start >= end));
+      rangeStatus.textContent = "Enter a start before the end, within " + full[0] + " to " + full[1] + " seconds.";
+      (!validStart || start >= end ? rangeStart : rangeEnd).focus();
+      return;
+    }
+    zoomTo(start, end);
+  });
+  if (resetButton) resetButton.addEventListener("click", () => {
+    resetZoom();
+    if (rangeStart) rangeStart.focus();
+  });
   document.addEventListener("keydown", (event) => { if (event.key === "Escape") resetZoom(); });
   let frame = 0;
   window.addEventListener("resize", () => {
@@ -589,4 +641,5 @@
     frame = requestAnimationFrame(drawAll);
   });
   drawAll();
+  syncRange();
 })();

@@ -1,5 +1,12 @@
 # Public report and machine-output contracts
 
+`draintracer.report_contract.parse_report(raw: bytes)` validates an immutable
+UTF-8 upload in memory with the same byte, depth, token, value and schema limits
+as `read_report(path)`. It touches no files. A sharing service can apply its
+server privacy profile before persisting anything, rather than staging an
+unredacted upload on disk. Both functions return JSON-native report dictionaries
+and raise `ReportContractError` for unusable input.
+
 DrainTracer reads report schemas **1, 2, and 3**. A report without
 `report_schema` is schema 1. Future, zero, fractional, string, and Boolean
 schema versions are rejected explicitly. Empty snapshots are valid evidence
