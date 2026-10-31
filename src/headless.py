@@ -353,7 +353,11 @@ class HeadlessRunner(MonitorSession):
     def _print_progress(self) -> None:
         totals = self._totals()
         sep = self.glyphs.sep
-        processes = len(self.snapshot.processes) if self.snapshot else 0
+        snapshot = self.snapshot
+        counts = snapshot.process_counts if snapshot is not None else None
+        processes = counts.live if counts is not None else (
+            len(snapshot.processes) if snapshot is not None else 0
+        )
         severity = self.snapshot.severity if self.snapshot else LeakSeverity.NONE
         active = ", ".join(
             alert.resource.value for alert in (self.snapshot.alerts if self.snapshot else ())
@@ -374,7 +378,7 @@ class HeadlessRunner(MonitorSession):
             f"rss {self._format_bytes(totals.get('rss_bytes', 0.0))} {sep} "
             f"handles {int(totals.get('handles', 0.0)):,} {sep} "
             f"threads {int(totals.get('threads', 0.0)):,} {sep} "
-            f"{processes} process{'es' if processes != 1 else ''} {sep} "
+            f"{processes} live process{'es' if processes != 1 else ''} {sep} "
             f"signal {signal}",
         )
 

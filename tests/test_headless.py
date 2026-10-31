@@ -76,6 +76,30 @@ class ExitStatusTests(unittest.TestCase):
             output,
         )
 
+    def test_progress_uses_snapshot_live_counts_without_resampling(self) -> None:
+        from dataclasses import replace
+
+        from helpers import make_denied
+
+        from src.events import ProcessCounts
+
+        runner = self._runner()
+        for live in (3, 1, 0):
+            snapshot = replace(make_snapshot(processes=(make_denied(100),)),
+                               process_counts=ProcessCounts(live=live, exited=3 - live))
+            runner._accept_snapshot(snapshot)
+            runner._print_progress()
+            line = _output(runner).splitlines()[-1]
+            self.assertIn(f"{live} live process{'es' if live != 1 else ''}", line)
+
+    def test_progress_retains_count_fallback_for_older_snapshots(self) -> None:
+        runner = self._runner()
+        runner._print_progress()
+        self.assertIn("0 live processes", _output(runner))
+        runner._accept_snapshot(make_snapshot())
+        runner._print_progress()
+        self.assertIn("1 live process", _output(runner))
+
     def test_clean_run_passes(self) -> None:
         runner = self._runner()
         runner._accept_snapshot(make_snapshot())

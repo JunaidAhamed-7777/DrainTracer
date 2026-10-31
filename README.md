@@ -337,7 +337,9 @@ python src/main.py --headless --target .\torture\steady.py --timeout 15s --fail-
 ```
 
 Headless mode prints progress, exports reports, and exits when the monitored
-tree finishes or the time limit passes. Its exit code describes the monitor's
+tree exits or the configured time limit expires. Each `STAT` line includes the
+live process count from the accepted snapshot, including unreadable processes.
+Its exit code describes the monitor's
 result, rather than forwarding the target's exit code:
 
 - `0` — no observed signal reached the selected threshold. This includes
@@ -454,6 +456,8 @@ rounded duration labels look identical. Coverage caveats use recorded whole-sess
 including wholly unreadable samples, even after chart history is thinned.
 
 Use comparable workloads, durations, warm-ups, and settings. Long sessions
+count evicted event messages separately as `event_counts`; the HTML event
+section shows observed, retained, and discarded totals. They also
 thin the stored chart history; reports then say "chart thinned 1:N", while
 peaks with their times, worst severities, signal episode counts, evaluated
 time, and sample counts stay exact in `session_facts`. Reports include local
