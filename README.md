@@ -500,6 +500,8 @@ and comparison exit codes.
 
 ## Documentation
 
+- [First result walkthrough](docs/first-result.md) — install, measure bounded
+  growth, inspect coverage, change the workload, and compare exported reports.
 - [Usage and troubleshooting](docs/usage.md) — launch, attach, controls, warm-up,
   headless operation, and diagnostic logging.
 - [Configuration](docs/configuration.md) — TOML discovery, profiles, thresholds,
