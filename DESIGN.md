@@ -106,6 +106,12 @@ PID and creation time. Range controls stay within bounded retained history; free
 captures the current scope and never stops sampling. HTML provides the same named
 annotations as visible chart labels and an escaped textual list.
 
+Compare is view 6. It uses the shared strict report-diff engine and renderer,
+with comparability and caveats above differences. Baseline path input owns keys
+until Enter or Escape; background loading never controls the target. Comparison
+results are captured on request, show their capture time, and refresh with R.
+The scrollable view preserves the previous result after a failed load.
+
 Repeated report comparisons display strict comparability and run-specific caveats
 before resource differences. They use medians with observed ranges, state the
 conservative decision rule, and preserve unknown values. Text remains readable
