@@ -159,9 +159,6 @@ worst signals, budget decisions, coverage, and sample counts still include
 every collected observation. `chart.seen` counts snapshots accepted into chart
 history, so it can be smaller than `samples.taken` after queue loss.
 
-The top-level `markers` list holds the markers added with `M` during a
-dashboard session: `index`, `label` (`marker N`), `timestamp`, `time`, and
-
 The top-level `markers` list holds the markers added with `M` or `N` during a
 dashboard session: `index`, `label` (`marker N` or an entered label), `timestamp`, `time`, and
 `elapsed_seconds` since monitoring started. Markers record when the user
