@@ -532,6 +532,8 @@ class MonitorDiagnostics:
     monitor_rss_bytes: int | None = None
     monitor_private_bytes: int | None = None
     host: HostPressure | None = None
+    clock_adjustments: int = 0
+    sampling_gaps: int = 0
 
     @property
     def cadence_lag_ms(self) -> float | None:
