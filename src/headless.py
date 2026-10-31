@@ -17,7 +17,7 @@ from .config import FAIL_ON_CHOICES, MonitorSettings
 from .analysis import RESOURCES, summarize
 from .budgets import BudgetCheck, check_budgets
 from .dashboard import DashboardApp
-from .events import EvidenceState, LeakSeverity, severity_rank, unavailable_reason
+from .events import EvidenceState, LeakResource, LeakSeverity, severity_rank, unavailable_reason
 from .report import DEFAULT_REPORT_DIR
 from .report_diff import format_amount, format_drift
 from .session import MonitorSession
@@ -118,6 +118,23 @@ class HeadlessRunner(MonitorSession):
         super()._accept_snapshot(snapshot, already_observed=already_observed)
         if self._start_logged:
             self._log_budget_breaches()
+
+    def _signal_label(self, resource: LeakResource) -> str:
+        if self.worst_severity_for(resource) != LeakSeverity.NONE:
+            return super()._signal_label(resource)
+        if resource in self._judged_resources:
+            return "clear"
+        snapshot = self.snapshot
+        evidence = snapshot.evidence_for(resource) if snapshot is not None else None
+        if evidence is not None and evidence.state == EvidenceState.UNAVAILABLE:
+            return "unavailable"
+        if (snapshot is not None and snapshot.warming_up) or (
+            self.detector.warmup_seconds and self.detector.warmup_completed_at is None
+        ):
+            return "inconclusive (warming up)"
+        if evidence is None and self.conclusive:
+            return "clear"  # Compatibility for snapshots without per-resource evidence.
+        return "inconclusive (collecting)"
 
     def _log_start(self) -> None:
         super()._log_start()
@@ -313,7 +330,11 @@ class HeadlessRunner(MonitorSession):
     def _print_progress(self) -> None:
         totals = self._totals()
         sep = self.glyphs.sep
-        processes = len(self.snapshot.processes) if self.snapshot else 0
+        snapshot = self.snapshot
+        counts = snapshot.process_counts if snapshot is not None else None
+        processes = counts.live if counts is not None else (
+            len(snapshot.processes) if snapshot is not None else 0
+        )
         severity = self.snapshot.severity if self.snapshot else LeakSeverity.NONE
         active = ", ".join(
             alert.resource.value for alert in (self.snapshot.alerts if self.snapshot else ())
@@ -334,7 +355,7 @@ class HeadlessRunner(MonitorSession):
             f"rss {self._format_bytes(totals.get('rss_bytes', 0.0))} {sep} "
             f"handles {int(totals.get('handles', 0.0)):,} {sep} "
             f"threads {int(totals.get('threads', 0.0)):,} {sep} "
-            f"{processes} process{'es' if processes != 1 else ''} {sep} "
+            f"{processes} live process{'es' if processes != 1 else ''} {sep} "
             f"signal {signal}",
         )
 
@@ -483,7 +504,7 @@ class HeadlessRunner(MonitorSession):
             ]
             for resource in RESOURCES:
                 stats = summary.resources[resource]
-                signal = stats.worst.upper() if stats.worst != "none" else "clear"
+                signal = self._signal_label(LeakResource(resource))
                 if stats.worst != "none":
                     signal = f"**{signal}**"
                 lines.append(
