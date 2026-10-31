@@ -46,12 +46,16 @@ use the report command's privacy preview before sharing them.
 `SessionResult.reason` distinguishes `target_exited`, `timeout`, `cancelled`,
 and `failed`. Startup, cleanup, measurement, coverage and errors are separate
 fields. `exit_code` uses the CLI's policy codes: explicit API cancellation is
-130; startup/runtime/export failures are 2, budgets 5, requested target failures
+130 when no signal has already failed; startup/runtime/export failures are 2, budgets 5, requested target failures
 4, requested coverage/inconclusive failures 3, signals at `fail_on` 1, otherwise
 0. A timeout requests normal cleanup and is not by itself a leak or failure.
 An incomplete cleanup remains explicit in `cleanup` and the report, even when
 default policies otherwise return zero. `close()` before `start()` completes
 as cancelled without launching or attaching to anything.
+The shared precedence is startup failure, then signal, cancellation,
+runtime/export failure, budget, requested target failure, requested coverage or
+inconclusive failure, then pass. A recorded signal remains a failure even if a
+later cancellation or monitor problem ends the session.
 
 The API does not install signal handlers. Context management handles a Python
 exception or KeyboardInterrupt by requesting normal cleanup. An abrupt monitor

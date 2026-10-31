@@ -27,7 +27,7 @@ from .budgets import check_budgets
 from .config import _parse_layer, resolve_settings
 from .events import severity_rank
 from .report import snapshot_to_dict
-from .session import MonitorSession
+from .session import MonitorSession, session_exit_code
 
 
 def _freeze(value: Any) -> Any:
@@ -550,23 +550,20 @@ class Session:
                 self._done.set()
 
     def _exit_code(self, backend, reason: str, errors: list[str]) -> int:
-        if reason == "failed":
-            return 2
-        if reason == "cancelled":
-            return 130
-        if errors:
-            return 2
         if backend is None:
-            return 2
+            return session_exit_code(startup_failed=reason == "failed", signal_breached=False,
+                                     cancelled=reason == "cancelled", monitor_failed=bool(errors),
+                                     over_budget=False, target_failed=False, inconclusive=True)
         settings = backend.settings
-        if any(check.exceeded for check in check_budgets(settings.budgets, backend._peaks)):
-            return 5
-        if settings.fail_on_target_error and backend.target_failed:
-            return 4
-        if ((settings.require_full_coverage and not backend.full_coverage)
-                or (settings.fail_on_inconclusive and not backend.conclusive)):
-            return 3
-        return int(severity_rank(backend.worst_severity) >= severity_rank(settings.fail_on))
+        return session_exit_code(
+            startup_failed=backend._startup_state == "failed",
+            signal_breached=severity_rank(backend.worst_severity) >= severity_rank(settings.fail_on),
+            cancelled=reason == "cancelled", monitor_failed=reason == "failed" or bool(errors),
+            over_budget=any(check.exceeded for check in check_budgets(settings.budgets, backend._peaks)),
+            target_failed=settings.fail_on_target_error and backend.target_failed,
+            inconclusive=((settings.require_full_coverage and not backend.full_coverage)
+                          or (settings.fail_on_inconclusive and not backend.conclusive)),
+        )
 
     def __enter__(self):
         self.start()

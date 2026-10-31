@@ -10,6 +10,7 @@ import time
 import unittest
 from concurrent.futures import Future
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 import psutil
@@ -22,6 +23,7 @@ from src.api import (
     SessionStatus,
     Subscription,
 )
+from src.events import LeakSeverity
 from src.report_contract import validate_report
 
 
@@ -124,6 +126,23 @@ class ApiTests(unittest.TestCase):
             with self.assertRaises(PermissionError):
                 control()
         session.close(5)
+
+    def test_exit_codes_keep_signals_before_later_cancel_errors_or_budgets(self):
+        options = self.options(budgets={"handles": 1})
+        session = Session.launch(self.target, options=options)
+        backend = SimpleNamespace(settings=options._settings(), _startup_state="started",
+                                  worst_severity=LeakSeverity.HIGH, _peaks={"handles": 2},
+                                  target_failed=False, full_coverage=True, conclusive=True)
+        for reason, errors in (("timeout", []), ("cancelled", []), ("failed", ["sample failed"])):
+            with self.subTest(reason=reason):
+                self.assertEqual(session._exit_code(backend, reason, errors), 1)
+        backend._startup_state = "failed"
+        self.assertEqual(session._exit_code(backend, "failed", ["startup failed"]), 2)
+        backend._startup_state = "started"
+        backend.worst_severity = LeakSeverity.NONE
+        self.assertEqual(session._exit_code(backend, "cancelled", []), 130)
+        self.assertEqual(session._exit_code(backend, "failed", ["sample failed"]), 2)
+        self.assertEqual(session._exit_code(backend, "timeout", []), 5)
 
     def test_enabled_controls_run_on_controller_and_record_kill_ownership(self):
         session = Session.launch(self.target, options=self.options(allow_pause=True, allow_kill=True))

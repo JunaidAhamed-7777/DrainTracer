@@ -13,14 +13,14 @@ from typing import Any
 from rich.console import Console
 from rich.text import Text
 
-from .config import FAIL_ON_CHOICES, MonitorSettings
 from .analysis import RESOURCES, summarize
 from .budgets import BudgetCheck, check_budgets
+from .config import FAIL_ON_CHOICES, MonitorSettings
 from .dashboard import DashboardApp
 from .events import EvidenceState, LeakResource, LeakSeverity, severity_rank, unavailable_reason
 from .report import DEFAULT_REPORT_DIR
 from .report_diff import format_amount, format_drift
-from .session import MonitorSession
+from .session import MonitorSession, session_exit_code
 from .theme import PALETTE
 from .units import format_duration
 
@@ -260,23 +260,15 @@ class HeadlessRunner(MonitorSession):
         error, then an exceeded budget; the optional policies only apply to
         runs that are otherwise a pass.
         """
-        if self._startup_state == "failed":
-            return EXIT_ERROR
-        if self.breached:
-            return EXIT_LEAK
-        if self._interrupted:
-            return EXIT_INTERRUPTED
-        if self._export_error is not None or self._run_error is not None:
-            return EXIT_ERROR
-        if self.over_budget:
-            return EXIT_BUDGET
-        if self.fail_on_target_error and self.target_failed:
-            return EXIT_TARGET_ERROR
-        if self.require_full_coverage and not self.full_coverage:
-            return EXIT_INCONCLUSIVE
-        if self.fail_on_inconclusive and not self.conclusive:
-            return EXIT_INCONCLUSIVE
-        return EXIT_PASS
+        return session_exit_code(
+            startup_failed=self._startup_state == "failed", signal_breached=self.breached,
+            cancelled=self._interrupted,
+            monitor_failed=self._export_error is not None or self._run_error is not None,
+            over_budget=bool(self.over_budget),
+            target_failed=self.fail_on_target_error and self.target_failed,
+            inconclusive=((self.require_full_coverage and not self.full_coverage)
+                          or (self.fail_on_inconclusive and not self.conclusive)),
+        )
 
     def _policy_text(self) -> str:
         """``fails on HIGH or above``, plus any optional policy in force."""
