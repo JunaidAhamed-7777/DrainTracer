@@ -82,6 +82,30 @@ rerun selectively until expected results appear. Operational failures stay
 in the dataset with their errors; a corrected harness requires a documented
 amendment and a fresh complete set.
 
+The harness aborts before another case if cleanup is incomplete or cannot be
+confirmed. Ctrl+C retains the partial dataset and stops the sequence. Its
+two-second `--smoke` mode validates orchestration only and is explicitly marked
+as a harness smoke, never as a calibration measurement.
+
+Run the committed harness from a clean checkout with dependencies installed:
+
+```powershell
+python torture/calibrate.py --output torture/reports/calibration-windows.json --concurrent-windows-wsl
+```
+
+In WSL/Linux, use that environment's Python and a distinct output name:
+
+```sh
+python torture/calibrate.py --output torture/reports/calibration-linux.json --concurrent-windows-wsl
+```
+
+Omit `--concurrent-windows-wsl` when the platforms run sequentially on separate
+or otherwise quiet hosts. Existing datasets are refused rather than overwritten.
+The output is checkpointed atomically after every run. Snapshot age at
+consumption includes collection time and scheduling; it is not a pure queue
+latency measurement. Each target's first warning is timed from monitor launch,
+not from an independently instrumented allocation event.
+
 Minimum useful durations must account for requested cadence, valid sample
 coverage, warm-up, and the longest intended window. A 60-second window needs
 roughly 51 seconds of valid evidence after warm-up; observed timing adds
