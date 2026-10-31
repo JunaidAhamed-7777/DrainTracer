@@ -46,6 +46,7 @@
     "src/stats.py",
     "src/team_database.py",
     "src/team_models.py",
+    "src/team_records.py",
     "src/team_security.py",
     "src/team_store.py",
     "src/theme.py",
