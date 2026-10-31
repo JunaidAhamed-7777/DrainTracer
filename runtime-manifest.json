@@ -46,6 +46,7 @@
     "src/view_processes.py",
     "src/view_timeline.py",
     "src/widgets.py",
+    "src/workload.py",
     "src/workload_logs.py"
   ]
 }

@@ -367,6 +367,11 @@ priority and GitHub Actions integration.
 
 ## Tune it to your workload
 
+For repeatable local and CI launches, use `draintracer-workload recipe.json`.
+Recipes select interpreter, working directory, environment, readiness, and
+bounded exercise steps, with optional capped target logs. See the
+[workload recipe guide](docs/workloads.md) for ownership, privacy, and exits.
+
 Copy [examples/drainrc.toml](examples/drainrc.toml) to `.drainrc` in your project.
 From a source checkout, you can also select that example explicitly:
 
