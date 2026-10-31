@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+import hashlib
 import json
 import os
 import re
@@ -104,13 +105,21 @@ def main():
         recipe = Path(os.environ.get("DRAIN_RECIPE", "")).resolve(strict=True)
         if not recipe.is_file() or recipe.stat().st_size > 65536:
             raise ValueError("Use a bounded recipe file")
-        environment = root / "environment"
-        venv.EnvBuilder(with_pip=True).create(environment)
-        python = str(environment / "Scripts" / "python.exe")
         wheel = os.environ.get("DRAIN_WHEEL", "")
         package = str(Path(wheel).resolve(strict=True)) if wheel else f"draintracer=={version}"
         if wheel and (not Path(package).is_file() or Path(package).suffix != ".whl"):
             raise ValueError("Candidate input must be a local wheel")
+        identity = hashlib.sha256(version.encode("ascii"))
+        if wheel:
+            with Path(package).open("rb") as handle:
+                for chunk in iter(lambda: handle.read(65536), b""):
+                    identity.update(chunk)
+        # Stable per pinned package in this runner job, so repeated invocations
+        # do not invent a different effective interpreter path in provenance.
+        environment = temporary_parent / f"draintracer-package-{identity.hexdigest()[:32]}"
+        if not environment.exists():
+            venv.EnvBuilder(with_pip=True).create(environment)
+        python = str(environment / "Scripts" / "python.exe")
         code = _run([python, "-I", "-m", "pip", "--isolated", "install", "--disable-pip-version-check",
                      "--index-url", "https://pypi.org/simple", package], evidence / "install.log", timeout=300)
         if code:
