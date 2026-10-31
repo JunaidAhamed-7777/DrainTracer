@@ -18,6 +18,8 @@ import zipfile
 from email.parser import BytesParser
 from pathlib import Path
 
+from verify_baseline_distribution import verify_baseline_runtime
+
 
 def _require(condition: bool, message: str) -> None:
     if not condition:
@@ -209,6 +211,9 @@ print(json.dumps({'reason': result.reason, 'cleanup': result.cleanup, 'errors': 
             content = Path(captured["path"]).read_bytes()
             _require(len(content) <= 1024 and b"disposable-selected-value" not in content,
                      "Installed recipe output was not bounded and redacted.")
+        source_commit = subprocess.check_output(["git", "rev-parse", "HEAD"],
+                                               cwd=Path(__file__).resolve().parent.parent, text=True).strip()
+        verify_baseline_runtime(python, cwd, environment, source_commit)
     return version
 
 
