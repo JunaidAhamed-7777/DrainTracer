@@ -174,6 +174,30 @@ class RenderTests(unittest.TestCase):
         self.assertNotIn("n/a", rows[1])
         self.assertEqual(rows[2].count("n/a"), 6)
 
+    def test_named_markers_are_retained_bounded_and_escaped_for_charts_and_text(self) -> None:
+        from src.analysis import chart_payload
+
+        report = _report(markers=[{"timestamp": 1001, "label": "[red]load " + HOSTILE,
+                                  "index": 1}, {"timestamp": "bad", "label": "bad"}])
+        payload = chart_payload(report)
+        self.assertEqual(payload["user_markers"][0]["t"], 1)
+        self.assertEqual(len(payload["user_markers"]), 1)
+        document = render_html_report(report)
+        self.assertIn("Named markers", document)
+        self.assertIn(html.escape("[red]load " + HOSTILE, quote=True), document)
+        self.assertIn('data-t="1.0" data-t1="1.0"', document)
+        panel = document.split("<h2>Named markers</h2>", 1)[1].split("</section>", 1)[0]
+        self.assertIn('type="button" class="signal-zoom"', panel)
+        self.assertIn('aria-label="Zoom charts to marker '
+                      + html.escape("[red]load " + HOSTILE, quote=True) + ' at +00:00:01"', panel)
+        self.assertIn(">Zoom +00:00:01</button>", panel)
+        self.assertNotIn("Activate a row", panel)
+        report["markers"] = [{"timestamp": 1001, "label": "x" * 100, "index": i}
+                             for i in range(510)]
+        payload = chart_payload(report)
+        self.assertEqual(len(payload["user_markers"]), 500)
+        self.assertEqual(len(payload["user_markers"][0]["label"]), 80)
+
     def test_offline_keyboard_and_table_semantics_are_explicit(self) -> None:
         document = render_html_report(_report())
         self.assertIn('<form id="range-controls" class="chart-range" novalidate hidden>', document)

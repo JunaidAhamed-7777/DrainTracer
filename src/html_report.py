@@ -72,6 +72,7 @@ def render_html_report(report: Mapping[str, Any]) -> str:
             _verdict(report, summary),
             _cards(report, summary, _sample_count(report, summary)),
             _charts_panel(),
+            _user_markers_panel(payload),
             _sample_table_panel(payload, summary.chart_stride),
             _episodes_panel(summary, start),
             _events_panel(report, start),
@@ -521,6 +522,22 @@ def _episodes_panel(summary: ReportSummary, start: float | None) -> str:
         f'<p class="hint">{_e(hint)}</p></div>'
         f"{body}</section>"
     )
+
+
+def _user_markers_panel(payload: Mapping[str, Any]) -> str:
+    markers = payload.get("user_markers") or []
+    if not markers:
+        return ""
+    rows = [
+        f'<tr data-t="{marker["t"]}" data-t1="{marker["t"]}">'
+        '<td><button type="button" class="signal-zoom" '
+        f'aria-label="Zoom charts to marker {_e(marker["label"])} at +{format_clock(marker["t"])}">'
+        f'Zoom +{format_clock(marker["t"])}</button></td><td>{_e(marker["label"])}</td></tr>'
+        for marker in markers
+    ]
+    return ('<section class="panel"><div class="panel-head"><h2>Named markers</h2>'
+            '<p class="hint">Timing annotations, not cause. Use a marker\'s Zoom button to inspect its interval.</p>'
+            '</div>' + _table(("Elapsed time", "Label"), rows) + '</section>')
 
 
 def _monitor_panel(summary: ReportSummary) -> str:
