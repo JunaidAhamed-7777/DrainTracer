@@ -44,6 +44,7 @@
     "src/session_facts.py",
     "src/startup.py",
     "src/stats.py",
+    "src/team_backups.py",
     "src/team_client.py",
     "src/team_database.py",
     "src/team_evidence.py",
