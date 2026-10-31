@@ -50,6 +50,7 @@ def _api():
     signatures = {
         "GetCurrentProcess": ([], wintypes.HANDLE),
         "CloseHandle": ([wintypes.HANDLE], wintypes.BOOL),
+        "OpenProcess": ([wintypes.DWORD, wintypes.BOOL, wintypes.DWORD], wintypes.HANDLE),
         "LocalFree": ([wintypes.LPVOID], wintypes.LPVOID),
         "CreateDirectoryW": ([wintypes.LPCWSTR, ctypes.POINTER(_SecurityAttributes)], wintypes.BOOL),
         "CreateNamedPipeW": ([wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.DWORD,
@@ -123,13 +124,32 @@ def current_user_sid() -> str:
         kernel.CloseHandle(token)
 
 
+def process_user_sid(pid: int) -> str:
+    """Read the target token owner without acquiring process-control rights."""
+    kernel, security = _api()
+    process = _check(kernel.OpenProcess(0x1000, False, pid))  # QUERY_LIMITED_INFORMATION
+    token = wintypes.HANDLE()
+    try:
+        _check(security.OpenProcessToken(process, 0x0008, ctypes.byref(token)))
+        size = wintypes.DWORD()
+        security.GetTokenInformation(token, 1, None, 0, ctypes.byref(size))
+        buffer = ctypes.create_string_buffer(size.value)
+        _check(security.GetTokenInformation(token, 1, buffer, size, ctypes.byref(size)))
+        return _sid_string(ctypes.cast(buffer, ctypes.POINTER(_TokenUser)).contents.sid)
+    finally:
+        if token.value:
+            kernel.CloseHandle(token)
+        kernel.CloseHandle(process)
+
+
 @contextmanager
-def _attributes():
+def _attributes(*, inherit_children: bool = False):
     kernel, security = _api()
     descriptor = wintypes.LPVOID()
     sid = current_user_sid()
+    flags = "OICI" if inherit_children else ""
     _check(security.ConvertStringSecurityDescriptorToSecurityDescriptorW(
-        f"O:{sid}D:P(A;;FA;;;{sid})(A;;FA;;;SY)", 1, ctypes.byref(descriptor), None))
+        f"O:{sid}D:P(A;{flags};FA;;;{sid})(A;{flags};FA;;;SY)", 1, ctypes.byref(descriptor), None))
     try:
         yield _SecurityAttributes(ctypes.sizeof(_SecurityAttributes), descriptor, False)
     finally:
@@ -186,7 +206,7 @@ def private_directory(path: str | Path) -> Path:
     for part in path.parents:
         if getattr(part.stat(follow_symlinks=False), "st_file_attributes", 0) & 0x400:
             raise AgentTransportError("agent state cannot traverse a reparse point")
-    with _attributes() as attributes:
+    with _attributes(inherit_children=True) as attributes:
         if not kernel.CreateDirectoryW(str(path), ctypes.byref(attributes)) and ctypes.get_last_error() != 183:
             raise ctypes.WinError(ctypes.get_last_error())
     verify_private_path(path)

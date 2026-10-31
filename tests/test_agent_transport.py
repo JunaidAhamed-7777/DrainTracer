@@ -24,9 +24,11 @@ from src.agent_transport import (
     _decode_frame,
     authenticate,
     connect,
+    current_user_sid,
     load_secret,
     pipe_name,
     private_directory,
+    process_user_sid,
     verify_private_path,
 )
 
@@ -89,6 +91,7 @@ class NativeTransportTests(unittest.TestCase):
         return thread, errors
 
     def test_private_state_and_first_instance_are_enforced(self) -> None:
+        self.assertEqual(process_user_sid(os.getpid()), current_user_sid())
         verify_private_path(self.directory)
         verify_private_path(self.directory / "credential")
         self.assertEqual(load_secret(self.directory), self.secret)
