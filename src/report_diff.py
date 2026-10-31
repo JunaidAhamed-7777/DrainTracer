@@ -23,7 +23,6 @@ verdict with ``not comparable`` or ``insufficient coverage``.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -40,6 +39,7 @@ from .analysis import (
 )
 from .budgets import BudgetCheck, check_budgets
 from .events import METRIC_LABELS
+from .report_contract import ReportContractError, read_report
 from .experiment import ExperimentData, load_experiment
 from .handle_types import CATEGORIES as HANDLE_CATEGORIES
 from .report import target_filename
@@ -348,23 +348,12 @@ def load_report(path: str | Path) -> LoadedReport:
     """Read a JSON report from disk and summarize it."""
     report_path = Path(path)
     try:
-        text = report_path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        raise DiffError(f"{report_path}: no such file") from None
-    except UnicodeDecodeError:
-        raise DiffError(f"{report_path}: not a UTF-8 JSON report") from None
-    except OSError as exc:
-        raise DiffError(f"{report_path}: cannot read the file ({exc.strerror or exc})") from None
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise DiffError(f"{report_path}: not valid JSON ({exc.msg} at line {exc.lineno})") from None
-    except RecursionError:
-        raise DiffError(f"{report_path}: JSON nested too deeply to be a report") from None
-    except ValueError as exc:  # such as an integer too long to convert
-        raise DiffError(f"{report_path}: not a usable JSON report ({exc})") from None
-    if not isinstance(data, dict) or not isinstance(data.get("snapshots"), list):
-        raise DiffError(f"{report_path}: not a DrainTracer report (no snapshots list)")
+        data = read_report(report_path)
+    except ReportContractError as exc:
+        message = str(exc)
+        if message.startswith("$"):
+            message = f"not a DrainTracer report ({message})"
+        raise DiffError(f"{report_path}: {message}") from None
     if not data["snapshots"]:
         raise DiffError(f"{report_path}: the report has no snapshots to compare")
     try:
@@ -503,6 +492,14 @@ def comparability_caveats(before: LoadedReport, after: LoadedReport) -> list[Cav
             NOT_COMPARABLE)
     caveats.extend(_experiment_caveats(before.experiment, after.experiment))
     for label, report in (("A", before), ("B", after)):
+        if isinstance(report.data.get("privacy"), Mapping):
+            add("privacy", f"report {label} was privacy transformed; original target and workload "
+                "identities cannot be shown equivalent", NOT_COMPARABLE)
+        recovery = report.data.get("recovery")
+        if (isinstance(recovery, Mapping) and recovery.get("partial") is True
+                or isinstance(report.data.get("checkpoint"), Mapping)):
+            add("recovered checkpoint", f"report {label} contains a saved prefix only; its missing tail, "
+                "final outcome, and cleanup are unknown", INSUFFICIENT_COVERAGE)
         if not report.detection_ran:
             add("inconclusive",
                 f"report {label} never filled a detection window, so its lack of "

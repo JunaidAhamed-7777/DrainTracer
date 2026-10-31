@@ -1,0 +1,287 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/JunaidAhamed-7777/DrainTracer/raw/main/schemas/report.json",
+  "title": "DrainTracer report versions 1\u20133",
+  "type": "object",
+  "required": [
+    "snapshots"
+  ],
+  "properties": {
+    "report_schema": {
+      "type": "integer",
+      "enum": [
+        1,
+        2,
+        3
+      ]
+    },
+    "report_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "version": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "target_path": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "mode": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "target_exit_code": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "snapshot_stride": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "snapshots": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "timestamp"
+        ],
+        "properties": {
+          "timestamp": {
+            "type": "number"
+          },
+          "processes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "pid": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "create_time": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "access_denied": {
+                  "type": "boolean"
+                },
+                "unmeasured": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "private_bytes": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "rss_bytes": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "vms_bytes": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "handles": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "threads": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "cpu_percent": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "io_read_bytes_per_sec": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "io_write_bytes_per_sec": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "totals": {
+            "type": "object",
+            "properties": {
+              "private_bytes": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "rss_bytes": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "vms_bytes": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "handles": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "threads": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "cpu_percent": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "io_read_bytes_per_sec": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "io_write_bytes_per_sec": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            }
+          },
+          "alerts": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "coverage": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "metadata": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "monitoring_paused": {
+            "type": "boolean"
+          },
+          "warming_up": {
+            "type": "boolean"
+          },
+          "severity": {
+            "enum": [
+              "none",
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ]
+          }
+        }
+      }
+    },
+    "detection_ran": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "recovery": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "partial": {
+          "type": "boolean"
+        },
+        "exact_through_cutoff": {
+          "type": "boolean"
+        },
+        "final_outcome_confirmed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "settings": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "experiment": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "coverage": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "outcome": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "session_facts": {
+      "type": [
+        "object",
+        "null"
+      ]
+    }
+  }
+}

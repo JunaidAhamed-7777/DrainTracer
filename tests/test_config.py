@@ -277,21 +277,43 @@ class ExampleFileTests(unittest.TestCase):
         self.assertEqual(heavy.thresholds[LeakResource.MEMORY].critical_delta, 4 * 1024 * MB)
 
 
+class CheckpointSettingsTests(ConfigTestCase):
+    def test_checkpoint_paths_and_cadence_are_opt_in_and_layered(self) -> None:
+        self.assertIsNone(self.resolve(discover=False).checkpoint)
+        self.write(".drainrc", 'checkpoint = "state/session.json"\n[profiles.ci]\ncheckpoint_interval = "1s"\n')
+        settings = self.resolve(profile="ci")
+        self.assertEqual(Path(settings.checkpoint), self.root / "state/session.json")
+        self.assertEqual(settings.checkpoint_interval, 1.0)
+
+    def test_invalid_checkpoint_settings_fail_before_startup(self) -> None:
+        for text, error in (('checkpoint = ""', "non-empty path"),
+                            ('checkpoint_interval = "500ms"', "between 1s and 1h"),
+                            ('checkpoint_interval = "2h"', "between 1s and 1h")):
+            with self.subTest(text=text):
+                self.write(".drainrc", text)
+                self.assertConfigError(error)
+
+
 class PolicySettingsTests(ConfigTestCase):
     def test_policies_come_from_files_and_default_off(self) -> None:
         self.assertFalse(self.resolve(discover=False).fail_on_inconclusive)
+        self.assertFalse(self.resolve(discover=False).require_full_coverage)
         self.write(".drainrc", """
             fail_on_inconclusive = true
             [profiles.ci]
             fail_on_target_error = true
+            require_full_coverage = true
         """)
         settings = self.resolve(profile="ci")
         self.assertTrue(settings.fail_on_inconclusive)
         self.assertTrue(settings.fail_on_target_error)
+        self.assertTrue(settings.require_full_coverage)
 
     def test_policies_must_be_booleans(self) -> None:
-        self.write(".drainrc", 'fail_on_target_error = "yes"\n')
-        self.assertConfigError("fail_on_target_error must be true or false")
+        for key in ("fail_on_target_error", "require_full_coverage"):
+            with self.subTest(key=key):
+                self.write(".drainrc", f'{key} = "yes"\n')
+                self.assertConfigError(f"{key} must be true or false")
 
 
 class ExperimentSettingsTests(ConfigTestCase):
