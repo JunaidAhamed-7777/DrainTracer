@@ -4,6 +4,19 @@ The supported integration boundary is `draintracer.api`. It does not import or
 initialize the dashboard, file picker, keyboard input, or update checker.
 The report reader remains available from `draintracer.report_contract`.
 
+After `pip install draintracer`, run the [standalone example](../examples/python_session.py)
+outside the repository: `python python_session.py /path/to/worker.py`. It uses
+only documented supported imports and produces the normal JSON/HTML pair.
+
+```python
+from draintracer.api import Session, SessionOptions
+
+options = SessionOptions(timeout_seconds=30)
+with Session.launch("worker.py", args=("--items", "1000"), options=options) as session:
+    result = session.wait()
+print(result.measurement, result.cleanup, result.exit_code)
+```
+
 `Session.launch(path, args=(), options=SessionOptions())` and
 `Session.attach(pid, create_time=..., options=SessionOptions())` construct a
 single-use session. Construction does not start or control a process. `start()`
@@ -25,6 +38,25 @@ omitting it means attaching to the identity found at startup.
 writes the usual JSON/HTML pair only under the configured report directory and
 returns an `ExportResult`; an HTML failure is explicit even when JSON succeeds.
 Exports and commands run on the controller, never on the sampling thread.
+Commands require a running session. After completion, use `report()` for the
+final report and `result.exports` for the pair written by `export_on_close`
+(true by default). Reports and paths can contain sensitive local information;
+use the report command's privacy preview before sharing them.
+
+`SessionResult.reason` distinguishes `target_exited`, `timeout`, `cancelled`,
+and `failed`. Startup, cleanup, measurement, coverage and errors are separate
+fields. `exit_code` uses the CLI's policy codes: explicit API cancellation is
+130; startup/runtime/export failures are 2, budgets 5, requested target failures
+4, requested coverage/inconclusive failures 3, signals at `fail_on` 1, otherwise
+0. A timeout requests normal cleanup and is not by itself a leak or failure.
+An incomplete cleanup remains explicit in `cleanup` and the report, even when
+default policies otherwise return zero. `close()` before `start()` completes
+as cancelled without launching or attaching to anything.
+
+The API does not install signal handlers. Context management handles a Python
+exception or KeyboardInterrupt by requesting normal cleanup. An abrupt monitor
+process kill cannot run context exit; optional checkpoints preserve an evidence
+prefix under the recovery contract, without claiming final cleanup succeeded.
 
 Pause/resume and kill require separate `allow_pause` and `allow_kill` options,
 both false by default. Commands use a bounded controller queue. Queue saturation
