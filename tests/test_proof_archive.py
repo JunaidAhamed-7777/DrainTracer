@@ -63,7 +63,7 @@ class ProofArchiveTests(unittest.TestCase):
 
     def test_absolute_parent_windows_device_and_alternate_stream_paths_are_refused_first(self):
         for name in ("../outside", "/absolute", "C:/outside", "a/../../outside", "a\\outside", "a//b",
-                     "a/./b", "a:stream", "NUL.py", "COM1", "LPT¹.log", "a.", "a ", "bad\x01name", "bad\x00name"):
+                     "a/./b", "a:stream", "NUL.py", "NUL .py", "COM1", "LPT¹.log", "a.", "a ", "bad\x01name", "bad\x00name"):
             self.archive_with(["safe.txt", name])
             with self.subTest(name=name), self.assertRaises(ValueError):
                 proof_archive.extract(self.archive, self.root / "source", COMMIT)
@@ -84,7 +84,7 @@ class ProofArchiveTests(unittest.TestCase):
             self.assertFalse((self.root / "source").exists())
 
     def test_case_aliases_duplicates_and_file_directory_collisions_are_refused(self):
-        for names in (["A/file", "a/other"], ["src", "src/file"], ["src/file", "src"], ["same", "same"]):
+        for names in (["A/file", "a/other"], ["i/file", "ı/other"], ["src", "src/file"], ["src/file", "src"], ["same", "same"]):
             with self.assertWarns(UserWarning) if names == ["same", "same"] else nullcontext():
                 self.archive_with(names)
             with self.subTest(names=names), self.assertRaises(ValueError):

@@ -115,7 +115,7 @@ def _parts(item):
         raise ValueError("ZIP path depth exceeds its bound")
     for part in pieces:
         if (not part or part in {".", ".."} or len(part) > 255 or ":" in part or part.endswith((".", " "))
-                or _DEVICE.fullmatch(part.split(".", 1)[0])
+                or _DEVICE.fullmatch(part.split(".", 1)[0].rstrip(" ."))
                 or any(unicodedata.category(character).startswith("C") for character in part)):
             raise ValueError("ZIP path is unsafe on supported platforms")
     mode = stat.S_IFMT(item.external_attr >> 16)
@@ -150,7 +150,7 @@ def entries(path, source_commit):
                 raise ValueError("ZIP local header lies outside the file-entry area")
             for index in range(1, len(parts) + 1):
                 original = parts[:index]
-                key = tuple(unicodedata.normalize("NFC", part).casefold() for part in original)
+                key = tuple(unicodedata.normalize("NFC", part).upper().casefold() for part in original)
                 directory = index < len(parts) or item.is_dir()
                 previous = namespace.get(key)
                 if previous is not None and previous != (original, directory):
