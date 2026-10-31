@@ -145,6 +145,161 @@ class SessionFactsTests(unittest.TestCase):
         self.assertEqual(facts["coverage"]["samples"], 0)  # these snapshots record no coverage
 
 
+class QueueOverflowTests(unittest.TestCase):
+    def _runner(self, budgets=None):
+        from src.config import MonitorSettings
+        from src.events import MetricsStream
+        from src.headless import HeadlessRunner
+
+        class TinyRunner(HeadlessRunner):
+            SNAPSHOT_LIMIT = 8
+
+        runner = TinyRunner("C:/targets/worker.exe", console=make_console(),
+                            settings=replace(MonitorSettings(), budgets=budgets or {}))
+        runner.detector.stream = MetricsStream(max_queue_size=2, facts=runner.facts)
+        return runner
+
+    def _publish(self, runner, snapshot):
+        runner.detector.stream.publish(replace(snapshot, diagnostics=MonitorDiagnostics(
+            500, dropped_snapshots=runner.detector.stream.dropped
+        )))
+
+    def test_dropped_only_signal_peak_coverage_and_judgement_remain_authoritative(self) -> None:
+        from helpers import make_denied
+
+        from src.headless import EXIT_LEAK
+
+        runner = self._runner({"private_bytes": 512 * MB})
+        first = make_snapshot(
+            timestamp=0, processes=(make_process(100, private=600 * MB), make_denied(200)),
+            alerts=(make_alert(severity=LeakSeverity.HIGH),), measured_coverage=True,
+        )
+        self._publish(runner, replace(first, evidence=_judged()))
+        for stamp in range(1, 4):
+            self._publish(runner, make_snapshot(timestamp=stamp, measured_coverage=True))
+        self.assertEqual(runner.poll(), 2)
+        report = runner.build_report()
+        self.assertEqual(runner.worst_severity, LeakSeverity.HIGH)
+        self.assertEqual(runner.worst_severity_for(LeakResource.MEMORY), LeakSeverity.HIGH)
+        self.assertEqual(runner.exit_status(), EXIT_LEAK)
+        self.assertTrue(runner.over_budget)
+        self.assertTrue(runner.conclusive)
+        self.assertEqual(runner._judged_resources, set(LeakResource))
+        self.assertTrue(report["detection_ran"])
+        self.assertEqual(report["sample_count"], 4)
+        self.assertEqual(report["session_facts"]["samples"]["taken"], 4)
+        self.assertEqual(report["session_facts"]["peaks"]["private_bytes"]["value"], 600 * MB)
+        self.assertEqual(report["session_facts"]["signals"]["memory"]["episodes"], 1)
+        self.assertEqual(report["coverage"]["samples"], 4)
+        self.assertEqual(report["coverage"]["metrics"]["private_bytes"]["partial_samples"], 1)
+        self.assertEqual(report["coverage"]["unreadable_pids"], [200])
+
+    def test_a_dropped_budget_peak_alone_still_fails_the_run(self) -> None:
+        from src.headless import EXIT_BUDGET
+
+        runner = self._runner({"handles": 10})
+        self._publish(runner, make_snapshot(timestamp=0, processes=(make_process(100, handles=20),)))
+        for stamp in range(1, 4):
+            self._publish(runner, make_snapshot(timestamp=stamp, processes=(make_process(100, handles=1),)))
+        runner.poll()
+        self.assertEqual(runner.exit_status(), EXIT_BUDGET)
+        self.assertEqual(runner.budget_checks()[0].peak, 20)
+
+    def test_final_publication_records_its_own_drop(self) -> None:
+        runner = self._runner()
+        for stamp in range(3):
+            self._publish(runner, make_snapshot(timestamp=stamp))
+        runner.poll()
+        self.assertEqual(runner.detector.stream.dropped, 1)
+        self.assertEqual(runner.diagnostics.dropped_snapshots, 1)
+        self.assertEqual(runner.snapshot.diagnostics.dropped_snapshots, 1)
+        self.assertEqual(runner.facts.to_dict()["monitor"]["dropped_snapshots"], 1)
+
+    def test_live_report_uses_one_atomic_capture_despite_a_new_publication(self) -> None:
+        from unittest import mock
+
+        from helpers import make_denied
+
+        runner = self._runner()
+        self._publish(runner, make_snapshot(timestamp=0, measured_coverage=True))
+        runner.poll()
+        capture = runner.facts.capture
+
+        def publish_after_capture():
+            result = capture()
+            self._publish(runner, make_snapshot(
+                timestamp=1, processes=(make_denied(200),), measured_coverage=True,
+            ))
+            return result
+
+        with mock.patch.object(runner.facts, "capture", side_effect=publish_after_capture) as captured:
+            report = runner.build_report()
+        captured.assert_called_once_with()
+        self.assertEqual(report["sample_count"], 1)
+        self.assertEqual(report["coverage"]["samples"], 1)
+        self.assertFalse(report["coverage"]["partial"])
+        self.assertEqual(report["session_facts"]["samples"]["taken"], 1)
+        self.assertEqual(report["session_facts"]["coverage"]["samples"], 1)
+        self.assertEqual(runner.facts.to_dict()["samples"]["taken"], 2)
+        next_report = runner.build_report()
+        self.assertEqual(next_report["sample_count"], 2)
+        self.assertTrue(next_report["coverage"]["partial"])
+
+    def test_direct_and_queued_samples_are_counted_once_each(self) -> None:
+        runner = self._runner()
+        runner._accept_snapshot(make_snapshot(timestamp=0))
+        for stamp in range(1, 7):
+            self._publish(runner, make_snapshot(timestamp=stamp))
+        self.assertEqual(runner.poll(), 2)
+        self.assertEqual(runner.poll(), 0)
+        runner._accept_snapshot(make_snapshot(timestamp=7))
+        self.assertEqual(runner.facts.to_dict()["samples"]["taken"], 8)
+        self.assertEqual(runner._sample_count, 8)
+        self.assertEqual(runner._snapshot_history.seen, 4)
+
+    def test_dropped_failure_and_pause_counts_survive(self) -> None:
+        runner = self._runner()
+        self._publish(runner, make_snapshot(timestamp=0, metadata={"sampling_error": "lost failure"}))
+        self._publish(runner, make_snapshot(timestamp=1, paused=True))
+        self._publish(runner, make_snapshot(timestamp=2))
+        self._publish(runner, make_snapshot(timestamp=3))
+        runner.poll()
+        self.assertEqual(runner.facts.to_dict()["samples"],
+                         {"taken": 4, "collected": 2, "measured": 2, "paused": 1, "failed": 1})
+        self.assertIn("sampling error: lost failure", runner.monitor_errors)
+
+    def test_publisher_keeps_bounded_state_and_never_calls_session_ui(self) -> None:
+        import threading
+        from unittest import mock
+
+        from helpers import make_denied
+
+        runner = self._runner()
+
+        def publish():
+            for index in range(100):
+                runner.detector.stream.publish(make_snapshot(
+                    timestamp=index * 2, metadata={"sampling_error": f"failure {index}"}
+                ))
+                runner.detector.stream.publish(make_snapshot(
+                    timestamp=index * 2 + 1, processes=(make_denied(100 + index),),
+                    measured_coverage=True,
+                ))
+
+        with mock.patch.object(runner, "_append_event") as render_event:
+            worker = threading.Thread(target=publish)
+            worker.start()
+            worker.join(timeout=5)
+            self.assertFalse(worker.is_alive())
+            render_event.assert_not_called()
+        runner.poll()
+        state = runner.facts.session_state()
+        self.assertEqual(runner.facts.to_dict()["samples"]["taken"], 200)
+        self.assertEqual(len(state["errors"]), 20)
+        self.assertEqual(len(state["unreadable_pids"]), 50)
+        self.assertEqual(len(runner._snapshot_history), 2)
+
+
 def thinned_session_report() -> tuple[dict, float, int]:
     """A reopened (JSON round-tripped) report of the long session: report, spike time, samples."""
     session = _SmallHistorySession("C:/targets/worker.exe", console=make_console())

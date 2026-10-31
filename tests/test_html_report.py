@@ -59,6 +59,87 @@ def _data_block(document: str) -> str:
 
 
 class RenderTests(unittest.TestCase):
+    def test_partial_coverage_qualifies_verdict_and_resource_cards(self) -> None:
+        from helpers import make_denied
+
+        snapshots = [snapshot_to_dict(make_snapshot(timestamp=stamp,
+                     processes=(make_process(100), make_denied(200)), measured_coverage=True))
+                     for stamp in (1000, 1001)]
+        report = _report(snapshots=snapshots, detection_ran=True, coverage={"partial": True},
+                         outcome={"measurement": {"result": "partial", "partial_coverage": True}})
+        document = html.unescape(render_html_report(report))
+        self.assertIn("<title>DrainTracer · worker.exe · PARTIAL</title>", document)
+        self.assertIn("No leak signals in the measured subset", document)
+        self.assertIn("unreadable processes may hide growth", document)
+        self.assertEqual(document.count("partial coverage in 2 of 2 samples; 0 unavailable"), 3)
+        self.assertNotIn('>CLEAR</span>', document)
+
+    def test_wholly_unavailable_resource_is_not_clear(self) -> None:
+        from dataclasses import replace
+
+        process = replace(make_process(100), handles=0, unmeasured=("handles",))
+        snapshots = [snapshot_to_dict(make_snapshot(timestamp=stamp, processes=(process,),
+                                                    measured_coverage=True))
+                     for stamp in (1000, 1001)]
+        document = html.unescape(render_html_report(_report(snapshots=snapshots, detection_ran=True)))
+        cards = re.findall(r'<article class="card">(.*?)</article>', document, re.DOTALL)
+        self.assertIn('>UNAVAILABLE</span>', cards[1])
+        self.assertIn("2 unavailable", cards[1])
+        self.assertIn('>CLEAR</span>', cards[0])
+        self.assertIn("No leak signals in the measured subset", document)
+
+    def test_partial_measurement_preserves_observed_severity(self) -> None:
+        report = _report(outcome={"measurement": {"result": "partial"}})
+        document = render_html_report(report)
+        self.assertIn("HIGH leak signal observed", document)
+        self.assertIn('>HIGH</span>', document)
+        self.assertIn("Coverage was partial or unavailable", document)
+
+    def test_complete_and_unavailable_runs_have_distinct_verdicts(self) -> None:
+        from helpers import make_denied
+
+        for process, badge in ((make_process(100), "CLEAR"), (make_denied(100), "UNAVAILABLE")):
+            with self.subTest(badge=badge):
+                snapshots = [snapshot_to_dict(make_snapshot(timestamp=stamp, processes=(process,),
+                                                            measured_coverage=True))
+                             for stamp in (1000, 1001)]
+                report = _report(snapshots=snapshots, detection_ran=badge == "CLEAR")
+                document = render_html_report(report)
+                self.assertIn(f"<title>DrainTracer · worker.exe · {badge}</title>", document)
+                self.assertIn(f'>{badge}</span>', document)
+                if badge == "CLEAR":
+                    self.assertNotIn("Coverage was partial", document)
+                else:
+                    self.assertNotIn('>CLEAR</span>', document)
+
+    def test_process_cells_distinguish_unmeasured_from_measured_zero(self) -> None:
+        process = snapshot_to_dict(make_snapshot())["processes"][0]
+        for unmeasured in (("handles",), ("cpu_percent",), ("private_bytes", "rss_bytes", "threads")):
+            with self.subTest(unmeasured=unmeasured):
+                row = {**process, "handles": 0, "cpu_percent": 0, "private_bytes": 0,
+                       "rss_bytes": 0, "threads": 0, "unmeasured": unmeasured}
+                snapshot = snapshot_to_dict(make_snapshot())
+                snapshot["processes"] = [row]
+                document = render_html_report(_report(snapshots=[snapshot]))
+                table = document.split('aria-label="Processes"', 1)[1].split("</section>", 1)[0]
+                cells = re.findall(r"<td[^>]*>(.*?)</td>", table)
+                expected = {"cpu_percent": (4, "0.0%"), "private_bytes": (5, "0.0 B"),
+                            "rss_bytes": (6, "0.0 B"), "handles": (7, "0"), "threads": (8, "0")}
+                for metric, (index, zero) in expected.items():
+                    self.assertEqual(cells[index], "n/a" if metric in unmeasured else zero)
+
+    def test_process_cells_preserve_legacy_values_and_total_denial(self) -> None:
+        from helpers import make_denied
+
+        snapshot = snapshot_to_dict(make_snapshot(processes=(make_process(100), make_denied(200))))
+        snapshot["processes"][0].pop("unmeasured", None)
+        document = render_html_report(_report(snapshots=[snapshot]))
+        table = document.split('aria-label="Processes"', 1)[1].split("</section>", 1)[0]
+        rows = re.findall(r"<tr[^>]*>(.*?)</tr>", table)
+        self.assertIn("1.5%", rows[1])
+        self.assertNotIn("n/a", rows[1])
+        self.assertEqual(rows[2].count("n/a"), 6)
+
     def test_linux_counter_definitions_and_paths_render_on_either_platform(self) -> None:
         report = _report(target_path="/opt/worker\\name")
         report["experiment"] = {"environment": {
@@ -226,6 +307,51 @@ class RenderTests(unittest.TestCase):
 
 
 class SessionFactsRenderingTests(unittest.TestCase):
+    def test_empty_signal_details_do_not_erase_exact_recorded_episodes(self) -> None:
+        from helpers import make_console
+
+        from src.session import MonitorSession
+
+        class SmallSession(MonitorSession):
+            VERSION = "v5.4.0"
+            SNAPSHOT_LIMIT = 8
+
+        session = SmallSession("worker.exe", console=make_console())
+        for index in range(100):
+            session._accept_snapshot(make_snapshot(timestamp=1000 + index, paused=index == 1,
+                                    alerts=(make_alert(),) if index == 5 else ()))
+        document = render_html_report(session.build_report())
+        panel = document.split('aria-label="Leak signals"', 1)[1].split("</section>", 1)[0]
+        self.assertIn("0 of the 1 episodes counted", panel)
+        self.assertIn("Signal episodes were recorded", panel)
+        self.assertNotIn("No leak signals were raised", panel)
+
+    def test_signal_free_session_keeps_its_empty_state(self) -> None:
+        report = _report(snapshots=[snapshot_to_dict(make_snapshot(timestamp=1000))])
+        document = render_html_report(report)
+        self.assertIn("No leak signals were raised during this session.", document)
+        self.assertNotIn("Signal episodes were recorded", document)
+
+    def test_exact_severity_without_episode_count_keeps_known_signal(self) -> None:
+        report = _report(snapshots=[snapshot_to_dict(make_snapshot(timestamp=1000))],
+                         session_facts={"schema": 1, "signals": {"memory": {"worst": "high"}}})
+        document = render_html_report(report)
+        panel = document.split('aria-label="Leak signals"', 1)[1].split("</section>", 1)[0]
+        self.assertIn("A HIGH signal was recorded", panel)
+        self.assertIn("no episode details are available", panel)
+        self.assertNotIn("No leak signals were raised", panel)
+        self.assertNotIn("0 of the", panel)
+
+    def test_explicit_signal_free_facts_keep_no_signal_empty_state(self) -> None:
+        report = _report(snapshots=[snapshot_to_dict(make_snapshot(timestamp=1000))],
+                         session_facts={"schema": 1, "signals": {
+                             resource: {"worst": "none", "episodes": 0}
+                             for resource in ("memory", "handles", "threads")}})
+        document = render_html_report(report)
+        panel = document.split('aria-label="Leak signals"', 1)[1].split("</section>", 1)[0]
+        self.assertIn("No leak signals were raised during this session.", panel)
+        self.assertNotIn("signal was recorded", panel)
+
     def test_thinned_reports_say_so_and_show_exact_facts(self) -> None:
         import json as _json
 
@@ -244,6 +370,21 @@ class SessionFactsRenderingTests(unittest.TestCase):
         self.assertIn("8.5 ms mean · 13.0 ms max", text)
         self.assertIn("Detection evaluated", text)
         _json.loads(_data_block(document))
+        memory_card = re.search(r'<article class="card"><h3>Memory.*?</article>',
+                                text, re.DOTALL).group(0)
+        self.assertIn("retained peak 100.3 MB", memory_card)
+        self.assertNotIn("peak 600.0 MB", memory_card)
+
+    def test_retained_card_peak_keeps_its_post_warmup_scope(self) -> None:
+        snapshots = [snapshot_to_dict(make_snapshot(timestamp=1000 + index,
+                     processes=(make_process(100, private=private),)))
+                     for index, private in enumerate((600 * 1024**2, 10 * 1024**2, 12 * 1024**2))]
+        snapshots[0]["warming_up"] = True
+        report = _report(snapshots=snapshots, snapshot_stride=8)
+        text = html.unescape(render_html_report(report))
+        card = re.search(r'<article class="card"><h3>Memory.*?</article>', text, re.DOTALL).group(0)
+        self.assertIn("since warm-up · retained peak 12.0 MB", card)
+        self.assertNotIn("600.0 MB", card)
 
     def test_thinned_reports_without_facts_are_marked_approximate(self) -> None:
         report = _report(snapshot_stride=8)
