@@ -97,7 +97,7 @@ class ComparisonViewMixin:
             self._comparison_worker = worker
             worker.start()
         except Exception as exc:  # noqa: BLE001 - a failed worker must not disable the view.
-            self._comparison_error = f"Could not start baseline comparison: {exc}"
+            self._comparison_error = f"Comparison worker startup reported an error: {exc}"
             # A lost start acknowledgement can leave a live or completed worker.
             # Keep its ownership until the normal result drain permits a retry.
             if worker is None or (worker.ident is None and not worker.is_alive()
@@ -137,7 +137,10 @@ class ComparisonViewMixin:
                 parts.append(Text("Loading/comparing baseline; sampling continues.", style=self.palette.muted))
             if self._comparison_error:
                 parts.append(Text(f"Baseline unavailable: {self._comparison_error}", style=self.palette.danger))
-                parts.append(Text("Press B to choose another report; the previous comparison is retained."))
+                hint = ("Wait for the current comparison worker to finish before retrying."
+                        if self._comparison_loading else
+                        "Press B to choose another report; the previous comparison is retained.")
+                parts.append(Text(hint))
             comparison = self._comparison
             if comparison is None:
                 parts.append(Text("Press B and enter a saved JSON report path. Monitoring continues."))

@@ -113,6 +113,7 @@ class ComparisonViewTests(unittest.TestCase):
             self.app.console = make_console(140, 40, "cp437")
             output = render_text(self.app)
             self.assertIn("[red]thread unavailable", output)
+            self.assertIn("Press B to choose another report", output)
             output.encode("cp437")
         self.app._request_comparison(None)
         self.complete()
@@ -140,6 +141,9 @@ class ComparisonViewTests(unittest.TestCase):
                 self.assertTrue(entered.wait(1))
                 worker = self.app._comparison_worker
                 self.assertTrue(self.app._comparison_loading)
+                output = render_text(self.app)
+                self.assertIn("Wait for the current comparison worker to finish before retrying.", output)
+                self.assertNotIn("Press B to choose another report", output)
                 self.app._request_comparison(self.baseline)
                 start.assert_called_once()
                 self.assertIs(self.app._comparison_worker, worker)
