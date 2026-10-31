@@ -1138,9 +1138,11 @@ class MonitorSession:
         if monitor["dropped_snapshots"]:
             parts.append(f"{monitor['dropped_snapshots']:,} dropped")
         if monitor["clock_adjustments"]:
-            parts.append(f"{monitor['clock_adjustments']:,} clock adjustments")
+            count = monitor["clock_adjustments"]
+            parts.append(f"{count:,} clock adjustment{'s' if count != 1 else ''}")
         if monitor["sampling_gaps"]:
-            parts.append(f"{monitor['sampling_gaps']:,} sampling gaps")
+            count = monitor["sampling_gaps"]
+            parts.append(f"{count:,} sampling gap{'s' if count != 1 else ''}")
         return sep.join(parts) or None
 
     def chart_thinning_text(self) -> str | None:

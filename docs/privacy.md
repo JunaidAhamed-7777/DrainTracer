@@ -129,6 +129,10 @@ or share preview in the current software. That work remains tracked in
 
 ## Before sharing evidence
 
+Privacy copies preserve typed clock-adjustment and sampling-gap counts and
+relative timing-reset diagnostics. These qualify measurement continuity;
+removing paths and identities must not remove a known evidence interruption.
+
 1. Prefer a minimal reproduction using a disposable, synthetic workload.
    Avoid real customer paths, credentials, or production process names at
    collection time. Obtain authorization to share the resulting evidence.
