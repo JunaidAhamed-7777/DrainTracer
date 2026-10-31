@@ -11,6 +11,7 @@ from unittest import mock
 
 import helpers  # noqa: F401
 
+from src.service_agent_exercise import exercise_agent
 from src.service_exercise import (
     exercise_authority,
     exercise_authority_faults,
@@ -94,6 +95,21 @@ class OperatingEvidenceTests(unittest.TestCase):
                 write_evidence(root, document)
             with self.assertRaises(ValueError):
                 require_fresh_workspace(root)
+
+    @unittest.skipUnless(os.name == "nt", "real Windows agent acceptance and owned-job crash recovery")
+    def test_actual_agent_freshness_completion_cleanup_and_crash_prefix_are_measured(self):
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temporary:
+            root = require_fresh_workspace(Path(temporary) / "exercise")
+            evidence = ExerciseEvidence(OperatingBudgets(readiness_seconds=10, cleanup_seconds=20))
+            with ResourceSampler() as sampler:
+                sampler.add("driver", os.getpid())
+                self.assertTrue(exercise_agent(root, evidence, sampler))
+            evidence.resources = sampler.close()
+            document = evidence.document()
+            self.assertTrue(document["checks_passed"], document)
+            self.assertEqual(document["rates"]["agent_completed_runs"],
+                             {"successful": 2, "total": 2, "ratio": 1.0})
+            self.assertGreater(document["resources"]["agent"]["samples"], 0)
 
 
 if __name__ == "__main__":
