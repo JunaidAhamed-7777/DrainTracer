@@ -296,11 +296,19 @@ class HeadlessRunner(MonitorSession):
     def _export(self) -> None:
         try:
             self.export_log()
+        except KeyboardInterrupt:
+            self._interrupted = True
+            self._export_error = "Report export interrupted"
+            self._print_line("warn", self._export_error)
         except Exception as exc:
             if not isinstance(exc, OSError):
                 logger.exception("Report export failed")
             self._export_error = str(exc)
             self._print_line("error", f"Report export failed: {exc}")
+
+    def _on_export_interrupted(self, report: dict[str, Any]) -> None:
+        self._interrupted = True
+        report["headless"]["exit_code"] = self.exit_status()
 
     # ------------------------------------------------------------------
     # Output

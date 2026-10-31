@@ -1006,9 +1006,13 @@ class MonitorSession:
         self._last_html_report = None
         try:
             self._last_html_report = write_html_report(report, directory)
-        except Exception as exc:  # never lose the JSON report to a rendering bug
-            self._append_event(f"HTML report failed: {exc}", "error")
-            self._note_monitor_error(f"HTML report failed: {exc}")
+        except (Exception, KeyboardInterrupt) as exc:  # preserve the usable JSON when rendering fails or is cancelled
+            interrupted = isinstance(exc, KeyboardInterrupt)
+            if interrupted:
+                self._on_export_interrupted(report)
+            message = "HTML report interrupted" if interrupted else f"HTML report failed: {exc}"
+            self._append_event(message, "error")
+            self._note_monitor_error(message)
             report["outcome"] = self._outcome_record()
             try:
                 # Atomically replace the same report, retaining the first JSON if this fails.
@@ -1018,7 +1022,12 @@ class MonitorSession:
                 self._append_event(message, "error")
                 self._note_monitor_error(message)
                 report["outcome"] = self._outcome_record()
+            if interrupted:
+                raise
         return path
+
+    def _on_export_interrupted(self, report: dict[str, Any]) -> None:
+        """Let a caller update its outcome before the same-ID JSON is corrected."""
 
     def build_report(self) -> dict[str, Any]:
         """Assemble the report dictionary for the session so far."""
