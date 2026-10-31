@@ -8,6 +8,10 @@ and the Linux verifier also checks a native `/bin/sleep` executable.
 Together they cover genuine leak-shaped growth, normal recovery, recursive
 children, a root that exits before its child, and a fast non-zero exit.
 
+For a complete installed-CLI sequence, follow the
+[install-to-comparison walkthrough](../docs/first-result.md). It uses copied
+fixtures and distinguishes judged, signal, and inconclusive evidence.
+
 Run from the repository root on Windows 10/11 or Linux with Python 3.10+ and the
 dependencies in `requirements.txt` installed. The fixtures are diagnostic
 examples; an observed signal still needs workload context before treating

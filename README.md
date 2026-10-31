@@ -570,6 +570,8 @@ and comparison exit codes.
 
 ## Documentation
 
+- [First result walkthrough](docs/first-result.md) — install, measure bounded
+  growth, inspect coverage, change the workload, and compare exported reports.
 - [Service observation recipe](docs/service-observation.md) — inspect an
   authorized disposable Windows service and verify it survives ordinary detach.
 - [Usage and troubleshooting](docs/usage.md) — launch, attach, controls, warm-up,
