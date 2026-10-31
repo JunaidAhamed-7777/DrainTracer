@@ -173,6 +173,33 @@ def _eligible(reports: Sequence[LoadedReport]) -> str:
         if (data.get("report_schema") != 3 or data.get("detection_ran") is not True
                 or measurement.get("full_coverage") is not True or measurement.get("result") != "conclusive"):
             raise BaselineEvidenceError("baseline evidence requires schema 3, judged windows and explicit full conclusive coverage")
+        outcome = _mapping(data.get("outcome"))
+        startup, cleanup, target = (_mapping(outcome.get(key)) for key in ("startup", "cleanup", "target"))
+        headless = data.get("headless")
+        if (startup.get("state") != "started" or startup.get("error")
+                or cleanup.get("state") != "complete" or cleanup.get("remaining_count") != 0
+                or cleanup.get("resume_required") is not False or cleanup.get("errors") != []
+                or target.get("failed") is not False or outcome.get("monitor_errors") != []
+                or data.get("target_exit_code") not in (None, 0)
+                or (headless is not None and (type(_mapping(headless).get("exit_code")) is not int
+                                              or headless["exit_code"] not in (0, 1, 5)))):
+            raise BaselineEvidenceError("startup, cleanup, target or monitor failures cannot become baseline evidence")
+        workflow = _mapping(outcome.get("workload"))
+        raw_workflow = data.get("workload")
+        if ("workload" in outcome or "workload" in data) and workflow.get("state") != "complete":
+            raise BaselineEvidenceError("unfinished or failed workload evidence cannot become a baseline")
+        if "workload" in data:
+            raw = _mapping(raw_workflow)
+            work = _mapping(raw.get("outcome"))
+            steps = work.get("exercise")
+            exercise_cleanup = _mapping(work.get("exercise_cleanup"))
+            if (raw.get("schema") != 1 or work.get("state") != "complete" or work.get("failure")
+                    or not isinstance(steps, list)
+                    or any(not isinstance(step, Mapping) or step.get("state") != "complete" or step.get("exit_code") != 0
+                           for step in steps)
+                    or (exercise_cleanup and (exercise_cleanup.get("state") != "complete"
+                                              or exercise_cleanup.get("remaining_count") != 0))):
+                raise BaselineEvidenceError("raw workload outcome, exercise or cleanup is not confirmed complete")
         _provenance(data)
         if not isinstance(name, str) or not name.strip():
             raise BaselineEvidenceError("baseline evidence requires a declared workload_id")
@@ -266,7 +293,7 @@ class BaselineStore:
             for key in ("actor", "approved_by", "reason"):
                 _text(entry.get(key), key)
             _source(entry.get("source_commit"))
-            _time(entry.get("at"))
+            recorded_at = _time(entry.get("at"))
             details = entry.get("details")
             if not isinstance(details, dict):
                 raise BaselineError("invalid audit details")
@@ -289,7 +316,9 @@ class BaselineStore:
                         or details.get("workload_id") != state["workload_id"]
                         or len(state["suppressions"]) >= MAX_SUPPRESSIONS):
                     raise BaselineError("invalid scoped suppression")
-                _time(details.get("expires"))
+                expiry = _time(details.get("expires"))
+                if not recorded_at < expiry <= recorded_at + timedelta(days=90):
+                    raise BaselineError("recorded suppression expiry violates the 90-day policy")
                 state["suppressions"].append({**details, "approved_by": entry["approved_by"],
                                                "reason": entry["reason"], "sequence": number})
             else:
@@ -354,8 +383,10 @@ class BaselineStore:
             raise BaselineError("accept_regression must be a bool")
         peaks = {metric: max(report.summary.peaks[metric] for report in reports) for metric in SIGNAL_TOTALS.values()}
         new_budget_checks = check_budgets(budgets, peaks)
-        if any(check.exceeded for check in new_budget_checks) and not accept_regression:
-            raise BaselineError("approved budget is already exceeded; explicit accept_regression approval is required")
+        has_signal = any(report.summary.resources[resource].worst != "none"
+                         for report in reports for resource in RESOURCES)
+        if (any(check.exceeded for check in new_budget_checks) or has_signal) and not accept_regression:
+            raise BaselineError("recorded signal or exceeded budget requires explicit accept_regression approval")
         comparison = None
         if self.state["revision"]:
             comparison = compare_repeated_reports(self.reports(), reports, budgets=self.state["budgets"])
@@ -377,11 +408,7 @@ class BaselineStore:
                 if _digest(read_report(destination)) != identifier:
                     raise BaselineError("existing evidence object has been changed")
             else:
-                descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-                with os.fdopen(descriptor, "wb") as handle:
-                    handle.write(encoded)
-                    handle.flush()
-                    os.fsync(handle.fileno())
+                self._publish_object(destination, encoded, identifier)
             identifiers.append(identifier)
         self._append("promote", {"reports": identifiers, "budgets": budgets, "workload_id": workload,
                                  "comparison": comparison.to_dict() if comparison else None,
@@ -390,6 +417,26 @@ class BaselineStore:
                      approved_by=approved_by, reason=reason, source_commit=source_commit)
         return {"baseline_schema": 1, "revision": self.state["revision"], "audit_head": self.audit[-1]["digest"],
                 "budgets": budgets, "reports": identifiers, "comparison": comparison.to_dict() if comparison else None}
+
+    def _publish_object(self, destination: Path, encoded: bytes, identifier: str) -> None:
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(prefix=".evidence-", dir=self.path, delete=False) as handle:
+                temporary = Path(handle.name)
+                handle.write(encoded)
+                handle.flush()
+                os.fsync(handle.fileno())
+            # The OS lock excludes cooperative writers. Keep an existing
+            # verified object intact even if one appeared during this write.
+            _ordinary(destination)
+            if destination.exists():
+                if _digest(read_report(destination)) != identifier:
+                    raise BaselineError("existing evidence object has been changed")
+            else:
+                os.replace(temporary, destination)
+        finally:
+            if temporary is not None and temporary.exists():
+                temporary.unlink()
 
     def suppress(self, *, resource: str, kind: str, expires: str, approved_by: str,
                  reason: str, source_commit: str) -> dict[str, Any]:
@@ -411,6 +458,8 @@ class BaselineStore:
               budgets: Mapping[str, float] | None = None) -> tuple[int, dict[str, Any]]:
         _source(source_commit)
         _eligible(reports)
+        if budgets is not None and (not isinstance(budgets, Mapping) or set(budgets) - set(SIGNAL_TOTALS.values())):
+            raise BaselineError("budget overrides must name only private_bytes, handles or threads")
         resolved = {**self.state["budgets"], **(budgets or {})}
         resolved = {key: parse_budget(key, value) for key, value in resolved.items()}
         comparison = compare_repeated_reports(self.reports(), reports, budgets=resolved)
