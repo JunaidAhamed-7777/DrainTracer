@@ -18,6 +18,14 @@ from typing import Any
 
 from .analysis import RESOURCES, SIGNAL_TOTALS, finite, summarize
 from .budgets import BUDGET_OPTIONS, check_budgets, parse_budget
+from .config import (
+    MAX_SAMPLE_INTERVAL,
+    MAX_WARMUP,
+    MAX_WINDOW,
+    MAX_WINDOWS,
+    MIN_SAMPLE_INTERVAL,
+    MIN_SAMPLES_PER_WINDOW,
+)
 from .repeat_comparison import MAX_GROUP_BYTES, MAX_GROUP_RUNS, compare_repeated_reports
 from .report_contract import _check_text_depth, _unique_object, read_report
 from .report_diff import LoadedReport, comparability_caveats, load_report
@@ -148,10 +156,14 @@ def _provenance(data: Mapping[str, Any]) -> None:
             or (count == 0 and fingerprint is not None)
             or (count > 0 and (not isinstance(fingerprint, str) or not re.fullmatch(r"[0-9a-f]{16}", fingerprint)))):
         raise BaselineEvidenceError("baseline requires explicit target argument provenance")
-    if (finite(settings.get("sample_interval_ms")) is None
-            or settings["sample_interval_ms"] <= 0 or finite(settings.get("warmup_seconds")) is None
-            or not isinstance(settings.get("windows_seconds"), list) or not settings["windows_seconds"]
-            or any(finite(value) is None or value <= 0 for value in settings["windows_seconds"])
+    windows = settings.get("windows_seconds")
+    interval = finite(settings.get("sample_interval_ms"))
+    warmup = finite(settings.get("warmup_seconds"))
+    if (interval is None or not MIN_SAMPLE_INTERVAL * 1000 <= interval <= MAX_SAMPLE_INTERVAL * 1000
+            or warmup is None or not 0 <= warmup <= MAX_WARMUP
+            or not isinstance(windows, list) or not 1 <= len(windows) <= MAX_WINDOWS
+            or any(finite(value) is None or not 0 < value <= MAX_WINDOW for value in windows)
+            or len(set(windows)) != len(windows) or min(windows) < MIN_SAMPLES_PER_WINDOW * interval / 1000
             or any(any(finite(_mapping(_mapping(settings.get("thresholds")).get(resource)).get(key)) is None
                            or _mapping(settings["thresholds"][resource])[key] <= 0
                            for key in ("critical_delta", "critical_slope")) for resource in RESOURCES)):
@@ -159,6 +171,8 @@ def _provenance(data: Mapping[str, Any]) -> None:
 
 
 def _eligible(reports: Sequence[LoadedReport]) -> str:
+    if not 2 <= len(reports) <= MAX_GROUP_RUNS:
+        raise BaselineError(f"provide 2 to {MAX_GROUP_RUNS} independent runs")
     paths = [report.path.resolve() for report in reports]
     identifiers = [report.data.get("report_id") for report in reports]
     if (len(set(paths)) != len(paths) or any(not isinstance(value, str) or not value for value in identifiers)
@@ -202,7 +216,7 @@ def _eligible(reports: Sequence[LoadedReport]) -> str:
                     or any(not isinstance(step, Mapping) or step.get("state") != "complete"
                            or type(step.get("exit_code")) is not int or step["exit_code"] != 0
                            for step in steps)
-                    or ("exercise_cleanup" in work and (exercise_cleanup.get("state") != "complete"
+                    or ((steps or "exercise_cleanup" in work) and (exercise_cleanup.get("state") != "complete"
                                               or type(exercise_cleanup.get("remaining_count")) is not int
                                               or exercise_cleanup.get("remaining_count") != 0))):
                 raise BaselineEvidenceError("raw workload outcome, exercise or cleanup is not confirmed complete")
