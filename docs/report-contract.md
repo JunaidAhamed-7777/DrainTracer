@@ -100,6 +100,9 @@ versions, duplicate object keys, integers outside finite numeric representabilit
 and invalid known field shapes fail with bounded useful errors that do not echo
 the rejected numeric payload.
 `diff` uses this same reader, so it applies the same ingestion policy.
+In particular, a numerically unrepresentable value now rejects the report
+with exit 2 instead of being skipped as an unknown counter in a comparison.
+The reader never assigns a clean or regression verdict to that input.
 
 The public schema describes shape and meaning; byte/token/depth limits are
 additional ingestion requirements. No field can instruct the validator to
