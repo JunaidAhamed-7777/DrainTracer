@@ -244,6 +244,11 @@ def _remote(args):
         bindings = (args.repository, args.source_commit, args.workload_id)
         if any(bindings) and not all(bindings):
             raise SharingError("invalid")
+        if all(bindings) and (not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", args.source_commit)
+                              or any(not value.strip() or len(value) > maximum
+                                     or any(unicodedata.category(character).startswith("C") for character in value)
+                                     for value, maximum in ((args.repository, 256), (args.workload_id, 128)))):
+            raise SharingError("invalid")
         return (client.call("list_records", {"kind": "comparison_receipt", "key": history_key(*bindings),
                                              "limit": args.limit, "cursor": args.cursor}) if all(bindings)
                 else client.call("list_reports", {"limit": args.limit, "cursor": args.cursor})), 0
@@ -271,11 +276,13 @@ def _remote(args):
         try:
             write_credential_file(destination, {"team_credentials_schema": 1, "project_id": issued["project_id"],
                                                 "token": issued["token"]})
-        except Exception:  # noqa: BLE001 - attempt revocation after any uncertain private delivery
+        except BaseException as error:
             try:
                 client.call("revoke_credential", {"credential_id": issued["credential"]["id"]})
-            except Exception:  # noqa: BLE001 - outer fixed code requires local audit/administration, never echoes token
-                raise SharingError("storage") from None
+            except Exception:  # noqa: BLE001, S110 - outer storage error must not claim delivery or successful revocation
+                pass
+            if isinstance(error, KeyboardInterrupt):
+                raise
             raise SharingError("storage") from None
         return {"share_schema": 1, "project_id": issued["project_id"], "credential": issued["credential"],
                 "credential_saved": True}, 0

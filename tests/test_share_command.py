@@ -177,6 +177,10 @@ class ShareCommandTests(unittest.TestCase):
             self.assertEqual(code, 2)
             self.assertNotIn("SECRET", output + errors)
             self.assertEqual({row["id"] for row in self.store.list_credentials(self.actor)["credentials"]}, before)
+            with mock.patch("src.share_command.write_credential_file", side_effect=KeyboardInterrupt):
+                code, _output, _errors = self.call([*args, "issue-credential", "viewer", "--output", self.root / "interrupted.json"])
+            self.assertEqual(code, 130)
+            self.assertEqual({row["id"] for row in self.store.list_credentials(self.actor)["credentials"]}, before)
 
     def test_peer_secret_fields_and_bearer_strings_never_reach_cli_output(self):
         with mock.patch("src.share_command.TeamClient.call", return_value={"token": self.issued["token"],
@@ -268,6 +272,12 @@ class ShareCommandTests(unittest.TestCase):
         self.assertEqual((code, errors), (130, ""))
         self.assertTrue(json.loads(output)["listening"])
         listener.server_close.assert_called_once()
+
+    def test_invalid_history_bindings_are_refused_before_network(self):
+        with mock.patch("src.team_client.request", side_effect=AssertionError("unexpected network")):
+            args = ["--endpoint", "tls://localhost:8443", "--credentials", self.credential, "history"]
+            for filters in (["--repository", "Owner/Repo"], ["--repository", "Owner/Repo", "--source-commit", "HEAD", "--workload-id", "w"]):
+                self.assertEqual(self.call([*args, *filters])[0], 2)
 
 
 if __name__ == "__main__":
