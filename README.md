@@ -520,6 +520,8 @@ and comparison exit codes.
 
 - [Maintained Windows CI action](docs/ci-workloads.md) — exact version installs,
   bounded workload execution, strict comparison, and evidence after failures.
+  Its [published-package dispatch](docs/ci-workloads.md#verify-a-published-package)
+  verifies PyPI artifacts after the matching release tag and package exist.
 - [Usage and troubleshooting](docs/usage.md) — launch, attach, controls, warm-up,
   headless operation, and diagnostic logging.
 - [Configuration](docs/configuration.md) — TOML discovery, profiles, thresholds,

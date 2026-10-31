@@ -6,7 +6,8 @@ an optional strict report comparison, and uploads its evidence **before**
 enforcing the recorded failure. It never approves or replaces a baseline.
 The [native PR example](../.github/workflows/workload-example.yml) exercises
 growing, changed and deliberately inconclusive workloads using this candidate's
-wheel; released consumers install the exact package version from PyPI.
+wheel by default. Its optional published-package dispatch and released
+consumers install the exact package version from PyPI.
 
 ## Copy the workflow
 
@@ -46,6 +47,49 @@ is not a remote download URL. Setup uses Python 3.10 and the action creates a
 runner-local environment tied to the pinned package or candidate-wheel digest.
 Repeated calls use the same interpreter path. It does not install into or
 modify the workload's own interpreter environment.
+
+## Verify a published package
+
+After the exact version is actually available on PyPI, dispatch
+`workload-example.yml` at its matching release tag with `published_version`.
+For example, **after** version 5.5.0 has been published and the tag contains
+this workflow mode:
+
+```powershell
+gh workflow run workload-example.yml --repo JunaidAhamed-7777/DrainTracer --ref v5.5.0 -f published_version=5.5.0
+```
+
+Repeat with the matching tag/version for each later release. The tag selects
+the reviewed action, fixture and verifier source; `published_version` selects
+the package installed from PyPI. These are both required parts of the proof.
+This example is a post-publication procedure, not a claim that the package or
+its verification run already exists.
+
+The input is passed through an environment variable and validated as an exact
+ASCII `MAJOR.MINOR.PATCH` before writing action outputs. A leading `v`, leading
+zeroes, prerelease suffix, whitespace or newline is refused. Nonempty input
+skips the candidate build and explicitly leaves the `wheel` output empty, so
+all three action calls take the isolated, exact-version PyPI install path.
+An ordinary pull request or empty dispatch input still builds the checkout's
+candidate wheel and uses its canonical version. Both modes copy the same
+bounded disposable fixture.
+
+The existing policy probe checks installed distribution metadata against the
+requested version before running a recipe. The final verifier additionally
+requires that version in **before, after and short-run JSON reports**. Strict
+comparability, resolved memory evidence, growing/steady/short policy exits,
+matching JSON/HTML, machine summaries and complete owned cleanup remain
+required. Expected failing action steps still upload their evidence before
+the verifier evaluates their results. Inspect all three retained artifacts;
+a published-package check is incomplete if installation, comparison, version
+or artifact validation fails.
+
+The dispatched workflow retains `contents: read`, a 15-minute limit and
+three-day artifact expiry. It needs no publishing secret, baseline-write
+credential or additional workflow permission. It publishes no package or
+baseline. Candidate-wheel success does not replace this check: keep the
+published-installation gate open until the tagged published-package run
+passes and its evidence has been inspected.
 
 Use clean recipes without selected variables for strict comparisons. Selected
 or inherited private environment values remain unrecorded and block strict
