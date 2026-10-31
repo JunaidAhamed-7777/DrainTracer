@@ -145,6 +145,27 @@ def _validate(data, *, app_version, owner):
     return data
 
 
+def acquire_control_fence(directory: Path, *, create=True):
+    """Permanent OS-owned startup/removal exclusion; this file is never unlinked."""
+    path = verify_trusted_path(directory / "agent-control.lock")
+    if not create and not path.exists():
+        raise AgentStateError("the permanent control fence is missing; removal cannot proceed")
+    try:
+        handle = _lock(path)
+    except OSError as error:
+        raise AgentStateError("agent startup or removal is already active") from error
+    try:
+        handle.seek(0)
+        if handle.read(2) != b"\0":
+            raise AgentStateError("the permanent control fence has invalid contents")
+        if os.name == "nt":
+            verify_private_data_path(path)
+    except BaseException:
+        handle.close()
+        raise
+    return handle
+
+
 def read_agent_state(directory: Path, *, app_version: str, owner: str):
     """Read-only, bounded inspection; never acquire writer ownership or rewrite state."""
     path = verify_trusted_path(directory / "agent-state.json")

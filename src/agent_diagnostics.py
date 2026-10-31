@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import math
@@ -18,9 +19,13 @@ import psutil
 
 from .agent_state import (
     AgentStateError,
+    acquire_control_fence,
     read_agent_state,
     relative_report,
     storage_inventory,
+)
+from .agent_state import (
+    _version as semantic_version,
 )
 from .agent_transport import (
     current_user_sid,
@@ -207,30 +212,81 @@ def _confirm_no_owned_survivors(directory, records):
                 raise AgentStateError("a known launched process remains alive; cleanup must be resolved before removal")
 
 
+def _removal_intent(directory):
+    path = directory / "agent-removal.json"
+    if not path.exists():
+        return None
+    verify_private_data_path(path)
+    from .agent_transport import _decode_frame
+    with path.open("rb") as handle:
+        raw = handle.read(4097)
+    if len(raw) > 4096:
+        raise AgentStateError("removal intent exceeds its byte limit")
+    value = _decode_frame(raw)
+    fields = {"schema", "owner", "version", "state_id", "journal_sha256", "cleanup_confirmed"}
+    if (set(value) != fields or type(value["schema"]) is not int or value["schema"] != 1
+            or value["owner"] != current_user_sid() or value["cleanup_confirmed"] is not True
+            or not isinstance(value["journal_sha256"], str)
+            or not re.fullmatch("[0-9a-f]{64}", value["journal_sha256"])):
+        raise AgentStateError("removal intent is malformed; authority preserved")
+    from .checkpoints import _uuid
+    if _uuid(value["state_id"]) != value["state_id"]:
+        raise AgentStateError("removal state identity is malformed")
+    writer, current = semantic_version(value["version"]), semantic_version(_version())
+    if writer[0] != current[0] or writer > current:
+        raise AgentStateError("removal intent requires a compatible current version")
+    return value
+
+
+def _write_removal_intent(directory, saved):
+    value = {"schema": 1, "owner": current_user_sid(), "version": _version(),
+             "state_id": saved["state_id"], "cleanup_confirmed": True,
+             "journal_sha256": hashlib.sha256((directory / "agent-state.json").read_bytes()).hexdigest()}
+    descriptor, name = tempfile.mkstemp(prefix=".agent-removal-", suffix=".tmp", dir=directory)
+    temporary = Path(name)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(json.dumps(value, allow_nan=False).encode("utf-8"))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, directory / "agent-removal.json")
+    finally:
+        temporary.unlink(missing_ok=True)
+    return value
+
+
 def remove_control_files(directory, *, apply=False):
     directory = Path(directory).absolute()
     verify_private_path(directory)
     planned = ["credential", "agent-state.json", "agent-state.lock"]
-    if not any((directory / name).exists() for name in planned):
-        return {"applied": apply, "already_removed": True, "control_files": [],
-                "preserved": ["reports", "checkpoints", "unrelated files"]}
-    _saved(directory)  # Missing authority is not permission to remove leftovers.
-    if (directory / "credential").exists():
-        load_secret(directory)  # Validate format/permissions, never serialize it.
-    with _stopped_lock(directory, create=apply):
-        saved = _saved(directory)
-        _confirm_no_owned_survivors(directory, saved["sessions"])
-        result = {"applied": apply, "control_files": planned,
-                  "preserved": ["reports", "checkpoints", "unrelated files"]}
+    preserved = ["agent-control.lock", "reports", "checkpoints", "unrelated files"]
+    if not any((directory / name).exists() for name in [*planned, "agent-removal.json"]):
+        return {"applied": apply, "already_removed": True, "control_files": [], "preserved": preserved}
+    with acquire_control_fence(directory, create=apply):
+        intent = _removal_intent(directory)
+        journal = directory / "agent-state.json"
+        if journal.exists():
+            saved = _saved(directory)
+            if intent is not None and (saved["state_id"] != intent["state_id"]
+                    or hashlib.sha256(journal.read_bytes()).hexdigest() != intent["journal_sha256"]):
+                raise AgentStateError("removal authority changed; journal preserved")
+            if (directory / "credential").exists():
+                load_secret(directory)
+            with _stopped_lock(directory, create=apply):
+                _confirm_no_owned_survivors(directory, saved["sessions"])
+                if apply:
+                    if intent is None:
+                        intent = _write_removal_intent(directory, saved)
+                    (directory / "credential").unlink(missing_ok=True)
+        elif intent is None:
+            raise AgentStateError("current removal authority is missing; remaining files preserved")
         if apply:
-            (directory / "credential").unlink(missing_ok=True)
-    if apply:
-        (directory / "agent-state.lock").unlink(missing_ok=True)
-        # Keep the validated journal until all other control-file removals
-        # succeed. A transient failure can then be retried without guessing
-        # about prior process ownership or deleting unrelated files.
-        (directory / "agent-state.json").unlink()
-    return result
+            # The permanent fence remains held across the Windows unlock/unlink
+            # gap. A crash leaves durable intent that blocks normal startup.
+            (directory / "agent-state.lock").unlink(missing_ok=True)
+            journal.unlink(missing_ok=True)
+            (directory / "agent-removal.json").unlink()
+        return {"applied": apply, "control_files": planned, "preserved": preserved}
 
 
 def _enum(value, allowed, fallback="unknown"):

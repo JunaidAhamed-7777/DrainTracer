@@ -206,6 +206,76 @@ class NativeOperationsTests(unittest.TestCase):
         self.assertTrue(all(path.exists() for path in evidence))
         self.assertIsNone(attached.poll())
 
+    def test_startup_is_fenced_across_removal_unlock_and_crash_retry(self):
+        for crash in (False, True):
+            with self.subTest(removal_crash=crash):
+                initial, client = self.start_agent()
+                client.request("shutdown")
+                initial.communicate(timeout=20)
+                journal = self.state / "agent-state.json"
+                original = journal.read_bytes()
+                note = self.state / "unrelated-concurrency-note.txt"
+                note.write_text(SECRET, encoding="utf-8")
+                released, gate = self.root / f"released-{crash}", self.root / f"gate-{crash}"
+                remover_code = f"""from pathlib import Path
+import time
+from src.agent_diagnostics import remove_control_files
+original = Path.unlink
+def unlink(path, *args, **kwargs):
+    if path.name == 'agent-state.lock':
+        Path({str(released)!r}).touch()
+        deadline = time.monotonic() + 15
+        while not Path({str(gate)!r}).exists():
+            if time.monotonic() >= deadline:
+                raise TimeoutError('coordinator did not release removal')
+            time.sleep(.01)
+    return original(path, *args, **kwargs)
+Path.unlink = unlink
+remove_control_files({str(self.state)!r}, apply=True)
+"""
+                remover = subprocess.Popen([sys.executable, "-c", remover_code], stdin=subprocess.DEVNULL,
+                                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                self.processes.append((remover, gate))
+                recovery_helpers.wait_for(lambda released=released, remover=remover: released.exists() or remover.poll() is not None)
+                if remover.poll() is not None:
+                    self.fail(remover.communicate(timeout=5)[1].decode(errors="replace"))
+                self.assertFalse((self.state / "credential").exists())
+                self.assertTrue((self.state / "agent-removal.json").exists())
+                if crash:
+                    remover.kill()
+                    remover.communicate(timeout=5)
+                denied, started = self.root / f"denied-{crash}", self.root / f"started-{crash}"
+                competing_code = f"""from pathlib import Path
+from src.agent_command import AgentServer
+try:
+    server = AgentServer({str(self.state)!r}, profile='competing-start')
+except (OSError, ValueError):
+    Path({str(denied)!r}).touch()
+else:
+    Path({str(started)!r}).touch()
+    server.registry.close()
+    server.listener.close()
+    server.journal.close()
+    server._fence.close()
+"""
+                competing = subprocess.run([sys.executable, "-c", competing_code], stdin=subprocess.DEVNULL,
+                                           capture_output=True, timeout=8, check=False)
+                self.assertEqual(competing.returncode, 0, competing.stderr.decode(errors="replace"))
+                self.assertTrue(denied.exists())
+                self.assertFalse(started.exists())
+                self.assertFalse((self.state / "credential").exists())
+                self.assertEqual(journal.read_bytes(), original)
+                if crash:
+                    remove_control_files(self.state, apply=True)
+                else:
+                    gate.touch()
+                    _stdout, stderr = remover.communicate(timeout=8)
+                    self.assertEqual(remover.returncode, 0, stderr.decode(errors="replace"))
+                self.assertFalse(journal.exists())
+                self.assertFalse((self.state / "agent-removal.json").exists())
+                self.assertTrue((self.state / "agent-control.lock").is_file())
+                self.assertEqual(note.read_text(encoding="utf-8"), SECRET)
+
     def test_accepted_shutdown_survives_a_disconnected_client(self):
         process, client = self.start_agent()
         pipe = connect(client.name)

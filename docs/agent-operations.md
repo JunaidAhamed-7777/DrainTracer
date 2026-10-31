@@ -96,3 +96,27 @@ and structured private values are absent from both the support preview and
 all JSON/HTML/archive member names; supplied numerical evidence is retained
 only in documented typed fields. These are local tests, not hosted production
 availability or a user pilot.
+
+### Concurrent startup and interrupted removal
+
+Normal startup acquires the permanent private `agent-control.lock` before it
+reads or creates a credential, journal, or session. It holds this OS-owned fence
+for the agent lifetime. Removal holds the same fence through every control-file
+unlink. The fence file is intentionally preserved: releasing and deleting the
+primary journal lock on Windows cannot admit a concurrent normal startup into
+the middle of removal.
+
+Before deleting anything, explicit removal flushes a private intent containing
+the validated state identity, journal hash, and confirmed cleanup. Startup
+refuses any pending removal intent before recreating credentials or adopting
+state. An explicit removal retry validates that intent and the remaining
+journal; a changed/corrupt authority is preserved and refused. The journal is
+removed after other control files, and the removal intent is removed last.
+A crash after journal removal can finish only the already-confirmed control-file
+removal; it never restores process ownership. No automatic retry starts work.
+
+The coordinated native regression pauses a separate removal process exactly
+between primary-lock release and unlink, attempts a normal startup, and proves
+that no credential is recreated and the journal remains unchanged. It repeats
+the attempt after killing the paused remover: durable intent still blocks
+startup, and an explicit retry finishes while preserving unrelated notes.

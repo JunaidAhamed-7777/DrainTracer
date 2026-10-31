@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 
 from .agent_service import AgentError, AgentPolicy, AgentRegistry
-from .agent_state import AgentJournal
+from .agent_state import AgentJournal, AgentStateError, acquire_control_fence
 from .agent_transport import (
     AgentTransportError,
     PipeListener,
@@ -26,18 +26,25 @@ class AgentServer:
     def __init__(self, state_directory, *, profile="default", policy=None,
                  retention_seconds=7 * 86400, max_storage_bytes=512 * 1024 * 1024):
         self.directory = private_directory(state_directory)
-        self.secret = load_secret(self.directory, create=True)
-        self.reports = private_directory(self.directory / "reports")
-        self.checkpoints = private_directory(self.directory / "checkpoints")
-        from .agent_transport import current_user_sid
-        self.journal = AgentJournal(self.directory, app_version=_version(), owner=current_user_sid(),
-                                    retention_seconds=retention_seconds, max_storage_bytes=max_storage_bytes)
+        self._fence = acquire_control_fence(self.directory)
         try:
-            self.registry = AgentRegistry(self.reports, policy or AgentPolicy(), journal=self.journal,
-                                          checkpoints=self.checkpoints)
-            self.listener = PipeListener(pipe_name(profile))
+            if (self.directory / "agent-removal.json").exists():
+                raise AgentStateError("an interrupted removal must be explicitly completed before startup")
+            self.secret = load_secret(self.directory, create=True)
+            self.reports = private_directory(self.directory / "reports")
+            self.checkpoints = private_directory(self.directory / "checkpoints")
+            from .agent_transport import current_user_sid
+            self.journal = AgentJournal(self.directory, app_version=_version(), owner=current_user_sid(),
+                                        retention_seconds=retention_seconds, max_storage_bytes=max_storage_bytes)
+            try:
+                self.registry = AgentRegistry(self.reports, policy or AgentPolicy(), journal=self.journal,
+                                              checkpoints=self.checkpoints)
+                self.listener = PipeListener(pipe_name(profile))
+            except BaseException:
+                self.journal.close()
+                raise
         except BaseException:
-            self.journal.close()
+            self._fence.close()
             raise
         self.rejected_connections = 0
 
@@ -70,6 +77,7 @@ class AgentServer:
             finally:
                 self.listener.close()
                 self.journal.close()
+                self._fence.close()
         return clean
 
 

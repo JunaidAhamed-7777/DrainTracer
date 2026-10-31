@@ -566,3 +566,7 @@ add up to two explicit `--include-report SESSION_UUID` selections and `--out
 PATH.zip` for an exclusive local archive. Nothing is uploaded. Follow the
 [agent operations guide](docs/agent-operations.md) for installation, upgrade,
 rollback, removal, privacy review, and command bounds.
+
+Agent removal and startup share a permanent private control fence. An interrupted
+removal blocks startup until an explicit removal retry validates and finishes
+it; reports, checkpoints, unrelated files, and the harmless fence file remain.
