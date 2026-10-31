@@ -227,7 +227,12 @@ with BaselineStore(sys.argv[1]) as store:
     def test_completed_workload_requires_known_successful_readiness_steps_and_cleanup(self):
         def complete(data):
             data["outcome"]["workload"] = {"state": "complete"}
-            data["workload"] = {"schema": 1, "outcome": {"state": "complete", "readiness": "ready",
+            data["workload"] = {"schema": 1, "command": {"target": "worker.py", "interpreter": "python"},
+                                  "cwd": ".", "timeout_seconds": 60, "readiness": {"kind": "none"},
+                                  "exercise": [], "log_capture": {"enabled": False},
+                                  "environment": {"mode": "selected", "selected": [], "platform_basics": [],
+                                                  "values_recorded": False, "values_compared": False},
+                                  "outcome": {"state": "complete", "readiness": "ready",
                                   "exercise": [{"index": 1, "state": "complete", "exit_code": 0}],
                                   "exercise_cleanup": {"state": "complete", "remaining_count": 0}}}
         self.assertEqual(len(self.reports("success", change=complete)), 2)
