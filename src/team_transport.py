@@ -146,7 +146,7 @@ class Endpoint:
     @classmethod
     def parse(cls, value: str, connect_ip: str | None = None) -> Endpoint:
         try:
-            if not isinstance(value, str) or len(value) > 512:
+            if not isinstance(value, str) or len(value) > 512 or any(ord(c) <= 32 for c in value):
                 raise ValueError
             parts = urlsplit(value)
             host = parts.hostname
@@ -179,7 +179,10 @@ def request(endpoint: Endpoint, message: dict, *, cafile=None, timeout: float = 
     if type(timeout) not in (int, float) or not math.isfinite(timeout) or not 0 < timeout <= 60:
         raise SharingError("invalid")
     raw = encode_message(message)
-    context = client_context(cafile)
+    try:
+        context = client_context(cafile)
+    except (OSError, ssl.SSLError) as error:
+        raise SharingError("certificate", "TLS trust configuration could not be loaded") from error
     deadline = time.monotonic() + timeout
     try:
         with socket.create_connection((endpoint.connect_ip, endpoint.port), timeout=_remaining(deadline)) as plain:

@@ -127,7 +127,9 @@ class TLSRoundTripTests(unittest.TestCase):
                 self.assertLess(size, 1000)
                 body = bytearray()
                 while len(body) < size:
-                    body.extend(secure.recv(size - len(body)))
+                    part = secure.recv(size - len(body))
+                    self.assertTrue(part)
+                    body.extend(part)
                 self.assertEqual(decode_message(bytes(body))["error"]["code"], "unavailable")
             self.assertLess(time.monotonic() - started, 1.8)
         self.assertEqual(self.received, [])
