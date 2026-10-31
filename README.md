@@ -468,6 +468,10 @@ coverage, and duration/profile guidance with reproducible aggregate evidence.
 
 ## Save and compare evidence
 
+Comparisons include [independent retained process rankings](docs/report-process-attribution.md)
+for each run, with lifetime changes and recorded alert contributions labeled
+separately. They do not pair PIDs across runs or change the resource verdict.
+
 Press `E` in the dashboard; headless runs export automatically. Each export
 creates a JSON/HTML pair under
 `leak_reports/reports/worker.exe_2026-10-21/` for a program named `worker.exe`

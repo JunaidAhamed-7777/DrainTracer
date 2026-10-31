@@ -296,20 +296,18 @@ do not change heuristic thresholds alongside presentation work.
   (O2) and has a measured collection cost.
 
 - [ ] **I7. Remaining consistency gaps.** Smaller issues found while
-  delivering milestone 12:
-  - Headless `signals` still prints "clear" for resources on runs that never
-    judged a window, although the measured row says inconclusive.
-  - The HTML report does not yet render per-resource evidence states or
-    coverage, and there is no headless STAT line for process counts.
-  - Report analysis and diffs do not use process attribution yet.
-  - The evidence view's "within processes already running" figure leaves
-    out negative contributions from exits, so it can exceed the window delta.
-  - Budgets accept fractional handle and thread counts.
-  - With help open, global keys (including `K`) still act.
-  - The dashboard does not show configured budgets, and diffs do not check
-    budgets recorded in a report.
-  - Steady churn of one process per sample logs one lifecycle line per
-    sample, bounded only by the 200-event log.
+  delivering milestone 12, reconciled on 2026-10-31 in the
+  [linked implementation/decision record](docs/consistency-tracking.md).
+  No-window wording, unknown counters, HTML/strict coverage, headless live
+  counts, whole-number budgets, help isolation and configured-budget display
+  have linked fixes. This issue adds independent within-run process rankings
+  to analysis/diffs and explicit positive-growth arithmetic labels. Detailed
+  lifecycle text remains intentionally bounded, with exact eviction counts;
+  it is not a complete process audit or a new temporal rate limiter.
+  **Remaining integration gate:** deliver report-sourced comparison budgets
+  under [#37](https://github.com/JunaidAhamed-7777/DrainTracer/issues/37)
+  before closing the [#29](https://github.com/JunaidAhamed-7777/DrainTracer/issues/29)
+  umbrella. Keep this checkbox open until that linked scope is delivered.
   **Done when:** each gap is fixed with a regression test or recorded as an
   intentional limitation in the relevant guide.
 
