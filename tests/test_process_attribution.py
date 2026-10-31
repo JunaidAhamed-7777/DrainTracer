@@ -6,14 +6,16 @@ import copy
 import json
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
-from helpers import make_console, make_snapshot
+from helpers import make_alert, make_console, make_snapshot, render_text
 from test_report_diff import _run
 
 from src.analysis import PROCESS_SUMMARY_SCAN_LIMIT, process_attribution, summarize
+from src.dashboard import DashboardApp
 from src.diff_command import run_diff
-from src.events import ProcessSummary
+from src.events import GrowthContributor, ProcessSummary
 from src.report import process_summary_to_dict, snapshot_to_dict
 from src.report_diff import compare_reports, load_report
 
@@ -116,6 +118,17 @@ class ProcessAttributionTests(unittest.TestCase):
                     self.assertIn("[red]", output)
                     self.assertIn("ranked independently", " ".join(output.split()))
                     self.assertTrue(all(len(line) <= width for line in output.splitlines()))
+
+    def test_evidence_positive_components_are_not_presented_as_net_window_arithmetic(self):
+        alert = replace(make_alert(), baseline_value=100 * 1024**2, current_value=110 * 1024**2,
+            growth_from_new_processes=20 * 1024**2, growth_within_existing=30 * 1024**2,
+            contributors=(GrowthContributor(100, 1, "worker", 30 * 1024**2, 0.6),))
+        app = DashboardApp("worker.exe", console=make_console())
+        output = " ".join(render_text(app, app._alert_detail(alert)).split())
+        self.assertIn("Positive growth: new processes 20.0 MB", output)
+        self.assertIn("existing processes 30.0 MB", output)
+        self.assertIn("Exits and decreases can offset", output)
+        self.assertEqual(alert.current_value - alert.baseline_value, 10 * 1024**2)
 
 
 if __name__ == "__main__":
