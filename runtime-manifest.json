@@ -48,6 +48,7 @@
     "src/team_transport.py",
     "src/startup.py",
     "src/stats.py",
+    "src/team_database.py",
     "src/team_models.py",
     "src/team_security.py",
     "src/theme.py",
