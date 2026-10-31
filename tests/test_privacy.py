@@ -193,6 +193,29 @@ class PrivacyTests(unittest.TestCase):
         self.assertEqual(comparison.verdict, NOT_COMPARABLE)
         self.assertIn("privacy transformed", " | ".join(comparison.warnings))
 
+    def test_transformed_recovered_evidence_keeps_both_independent_comparison_limits(self) -> None:
+        from src.analysis import summarize
+        from src.report_diff import (
+            INSUFFICIENT_COVERAGE,
+            NOT_COMPARABLE,
+            LoadedReport,
+            compare_reports,
+        )
+
+        source = private_fixture()
+        source["recovery"] = {"partial": True, "exact_through_cutoff": True, "final_outcome_confirmed": False}
+        for profile in ("share", "minimal"):
+            with self.subTest(profile=profile):
+                report = redact_report(source, profile)
+                report["detection_ran"] = True
+                loaded = LoadedReport(Path("shared-prefix.json"), report, summarize(report))
+                comparison = compare_reports(loaded, loaded, strict=True)
+                limits = {caveat.kind: caveat.blocks for caveat in comparison.caveats}
+                self.assertEqual(limits["privacy"], NOT_COMPARABLE)
+                self.assertEqual(limits["recovered checkpoint"], INSUFFICIENT_COVERAGE)
+                self.assertEqual(comparison.verdict, NOT_COMPARABLE)
+                self.assertFalse(session_summary(report)["recovery"]["final_outcome_confirmed"])
+
     def test_cli_defaults_to_local_preview_and_only_writes_when_requested(self) -> None:
         import contextlib
         import io
