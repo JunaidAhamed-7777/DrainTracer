@@ -18,6 +18,8 @@ import zipfile
 from email.parser import BytesParser
 from pathlib import Path
 
+from verify_baseline_distribution import verify_baseline_runtime
+
 
 def _require(condition: bool, message: str) -> None:
     if not condition:
@@ -150,6 +152,9 @@ def verify_distribution(wheel: Path) -> str:
         _require(f"<script>{probe['js']}</script>" in page, "The HTML export does not embed its bundled JavaScript.")
         _require(not list(package.rglob("leak_report_*.json")), "Reports were written inside the installed package.")
         _require(not list(package.rglob("leak_report_*.html")), "HTML reports were written inside the installed package.")
+        source_commit = subprocess.check_output(["git", "rev-parse", "HEAD"],
+                                               cwd=Path(__file__).resolve().parent.parent, text=True).strip()
+        verify_baseline_runtime(python, cwd, environment, source_commit)
     return version
 
 

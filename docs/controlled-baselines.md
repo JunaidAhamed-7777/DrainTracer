@@ -8,7 +8,7 @@ claim; enforce real review authority through your repository/access policy.
 
 Create or replace a baseline with `promote STORE --run A.json --run B.json
 --approved-by NAME --reason TEXT --source-commit FULL_SHA`. A promotion requires
-2–20 distinct schema-3 reports, a declared workload, measured drift for every
+2–20 distinct schema-3 launch reports, a declared workload, measured drift for every
 resource, explicit judged/full coverage, and equivalent target, arguments,
 settings, detector version and environment. A new baseline is compared with the
 existing one before replacement. Incompatible or insufficient reports cannot be
@@ -34,9 +34,9 @@ inconclusive overlapping ranges cannot pass a controlled check. An approved
 baseline is a policy choice, not proof that a workload is free of leaks.
 
 An exceptional `suppress STORE --resource handles --kind regression --expires
-2030-01-02T00:00:00Z --approved-by NAME --reason TEXT --source-commit FULL_SHA`
-records a narrow exception (replace the example timestamp with a future UTC
-time). Expiry must be in the future and at most 90 days
+FUTURE_UTC_TIME --approved-by NAME --reason TEXT --source-commit FULL_SHA`
+records a narrow exception (replace `FUTURE_UTC_TIME` with a UTC timestamp
+ending in `Z`). Expiry must be in the future and at most 90 days
 away. Suppressions apply only to one resource and finding kind (`regression` or
 `budget`), the exact baseline revision and its workload. Promotion invalidates
 old suppressions. They never suppress target/provenance/coverage gates, missing
@@ -56,3 +56,10 @@ When repeated earlier runs disagree about their budgets, the command refuses an
 ambiguous policy instead of selecting the first. Explicit flags override only
 the named metric. `draintracer-baseline audit STORE` prints the intact review
 history and current policy as JSON without changing the approval.
+
+The clean-wheel verification runs four independent real steady targets, approves
+the first pair and checks the second. It permits a conclusive pass or explicitly
+reported observed overlap, and rejects lost provenance or measurement coverage.
+Deterministic regression fixtures separately verify repeatable failure, strict
+promotion gates, scoped exceptions, atomic failure preservation and audit/hash
+validation. This is functional verification, not broad detector calibration.
