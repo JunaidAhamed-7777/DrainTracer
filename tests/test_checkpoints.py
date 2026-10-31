@@ -14,6 +14,7 @@ from pathlib import Path
 from unittest import mock
 
 from helpers import make_console, make_process, make_snapshot
+from live_checkpoint_wait import wait_for_checkpoint
 
 from src.checkpoints import (
     CheckpointError,
@@ -281,10 +282,12 @@ class CheckpointSessionTests(unittest.TestCase):
             while not self.path.exists() and monitor.poll() is None and time.monotonic() < deadline:
                 time.sleep(0.02)
             self.assertTrue(self.path.exists(), "monitor did not persist its first checkpoint")
-            saved = read_checkpoint(self.path, app_version=DashboardApp.VERSION)
+            saved = wait_for_checkpoint(self.path, writer=monitor, samples=1, session_id=None,
+                                       timeout=max(0, deadline - time.monotonic()))
             identity = saved["checkpoint"]["target_identity"]
             monitor.kill()
             monitor.wait(timeout=10)
+            saved = read_checkpoint(self.path, app_version=DashboardApp.VERSION, session_id=saved["session_id"])
             with mock.patch("src.checkpoints.psutil.Process", side_effect=AssertionError("no reattachment")):
                 report = recovered_report(self.path, app_version=DashboardApp.VERSION)
             self.assertEqual(report["session_facts"], saved["session_facts"])
