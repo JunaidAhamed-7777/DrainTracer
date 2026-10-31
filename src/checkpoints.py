@@ -161,11 +161,11 @@ def _lock(path: Path) -> BinaryIO:
 class CheckpointStore:
     """One writer, one bounded atomic file; OS locks release after a crash."""
 
-    def __init__(self, path: str | Path, app_version: str) -> None:
+    def __init__(self, path: str | Path, app_version: str, *, session_id: str | None = None) -> None:
         _version(app_version)
         self.path = Path(path)
         self.app_version = app_version
-        self.session_id = str(uuid.uuid4())
+        self.session_id = _uuid(session_id) if session_id is not None else str(uuid.uuid4())
         self.writer_identity = {"pid": os.getpid(), "create_time": psutil.Process().create_time()}
         self._handle: BinaryIO | None = None
         self.path.parent.mkdir(parents=True, exist_ok=True)
