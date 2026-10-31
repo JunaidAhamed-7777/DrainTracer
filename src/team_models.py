@@ -26,15 +26,15 @@ def integer(value, name: str, minimum: int, maximum: int) -> int:
 
 
 def duration(value, name: str, minimum: float, maximum: float) -> float:
-    if (type(value) not in (int, float) or not math.isfinite(value)
-            or not minimum <= value <= maximum):
+    if (type(value) not in (int, float) or not minimum <= value <= maximum
+            or not math.isfinite(value)):
         raise TeamError("invalid", f"{name} is outside its allowed duration range")
     return float(value)
 
 
 def text(value, name: str, maximum: int, *, empty: bool = False) -> str:
     if (not isinstance(value, str) or len(value) > maximum or value != value.strip()
-            or (not empty and not value) or any(ord(character) < 32 for character in value)):
+            or (not empty and not value) or (bool(value) and not value.isprintable())):
         raise TeamError("invalid", f"{name} must be bounded text without controls or surrounding whitespace")
     return value
 
