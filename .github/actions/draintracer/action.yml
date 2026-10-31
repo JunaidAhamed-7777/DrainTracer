@@ -1,0 +1,65 @@
+name: DrainTracer bounded Windows workload
+description: Install an exact version, run a strict bounded recipe, compare evidence and retain failures.
+inputs:
+  version:
+    description: Exact MAJOR.MINOR.PATCH package version.
+    required: true
+  recipe:
+    description: Checked-out schema-1 recipe; timeout at most 300 seconds and all strict outcome policies enabled.
+    required: true
+  baseline:
+    description: Optional trusted report file for strict comparison; never updated by this action.
+    default: ''
+  wheel:
+    description: Optional locally built candidate wheel matching version; omit to install from PyPI.
+    default: ''
+  artifact-name:
+    description: Name of the private-workflow evidence artifact.
+    default: draintracer-evidence
+outputs:
+  report-directory:
+    value: ${{ steps.monitor.outputs.report-directory }}
+    description: Unique evidence directory, including failure diagnostics.
+  report-file:
+    value: ${{ steps.monitor.outputs.report-file }}
+    description: The run's JSON evidence, when exported.
+  run-exit:
+    value: ${{ steps.monitor.outputs.run-exit }}
+    description: Workload CLI exit code.
+  comparison-exit:
+    value: ${{ steps.monitor.outputs.comparison-exit }}
+    description: Strict comparison exit code, or empty when not requested.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      with:
+        python-version: '3.10'
+    - name: Run and retain structured evidence
+      id: monitor
+      continue-on-error: true
+      shell: pwsh
+      env:
+        DRAIN_ACTION_PATH: ${{ github.action_path }}
+        DRAIN_VERSION: ${{ inputs.version }}
+        DRAIN_RECIPE: ${{ inputs.recipe }}
+        DRAIN_BASELINE: ${{ inputs.baseline }}
+        DRAIN_WHEEL: ${{ inputs.wheel }}
+      run: python "$env:DRAIN_ACTION_PATH/run_ci.py"
+    - name: Retain evidence after a failed workload or comparison
+      if: always() && steps.monitor.outputs.report-directory != ''
+      uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ steps.monitor.outputs.report-directory }}
+        if-no-files-found: error
+        retention-days: 3
+    - name: Enforce recorded outcome
+      if: always()
+      shell: pwsh
+      env:
+        DRAIN_EXIT: ${{ steps.monitor.outputs.exit-code }}
+      run: |
+        $result = 2
+        if (-not [int]::TryParse($env:DRAIN_EXIT, [ref]$result)) { exit 2 }
+        exit $result
