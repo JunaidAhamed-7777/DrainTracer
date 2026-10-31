@@ -105,6 +105,18 @@ class NativeTransportTests(unittest.TestCase):
         with self.assertRaisesRegex(AgentTransportError, "another principal"):
             load_secret(self.directory)
 
+    def test_remote_state_is_rejected_before_directory_creation(self) -> None:
+        kernel, _security = _api()
+        with (mock.patch.object(kernel, "CreateDirectoryW") as create,
+              self.assertRaisesRegex(AgentTransportError, "local drive")):
+            private_directory(r"\\unreachable-server\share\agent")
+        create.assert_not_called()
+        with (mock.patch.object(kernel, "GetDriveTypeW", return_value=4),
+              mock.patch.object(kernel, "CreateDirectoryW") as create,
+              self.assertRaisesRegex(AgentTransportError, "local drive")):
+            private_directory(self.directory / "mapped-remote")
+        create.assert_not_called()
+
     def test_authenticated_roundtrip_and_client_server_role_separation(self) -> None:
         def server(pipe):
             authenticate(pipe, self.secret, server=True)

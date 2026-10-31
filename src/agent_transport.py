@@ -49,6 +49,7 @@ def _api():
     security = ctypes.WinDLL("advapi32", use_last_error=True)
     signatures = {
         "GetCurrentProcess": ([], wintypes.HANDLE),
+        "GetDriveTypeW": ([wintypes.LPCWSTR], wintypes.UINT),
         "CloseHandle": ([wintypes.HANDLE], wintypes.BOOL),
         "OpenProcess": ([wintypes.DWORD, wintypes.BOOL, wintypes.DWORD], wintypes.HANDLE),
         "LocalFree": ([wintypes.LPVOID], wintypes.LPVOID),
@@ -156,12 +157,18 @@ def _attributes(*, inherit_children: bool = False):
         kernel.LocalFree(descriptor)
 
 
+def local_drive_path(path: str | Path) -> Path:
+    """Reject UNC/device paths and mapped remote drives before any file mutation."""
+    path = Path(path).absolute()
+    if str(path).startswith("\\\\") or (os.name == "nt" and _api()[0].GetDriveTypeW(path.anchor) == 4):
+        raise AgentTransportError("agent paths must be on a local drive")
+    return path
+
+
 def verify_private_path(path: Path) -> None:
     """Refuse redirected paths, non-owner files and ACLs granting other users access."""
     kernel, security = _api()
-    path = path.absolute()
-    if str(path).startswith("\\\\"):
-        raise AgentTransportError("agent state must be on a local drive")
+    path = local_drive_path(path)
     for part in (path, *path.parents):
         if part.exists() and getattr(part.stat(follow_symlinks=False), "st_file_attributes", 0) & 0x400:
             raise AgentTransportError("agent state cannot traverse a reparse point")
@@ -199,7 +206,7 @@ def verify_private_path(path: Path) -> None:
 def private_directory(path: str | Path) -> Path:
     """Create only the requested leaf; preserve and validate any existing data."""
     kernel, _security = _api()
-    path = Path(path).absolute()
+    path = local_drive_path(path)
     if not path.parent.is_dir():
         raise AgentTransportError("agent state parent directory must already exist")
     # Check ancestors before CreateDirectory, and the final object afterward.
