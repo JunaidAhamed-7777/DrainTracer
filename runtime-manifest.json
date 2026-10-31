@@ -48,6 +48,7 @@
     "src/team_client.py",
     "src/team_database.py",
     "src/team_evidence.py",
+    "src/team_governance.py",
     "src/team_models.py",
     "src/team_queue.py",
     "src/team_records.py",
