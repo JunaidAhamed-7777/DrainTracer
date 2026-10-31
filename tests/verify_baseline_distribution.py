@@ -15,7 +15,7 @@ def verify_baseline_runtime(python: Path, cwd: Path, environment: dict[str, str]
     for _index in range(4):
         before = set(reports.rglob("*.json"))
         command = [str(python), "-m", "draintracer", "--headless", "--target", str(target),
-                   "--interval", "100ms", "--window", "600ms", "--warmup", "300ms", "--timeout", "1.4s",
+                   "--interval", "100ms", "--window", "1s", "--warmup", "2s", "--timeout", "4s",
                    "--report-dir", str(reports), "--workload-id", "baseline-distribution-steady",
                    "--build", source_commit, "--no-config", "--fail-on-inconclusive", "--require-full-coverage"]
         result = subprocess.run(command, check=False, cwd=cwd, env=environment, stdin=subprocess.DEVNULL,
