@@ -235,7 +235,7 @@ class StepSummaryTests(unittest.TestCase):
         self.assertEqual(markdown.count("### DrainTracer leak check: FAIL"), 2)
         self.assertIn("**a\\|b\\*.exe**", markdown)
         self.assertIn("| memory | **HIGH** |", markdown)
-        self.assertIn("| handles | clear |", markdown)
+        self.assertIn("| handles | inconclusive (collecting) |", markdown)
         self.assertIn("Worst leak signal HIGH.", markdown)
         self.assertIn("leak_report_x.json` (HTML alongside)", markdown)
 
@@ -297,6 +297,30 @@ class ConclusivenessTests(unittest.TestCase):
         output = _output(runner)
         self.assertIn("the 30s warm-up never finished", output)
         self.assertIn("warm-up   30s | did not finish", output.replace("·", "|"))
+        self.assertIn("memory inconclusive (warming up)", output)
+
+    def test_signal_rows_distinguish_collecting_unavailable_and_judged(self) -> None:
+        from dataclasses import replace
+
+        from src.events import EvidenceState, LeakResource, ResourceEvidence
+
+        runner = self._runner()
+        snapshot = replace(make_snapshot(), evidence=(
+            ResourceEvidence(LeakResource.MEMORY, EvidenceState.NO_GROWTH),
+            ResourceEvidence(LeakResource.HANDLES, EvidenceState.COLLECTING),
+            ResourceEvidence(LeakResource.THREADS, EvidenceState.UNAVAILABLE),
+        ))
+        runner._accept_snapshot(snapshot)
+        self.assertEqual(runner.signals_text(),
+                         "memory clear · handles inconclusive (collecting) · threads unavailable")
+        runner._accept_snapshot(replace(snapshot, evidence=tuple(
+            replace(item, state=EvidenceState.UNAVAILABLE) for item in snapshot.evidence
+        )))
+        self.assertTrue(runner.signals_text().startswith("memory clear"))
+        runner._accept_snapshot(make_snapshot(alerts=(make_alert(),)))
+        runner._accept_snapshot(snapshot)
+        self.assertIn("memory HIGH", runner.signals_text())
+        self.assertEqual(runner.exit_status(), EXIT_LEAK)
 
     def test_a_judged_clean_run_passes(self) -> None:
         runner = self._runner()
@@ -306,6 +330,34 @@ class ConclusivenessTests(unittest.TestCase):
         runner._print_summary()
         self.assertIn("PASS", self._result_line(runner))
         self.assertNotIn("::", _output(runner))
+
+    def test_dropped_clean_judgment_still_labels_only_its_resource_clear(self) -> None:
+        from dataclasses import replace
+
+        from src.events import (
+            EvidenceState,
+            LeakResource,
+            MetricsStream,
+            ResourceEvidence,
+        )
+
+        runner = self._runner()
+        runner.detector.stream = MetricsStream(max_queue_size=1, facts=runner.facts)
+        first = replace(make_snapshot(timestamp=1000), evidence=(
+            ResourceEvidence(LeakResource.MEMORY, EvidenceState.NO_GROWTH),
+            ResourceEvidence(LeakResource.HANDLES, EvidenceState.COLLECTING),
+            ResourceEvidence(LeakResource.THREADS, EvidenceState.COLLECTING),
+        ))
+        runner.detector.stream.publish(first)
+        runner.detector.stream.publish(replace(first, timestamp=1001, evidence=tuple(
+            replace(item, state=EvidenceState.COLLECTING) for item in first.evidence
+        )))
+        self.assertEqual(runner.poll(), 1)
+        self.assertEqual(runner.detector.stream.dropped, 1)
+        self.assertEqual(runner.signals_text(),
+                         "memory clear · handles inconclusive (collecting) · threads inconclusive (collecting)")
+        self.assertEqual(runner.facts.to_dict()["samples"]["taken"], 2)
+        self.assertTrue(runner.conclusive)
 
     def test_a_breach_is_a_failure_even_before_a_window_filled(self) -> None:
         runner = self._runner()
