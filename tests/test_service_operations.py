@@ -142,6 +142,11 @@ class OperatingEvidenceTests(unittest.TestCase):
                 token = admin._token
             document = evidence.document()
             self.assertTrue(document["checks_passed"], document)
+            probes = {probe["name"]: probe for probe in document["probes"]}
+            for name in ("stepped_clock_credential_read_before_expiry",
+                         "stepped_clock_cached_actor_matches_issued_credential",
+                         "stepped_clock_expired_cached_actor_refused", "stepped_clock_expired_credential_login_refused"):
+                self.assertTrue(probes[name]["passed"], name)
             self.assertEqual(document["rates"]["authorized_read_availability"],
                              {"successful": 5, "total": 5, "ratio": 1.0})
             path = write_evidence(root, document)
