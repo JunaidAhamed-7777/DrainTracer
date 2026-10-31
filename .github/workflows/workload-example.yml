@@ -87,6 +87,7 @@ jobs:
         if: always()
         shell: pwsh
         env:
+          EXPECTED_VERSION: ${{ steps.candidate.outputs.version }}
           BEFORE: ${{ steps.before.outputs.report-directory }}
           AFTER: ${{ steps.after.outputs.report-directory }}
           SHORT: ${{ steps.short.outputs.report-directory }}
