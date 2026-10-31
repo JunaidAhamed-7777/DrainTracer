@@ -98,7 +98,7 @@ def _record(directory, session_id):
 def assigned_checkpoint(directory, record):
     path = verify_trusted_path(Path(directory) / "checkpoints" / record["checkpoint"])
     verify_private_data_path(path)
-    report = read_checkpoint(path, app_version=_version())
+    report = read_checkpoint(path, app_version=_version(), session_id=record["session_id"])
     metadata = report["checkpoint"]
     if metadata["writer_identity"] != record["writer_identity"]:
         raise AgentStateError("checkpoint writer identity does not match the retained session")

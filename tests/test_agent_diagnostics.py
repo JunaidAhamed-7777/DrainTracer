@@ -12,6 +12,7 @@ import sys
 import tempfile
 import time
 import unittest
+import uuid
 import zipfile
 from pathlib import Path
 from unittest import mock
@@ -33,7 +34,7 @@ from src.agent_diagnostics import (
 from src.agent_service import AgentPolicy, AgentRegistry
 from src.agent_transport import authenticate, connect
 from src.api import _version
-from src.checkpoints import read_checkpoint
+from src.checkpoints import _digest, read_checkpoint
 from src.process_runner import _windows_process_exited
 
 SECRET = "PrivateDiagnosticSeed987654"
@@ -240,6 +241,16 @@ class NativeOperationsTests(unittest.TestCase):
         self.assertIsNone(preview["session_ended_at"])
         self.assertTrue(Path(written["json"]).is_file())
         self.assertTrue(Path(written["html"]).is_file())
+        swapped = read_checkpoint(source, app_version=_version(), session_id=session_id)
+        other_identity = str(uuid.uuid4())
+        swapped["session_id"] = swapped["checkpoint"]["session_id"] = other_identity
+        swapped["checkpoint"]["digest"] = _digest(swapped)
+        source.write_text(json.dumps(swapped), encoding="utf-8")
+        corrupted = source.read_bytes()
+        with (mock.patch("src.agent_diagnostics.psutil.Process", side_effect=AssertionError("recovery must not reopen a PID")),
+              self.assertRaises(ValueError)):
+            recover_session(self.state, session_id)
+        self.assertEqual(source.read_bytes(), corrupted)
 
 
 if __name__ == "__main__":
