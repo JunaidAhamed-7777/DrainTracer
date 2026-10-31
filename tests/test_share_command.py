@@ -6,6 +6,10 @@ import copy
 import io
 import json
 import os
+import queue
+import socket
+import subprocess
+import sys
 import tempfile
 import threading
 import unittest
@@ -20,10 +24,12 @@ from test_team_evidence import report_bytes
 from test_team_receipts import check_result
 
 from src import share_command
+from src.team_client import TeamClient
 from src.team_receipts import prepare_receipt
 from src.team_security import secure_directory, write_credential_file
 from src.team_server import make_server
 from src.team_store import TeamStore
+from src.team_transport import Endpoint
 
 
 def evidence_document():
@@ -139,6 +145,23 @@ class ShareCommandTests(unittest.TestCase):
             code, _output, _errors = self.call([*args, "--operating-evidence", path, "--host", "0.0.0.0"])
             self.assertEqual(code, 2)
         create.assert_not_called()
+
+    def test_operating_gate_refuses_public_read_and_hardlinks_without_repairing_files(self):
+        path = self.private_json("operating.json", evidence_document())
+        before = path.read_bytes()
+        alias = self.root / "evidence-alias.json"
+        os.link(path, alias)
+        with self.assertRaises(ValueError):
+            share_command.operating_evidence(path)
+        alias.unlink()
+        if os.name == "nt":
+            subprocess.run(["icacls", str(path), "/grant", "*S-1-1-0:(R)"], check=True, capture_output=True)
+        else:
+            path.chmod(0o644)
+        for _attempt in range(2):
+            with self.assertRaises(ValueError):
+                share_command.operating_evidence(path)
+        self.assertEqual(path.read_bytes(), before)
 
     def test_real_tls_upload_flush_history_export_and_revoked_outage_exits(self):
         path = self.root / "raw.json"
@@ -278,6 +301,40 @@ class ShareCommandTests(unittest.TestCase):
             args = ["--endpoint", "tls://localhost:8443", "--credentials", self.credential, "history"]
             for filters in (["--repository", "Owner/Repo"], ["--repository", "Owner/Repo", "--source-commit", "HEAD", "--workload-id", "w"]):
                 self.assertEqual(self.call([*args, *filters])[0], 2)
+
+    def test_actual_foreground_cli_serves_existing_authority_after_the_private_gate(self):
+        fixtures = Path(__file__).parent / "fixtures" / "team-tls"
+        for name in ("cert.pem", "key.pem"):
+            path = self.root / name
+            path.write_bytes((fixtures / name).read_bytes())
+            if os.name != "nt":
+                path.chmod(0o600)
+        path = self.private_json("operating.json", evidence_document())
+        with socket.socket() as reservation:
+            reservation.bind(("127.0.0.1", 0))
+            port = reservation.getsockname()[1]
+        bootstrap = "import sys;sys.path.insert(0,sys.argv.pop(1));from src.share_command import main;raise SystemExit(main())"
+        process = subprocess.Popen([getattr(sys, "_base_executable", None) or sys.executable, "-c", bootstrap,
+                str(Path(__file__).parent.parent), "serve", "--store", str(self.store.directory),
+                "--certificate", str(self.root / "cert.pem"), "--key", str(self.root / "key.pem"),
+                "--operating-evidence", str(path), "--port", str(port)],
+                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+        lines = queue.Queue(maxsize=1)
+        reader = threading.Thread(target=lambda: lines.put(process.stdout.readline()), daemon=True)
+        try:
+            reader.start()
+            line = lines.get(timeout=10)
+            self.assertTrue(json.loads(line)["listening"], line)
+            client = TeamClient(Endpoint.parse(f"tls://localhost:{port}"), self.credential, cafile=self.root / "cert.pem", timeout=2)
+            self.assertEqual(client.call("whoami")["project_id"], self.issued["project_id"])
+            self.assertEqual(len(self.store.list_projects_local()["projects"]), 1)
+        finally:
+            process.kill()
+            process.wait(timeout=10)
+            process.stdout.close()
+            process.stderr.close()
+            reader.join(2)
 
 
 if __name__ == "__main__":
