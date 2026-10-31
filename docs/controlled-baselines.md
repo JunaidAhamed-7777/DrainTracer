@@ -72,7 +72,7 @@ Deterministic regression fixtures separately verify repeatable failure, strict
 promotion gates, scoped exceptions, atomic failure preservation and audit/hash
 validation. This is functional verification, not broad detector calibration.
 
-Verification on 2026-10-31: the 18 focused baseline tests and all 741 unit tests
+Verification on 2026-10-31: the 20 focused baseline tests and all 743 unit tests
 passed on Windows (23 platform skips) and WSL Linux (16 skips). The native
 mid-object-write crash drill exited the writer abruptly, retained the previous
 approval, released its OS lock and completed a subsequent retry. A clean source
