@@ -27,7 +27,13 @@ from .config import (
     MIN_SAMPLES_PER_WINDOW,
 )
 from .repeat_comparison import MAX_GROUP_BYTES, MAX_GROUP_RUNS, compare_repeated_reports
-from .report_contract import _check_text_depth, _unique_object, read_report
+from .report_contract import (
+    MAX_REPORT_BYTES,
+    _check_text_depth,
+    _unique_object,
+    read_report,
+    validate_report,
+)
 from .report_diff import LoadedReport, comparability_caveats, load_report
 
 MAX_MANIFEST_BYTES = 2 * 1024 * 1024
@@ -168,6 +174,29 @@ def _provenance(data: Mapping[str, Any]) -> None:
                            or _mapping(settings["thresholds"][resource])[key] <= 0
                            for key in ("critical_delta", "critical_slope")) for resource in RESOURCES)):
         raise BaselineEvidenceError("baseline requires complete detector sampling and threshold settings")
+
+
+def _current_reports(reports: Sequence[LoadedReport]) -> tuple[LoadedReport, ...]:
+    """Snapshot mutable public LoadedReport data; summaries are never caller authority."""
+    if not 2 <= len(reports) <= MAX_GROUP_RUNS:
+        raise BaselineError(f"provide 2 to {MAX_GROUP_RUNS} independent runs")
+    current, total = [], 0
+    for report in reports:
+        if not isinstance(report, LoadedReport):
+            raise BaselineEvidenceError("baseline inputs must be loaded reports")
+        try:
+            encoded = _encoded(report.data)
+            total += len(encoded)
+            if len(encoded) > MAX_REPORT_BYTES or total > MAX_GROUP_BYTES:
+                raise BaselineEvidenceError("bounded baseline evidence exceeds its report/group byte limit")
+            _check_text_depth(encoded.decode("utf-8"))
+            data = validate_report(json.loads(encoded, object_pairs_hook=_unique_object))
+            current.append(LoadedReport(Path(report.path), data, summarize(data)))
+        except (ValueError, TypeError, RecursionError, OverflowError) as error:
+            if isinstance(error, BaselineEvidenceError):
+                raise
+            raise BaselineEvidenceError("baseline report data is no longer valid bounded evidence") from None
+    return tuple(current)
 
 
 def _gating_caveats(caveats) -> bool:
@@ -411,6 +440,7 @@ class BaselineStore:
 
     def promote(self, reports: Sequence[LoadedReport], *, approved_by: str, reason: str,
                 source_commit: str, accept_regression: bool = False) -> dict[str, Any]:
+        reports = _current_reports(reports)
         workload = _eligible(reports)
         budgets = report_budget_defaults(reports)
         _text(approved_by, "approved_by")
@@ -494,6 +524,7 @@ class BaselineStore:
     def check(self, reports: Sequence[LoadedReport], *, source_commit: str,
               budgets: Mapping[str, float] | None = None) -> tuple[int, dict[str, Any]]:
         _source(source_commit)
+        reports = _current_reports(reports)
         _eligible(reports)
         if budgets is not None and (not isinstance(budgets, Mapping) or set(budgets) - set(SIGNAL_TOTALS.values())):
             raise BaselineError("budget overrides must name only private_bytes, handles or threads")

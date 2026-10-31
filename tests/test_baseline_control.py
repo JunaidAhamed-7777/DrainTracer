@@ -269,6 +269,26 @@ with BaselineStore(sys.argv[1]) as store:
                     store.promote(group, **APPROVAL)
             self.assertFalse(list(self.store.glob("*.json")))
 
+    def test_mutated_loaded_data_cannot_reuse_a_stale_clean_summary_for_approval_or_check(self):
+        self.approve(self.reports("approved"))
+        signaled = self.reports("mutated-signal")
+        for report in signaled:
+            report.data["snapshots"] = _run(3, severity=LeakSeverity.HIGH)["snapshots"]
+        with BaselineStore(self.store) as store:
+            before = (self.store / "baseline.json").read_bytes()
+            with self.assertRaisesRegex(BaselineError, "accept_regression"):
+                store.promote(signaled, **APPROVAL)
+            self.assertEqual((self.store / "baseline.json").read_bytes(), before)
+            growing = self.reports("mutated-drift")
+            for report in growing:
+                report.data["snapshots"] = _run(3)["snapshots"]
+            code, result = store.check(growing, source_commit="b" * 40)
+            self.assertEqual(code, 1)
+            self.assertEqual(result["comparison"]["resources"]["memory"]["verdict"], "regressed")
+            growing[0].data["snapshots"] = "invalid"
+            with self.assertRaises(BaselineEvidenceError):
+                store.check(growing, source_commit="b" * 40)
+
     def test_unknown_or_lost_temporal_continuity_cannot_be_approved_or_suppressed(self):
         self.approve(self.reports("a"))
         for field in ("clock_adjustments", "sampling_gaps", "paused"):
