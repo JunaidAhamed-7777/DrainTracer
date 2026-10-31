@@ -52,6 +52,7 @@ class ParserTests(unittest.TestCase):
             ("--profile", "ci", "--no-config"): "--profile needs a settings file",
             ("--config", "a.toml", "--no-config"): "not allowed with argument",
             ("--interval", "10ms"): "between 100ms and 1m",
+            ("--checkpoint-interval", "500ms"): "between 1s and 1h",
             ("--window", "2h"): "at most 1h",
             ("--warmup", "2d"): "unknown duration unit",
             ("--warmup", "30h"): "at most 24h",
@@ -64,6 +65,15 @@ class ParserTests(unittest.TestCase):
 
 
 class DispatchTests(unittest.TestCase):
+    def test_checkpoint_flags_reach_the_session_settings(self) -> None:
+        with mock.patch.object(cli, "HeadlessRunner") as runner:
+            runner.return_value.run.return_value = 0
+            self.assertEqual(cli._main(make_console(), ["--headless", "--target", "worker.exe", "--no-config",
+                                                        "--checkpoint", "state.json", "--checkpoint-interval", "2s"]), 0)
+        settings = runner.call_args.kwargs["settings"]
+        self.assertEqual(settings.checkpoint, "state.json")
+        self.assertEqual(settings.checkpoint_interval, 2.0)
+
     def test_headless_builds_a_runner_from_flags(self) -> None:
         with mock.patch.object(cli, "HeadlessRunner") as runner:
             runner.return_value.run.return_value = 1
@@ -97,6 +107,16 @@ class DispatchTests(unittest.TestCase):
         kwargs = runner.call_args.kwargs
         self.assertEqual(kwargs["fail_on"], LeakSeverity.HIGH)
         self.assertEqual(kwargs["attach_pid"], 4242)
+
+    def test_full_coverage_policy_is_headless_only_and_reaches_the_runner(self) -> None:
+        self.assertIn("--headless", _parse_error(["--target", "app.exe", "--require-full-coverage"]))
+        with mock.patch.object(cli, "HeadlessRunner") as runner:
+            runner.return_value.run.return_value = 3
+            code = cli._main(make_console(), ["--headless", "--pid", "4242", "--no-config",
+                                              "--require-full-coverage"])
+        self.assertEqual(code, 3)
+        self.assertTrue(runner.call_args.kwargs["require_full_coverage"])
+        self.assertTrue(runner.call_args.kwargs["settings"].require_full_coverage)
 
     def test_settings_file_profile_and_flags_layer_in_order(self) -> None:
         import tempfile

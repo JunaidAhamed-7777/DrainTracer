@@ -10,6 +10,10 @@
 
 <h1 align="center">DrainTracer</h1>
 
+Python integrations can use the [supported session API](docs/python-api.md)
+for launch/attach, immutable snapshots, bounded subscriptions, cancellation,
+and explicit cleanup/export outcomes without initializing the dashboard.
+
 <p align="center">
   <strong>Release series: v5.4.0</strong> ·
   <a href="RELEASES.md">Current version and release notes</a>
@@ -337,16 +341,18 @@ python src/main.py --headless --target .\torture\steady.py --timeout 15s --fail-
 ```
 
 Headless mode prints progress, exports reports, and exits when the monitored
-tree finishes or the time limit passes. Its exit code describes the monitor's
+tree exits or the configured time limit expires. Each `STAT` line includes the
+live process count from the accepted snapshot, including unreadable processes.
+Its exit code describes the monitor's
 result, rather than forwarding the target's exit code:
 
 - `0` — no observed signal reached the selected threshold. This includes
   `INCONCLUSIVE` runs that never filled a detection window.
 - `1` — a signal reached the threshold at any point, even if it later cleared.
-- `2` — a usage, startup, monitoring, or report error, unless a higher-priority
-  failing signal or interruption applies.
-- `3` / `4` — only with `--fail-on-inconclusive` (no window judged) or
-  `--fail-on-target-error` (the launched target exited non-zero).
+- `2` — a usage or startup error; after successful startup, a monitoring or
+  report error unless a failing signal or interruption takes precedence.
+- `3` — opted-in inconclusive measurement or incomplete coverage.
+- `4` — only with `--fail-on-target-error`: the launched target exited non-zero.
 - `5` — only with a budget such as `--budget-private 500MB`,
   `--budget-handles 2000`, or `--budget-threads 64`: a peak exceeded it,
   even with no leak signal, because stable usage can still be excessive.
@@ -362,6 +368,17 @@ Headless signal rows label each unjudged resource as inconclusive or unavailable
 `clear` means a window was judged, and earlier signals remain visible.
 The default failure threshold is `high`. Allow enough time after warm-up for
 a detection window to fill, and inspect the verdict as well as the exit code.
+Use `--require-full-coverage` with `--headless` to exit `3` when any live
+sample lacks full private-byte, handle, or thread coverage, including missing
+coverage records or failed samples. Paused samples are excluded; combine it
+with `--fail-on-inconclusive` to also require a judged detection window.
+Reports include structured startup and cleanup results in `outcome`, and
+headless startup or cleanup failures attempt to export available evidence.
+For longer runs, opt in with `--checkpoint state/session.json`; the default
+cadence is 30s (`--checkpoint-interval 1s` through `1h`). Recover an interrupted
+prefix with `draintracer recover state/session.json --report-dir recovered`.
+Recovery never reattaches or controls a process, and recovered reports remain
+explicitly partial. See [checkpoint recovery](docs/reports.md#checkpoint-recovery).
 The [headless guide](docs/usage.md#run-without-a-dashboard) covers outcome
 priority and GitHub Actions integration.
 
@@ -454,6 +471,8 @@ rounded duration labels look identical. Coverage caveats use recorded whole-sess
 including wholly unreadable samples, even after chart history is thinned.
 
 Use comparable workloads, durations, warm-ups, and settings. Long sessions
+count evicted event messages separately as `event_counts`; the HTML event
+section shows observed, retained, and discarded totals. They also
 thin the stored chart history; reports then say "chart thinned 1:N", while
 peaks with their times, worst severities, signal episode counts, evaluated
 time, and sample counts stay exact in `session_facts`. Reports include local
@@ -521,3 +540,13 @@ whole report. Review both JSON and embedded HTML data before sharing.
 ## License
 
 [MIT](LICENSE) · Copyright © 2026 Junaid Ahamed.
+
+### Optional foreground Windows agent
+
+`draintracer-agent serve` starts an authenticated, per-user local agent explicitly.
+Use `draintracer-agent start --pid PID --create-time CREATION_TIME --timeout 30`
+from a second terminal to observe a same-user process, then `status`, `events`,
+`export`, or `cancel` its session UUID. Attachments default to observation;
+launch, launch pause/resume, and explicit kill require separate server flags.
+See the [local agent contract and commands](docs/local-agent.md) for private
+state permissions, limits, trusted launch roots, cleanup, and failure states.

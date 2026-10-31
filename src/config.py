@@ -63,7 +63,10 @@ _LAYER_KEYS = (
     "fail_on",
     "fail_on_inconclusive",
     "fail_on_target_error",
+    "require_full_coverage",
     "report_dir",
+    "checkpoint",
+    "checkpoint_interval",
     "thresholds",
     "workload_id",
     "build",
@@ -74,7 +77,7 @@ _LAYER_KEYS = (
     "budget_threads",
 )
 # Optional headless policies; all default to off so exit codes stay unchanged.
-_POLICY_KEYS = ("fail_on_inconclusive", "fail_on_target_error")
+_POLICY_KEYS = ("fail_on_inconclusive", "fail_on_target_error", "require_full_coverage")
 # Experiment labels recorded in reports; free text except the operation count.
 _LABEL_KEYS = ("workload_id", "build", "note")
 _ROOT_KEYS = (*_LAYER_KEYS, "profiles", "default_profile")
@@ -110,6 +113,9 @@ class MonitorSettings:
     budgets: Mapping[str, float] = field(default_factory=lambda: MappingProxyType({}))
     profile: str | None = None
     source: Path | None = None
+    require_full_coverage: bool = False
+    checkpoint: str | None = None
+    checkpoint_interval: float = 30.0
 
     @property
     def experiment(self) -> ExperimentInfo:
@@ -314,6 +320,13 @@ def _parse_layer(table: Mapping[str, Any], where: str, folder: Path) -> dict[str
         if not isinstance(value, str) or not value.strip():
             raise ConfigError(f"{where}report_dir must be a non-empty path")
         overrides["report_dir"] = str(folder / value)
+    if "checkpoint" in table:
+        value = table["checkpoint"]
+        if not isinstance(value, str) or not value.strip():
+            raise ConfigError(f"{where}checkpoint must be a non-empty path")
+        overrides["checkpoint"] = str(folder / value)
+    if "checkpoint_interval" in table:
+        overrides["checkpoint_interval"] = _duration(table["checkpoint_interval"], f"{where}checkpoint_interval")
     if "thresholds" in table:
         overrides["thresholds"] = _parse_thresholds(table["thresholds"], f"{where}thresholds.")
     for key in _LABEL_KEYS:
@@ -388,6 +401,10 @@ def _apply(settings: MonitorSettings, overrides: Mapping[str, Any]) -> MonitorSe
 
 
 def _check_consistency(settings: MonitorSettings) -> None:
+    if settings.checkpoint is not None and (not isinstance(settings.checkpoint, str) or not settings.checkpoint.strip()):
+        raise ConfigError("checkpoint must be a non-empty path")
+    if not 1.0 <= settings.checkpoint_interval <= 3600.0:
+        raise ConfigError("checkpoint_interval must be between 1s and 1h")
     if settings.timeout is not None and settings.warmup and settings.timeout <= settings.warmup:
         raise ConfigError(
             f"the {format_duration(settings.timeout)} time limit ends before the "

@@ -269,6 +269,15 @@ The dashboard adapts to narrow and short terminals and uses ASCII fallbacks
 for legacy encodings. A real interactive terminal is needed for controls;
 use headless mode when redirecting output or running in CI.
 
+## Preserve interrupted-run evidence
+
+To preserve evidence during a long run, add `--checkpoint PATH` and optionally
+`--checkpoint-interval 5s` to either monitoring mode. Use a new checkpoint path
+for each session. After interruption, `draintracer recover PATH --report-dir
+recovered` exports the saved prefix without controlling any process. The report
+remains partial; see [checkpoint recovery](reports.md#checkpoint-recovery) for
+bounds, validation, failure behavior, and comparison qualification.
+
 ## Exclude startup growth
 
 ```powershell
@@ -313,11 +322,13 @@ The exit code describes DrainTracer's result, not the target's exit code:
   never filled a detection window is `INCONCLUSIVE` and also returns `0`.
 - `1`: the strongest signal at any point reached the failure threshold,
   even if it subsequently cleared.
-- `2`: invalid usage, startup failure, or a monitoring/report failure when
-  no higher-priority outcome applies.
-- `3`: only with `--fail-on-inconclusive`: no detection window was judged
-  (the run was too short, the warm-up never finished, or nothing could be
-  read).
+- `2`: invalid usage or startup failure; after successful startup, a
+  monitoring/cleanup exception or JSON-report failure when no higher-priority
+  outcome applies.
+- `3`: with `--fail-on-inconclusive`, no detection window was judged;
+  with `--require-full-coverage`, not every live sample had known full
+  private-byte, handle, and thread coverage, or a sample failed. Pauses are
+  excluded. The two requirements are independent and can be combined.
 - `4`: only with `--fail-on-target-error`: a launched target exited by
   itself with a non-zero code. A target DrainTracer stopped does not count.
 - `5`: only with a budget (`--budget-private SIZE`, `--budget-handles N`,
@@ -326,14 +337,21 @@ The exit code describes DrainTracer's result, not the target's exit code:
   each budget, and the summary has a `budgets` row.
 - `130`: Ctrl+C when no signal had reached the failure threshold.
 
-A failing signal takes precedence over an interruption or runtime/report
+Startup failure always exits `2` and attempts to export available evidence.
+After startup succeeds, a failing signal takes precedence over an interruption or runtime/report
 error; interruption takes precedence over runtime/report errors, and those
-over `5`, then the optional `4`, then `3`. Both policies are off by default and
-can also be set with `fail_on_target_error` and `fail_on_inconclusive` in a
+over `5`, then the optional `4`, then `3`. These policies are off by default and
+can also be set with `fail_on_target_error`, `fail_on_inconclusive`, and
+`require_full_coverage` in a
 settings file. The summary prints the target outcome, the measurement
 outcome (`conclusive`, `partial` when some processes were unreadable, or
 `inconclusive` with its reason), and monitor errors on separate lines; the
-report's `outcome` object holds the same three parts. Check the
+report's `outcome` object also records structured startup and cleanup results.
+Cleanup exceptions still attempt to export evidence. Nonthrowing cleanup
+survivors retain the default exit behavior but emit a warning and
+`outcome.cleanup.state: incomplete`; automation requiring full cleanup must
+check that field. See [the report contract](reports.md#startup-and-cleanup-outcomes).
+Check the
 printed errors and report as well as the exit code when diagnosing a run.
 An HTML companion failure is logged while the JSON report remains usable.
 

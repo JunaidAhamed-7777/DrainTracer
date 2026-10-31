@@ -293,6 +293,7 @@ try:
     from rich.text import Text
 
     from .budgets import BUDGET_OPTIONS, parse_budget
+    from .checkpoints import recovered_report
     from .config import (
         FAIL_ON_CHOICES,
         MAX_SAMPLE_INTERVAL,
@@ -309,9 +310,10 @@ try:
     from .events import METRIC_LABELS, LeakSeverity
     from .file_picker import select_target_file
     from .headless import EXIT_ERROR, HeadlessRunner
+    from .html_report import write_html_report
     from .process_picker import select_running_process
     from .process_runner import ProcessManagerError
-    from .report import DEFAULT_REPORT_DIR
+    from .report import DEFAULT_REPORT_DIR, report_directory, write_json_report
     from .resources import resource_path
     from .startup import choose_startup_action
     from .theme import PALETTE, blend
@@ -411,6 +413,13 @@ def _sample_interval(value: str) -> float:
     seconds = _duration_arg(value)
     if not MIN_SAMPLE_INTERVAL <= seconds <= MAX_SAMPLE_INTERVAL:
         raise argparse.ArgumentTypeError("the sample interval must be between 100ms and 1m")
+    return seconds
+
+
+def _checkpoint_interval(value: str) -> float:
+    seconds = _duration_arg(value)
+    if not 1.0 <= seconds <= 3600.0:
+        raise argparse.ArgumentTypeError("the checkpoint interval must be between 1s and 1h")
     return seconds
 
 
@@ -530,6 +539,14 @@ def build_parser() -> argparse.ArgumentParser:
             f"(default: {DEFAULT_REPORT_DIR})."
         ),
     )
+    monitoring.add_argument(
+        "--checkpoint", metavar="PATH",
+        help="Opt in to atomic recovery checkpoints at PATH; existing files are never replaced by a new session.",
+    )
+    monitoring.add_argument(
+        "--checkpoint-interval", type=_checkpoint_interval, metavar="DURATION",
+        help="Checkpoint cadence from 1s to 1h (default: 30s); checkpointing remains opt-in.",
+    )
 
     experiment = parser.add_argument_group(
         "experiment",
@@ -617,6 +634,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Exit 4 when a launched target exits by itself with a non-zero code.",
     )
+    headless.add_argument(
+        "--require-full-coverage",
+        action="store_true",
+        default=None,
+        help="Exit 3 unless every live sample measured private bytes, handles, and threads fully.",
+    )
     for metric, option in BUDGET_OPTIONS.items():
         what = "a size such as 500MB" if metric == "private_bytes" else "a positive whole count"
         headless.add_argument(
@@ -650,11 +673,15 @@ def _resolve_settings(args: argparse.Namespace) -> MonitorSettings:
         overrides["timeout"] = args.timeout
     if args.fail_on is not None:
         overrides["fail_on"] = LeakSeverity(args.fail_on)
-    for key in ("fail_on_inconclusive", "fail_on_target_error"):
+    for key in ("fail_on_inconclusive", "fail_on_target_error", "require_full_coverage"):
         if getattr(args, key) is not None:
             overrides[key] = getattr(args, key)
     if args.report_dir is not None:
         overrides["report_dir"] = args.report_dir
+    if args.checkpoint is not None:
+        overrides["checkpoint"] = args.checkpoint
+    if args.checkpoint_interval is not None:
+        overrides["checkpoint_interval"] = args.checkpoint_interval
     for key in ("workload_id", "build", "operations", "note"):
         if getattr(args, key) is not None:
             overrides[key] = getattr(args, key)
@@ -757,6 +784,8 @@ def _main(console: Console, argv: list[str] | None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     if arguments[:1] == ["diff"]:
         return run_diff(arguments[1:], console)
+    if arguments[:1] == ["recover"]:
+        return _run_recovery(arguments[1:], console)
     parser = build_parser()
     args = parser.parse_args(arguments)
 
@@ -770,6 +799,7 @@ def _main(console: Console, argv: list[str] | None) -> int:
     for flag, value in (
         ("--fail-on-inconclusive", args.fail_on_inconclusive),
         ("--fail-on-target-error", args.fail_on_target_error),
+        ("--require-full-coverage", args.require_full_coverage),
     ):
         if value and not args.headless:
             parser.error(f"{flag} only applies with --headless")
@@ -881,6 +911,43 @@ def _main(console: Console, argv: list[str] | None) -> int:
     return _run_dashboard(app, console)
 
 
+def _run_recovery(arguments: list[str], console: Console) -> int:
+    parser = argparse.ArgumentParser(prog="draintracer recover", description=(
+        "Recover an intact checkpoint prefix as JSON/HTML. Missing tail and final cleanup remain unknown; "
+        "no process is reattached or controlled."
+    ))
+    parser.add_argument("checkpoint", metavar="CHECKPOINT")
+    parser.add_argument("--report-dir", default=DEFAULT_REPORT_DIR, metavar="DIR")
+    parser.add_argument("--expect-session", metavar="UUID", help="Reject a checkpoint from any other session.")
+    parser.add_argument("--json", action="store_true", help="Print a versioned recovery result as JSON.")
+    args = parser.parse_args(arguments)
+    result: dict[str, Any] = {"recovery_result_schema": 1}
+    try:
+        report = recovered_report(args.checkpoint, app_version=DashboardApp.VERSION, session_id=args.expect_session)
+        directory = report_directory(report, args.report_dir)
+        json_path = write_json_report(report, directory)
+        result.update(status="recovered", partial=True, json_path=str(json_path), html_path=None)
+        try:
+            result["html_path"] = str(write_html_report(report, directory))
+        except Exception as exc:  # noqa: BLE001 - retain JSON evidence after any HTML rendering failure
+            report.setdefault("outcome", {}).setdefault("monitor_errors", []).append(f"Recovery HTML export failed: {exc}")
+            write_json_report(report, directory)
+            result.update(status="partial_export", error=str(exc))
+    except (OSError, ValueError) as exc:
+        result.update(status="error", error=str(exc))
+    if args.json:
+        console.print(Text(json.dumps(result, ensure_ascii=True)), soft_wrap=True)
+    elif result["status"] == "recovered":
+        console.print(Text(f"Recovered partial evidence: {result['json_path']}"), soft_wrap=True)
+        console.print(Text(f"HTML: {result['html_path']}"), soft_wrap=True)
+        console.print(Text("Facts are exact through the checkpoint; the missing tail and final cleanup are unknown."))
+    else:
+        console.print(Text(f"Recovery failed: {result['error']}"), soft_wrap=True)
+        if result.get("json_path"):
+            console.print(Text(f"JSON evidence retained: {result['json_path']}"), soft_wrap=True)
+    return 0 if result["status"] == "recovered" else 2
+
+
 def _run_headless(
     args: argparse.Namespace,
     forwarded_args: list[str],
@@ -898,6 +965,7 @@ def _run_headless(
         settings=settings,
         fail_on_inconclusive=settings.fail_on_inconclusive,
         fail_on_target_error=settings.fail_on_target_error,
+        require_full_coverage=settings.require_full_coverage,
     )
     try:
         return runner.run()

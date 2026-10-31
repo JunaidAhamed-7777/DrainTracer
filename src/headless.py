@@ -13,14 +13,14 @@ from typing import Any
 from rich.console import Console
 from rich.text import Text
 
-from .config import FAIL_ON_CHOICES, MonitorSettings
 from .analysis import RESOURCES, summarize
 from .budgets import BudgetCheck, check_budgets
+from .config import FAIL_ON_CHOICES, MonitorSettings
 from .dashboard import DashboardApp
 from .events import EvidenceState, LeakResource, LeakSeverity, severity_rank, unavailable_reason
 from .report import DEFAULT_REPORT_DIR
 from .report_diff import format_amount, format_drift
-from .session import MonitorSession
+from .session import MonitorSession, session_exit_code
 from .theme import PALETTE
 from .units import format_duration
 
@@ -75,6 +75,7 @@ class HeadlessRunner(MonitorSession):
         settings: MonitorSettings | None = None,
         fail_on_inconclusive: bool = False,
         fail_on_target_error: bool = False,
+        require_full_coverage: bool | None = None,
     ) -> None:
         if fail_on == LeakSeverity.NONE:
             raise ValueError("fail_on must be a leak severity, not NONE")
@@ -90,6 +91,9 @@ class HeadlessRunner(MonitorSession):
         self.fail_on = fail_on
         self.fail_on_inconclusive = fail_on_inconclusive
         self.fail_on_target_error = fail_on_target_error
+        self.require_full_coverage = (
+            self.settings.require_full_coverage if require_full_coverage is None else require_full_coverage
+        )
         self._github_actions = os.environ.get("GITHUB_ACTIONS") == "true"
         self._export_error: str | None = None
         self._run_error: str | None = None
@@ -157,10 +161,15 @@ class HeadlessRunner(MonitorSession):
         try:
             self.start()
         except Exception as exc:
+            self._startup_state = "failed"
+            self._startup_error = str(exc) or type(exc).__name__
+            self._run_error = f"startup failed: {self._startup_error}"
             self._print_line("error", f"Could not start monitoring: {exc}")
             hint = self.startup_hint(exc)
             if hint:
                 self._print_line("info", hint)
+            self._export()
+            self._print_summary()
             return EXIT_ERROR
 
         try:
@@ -171,7 +180,13 @@ class HeadlessRunner(MonitorSession):
         except Exception as exc:
             self._fail("Monitoring", exc)
         finally:
-            self.shutdown()
+            try:
+                self.shutdown()
+            except KeyboardInterrupt:
+                self._interrupted = True
+                self._append_event("Cleanup interrupted; exporting available evidence", "warn")
+            except Exception as exc:  # noqa: BLE001 - export evidence after any cleanup failure
+                self._fail("Cleanup", exc)
         try:
             self.poll()
         except Exception as exc:
@@ -223,13 +238,15 @@ class HeadlessRunner(MonitorSession):
         except Exception as exc:  # the tree is gone; a failed sample is harmless
             self._print_line("warn", f"Final sample failed: {exc}")
 
-    def build_report(self) -> dict[str, Any]:
-        report = super().build_report()
+    def build_report(self, *, snapshot_limit: int | None = None) -> dict[str, Any]:
+        report = super().build_report(snapshot_limit=snapshot_limit)
         report["headless"] = {
             "fail_on": self.fail_on.value,
             "breached": self.breached,
             "fail_on_inconclusive": self.fail_on_inconclusive,
             "fail_on_target_error": self.fail_on_target_error,
+            "require_full_coverage": self.require_full_coverage,
+            "exit_code": self.exit_status(),
             "budgets": [check.to_dict() for check in self.budget_checks()],
         }
         if self._run_error is not None:
@@ -243,19 +260,15 @@ class HeadlessRunner(MonitorSession):
         error, then an exceeded budget; the optional policies only apply to
         runs that are otherwise a pass.
         """
-        if self.breached:
-            return EXIT_LEAK
-        if self._interrupted:
-            return EXIT_INTERRUPTED
-        if self._export_error is not None or self._run_error is not None:
-            return EXIT_ERROR
-        if self.over_budget:
-            return EXIT_BUDGET
-        if self.fail_on_target_error and self.target_failed:
-            return EXIT_TARGET_ERROR
-        if self.fail_on_inconclusive and not self.conclusive:
-            return EXIT_INCONCLUSIVE
-        return EXIT_PASS
+        return session_exit_code(
+            startup_failed=self._startup_state == "failed", signal_breached=self.breached,
+            cancelled=self._interrupted,
+            monitor_failed=self._export_error is not None or self._run_error is not None,
+            over_budget=bool(self.over_budget),
+            target_failed=self.fail_on_target_error and self.target_failed,
+            inconclusive=((self.require_full_coverage and not self.full_coverage)
+                          or (self.fail_on_inconclusive and not self.conclusive)),
+        )
 
     def _policy_text(self) -> str:
         """``fails on HIGH or above``, plus any optional policy in force."""
@@ -264,6 +277,8 @@ class HeadlessRunner(MonitorSession):
             text += ", inconclusive runs"
         if self.fail_on_target_error:
             text += ", target errors"
+        if self.require_full_coverage:
+            text += ", incomplete coverage"
         if self.budgets:
             text += ", budgets"
         return text
@@ -330,7 +345,11 @@ class HeadlessRunner(MonitorSession):
     def _print_progress(self) -> None:
         totals = self._totals()
         sep = self.glyphs.sep
-        processes = len(self.snapshot.processes) if self.snapshot else 0
+        snapshot = self.snapshot
+        counts = snapshot.process_counts if snapshot is not None else None
+        processes = counts.live if counts is not None else (
+            len(snapshot.processes) if snapshot is not None else 0
+        )
         severity = self.snapshot.severity if self.snapshot else LeakSeverity.NONE
         active = ", ".join(
             alert.resource.value for alert in (self.snapshot.alerts if self.snapshot else ())
@@ -351,7 +370,7 @@ class HeadlessRunner(MonitorSession):
             f"rss {self._format_bytes(totals.get('rss_bytes', 0.0))} {sep} "
             f"handles {int(totals.get('handles', 0.0)):,} {sep} "
             f"threads {int(totals.get('threads', 0.0)):,} {sep} "
-            f"{processes} process{'es' if processes != 1 else ''} {sep} "
+            f"{processes} live process{'es' if processes != 1 else ''} {sep} "
             f"signal {signal}",
         )
 
@@ -416,7 +435,11 @@ class HeadlessRunner(MonitorSession):
         elif status == EXIT_TARGET_ERROR:
             reason = f"the target exited with code {self.manager.exit_code}"
         elif status == EXIT_INCONCLUSIVE:
-            reason = self.inconclusive_reason()
+            if self.require_full_coverage and not self.full_coverage:
+                verdict = "INSUFFICIENT COVERAGE"
+                reason = "full private-byte, handle, and thread coverage was not observed for every live sample"
+            else:
+                reason = self.inconclusive_reason()
         elif status == EXIT_BUDGET:
             reason = "; ".join(check.describe() for check in self.over_budget)
         if status == EXIT_PASS and not self.conclusive:
