@@ -212,13 +212,27 @@ def read_report(path: str | Path) -> dict[str, Any]:
     try:
         with Path(path).open("rb") as handle:
             raw = handle.read(MAX_REPORT_BYTES + 1)
+    except FileNotFoundError:
+        raise ReportContractError("no such file") from None
+    except (OSError, ValueError) as exc:
+        raise ReportContractError(f"cannot read report ({getattr(exc, 'strerror', None) or exc})") from None
+    return parse_report(raw)
+
+
+def parse_report(raw: bytes) -> dict[str, Any]:
+    """Validate immutable UTF-8 upload bytes with the same bounds as file input.
+
+    This function performs no filesystem writes or reads. Ingestion services
+    can validate and privacy-transform a report before persisting any bytes.
+    """
+    if type(raw) is not bytes:
+        raise ReportContractError("expected immutable UTF-8 report bytes")
+    try:
         if len(raw) > MAX_REPORT_BYTES:
             raise ReportContractError(f"report exceeds {MAX_REPORT_BYTES} byte limit")
         text = raw.decode("utf-8")
         _check_text_depth(text)
         data = json.loads(text, object_pairs_hook=_unique_object)
-    except FileNotFoundError:
-        raise ReportContractError("no such file") from None
     except UnicodeDecodeError:
         raise ReportContractError("not a UTF-8 JSON report") from None
     except json.JSONDecodeError as exc:
@@ -229,8 +243,6 @@ def read_report(path: str | Path) -> dict[str, Any]:
         raise
     except ValueError as exc:
         raise ReportContractError(f"not a usable JSON report ({exc})") from None
-    except OSError as exc:
-        raise ReportContractError(f"cannot read report ({exc.strerror or exc})") from None
     return validate_report(data)
 
 
@@ -307,9 +319,15 @@ def session_summary(report: dict[str, Any]) -> dict[str, Any]:
 def main(argv: list[str] | None = None) -> int:
     """Machine-only stdout; structured failures go to stderr with exit status 2."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("validate", "summary", "schema"))
+    parser.add_argument("action", choices=("validate", "summary", "schema", "redact", "investigate"))
     parser.add_argument("path", nargs="?")
     parser.add_argument("--kind", choices=("report", "summary"), default="report")
+    parser.add_argument("--profile", choices=("share", "minimal"), default="share")
+    parser.add_argument("--output-dir", help="write a redacted JSON/HTML pair; otherwise preview JSON only")
+    parser.add_argument("--resource", choices=("memory", "handles", "threads"))
+    parser.add_argument("--runtime", choices=("unknown", "python", "dotnet", "native"), default="unknown")
+    parser.add_argument("--format", choices=("json", "text"), default="json",
+                        help="text is available for the investigate action")
     args = parser.parse_args(argv)
     try:
         if args.action == "schema":
@@ -318,12 +336,30 @@ def main(argv: list[str] | None = None) -> int:
             if not args.path:
                 raise ReportContractError("a report path is required")
             report = read_report(args.path)
-            result = (session_summary(report) if args.action == "summary" else
-                      {"validation_schema": 1, "valid": True, "report_schema": report.get("report_schema", 1)})
-        print(json.dumps(result, allow_nan=False))
+            if args.action == "investigate":
+                from .investigation import investigation_summary
+
+                result = investigation_summary(report, profile=args.profile, resource=args.resource,
+                                               runtime=args.runtime)
+            elif args.action == "redact":
+                from .privacy import export_private_report, redact_report
+
+                if args.output_dir:
+                    paths = export_private_report(report, args.output_dir, args.profile)
+                    result = {"privacy_schema": 1, "profile": args.profile,
+                              "json_path": str(paths[0]), "html_path": str(paths[1])}
+                else:
+                    result = redact_report(report, args.profile)
+            else:
+                result = (session_summary(report) if args.action == "summary" else
+                          {"validation_schema": 1, "valid": True, "report_schema": report.get("report_schema", 1)})
+        if args.format == "text" and args.action != "investigate":
+            raise ReportContractError("--format text requires the investigate action")
+        print(result["text"] if args.format == "text" else json.dumps(result, allow_nan=False))
         return 0
-    except (ReportContractError, ValueError) as exc:
-        print(json.dumps({"error_schema": 1, "error": {"code": "invalid_report", "message": str(exc)}}),
+    except (ReportContractError, ValueError, OSError) as exc:
+        code = "export_failed" if isinstance(exc, OSError) else "invalid_report"
+        print(json.dumps({"error_schema": 1, "error": {"code": code, "message": str(exc)}}),
               file=sys.stderr)
         return 2
 

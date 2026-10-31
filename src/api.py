@@ -24,6 +24,7 @@ from typing import Any
 from rich.console import Console
 
 from .budgets import check_budgets
+from .checkpoints import _uuid
 from .config import _parse_layer, resolve_settings
 from .events import severity_rank
 from .report import snapshot_to_dict
@@ -272,7 +273,7 @@ class Session:
 
     def __init__(self, target_path: str | None, args: Sequence[str] = (), *,
                  attach_pid: int | None = None, create_time: float | None = None,
-                 options: SessionOptions | None = None, _manager_factory=None):
+                 options: SessionOptions | None = None, _manager_factory=None, _checkpoint_session_id=None):
         self._options = options or SessionOptions()
         if not isinstance(self.options, SessionOptions):
             raise TypeError("options must be SessionOptions")
@@ -293,6 +294,7 @@ class Session:
         self._attach_pid = attach_pid
         self._create_time = create_time
         self._manager_factory = _manager_factory
+        self._checkpoint_session_id = _uuid(_checkpoint_session_id) if _checkpoint_session_id is not None else None
         self._lock = threading.RLock()
         self._cancel = threading.Event()
         self._done = threading.Event()
@@ -486,6 +488,7 @@ class Session:
                                          attach_create_time=self._create_time,
                                          timeout=settings.timeout, settings=settings)
                 backend.VERSION = _version()
+                backend._checkpoint_session_id = self._checkpoint_session_id
                 if self._manager_factory is not None:
                     manager = self._manager_factory(self._target, args=list(self._args))
                     backend.manager = manager

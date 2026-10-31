@@ -36,6 +36,48 @@ control. A local path is not necessarily private storage.
 
 ## What a report can reveal
 
+### Previewable privacy exports
+
+Reports remain detailed by default. To inspect an explicit transformation
+without writing files:
+
+```powershell
+draintracer-report redact .\run.json --profile share
+draintracer-report redact .\run.json --profile minimal
+```
+
+`share` removes paths, free text, argument fingerprints, configuration
+origins, host identifiers, unknown fields, and captured logs. It replaces
+process IDs/names/creation identities with local pseudonyms and shifts all
+recorded wall-clock dates to a fixed origin while preserving intervals.
+Numeric resource evidence, coverage, and signal windows remain available.
+`minimal` also removes event/marker detail and per-process resource
+attribution. Per-process counters removed intentionally are marked unknown;
+the aggregate measurements retain their original coverage semantics.
+
+Add `--output-dir .\shared` to explicitly write a JSON/HTML pair. Both
+formats are rendered from one transformed dictionary and identify the
+profile; no original JSON or embedded HTML data is copied alongside them.
+Each export receives a fresh report ID. Evidence is copied only from typed,
+documented paths: an opaque metadata field named `value` or `operations`
+cannot inherit metric permissions, and free-text fields are removed even
+when malformed input supplies numeric or structured values. Marker indices
+are renumbered. Unknown future fields are omitted instead of guessed safe.
+Cleanup/startup/coverage outcomes retain their structured limitations while
+diagnostic text and checkpoint identities are removed. Recovery retains only
+its three Boolean qualification flags. Privacy-transformed reports always carry a
+comparison caveat: pseudonyms cannot establish original target/workload
+equivalence, so strict comparison refuses them.
+
+Preview and export run locally without an account, upload, or telemetry.
+The command does not transmit evidence. Saving into a synchronized/shared
+folder can still send files through that service under your control.
+Review both outputs before sharing: retained resource values and timing
+patterns can identify a workload, so a transformed report is not a promise
+of anonymity. Keep the original private report separately when needed.
+
+### Detailed reports
+
 Review all of these, even if you used a harmless workload label:
 
 - `target_path`, `root_pid`, process names, parent IDs, creation times, and
@@ -69,6 +111,11 @@ values, hostname, and username fields. It keeps the argument count and a
 truncated SHA-256 fingerprint for launch comparisons. A predictable argument
 can be checked by guessing and hashing it; the fingerprint is not a secure
 way to conceal a secret.
+
+Monitor diagnostics include host CPU utilization, available/total physical
+memory, and the host reading's timestamp, age and collection cost. The detector
+collects these locally at most once every five seconds; they are saved with
+reports and are not attributed to the target. No new network request is involved.
 
 Experiment labels pass through pattern-based removal of secret-looking
 assignments, flags, URL credentials, and Basic/Bearer credentials. Arbitrary
@@ -168,3 +215,18 @@ For reviewers maintaining this guide:
 Changes to these data flows should trigger review of this guide and
 [PRIVACY.md](../PRIVACY.md). Proposed hosted sharing and user research need
 additional implementation and notices; these documents do not implement them.
+
+## Optional local agent support
+
+The opt-in agent stores a private credential, scheduling journal, checkpoints
+and reports beneath a verified local user-controlled path. Its authenticated
+pipe is local and never uploads evidence. `diagnose` is private operational
+output and may contain local session/process identities, paths and error text;
+do not paste it unreviewed. `support` previews an explicitly typed redacted
+document, excludes credentials and raw operational metadata, and can include
+up to two explicitly chosen privacy-transformed reports. JSON and offline HTML
+share the same transformed report object. Archive creation requires `--out`;
+there is no automatic publication. Numerical evidence can still identify a
+workload. Removal previews/applies only known control files after shutdown;
+reports, checkpoints and unrelated application files are preserved. See
+[agent operations](agent-operations.md) before sharing or removing data.

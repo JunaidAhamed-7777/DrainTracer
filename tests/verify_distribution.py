@@ -100,6 +100,49 @@ def verify_distribution(wheel: Path) -> str:
         for entry in ([str(command)], [str(python), "-m", "draintracer"]):
             help_output = _run([*entry, "--help"], cwd=cwd, environment=environment)
             _require("--target" in help_output and "--headless" in help_output, "CLI help is incomplete.")
+        agent_command = scripts / ("draintracer-agent.exe" if os.name == "nt" else "draintracer-agent")
+        _require(agent_command.is_file(), "Installing the wheel did not create the agent command.")
+        agent_help = _run([str(agent_command), "--help"], cwd=cwd, environment=environment)
+        _require("serve" in agent_help and "cancel" in agent_help, "The installed agent command is unavailable.")
+        operations_command = scripts / ("draintracer-ops.exe" if os.name == "nt" else "draintracer-ops")
+        _require(operations_command.is_file(), "Installing the wheel did not create the operating exercise command.")
+        operations_help = _run([str(operations_command), "--help"], cwd=cwd, environment=environment)
+        _require("--operator" in operations_help and "--workspace" in operations_help, "Operating CLI help is incomplete.")
+        _run([str(python), str(Path(__file__).parent.resolve() / "installed_operating_probe.py")],
+             cwd=cwd, environment=environment, timeout=120)
+        _run([str(python), "-c", ("import sys; from draintracer.agent_command import AgentClient; "
+              "assert 'draintracer.dashboard' not in sys.modules; "
+              "assert 'draintracer.main' not in sys.modules")], cwd=cwd, environment=environment)
+        team_command = scripts / ("draintracer-team.exe" if os.name == "nt" else "draintracer-team")
+        _require(team_command.is_file(), "Installing the wheel did not create the team command.")
+        team_help = _run([str(team_command), "--help"], cwd=cwd, environment=environment)
+        _require("bootstrap" in team_help and "record-create" in team_help, "The installed team command is unavailable.")
+        _run([str(python), "-c", """import json, os, sys, tempfile
+from pathlib import Path
+from uuid import uuid4
+from draintracer.team_store import TeamStore, TeamError
+assert 'draintracer.dashboard' not in sys.modules
+with tempfile.TemporaryDirectory(dir=Path.home() if os.name == 'nt' else None, prefix='.draintracer-installed-team-') as temporary:
+    with TeamStore.create(Path(temporary) / 'store') as store:
+        issued = store.bootstrap_project('installed-check')
+        actor = store.authenticate(issued['token'], issued['project_id'])
+        key = uuid4().hex
+        raw = json.dumps({'report_schema':3,'snapshots':[],'target_path':'private-installed-target'}).encode()
+        report = store.ingest(actor, raw, request_id=key)
+        assert store.ingest(actor, raw, request_id=key)['report_id'] == report['report_id']
+        assert b'private-installed-target' not in store.export_report(actor, report['report_id'])
+        backup = store.backup(actor)
+        assert store.restore(actor, backup['backup_id'])['restored'] == 1
+        store.delete_report(actor, report['report_id'])
+        assert store.list_backups(actor)['backups'] == []
+        try:
+            store.ingest(actor, raw, request_id=key)
+        except TeamError as error:
+            assert error.code == 'conflict'
+        else:
+            raise RuntimeError('Deleted installed evidence was replayed')
+assert 'draintracer.dashboard' not in sys.modules
+"""], cwd=cwd, environment=environment)
         diff_help = _run([str(command), "diff", "--help"], cwd=cwd, environment=environment)
         _require("--fail-on-regression" in diff_help, "The installed diff command is unavailable.")
 

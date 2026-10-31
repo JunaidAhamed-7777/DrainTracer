@@ -1,6 +1,6 @@
 # Privacy policy
 
-Effective and last updated: **28 October 2026**.
+Effective and last updated: **30 October 2026**.
 
 This policy describes the official DrainTracer project maintained by
 [Junaid Ahamed](https://github.com/JunaidAhamed-7777) (the "maintainer", "we", or
@@ -20,7 +20,10 @@ channels. Read it with the [terms](TERMS.md) and
   or share a report.
 - Monitoring records can contain personal or confidential information,
   especially in paths, process names, labels, event messages, and logs.
-  Existing redaction is limited; reports are not anonymous by default.
+  Reports are not anonymous by default. Explicit `share` and `minimal`
+  privacy profiles create local copies with paths/free text removed,
+  pseudonymous process identities, shifted dates, and an allowlist of
+  evidence fields. Resource patterns can still identify a workload.
 - Exported JSON and HTML, diagnostic logs, and CI output remain where you or
   your environment save them until removed under your own retention settings.
 - The maintainer receives monitoring evidence only if you or someone with
@@ -79,6 +82,9 @@ workload ID, build label, operation count, and note identify your experiment.
 
 Reports also include operating-system and Python versions, machine
 architecture, CPU count, total physical memory, and DrainTracer's version.
+Diagnostics additionally record host CPU utilization and available physical
+memory, sampled at most once every five seconds, with sampling time, age and
+collection cost. These counters describe the whole host, not target activity.
 There are no dedicated hostname or username fields in this environment
 record, but usernames, customer names, and machine identifiers can still
 appear in paths or free text.

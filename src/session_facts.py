@@ -13,7 +13,7 @@ analysis prefers them over values derived from the kept snapshots.
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any
 
 import psutil
@@ -123,6 +123,7 @@ class SessionFacts:
         self._unavailable_samples = dict.fromkeys(_SIGNAL_METRICS, 0)
         self._unreadable_pids: dict[int, str] = {}
         self._errors: list[str] = []
+        self._host: dict[str, Any] | None = None
 
     def observe(self, snapshot: MetricsSnapshot, *, dropped: int = 0) -> None:
         """Account for one snapshot, whatever its kind."""
@@ -232,6 +233,8 @@ class SessionFacts:
         if diagnostics is None:
             return
         self.dropped = max(self.dropped, diagnostics.dropped_snapshots)
+        if diagnostics.host is not None:
+            self._host = asdict(diagnostics.host)
         if snapshot.monitoring_paused or snapshot.metadata.get("sampling_error"):
             return
         self._collection.add(diagnostics.collection_ms)
@@ -330,6 +333,7 @@ class SessionFacts:
                 "first_evaluated_at": self.first_evaluated_at,
             },
             "monitor": {
+                "host_context": dict(self._host) if self._host is not None else None,
                 "requested_interval_ms": self.requested_interval_ms,
                 "interval_ms": self._interval.to_dict(1),
                 "collection_ms": self._collection.to_dict(),
