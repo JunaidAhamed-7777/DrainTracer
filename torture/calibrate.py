@@ -52,6 +52,8 @@ CASES = (
          "non-growth after warm-up"),
     Case("recovery", "calibration_target.py", ("recovery",), "recovering allocation"),
     Case("worker-churn", "calibration_target.py", ("churn",), "bounded worker churn"),
+    Case("fast-memory", "memory_leak.py", ("--chunk-mb", "2", "--interval", "0.25", "--max-mb", "128"),
+         "known growth then cap", "memory"),
     Case("slow-memory", "memory_leak.py", ("--chunk-mb", "0.25", "--interval", "0.5", "--max-mb", "48"),
          "sustained known growth", "memory"),
     Case("handle-growth", "handle_leak.py", ("--handles-per-tick", "10", "--interval", "0.25", "--max-handles", "800"),
