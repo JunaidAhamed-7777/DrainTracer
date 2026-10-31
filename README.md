@@ -436,6 +436,9 @@ tables show `PRIVATE`; RSS (working set), CPU, and I/O provide context, and
 neither memory counter alone proves an allocation leak. Read the
 [configuration reference](docs/configuration.md) for discovery, precedence, and
 units, and [working-principle.md](working-principle.md) for the detection math.
+Growth dominated by new workers keeps its full aggregate severity; the
+[measured worker-growth policy](docs/worker-growth-policy.md) explains the
+capacity distinction, CI effects, and separately scoped tracing decision.
 
 ## Save and compare evidence
 
