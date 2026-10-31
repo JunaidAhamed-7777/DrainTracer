@@ -35,7 +35,8 @@ baseline is a policy choice, not proof that a workload is free of leaks.
 
 An exceptional `suppress STORE --resource handles --kind regression --expires
 2030-01-02T00:00:00Z --approved-by NAME --reason TEXT --source-commit FULL_SHA`
-records a narrow exception. Expiry must be in the future and at most 90 days
+records a narrow exception (replace the example timestamp with a future UTC
+time). Expiry must be in the future and at most 90 days
 away. Suppressions apply only to one resource and finding kind (`regression` or
 `budget`), the exact baseline revision and its workload. Promotion invalidates
 old suppressions. They never suppress target/provenance/coverage gates, missing
@@ -48,3 +49,10 @@ input/store error, 3 for incompatible/insufficient/inconclusive evidence, and 4
 for an unsuppressed peak budget. No global detector defaults or calibration
 thresholds change. These conservative rules use the existing repeated-run
 method; broader detector calibration remains separate work.
+
+`draintracer diff A.json B.json --report-budgets` also opts into reading the
+earlier report's budgets. Without that flag, existing diff behavior is unchanged.
+When repeated earlier runs disagree about their budgets, the command refuses an
+ambiguous policy instead of selecting the first. Explicit flags override only
+the named metric. `draintracer-baseline audit STORE` prints the intact review
+history and current policy as JSON without changing the approval.
