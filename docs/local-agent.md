@@ -26,6 +26,15 @@ Launch roots and selected executable/script files have the same ancestor and
 content-write checks before use. A same-user process or administrator can access the credential or
 change the agent; neither is an isolation boundary.
 
+Private inherited data files, such as reports, SQLite databases and sidecars,
+also accept SYSTEM, Administrators or TrustedInstaller as an owner. An elevated
+token can naturally create Administrators-owned files. Every data-file ACE must
+still name the current user or these privileged principals, with no public
+read access, and the current user must have its own applicable access entry.
+OWNER RIGHTS counts as current-user access only when that user owns the file.
+State directories and credentials retain the protected current-user-owner
+requirement. Validation never rewrites an existing owner or ACL.
+
 Each connection performs mutual HMAC-SHA256 authentication with independent,
 fresh 256-bit challenges and role-separated proofs. The local credential is
 never sent over the pipe, placed in command-line arguments, included in
