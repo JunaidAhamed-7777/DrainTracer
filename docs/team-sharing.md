@@ -47,6 +47,9 @@ Collection, local JSON/HTML export and process cleanup never import the
 transport or wait for this queue. Enqueue/flush failures retain local reports.
 Only the explicit flush command attempts the network. Operators review queued
 content and retention before sharing; credentials are never stored in entries.
+Each client pins its project when it opens the credential file. A later
+same-project credential rotation refreshes the secret; a cross-project
+replacement is refused before sending and cannot redirect a bound queue.
 
 Verification must include two distinct project credentials reading one approved
 comparison, cross-project and revoked-token refusals, certificate/hostname

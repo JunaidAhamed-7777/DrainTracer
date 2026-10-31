@@ -158,6 +158,38 @@ class SharedEvidenceTests(unittest.TestCase):
         self.assertEqual(result["history"][0]["id"], job["id"])
         self.assertEqual(len(self.reader.call("list_reports")["reports"]), 1)
 
+    def test_credential_project_rotation_cannot_redirect_a_bound_queue(self):
+        other = self.store.bootstrap_project("rotation-destination")
+        replacement = self.client(other, "replacement")
+        queue = UploadQueue(self.root / "queue", self.actor.project_id, self.endpoint, create=True)
+        queue.enqueue(self.raw)
+        send = self.writer.ingest_prepared
+
+        def rotate_before_send(*args, **kwargs):
+            os.replace(replacement.credential_file, self.writer.credential_file)
+            return send(*args, **kwargs)
+
+        with mock.patch.object(self.writer, "ingest_prepared", side_effect=rotate_before_send):
+            result = queue.flush(self.writer)
+        self.assertEqual(result["delivered"], 0)
+        self.assertEqual(result["pending"], 1)
+        self.assertEqual(queue.inspect()["entries"][0]["state"], "blocked")
+        self.assertEqual(queue.inspect()["entries"][0]["last_error"], "conflict")
+        self.assertEqual(self.writer.project_id, self.actor.project_id)
+        self.assertEqual(self.reader.call("list_reports")["reports"], [])
+        other_actor = self.store.authenticate(other["token"], other["project_id"])
+        self.assertEqual(self.store.list_reports(other_actor)["reports"], [])
+
+    def test_same_project_credential_rotation_refreshes_the_secret(self):
+        issued = self.store.issue_credential(self.actor, "operator")
+        replacement = self.client(issued, "replacement")
+        self.store.revoke_credential(self.actor, self.operator_issued["credential"]["id"])
+        os.replace(replacement.credential_file, self.writer.credential_file)
+        queue = UploadQueue(self.root / "queue", self.actor.project_id, self.endpoint, create=True)
+        queue.enqueue(self.raw)
+        self.assertEqual(queue.flush(self.writer)["delivered"], 1)
+        self.assertEqual(len(self.reader.call("list_reports")["reports"]), 1)
+
     def test_outage_leaves_local_monitoring_export_and_cleanup_independent(self):
         queue = UploadQueue(self.root / "queue", self.actor.project_id, self.endpoint, create=True)
         queue.enqueue(self.raw)
