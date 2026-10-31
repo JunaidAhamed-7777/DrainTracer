@@ -177,10 +177,12 @@ def _eligible(reports: Sequence[LoadedReport]) -> str:
         startup, cleanup, target = (_mapping(outcome.get(key)) for key in ("startup", "cleanup", "target"))
         headless = data.get("headless")
         if (startup.get("state") != "started" or startup.get("error")
-                or cleanup.get("state") != "complete" or cleanup.get("remaining_count") != 0
+                or cleanup.get("state") != "complete" or type(cleanup.get("remaining_count")) is not int
+                or cleanup["remaining_count"] != 0
                 or cleanup.get("resume_required") is not False or cleanup.get("errors") != []
                 or target.get("failed") is not False or outcome.get("monitor_errors") != []
-                or data.get("target_exit_code") not in (None, 0)
+                or (data.get("target_exit_code") is not None
+                    and (type(data["target_exit_code"]) is not int or data["target_exit_code"] != 0))
                 or (headless is not None and (type(_mapping(headless).get("exit_code")) is not int
                                               or headless["exit_code"] not in (0, 1, 5)))):
             raise BaselineEvidenceError("startup, cleanup, target or monitor failures cannot become baseline evidence")
@@ -193,11 +195,15 @@ def _eligible(reports: Sequence[LoadedReport]) -> str:
             work = _mapping(raw.get("outcome"))
             steps = work.get("exercise")
             exercise_cleanup = _mapping(work.get("exercise_cleanup"))
-            if (raw.get("schema") != 1 or work.get("state") != "complete" or work.get("failure")
+            if (type(raw.get("schema")) is not int or raw["schema"] != 1
+                    or work.get("state") != "complete" or work.get("failure") is not None
+                    or work.get("readiness") not in ("ready", "not_requested")
                     or not isinstance(steps, list)
-                    or any(not isinstance(step, Mapping) or step.get("state") != "complete" or step.get("exit_code") != 0
+                    or any(not isinstance(step, Mapping) or step.get("state") != "complete"
+                           or type(step.get("exit_code")) is not int or step["exit_code"] != 0
                            for step in steps)
-                    or (exercise_cleanup and (exercise_cleanup.get("state") != "complete"
+                    or ("exercise_cleanup" in work and (exercise_cleanup.get("state") != "complete"
+                                              or type(exercise_cleanup.get("remaining_count")) is not int
                                               or exercise_cleanup.get("remaining_count") != 0))):
                 raise BaselineEvidenceError("raw workload outcome, exercise or cleanup is not confirmed complete")
         _provenance(data)
