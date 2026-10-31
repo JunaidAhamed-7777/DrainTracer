@@ -51,6 +51,7 @@ class StoreLimits:
     max_backup_bytes: int = 32 * MIB
     max_records: int = 256
     max_record_bytes: int = 16 * 1024
+    max_requests: int = 4096
     max_audit_events: int = 10_000
     max_audit_bytes: int = 2 * MIB
     max_sqlite_bytes: int = 512 * MIB
@@ -60,7 +61,7 @@ class StoreLimits:
         caps = {"max_upload_bytes": 16 * MIB, "max_project_bytes": 128 * MIB,
                 "max_global_bytes": 384 * MIB, "max_projects": 128, "max_credentials": 128,
                 "max_reports": 1000, "max_backups": 8, "max_backup_bytes": 64 * MIB,
-                "max_records": 1024, "max_record_bytes": 16 * 1024,
+                "max_records": 1024, "max_record_bytes": 16 * 1024, "max_requests": 16384,
                 "max_audit_events": 10_000, "max_audit_bytes": 2 * MIB, "max_sqlite_bytes": 512 * MIB}
         for name, maximum in caps.items():
             integer(getattr(self, name), name, 1, maximum)
@@ -68,6 +69,8 @@ class StoreLimits:
                 or self.max_global_bytes > self.max_sqlite_bytes or self.max_backup_bytes > self.max_project_bytes
                 or self.max_sqlite_bytes < 128 * 1024 or self.max_sqlite_bytes % 4096):
             raise TeamError("invalid", "storage limits must fit within project/global/database caps and whole 4096-byte pages")
+        if self.max_audit_bytes < 2048:
+            raise TeamError("invalid", "audit byte limit must retain at least one complete event")
         duration(self.busy_timeout_seconds, "busy_timeout_seconds", 0.01, 5.0)
 
     def to_dict(self) -> dict:
