@@ -15,13 +15,12 @@ sampling used 200 ms intervals and two-second windows. Successful owned
 cleanup was checked against observed PID/creation-time identities without
 persisting them in the published aggregates.
 
-These records precede a later multi-process review finding: Windows raw
-FILETIME and psutil floating-point conversion can differ by one representable
-step for some process starts. A successful single fixture/control sequence
-does not establish equality across starts or cover every access-denied
-fallback. The identity implementation and additional native fallback evidence
-require separate final acceptance; do not treat these historical records as
-that guarantee.
+These records precede a later multi-process review finding in the native test
+oracle: Python integer division of FILETIME can differ by one representable
+step from psutil's C floating-point conversion. That test-oracle difference
+does not establish a production fast/fallback mismatch. A successful single
+fixture/control sequence still does not cover all starts or access-denied
+fallbacks; broader native identity tests require separate final acceptance.
 
 ## Reproduce
 
@@ -133,4 +132,5 @@ failure boundary; it is not a claim that abrupt termination runs normal cleanup.
 
 The separate [observer measurement protocol](observer-protocol.md) covers
 reference-derived budgets, full-retention export stress, and the 30-minute
-native soak. These short fault drills alone do not establish observer budgets.
+native soak. Read the [reference values and frozen budgets](observer-reference-results.md);
+these short fault drills alone do not establish observer budgets.
