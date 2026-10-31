@@ -20,7 +20,7 @@ import helpers  # noqa: F401
 import psutil
 
 from src.agent_command import AgentClient, AgentServer
-from src.agent_service import AgentPolicy, AgentRegistry
+from src.agent_service import AgentError, AgentPolicy, AgentRegistry
 from src.api import CommandTimeoutError
 
 
@@ -236,6 +236,38 @@ class NativeAgentTests(unittest.TestCase):
         self.assertEqual(final["result"]["cleanup"], "complete")
         self.assertIsNone(target.poll())
         self.assertGreater(self.client.request("events", {"session_id": session_id})["observed"], 0)
+
+    def test_permitted_launch_pause_resume_and_cancel_clean_up_only_owned_tree(self):
+        self._stop()
+        script = self.root / "tree.py"
+        child_file = self.root / "child.pid"
+        script.write_text("import pathlib,subprocess,sys,time\n"
+                          "p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)'])\n"
+                          f"pathlib.Path({str(child_file)!r}).write_text(str(p.pid))\n"
+                          "time.sleep(60)\n", encoding="utf-8")
+        self.server = AgentServer(self.root / "agent", profile=self.profile,
+                                  policy=AgentPolicy(allow_launch=True, allow_pause=True, launch_roots=(self.root,)))
+        self.stop = threading.Event()
+        self.thread = threading.Thread(target=self.server.serve, args=(self.stop,))
+        self.thread.start()
+        accepted = self.client.request("start", {"mode": "launch", "target": str(script),
+                                                "timeout_seconds": 10, "sample_interval_ms": 100,
+                                                "windows_seconds": [1]})
+        session_id = accepted["session_id"]
+        wait_for(child_file.exists)
+        child_pid = int(child_file.read_text())
+        wait_for(lambda: self.client.request("status", {"session_id": session_id})["sample_count"] >= 2)
+        self.assertTrue(self.client.request("pause", {"session_id": session_id})["completed"])
+        self.assertEqual(psutil.Process(child_pid).status(), psutil.STATUS_STOPPED)
+        self.assertTrue(self.client.request("resume", {"session_id": session_id})["completed"])
+        self.assertNotEqual(psutil.Process(child_pid).status(), psutil.STATUS_STOPPED)
+        with self.assertRaises(AgentError) as denied:
+            self.client.request("kill", {"session_id": session_id})
+        self.assertEqual(denied.exception.code, "forbidden")
+        self.client.request("cancel", {"session_id": session_id})
+        wait_for(lambda: self.client.request("status", {"session_id": session_id})["state"] == "completed")
+        from src.process_runner import _windows_process_exited
+        wait_for(lambda: not psutil.pid_exists(child_pid) or _windows_process_exited(child_pid))
 
     def test_reused_pid_identity_fails_without_controlling_target(self):
         target = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], stdin=subprocess.DEVNULL,
