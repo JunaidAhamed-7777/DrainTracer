@@ -104,6 +104,20 @@ class DurableRegistryTests(unittest.TestCase):
             self.assertEqual(response["error"]["code"], "session_finished")
         self.assertEqual(len(FakeSession.created), 1)
 
+    def test_recovery_render_failure_is_storage_error_and_preserves_saved_json_metadata(self):
+        started = self.registry.handle(self.start_request())
+        self.restart()
+        checkpoint_id, report_id = str(uuid.uuid4()), str(uuid.uuid4())
+        with (mock.patch.object(self.registry, "_checkpoint_report", return_value=(self.directory / "prefix", {"session_id": checkpoint_id})),
+              mock.patch("src.agent_service.recovered_report", return_value={"report_id": report_id}) as recover,
+              mock.patch("src.agent_service.report_directory", return_value=self.reports),
+              mock.patch("src.agent_service.write_html_report", side_effect=OSError("controlled full disk"))):
+            response = self.registry.handle(request("export", {"session_id": started["result"]["session_id"]}))
+        self.assertEqual(response["error"]["code"], "storage")
+        self.assertEqual(recover.call_args.kwargs["session_id"], checkpoint_id)
+        self.assertTrue((self.reports / f"leak_report_{report_id}.json").is_file())
+        self.assertEqual(self.journal.snapshot()["sessions"][0]["reports"], [f"leak_report_{report_id}.json"])
+
     def test_retention_drops_old_metadata_and_tombstones_without_deleting_evidence(self):
         started = self.registry.handle(self.start_request())
         FakeSession.created[0].finish()
@@ -220,6 +234,7 @@ class NativeRecoveryTests(unittest.TestCase):
         with self.assertRaises(AgentError) as export_refused:
             client.request("export", {"session_id": healthy})
         self.assertEqual(export_refused.exception.code, "storage")
+        self.assertFalse(client.request("status")["ready"])
         wait_for(lambda: client.request("status", {"session_id": healthy})["sample_count"] >= before + 3)
         client.request("cancel", {"session_id": healthy})
         wait_for(lambda: client.request("status", {"session_id": healthy})["state"] == "completed")

@@ -260,7 +260,9 @@ class AgentRegistry:
     def _require_storage(self):
         if self.journal is not None:
             try:
-                self.storage_inventory = self.journal.require_capacity()
+                self.storage_inventory = self.journal.inventory()
+                if not self.storage_inventory["admission_available"]:
+                    raise AgentStateError("agent storage reached its admission high-water limit")
             except (OSError, AgentStateError) as error:
                 self.storage_error = str(error)[:512]
                 raise AgentError("storage", "agent storage cannot admit new writes; existing evidence preserved") from error
@@ -385,7 +387,8 @@ class AgentRegistry:
             offset = _integer(params.get("offset", 0), "offset", 0, self.policy.max_records)
             limit = _integer(params.get("limit", 32), "limit", 1, 32)
             records = list(self.records.values())[offset:offset + limit]
-            return {"ready": not self.stopping and self.storage_error is None,
+            return {"ready": (not self.stopping and self.storage_error is None
+                              and (self.storage_inventory is None or self.storage_inventory["admission_available"])),
                     "storage_error": self.storage_error, "storage": self.storage_inventory, "uptime_seconds": round(time.monotonic() - self.started, 3),
                     "active_sessions": sum(record.result is None for record in self.records.values()),
                     "session_limit": self.policy.max_sessions, "queue_depth": 0,
@@ -413,25 +416,32 @@ class AgentRegistry:
             if record.state == "interrupted":
                 self._require_storage()
                 try:
-                    source, _checkpoint = self._checkpoint_report(record)
-                    report = recovered_report(source, app_version=_version())
-                    directory = report_directory(report, self.reports)
-                    json_path = write_json_report(report, directory)
-                    html_path = write_html_report(report, directory)
-                    record.exports = tuple(map(str, (json_path, html_path)))
-                    record.updated_at, self._dirty = time.time(), True
-                    if not self._persist(force=True):
-                        raise AgentError("storage", "recovered evidence saved but journal update failed")
+                    source, checkpoint = self._checkpoint_report(record)
+                    report = recovered_report(source, app_version=_version(), session_id=checkpoint["session_id"])
                 except (OSError, ValueError) as error:
                     if isinstance(error, AgentError):
                         raise
                     raise AgentError("evidence_unavailable", "no intact matching checkpoint is available; interrupted state preserved") from error
+                try:
+                    directory = report_directory(report, self.reports)
+                    json_path = write_json_report(report, directory)
+                    record.exports = (str(json_path),)
+                    html_path = write_html_report(report, directory)
+                    record.exports = tuple(map(str, (json_path, html_path)))
+                except (OSError, ValueError, TypeError) as error:
+                    record.updated_at, self._dirty = time.time(), True
+                    self._persist(force=True)
+                    raise AgentError("storage", "recovered report export failed; checkpoint and any saved JSON were preserved") from error
+                record.updated_at, self._dirty = time.time(), True
+                if not self._persist(force=True):
+                    raise AgentError("storage", "recovered evidence saved but journal update failed")
             elif record.result is None:
                 self._require_storage()
                 exported = record.session.export(timeout=5)
                 record.exports = self._export_paths(exported)
                 record.updated_at, self._dirty = time.time(), True
-                self._persist(force=True)
+                if not self._persist(force=True):
+                    raise AgentError("storage", "evidence saved but the journal update failed")
                 if exported.errors:
                     raise AgentError("storage", "report export failed; inspect session status and storage")
             return {"directory": str(self.reports), "reports": self._report_names(record.exports)}
