@@ -23,7 +23,6 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import psutil
-
 from draintracer.team_security import secure_directory
 
 
