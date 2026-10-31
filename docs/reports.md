@@ -159,6 +159,15 @@ worst signals, budget decisions, coverage, and sample counts still include
 every collected observation. `chart.seen` counts snapshots accepted into chart
 history, so it can be smaller than `samples.taken` after queue loss.
 
+Export may thin the chart further when a dense process tree would exceed the
+public reader's token, nesting, or 64 MiB byte limits. First/last retained
+snapshots and all exact session facts remain; `snapshot_stride` and
+`session_facts.chart.stride/stored` describe the exported detail. JSON and HTML
+use the same bounded dictionary, while live dashboard history remains intact.
+A single-sample peak or warning can disappear from the chart but remains in
+exact peaks/signals/counts. If non-chart evidence itself cannot fit, export
+fails explicitly instead of silently dropping that evidence.
+
 Exact `session_facts.monitor.clock_adjustments` and `sampling_gaps` count
 temporal resets even when their detailed snapshot/event is evicted. New reports
 record zero explicitly; an absent field in an older report is unknown. A
