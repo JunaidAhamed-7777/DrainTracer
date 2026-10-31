@@ -15,6 +15,7 @@ from uuid import uuid4
 from .team_backups import _Backups
 from .team_database import _Database
 from .team_evidence import _Evidence
+from .team_governance import _Governance
 from .team_models import (
     Actor,
     ProjectPolicy,
@@ -56,7 +57,7 @@ class _ExpiredCredential(Exception):
         self.row = row
 
 
-class TeamStore(_Backups, _Evidence, _Database):
+class TeamStore(_Governance, _Backups, _Evidence, _Database):
     """No server/listener activation and no trust in a caller's cached role."""
 
     def _now(self) -> float:

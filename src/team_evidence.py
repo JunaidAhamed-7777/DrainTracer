@@ -218,6 +218,11 @@ class _Evidence:
                                        (payload, summary, hashlib.sha256(payload).hexdigest(), len(payload) + len(summary), actor.project_id, row["id"]))
             connection.execute("UPDATE reports SET expires_at=min(expires_at,created_at+?) WHERE project_id=?", (policy.retention_seconds, actor.project_id))
             connection.execute("UPDATE backups SET expires_at=min(expires_at,created_at+?) WHERE project_id=?", (policy.backup_ttl_seconds, actor.project_id))
+            connection.execute("UPDATE project_records SET expires_at=min(expires_at,created_at+?) WHERE project_id=?", (policy.retention_seconds, actor.project_id))
+            connection.execute("UPDATE project_records SET expires_at=min(expires_at,coalesce((SELECT min(r.expires_at) FROM record_report_links l JOIN reports r "
+                               "ON r.project_id=l.project_id AND r.id=l.report_id WHERE l.project_id=project_records.project_id AND l.record_id=project_records.id),expires_at)) WHERE project_id=?", (actor.project_id,))
+            connection.execute("UPDATE project_records SET expires_at=min(expires_at,(SELECT a.expires_at FROM project_records a WHERE a.project_id=project_records.project_id AND a.id=project_records.approval_id)) "
+                               "WHERE project_id=? AND approval_id IS NOT NULL", (actor.project_id,))
             self._purge(connection, actor.project_id, now, policy)
             if (self._usage(connection, actor.project_id) > policy.max_bytes
                     or connection.execute("SELECT count(*) FROM reports WHERE project_id=? AND state='active'", (actor.project_id,)).fetchone()[0] > policy.max_reports
