@@ -30,6 +30,7 @@
     "src/process_runner.py",
     "src/process_table.py",
     "src/report.py",
+    "src/report_contract.py",
     "src/report_diff.py",
     "src/resources.py",
     "src/running_processes.py",

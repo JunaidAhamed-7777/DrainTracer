@@ -1,0 +1,6 @@
+{
+  "report_schema": 2,
+  "report_id": "legacy-v2",
+  "detection_ran": false,
+  "snapshots": [{"timestamp": 1000, "severity": "none", "processes": [{"pid": 100}], "totals": {"private_bytes": 10000000}}]
+}
