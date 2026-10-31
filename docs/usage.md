@@ -6,6 +6,16 @@ its normal environment and terminal behavior, including `NO_COLOR`.
 Textual verdicts and availability labels are preserved; bold emphasis may
 remain where the terminal supports it.
 
+For static output, use `--plain --target PATH` or `--plain --pid PID`.
+This selects headless monitoring and disables terminal styles and redraws.
+Ctrl+C or the time limit finishes the run and exports its reports; ordinary
+launch/attachment cleanup rules apply. `--quiet` suppresses routine events,
+STAT progress, and the startup banner while keeping warnings, signals, errors,
+and the final summary. Combine `--plain --quiet` for a short unstyled transcript.
+`draintracer diff BEFORE.json AFTER.json --plain` uses labeled text without
+panel borders. Add `--quiet` to keep its verdict, caveats, and budgets only;
+`--json` always retains the complete machine result.
+
 [README](../README.md) · [Configuration](configuration.md) · [Reports](reports.md) · [Working principles](../working-principle.md)
 
 Run the commands below from the repository root after installing

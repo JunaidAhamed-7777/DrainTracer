@@ -336,6 +336,18 @@ overrides forced color; otherwise Rich follows its normal `NO_COLOR`,
 `FORCE_COLOR`, and terminal detection. Verdict words, unknown readings, and
 text emphasis remain available without relying on color.
 
+`--plain` uses static, unstyled headless text with no screen clearing or live
+redraws. `--quiet` also selects headless mode and suppresses the startup banner,
+routine events, and STAT lines; warnings, signals, errors, and the final summary
+remain visible. Both require `--target` or `--pid`; combine them if needed.
+Inspect progress and the final summary as text, use Ctrl+C or `--timeout` to
+finish, and open the automatically saved JSON/HTML reports. Launched targets
+are cleaned up; attached targets are released. Dashboard Space controls remain
+available in the ordinary interactive mode.
+For comparisons, `diff --plain` prints labeled text without panel borders;
+`diff --quiet` keeps the verdict, caveats, and budget checks. `--json` takes
+precedence over presentation flags and preserves literal report strings.
+
 From the source checkout, use the included stable workload:
 
 ```powershell
