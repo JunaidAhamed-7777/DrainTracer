@@ -89,7 +89,7 @@ in here, with broader unmet goals kept open even when a scoped issue closes.
       markers and a view-only freeze, and monitor diagnostics, with decoded
       arrow and paging keys.
 
-13. **Windows and Linux monitoring** — done in v5.4.0
+13. **Windows and Linux monitoring** — implemented in v5.4.0 development source (unpublished)
     - Linux launch/attach/control semantics, USS private memory, open-file-
       descriptor counts and classification, terminal controls and offline
       reports, with platform definitions preserved in comparisons.
@@ -179,8 +179,9 @@ agent, private local team storage, and pull-request/release verification.
 These strengthen the original evidence and ownership contracts. There is
 no hosted production service or automatic report upload.
 
-Linux core support shipped in v5.4.0 with its own process and metric
-semantics; it does not inherit Windows counter meanings. Keep the offline
+Linux core support is implemented in v5.4.0 development source, an unpublished
+candidate with its own process and metric semantics; it does not inherit
+Windows counter meanings. Keep the offline
 CLI useful without an account. Execution remains on a developer-controlled
 machine or organization-owned runner. macOS, unattended Windows service
 accounts and broader enterprise deployments need their own evidence and
@@ -783,7 +784,8 @@ future release substitutes for O2 consent or hosted operating results.
   labeled rather than inheriting Windows guarantees.
   **Status:** [#53](https://github.com/JunaidAhamed-7777/DrainTracer/issues/53)
   remains open for broader demand and maintainability evidence. Linux core
-  support has already shipped in v5.4.0; WSL measurements do not justify
+  support is implemented in v5.4.0 development source, an unpublished
+  candidate; WSL measurements do not justify
   arbitrary native-Linux deployments, macOS, enterprise hosting or unattended
   Windows service-account guarantees.
 
