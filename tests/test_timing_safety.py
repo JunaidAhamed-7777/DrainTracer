@@ -12,6 +12,7 @@ from helpers import make_process
 from src.events import LeakResource
 from src.leak_detector import LeakDetector
 from src.process_runner import ProcessManager
+from src.session_facts import SessionFacts
 
 
 class TimingSafetyTests(unittest.TestCase):
@@ -58,13 +59,40 @@ class TimingSafetyTests(unittest.TestCase):
         self.assertFalse(any(window.judged for window in sample.evidence_for(LeakResource.MEMORY).windows))
 
     def test_long_unobserved_gap_cannot_complete_a_window_from_four_sparse_points(self) -> None:
+        facts = SessionFacts()
         for _ in range(4):
-            self.tick()
+            facts.observe(self.tick())
         sample = self.tick(9, value=180 * 1024**2)
+        facts.observe(sample)
         self.assertEqual(sample.metadata.get("timing_reset"), "sampling_gap")
         self.assertEqual(len(self.detector._memory_series.points), 1)
         self.assertFalse(sample.alerts)
         self.assertFalse(self.detector.detection_started)
+        monitor = facts.to_dict()["monitor"]
+        self.assertEqual(monitor["sampling_gaps"], 1)
+        self.assertEqual(monitor["clock_adjustments"], 0)
+        self.assertLess(monitor["interval_ms"]["max"], 2000)
+        self.assertLess(facts.to_dict()["evaluation"]["after_warmup_seconds"], 5)
+
+    def test_existing_process_growth_is_not_new_capacity_after_a_clock_reset(self) -> None:
+        for _ in range(22):
+            self.tick()
+        self.wall -= 600
+        self.tick()
+        for index in range(1, 23):
+            sample = self.tick(value=(100 + 4 * index) * 1024**2)
+        alert = next(item for item in sample.alerts if item.resource == LeakResource.MEMORY)
+        self.assertEqual(alert.growth_from_new_processes, 0)
+        self.assertGreater(alert.growth_within_existing, 0)
+        self.assertFalse(alert.mostly_new_processes)
+
+    def test_gap_restarts_warmup_without_counting_unobserved_sleep_time(self) -> None:
+        self.detector.warmup_seconds = 5
+        for _ in range(4):
+            self.tick()
+        sample = self.tick(20)
+        self.assertTrue(sample.warming_up)
+        self.assertGreater(self.detector.warmup_remaining, 3)
 
 
 if __name__ == "__main__":

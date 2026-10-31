@@ -62,6 +62,7 @@ class _Track:
     last: dict[str, float] = field(default_factory=dict)
     peak: dict[str, float] = field(default_factory=dict)
     exited_at: float | None = None
+    existed_at_window_reset: bool = False
 
     def same_process(self, process: ProcessMetrics) -> bool:
         """Whether ``process`` is this track's process, not a PID reuse.
@@ -163,6 +164,16 @@ class ProcessHistory:
             exited=self._exited_count,
             restarted=self._restarted,
         )
+
+    def restart_windows(self) -> None:
+        """Forget timing-dependent points while preserving identities and lifetime counts."""
+        with self._lock:
+            for track in self._live.values():
+                if track.points is not None:
+                    track.points.clear()
+                track.existed_at_window_reset = True
+            self._departed.clear()
+            self._restart_candidates.clear()
 
     def observe(self, now: float, processes: Iterable[ProcessMetrics]) -> tuple[LifecycleEvent, ...]:
         """Record one sample of the tree; return its starts, exits and restarts.
@@ -353,7 +364,7 @@ class ProcessHistory:
                         slope_per_second=least_squares_slope(times, series),
                         samples=len(series),
                         span_seconds=times[-1] - times[0],
-                        new_process=track.first_seen > since,
+                        new_process=not track.existed_at_window_reset and track.first_seen > since,
                         exited=track.exited_at is not None,
                     )
                 )
@@ -382,7 +393,7 @@ class ProcessHistory:
                 ]
                 if not values:
                     continue
-                new = track.first_seen > since
+                new = not track.existed_at_window_reset and track.first_seen > since
                 exited = track.exited_at is not None and track.exited_at <= until
                 baseline = 0.0 if new else values[0][1]
                 end = 0.0 if exited else values[-1][1]

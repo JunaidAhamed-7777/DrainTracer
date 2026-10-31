@@ -698,6 +698,11 @@ class MonitorSession:
             return
         self._last_sampling_error = None
 
+        timing = snapshot.metadata.get("timing_reset")
+        if timing in {"clock_adjustment", "sampling_gap"}:
+            cause = "System clock changed" if timing == "clock_adjustment" else "Sampling gap exceeded window coverage allowance"
+            self._append_event(cause + "; resource windows restarted with fresh evidence", "warn")
+
         previous = self.snapshot
         self.snapshot = snapshot
         if previous is not None and snapshot.monitoring_paused != previous.monitoring_paused:
@@ -1204,6 +1209,10 @@ class MonitorSession:
             parts.append(f"monitor CPU {cpu:.1f}% mean")
         if monitor["dropped_snapshots"]:
             parts.append(f"{monitor['dropped_snapshots']:,} dropped")
+        if monitor["clock_adjustments"]:
+            parts.append(f"{monitor['clock_adjustments']:,} clock adjustments")
+        if monitor["sampling_gaps"]:
+            parts.append(f"{monitor['sampling_gaps']:,} sampling gaps")
         return sep.join(parts) or None
 
     def chart_thinning_text(self) -> str | None:
