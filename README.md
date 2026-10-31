@@ -287,6 +287,9 @@ Use the target's own file logging when needed. See the
 - `O` — open the latest HTML export.
 - `M` — add a numbered marker (`marker N`) to the event log, timeline, and report.
 - `?` / `H` — show help and active settings; arrows scroll it, `Esc` closes it.
+  Configured budgets appear with their units. The dashboard displays ceilings;
+  headless runs and report comparisons enforce them. CLI budget flags require
+  headless mode.
   While help is open, only scrolling, closing help, and view selection are active.
   Close it before using target controls, exporting, or quitting.
 
@@ -334,6 +337,36 @@ readable fallback when it cannot be read as UTF-8 or displayed.
 
 ## Run a leak check in CI
 
+Use `draintracer doctor --target PATH` to validate the current settings and
+target/report paths before monitoring. It shows configuration origins and
+duration/permission problems without starting or controlling the target.
+Checkpoint paths and cadence include their origins; existing checkpoint
+destinations are blocked without creating directories or writer locks.
+`doctor --json` provides a structured diagnostic result. The output-directory
+check writes and removes a temporary probe in the nearest existing directory.
+See [Preflight](docs/preflight.md) for the command and initialization contracts.
+`draintracer init` previews a validated project configuration; add `--write`
+to create it. Existing files are always preserved, and the parent directory
+must already exist.
+
+Use `--no-color` to disable terminal colors in normal or headless runs, or
+`draintracer diff BEFORE.json AFTER.json --no-color` for comparisons. This
+overrides forced color; otherwise Rich follows its normal `NO_COLOR`,
+`FORCE_COLOR`, and terminal detection. Verdict words, unknown readings, and
+text emphasis remain available without relying on color.
+
+`--plain` uses static, unstyled headless text with no screen clearing or live
+redraws. `--quiet` also selects headless mode and suppresses the startup banner,
+routine events, and STAT lines; warnings, signals, errors, and the final summary
+remain visible. Both require `--target` or `--pid`; combine them if needed.
+Inspect progress and the final summary as text, use Ctrl+C or `--timeout` to
+finish, and open the automatically saved JSON/HTML reports. Launched targets
+are cleaned up; attached targets are released. Dashboard Space controls remain
+available in the ordinary interactive mode.
+For comparisons, `diff --plain` prints labeled text without panel borders;
+`diff --quiet` keeps the verdict, caveats, and budget checks. `--json` takes
+precedence over presentation flags and preserves literal report strings.
+
 From the source checkout, use the included stable workload:
 
 ```powershell
@@ -341,7 +374,9 @@ python src/main.py --headless --target .\torture\steady.py --timeout 15s --fail-
 ```
 
 Headless mode prints progress, exports reports, and exits when the monitored
-tree finishes or the time limit passes. Its exit code describes the monitor's
+tree exits or the configured time limit expires. Each `STAT` line includes the
+live process count from the accepted snapshot, including unreadable processes.
+Its exit code describes the monitor's
 result, rather than forwarding the target's exit code:
 
 - `0` — no observed signal reached the selected threshold. This includes
@@ -362,6 +397,8 @@ fractional growth-rate thresholds remain supported.
 
 The summary and report keep the target outcome, the measurement outcome
 (conclusive, partial coverage, or inconclusive), and monitor errors apart.
+Headless signal rows label each unjudged resource as inconclusive or unavailable;
+`clear` means a window was judged, and earlier signals remain visible.
 The default failure threshold is `high`. Allow enough time after warm-up for
 a detection window to fill, and inspect the verdict as well as the exit code.
 Use `--require-full-coverage` with `--headless` to exit `3` when any live
@@ -370,10 +407,20 @@ coverage records or failed samples. Paused samples are excluded; combine it
 with `--fail-on-inconclusive` to also require a judged detection window.
 Reports include structured startup and cleanup results in `outcome`, and
 headless startup or cleanup failures attempt to export available evidence.
+For longer runs, opt in with `--checkpoint state/session.json`; the default
+cadence is 30s (`--checkpoint-interval 1s` through `1h`). Recover an interrupted
+prefix with `draintracer recover state/session.json --report-dir recovered`.
+Recovery never reattaches or controls a process, and recovered reports remain
+explicitly partial. See [checkpoint recovery](docs/reports.md#checkpoint-recovery).
 The [headless guide](docs/usage.md#run-without-a-dashboard) covers outcome
 priority and GitHub Actions integration.
 
 ## Tune it to your workload
+
+For repeatable local and CI launches, use `draintracer-workload recipe.json`.
+Recipes select interpreter, working directory, environment, readiness, and
+bounded exercise steps, with optional capped target logs. See the
+[workload recipe guide](docs/workloads.md) for ownership, privacy, and exits.
 
 Copy [examples/drainrc.toml](examples/drainrc.toml) to `.drainrc` in your project.
 From a source checkout, you can also select that example explicitly:
@@ -426,6 +473,12 @@ resource trends, events, and process growth after recording.*
 
 Use the JSON reports for scripts and comparisons:
 
+Preview an explicit privacy transformation locally with
+`draintracer-report redact run.json --profile share`; add
+`--output-dir shared` to write the same transformed data as JSON and HTML.
+The `minimal` profile also removes event and attribution detail. Review both
+files before sharing; see the [privacy guide](docs/privacy.md).
+
 `draintracer-report validate run.json` checks the public report contract;
 `draintracer-report summary run.json` emits a versioned JSON summary without
 loading the terminal UI. See the [schemas and machine-output contract](docs/report-contract.md)
@@ -464,6 +517,8 @@ produce an inconclusive result, rather than a favorable single-pair improvement.
 These observed ranges describe the supplied runs; they are not confidence intervals.
 
 Use comparable workloads, durations, warm-ups, and settings. Long sessions
+count evicted event messages separately as `event_counts`; the HTML event
+section shows observed, retained, and discarded totals. They also
 thin the stored chart history; reports then say "chart thinned 1:N", while
 peaks with their times, worst severities, signal episode counts, evaluated
 time, and sample counts stay exact in `session_facts`. Reports include local

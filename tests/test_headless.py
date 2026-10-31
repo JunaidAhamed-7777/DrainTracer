@@ -76,6 +76,30 @@ class ExitStatusTests(unittest.TestCase):
             output,
         )
 
+    def test_progress_uses_snapshot_live_counts_without_resampling(self) -> None:
+        from dataclasses import replace
+
+        from helpers import make_denied
+
+        from src.events import ProcessCounts
+
+        runner = self._runner()
+        for live in (3, 1, 0):
+            snapshot = replace(make_snapshot(processes=(make_denied(100),)),
+                               process_counts=ProcessCounts(live=live, exited=3 - live))
+            runner._accept_snapshot(snapshot)
+            runner._print_progress()
+            line = _output(runner).splitlines()[-1]
+            self.assertIn(f"{live} live process{'es' if live != 1 else ''}", line)
+
+    def test_progress_retains_count_fallback_for_older_snapshots(self) -> None:
+        runner = self._runner()
+        runner._print_progress()
+        self.assertIn("0 live processes", _output(runner))
+        runner._accept_snapshot(make_snapshot())
+        runner._print_progress()
+        self.assertIn("1 live process", _output(runner))
+
     def test_clean_run_passes(self) -> None:
         runner = self._runner()
         runner._accept_snapshot(make_snapshot())
@@ -162,6 +186,60 @@ class ExitStatusTests(unittest.TestCase):
 
 
 class OutputTests(unittest.TestCase):
+    def test_plain_interrupt_exports_readable_evidence_and_runs_cleanup(self) -> None:
+        from src.theme import plain_console
+
+        with tempfile.TemporaryDirectory() as directory:
+            runner = HeadlessRunner("worker.exe", console=plain_console(make_console()),
+                                    report_dir=directory, quiet=True)
+            with mock.patch.object(runner, "start"), \
+                    mock.patch.object(runner, "_monitor", side_effect=KeyboardInterrupt), \
+                    mock.patch.object(runner, "shutdown") as cleanup:
+                self.assertEqual(runner.run(), EXIT_INTERRUPTED)
+            cleanup.assert_called_once_with()
+            self.assertEqual(len(list(Path(directory).rglob("*.json"))), 1)
+            self.assertEqual(len(list(Path(directory).rglob("*.html"))), 1)
+            self.assertIn("INTERRUPTED", _output(runner))
+            self.assertIn("INCONCLUSIVE", _output(runner).upper())
+            self.assertNotIn("\x1b", _output(runner))
+
+    def test_static_output_distinguishes_unavailable_counters_from_real_zero(self) -> None:
+        from helpers import make_denied, make_process
+
+        for process, amount in ((make_denied(100), "n/a"),
+                                (make_process(100, private=0, rss=0, handles=0, threads=0), "0.0 B")):
+            with self.subTest(amount=amount):
+                runner = HeadlessRunner("worker.exe", console=make_console())
+                runner._accept_snapshot(make_snapshot(processes=(process,), measured_coverage=True))
+                runner._print_progress()
+                runner._print_summary()
+                output = _output(runner)
+                self.assertIn(f"private {amount}", output)
+                self.assertEqual(runner._metric_text("private_bytes", peak=True), amount)
+                if amount == "n/a":
+                    self.assertIn("handles n/a", output)
+                    self.assertIsNone(runner.facts.peak("private_bytes"))
+                else:
+                    self.assertIn("handles 0", output)
+
+    def test_quiet_hides_routine_output_but_keeps_evidence_and_failures(self) -> None:
+        runner = HeadlessRunner("worker.exe", console=make_console(), quiet=True)
+        runner._print_banner()
+        runner._append_event("routine event", "info")
+        runner._print_progress()
+        self.assertEqual(_output(runner), "")
+        runner._append_event("partial coverage warning", "warn")
+        runner._append_event("export error", "error")
+        runner._accept_snapshot(make_snapshot(alerts=(make_alert(severity=LeakSeverity.HIGH),)))
+        runner._print_summary()
+        output = _output(runner)
+        self.assertIn("partial coverage warning", output)
+        self.assertIn("export error", output)
+        self.assertIn("RESULT", output)
+        self.assertIn("HIGH", output)
+        self.assertEqual(runner.exit_status(), EXIT_LEAK)
+        self.assertTrue(any("routine event" in event[1] for event in runner._events))
+
     def test_events_print_as_tagged_lines(self) -> None:
         runner = HeadlessRunner("C:/targets/worker.exe", console=make_console())
         runner._accept_snapshot(make_snapshot(alerts=(make_alert(severity=LeakSeverity.MEDIUM),)))
@@ -212,7 +290,7 @@ class StepSummaryTests(unittest.TestCase):
         self.assertEqual(markdown.count("### DrainTracer leak check: FAIL"), 2)
         self.assertIn("**a\\|b\\*.exe**", markdown)
         self.assertIn("| memory | **HIGH** |", markdown)
-        self.assertIn("| handles | clear |", markdown)
+        self.assertIn("| handles | inconclusive (collecting) |", markdown)
         self.assertIn("Worst leak signal HIGH.", markdown)
         self.assertIn("leak_report_x.json` (HTML alongside)", markdown)
 
@@ -274,6 +352,30 @@ class ConclusivenessTests(unittest.TestCase):
         output = _output(runner)
         self.assertIn("the 30s warm-up never finished", output)
         self.assertIn("warm-up   30s | did not finish", output.replace("·", "|"))
+        self.assertIn("memory inconclusive (warming up)", output)
+
+    def test_signal_rows_distinguish_collecting_unavailable_and_judged(self) -> None:
+        from dataclasses import replace
+
+        from src.events import EvidenceState, LeakResource, ResourceEvidence
+
+        runner = self._runner()
+        snapshot = replace(make_snapshot(), evidence=(
+            ResourceEvidence(LeakResource.MEMORY, EvidenceState.NO_GROWTH),
+            ResourceEvidence(LeakResource.HANDLES, EvidenceState.COLLECTING),
+            ResourceEvidence(LeakResource.THREADS, EvidenceState.UNAVAILABLE),
+        ))
+        runner._accept_snapshot(snapshot)
+        self.assertEqual(runner.signals_text(),
+                         "memory clear · handles inconclusive (collecting) · threads unavailable")
+        runner._accept_snapshot(replace(snapshot, evidence=tuple(
+            replace(item, state=EvidenceState.UNAVAILABLE) for item in snapshot.evidence
+        )))
+        self.assertTrue(runner.signals_text().startswith("memory clear"))
+        runner._accept_snapshot(make_snapshot(alerts=(make_alert(),)))
+        runner._accept_snapshot(snapshot)
+        self.assertIn("memory HIGH", runner.signals_text())
+        self.assertEqual(runner.exit_status(), EXIT_LEAK)
 
     def test_a_judged_clean_run_passes(self) -> None:
         runner = self._runner()
@@ -283,6 +385,34 @@ class ConclusivenessTests(unittest.TestCase):
         runner._print_summary()
         self.assertIn("PASS", self._result_line(runner))
         self.assertNotIn("::", _output(runner))
+
+    def test_dropped_clean_judgment_still_labels_only_its_resource_clear(self) -> None:
+        from dataclasses import replace
+
+        from src.events import (
+            EvidenceState,
+            LeakResource,
+            MetricsStream,
+            ResourceEvidence,
+        )
+
+        runner = self._runner()
+        runner.detector.stream = MetricsStream(max_queue_size=1, facts=runner.facts)
+        first = replace(make_snapshot(timestamp=1000), evidence=(
+            ResourceEvidence(LeakResource.MEMORY, EvidenceState.NO_GROWTH),
+            ResourceEvidence(LeakResource.HANDLES, EvidenceState.COLLECTING),
+            ResourceEvidence(LeakResource.THREADS, EvidenceState.COLLECTING),
+        ))
+        runner.detector.stream.publish(first)
+        runner.detector.stream.publish(replace(first, timestamp=1001, evidence=tuple(
+            replace(item, state=EvidenceState.COLLECTING) for item in first.evidence
+        )))
+        self.assertEqual(runner.poll(), 1)
+        self.assertEqual(runner.detector.stream.dropped, 1)
+        self.assertEqual(runner.signals_text(),
+                         "memory clear · handles inconclusive (collecting) · threads inconclusive (collecting)")
+        self.assertEqual(runner.facts.to_dict()["samples"]["taken"], 2)
+        self.assertTrue(runner.conclusive)
 
     def test_a_breach_is_a_failure_even_before_a_window_filled(self) -> None:
         runner = self._runner()

@@ -103,6 +103,19 @@
         "type": "string"
       }
     },
+    "workload_state": {
+      "enum": [
+        null,
+        "not_started",
+        "starting",
+        "running",
+        "complete",
+        "failed",
+        "interrupted",
+        "monitor_error",
+        "startup_failed"
+      ]
+    },
     "peaks": {
       "type": "object",
       "required": [
@@ -391,6 +404,20 @@
         "critical",
         null
       ]
+    },
+    "recovery": {
+      "type": "object",
+      "properties": {
+        "partial": {
+          "type": "boolean"
+        },
+        "exact_through_cutoff": {
+          "type": "boolean"
+        },
+        "final_outcome_confirmed": {
+          "type": "boolean"
+        }
+      }
     },
     "counts": {
       "type": "object",

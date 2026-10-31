@@ -160,6 +160,13 @@ changes are preserved up to a bounded allowance; `snapshot_stride` records
 the thinning, and the HTML report says "chart thinned 1:N". Long reports are
 therefore not guaranteed to contain every sample or every event.
 
+`event_counts` records session event messages: `observed` is the number added
+to the event log, `retained` is the number exported, and `dropped` is the
+number evicted by its retention limit. The HTML event section shows all three.
+These counts describe event messages, independently of chart thinning and
+snapshot queue drops. Older reports without this field label retention counts
+as unavailable.
+
 The top-level `session_facts` section is computed from every sample, not
 the retained ones: `samples` (taken, collected, measured, paused, failed),
 `peaks` (value and timestamp per total), `signals` (worst severity and when
@@ -226,6 +233,59 @@ coverage, while `--fail-on-inconclusive` separately requires a judged leak
 window. Coverage is recorded as `coverage.full`, `measured_samples`, and
 `fully_measured_samples`, also mirrored in `session_facts.coverage`; the
 measurement outcome includes `full_coverage`.
+
+### Checkpoint recovery
+
+Checkpointing is disabled by default. Choose a new file for a session:
+
+```powershell
+draintracer --headless --target .\torture\steady.py --timeout 2m --checkpoint .\state\run.json --checkpoint-interval 5s
+draintracer recover .\state\run.json --report-dir .\recovered
+```
+
+The fixture is available from a source checkout. Installed users can substitute
+their own target. Linux uses the same options with `/` path separators.
+Both dashboard and headless monitoring support checkpoints. The first is saved
+after startup; later writes happen when the main loop polls after the cadence
+elapses. Sampling stays on its background thread, and no disk write holds the
+facts lock. Filesystem stalls can delay the UI and checkpoint cadence while
+sampling continues within its existing bounds.
+
+A checkpoint keeps at most 128 representative chart snapshots, including the
+first and newest retained observations, and the normal bounded event/process
+detail. Whole-prefix peaks, signals, episodes, sample counts, and coverage stay
+exact independently of that extra chart thinning. Files are capped at 64 MiB
+and use the standard bounded JSON reader (depth 64 and one million values).
+Writes flush a temporary sibling and atomically replace the previous checkpoint.
+An OS-held file lock prevents a second writer and releases after a crash; its
+one-byte `.lock` sidecar can remain afterward. A new session refuses existing
+checkpoint files rather than overwriting earlier evidence. Writing failure is
+reported, and the last successfully written checkpoint remains usable.
+
+The checkpoint validates its format, compatible Semantic Version, session UUID,
+monitor PID and creation time, target PID and available creation time, and a
+SHA-256 corruption checksum. The cutoff is the last recorded observation, not
+the later disk-write time. Newer writer versions or another major version are
+rejected; older compatible writers remain readable. `--expect-session UUID`
+optionally pins the session identity during recovery. The checksum does not
+authenticate a report or make its contents trustworthy.
+
+Recovery reads evidence only: it never reattaches, resumes, launches, or kills
+a target. It writes a fresh JSON/HTML pair with a new report ID. `recovery.partial`
+is true, `exact_through_cutoff` identifies the preserved facts, and
+`final_outcome_confirmed` is false. The missing tail, final target outcome, and
+cleanup cannot be inferred. A prior headless decision is retained as
+`decision_as_of_checkpoint`; the final `headless.exit_code` is unknown. The
+original writer version remains on the evidence, while `recovery.tool_version`
+identifies the recovery tool.
+
+HTML labels the recording PARTIAL, and machine summaries preserve the recovery
+qualification. Ordinary diffs qualify the result; strict diffs return
+`INSUFFICIENT COVERAGE`. `recover --json` prints `recovery_result_schema: 1`
+and the generated paths. It exits `0` for a recovered pair and `2` for invalid
+input or an export error; JSON already written is retained if HTML fails.
+Recovery does not change the original checkpoint. Checkpoints contain report
+data and are subject to the same [sharing and retention rules](privacy.md).
 
 The `experiment` section records the optional labels (`workload_id`,
 `build`, `operations`, `note`), the mode, `arguments` (`count` and a

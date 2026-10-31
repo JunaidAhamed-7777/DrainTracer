@@ -491,7 +491,16 @@ def comparability_caveats(before: LoadedReport, after: LoadedReport) -> list[Cav
         add("target", f"the reports monitored different targets ({before.name} and {after.name})",
             NOT_COMPARABLE)
     caveats.extend(_experiment_caveats(before.experiment, after.experiment))
+    caveats.extend(_workload_caveats(before.data, after.data))
     for label, report in (("A", before), ("B", after)):
+        if isinstance(report.data.get("privacy"), Mapping):
+            add("privacy", f"report {label} was privacy transformed; original target and workload "
+                "identities cannot be shown equivalent", NOT_COMPARABLE)
+        recovery = report.data.get("recovery")
+        if (isinstance(recovery, Mapping) and recovery.get("partial") is True
+                or isinstance(report.data.get("checkpoint"), Mapping)):
+            add("recovered checkpoint", f"report {label} contains a saved prefix only; its missing tail, "
+                "final outcome, and cleanup are unknown", INSUFFICIENT_COVERAGE)
         if not report.detection_ran:
             add("inconclusive",
                 f"report {label} never filled a detection window, so its lack of "
@@ -531,6 +540,47 @@ def comparability_caveats(before: LoadedReport, after: LoadedReport) -> list[Cav
             "the runs measured different environments (" + "; ".join(machine) + "), "
             "so absolute peaks may differ for reasons other than the change",
             NOT_COMPARABLE if counters_differ else None)
+    return caveats
+
+
+def _workload_caveats(before: dict, after: dict) -> list[Caveat]:
+    """Recipe metadata records execution choices, never environment values."""
+    old, new = before.get("workload"), after.get("workload")
+    if old is None and new is None:
+        return []
+    if not all(isinstance(item, dict) and item.get("schema") == 1 for item in (old, new)):
+        return [Caveat("recipe", "both reports need supported workload execution provenance",
+                       NOT_COMPARABLE)]
+    caveats = []
+    keys = ("command", "cwd", "timeout_seconds", "readiness", "exercise", "log_capture", "environment")
+    if any(key not in old or key not in new or old[key] != new[key] for key in keys):
+        caveats.append(Caveat("recipe", "workload launch, readiness, exercise, environment selection, "
+                              "or capture choices differ or are incomplete", NOT_COMPARABLE))
+    # Matching names and source kinds do not establish matching secret values.
+    # Do not turn their deliberately omitted values into a false strict pass.
+    def clean_environment(item):
+        environment = item.get("environment")
+        return (isinstance(environment, dict)
+                and set(environment) == {"mode", "selected", "platform_basics", "values_recorded", "values_compared"}
+                and environment.get("mode") == "selected" and environment.get("selected") == []
+                and environment.get("values_recorded") is False and environment.get("values_compared") is False
+                and isinstance(environment.get("platform_basics"), list)
+                and all(isinstance(name, str) and name in {"SystemRoot", "WINDIR", "COMSPEC", "PATHEXT", "TEMP", "TMP"}
+                        for name in environment["platform_basics"])
+                and len(environment["platform_basics"]) == len(set(environment["platform_basics"])))
+
+    if not all(clean_environment(item) for item in (old, new)):
+        caveats.append(Caveat("recipe environment", "workload environment values are intentionally "
+                              "unrecorded, so their equivalence cannot be verified", NOT_COMPARABLE))
+    else:
+        caveats.append(Caveat("clean recipe platform basics", "clean recipes have no selected private environment "
+                              "values; platform basic locations are omitted, so equivalence covers recorded execution "
+                              "choices rather than the complete OS state"))
+    for label, item in (("A", old), ("B", new)):
+        outcome = item.get("outcome")
+        if not isinstance(outcome, dict) or outcome.get("state") != "complete":
+            caveats.append(Caveat("recipe outcome", f"report {label} has no completed workload outcome",
+                                  INSUFFICIENT_COVERAGE))
     return caveats
 
 

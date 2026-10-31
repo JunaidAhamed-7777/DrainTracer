@@ -1,5 +1,21 @@
 # Usage
 
+Add `--no-color` to monitoring commands or to `draintracer diff` to disable
+terminal colors, even when `FORCE_COLOR` is set. Without the flag, Rich keeps
+its normal environment and terminal behavior, including `NO_COLOR`.
+Textual verdicts and availability labels are preserved; bold emphasis may
+remain where the terminal supports it.
+
+For static output, use `--plain --target PATH` or `--plain --pid PID`.
+This selects headless monitoring and disables terminal styles and redraws.
+Ctrl+C or the time limit finishes the run and exports its reports; ordinary
+launch/attachment cleanup rules apply. `--quiet` suppresses routine events,
+STAT progress, and the startup banner while keeping warnings, signals, errors,
+and the final summary. Combine `--plain --quiet` for a short unstyled transcript.
+`draintracer diff BEFORE.json AFTER.json --plain` uses labeled text without
+panel borders. Add `--quiet` to keep its verdict, caveats, and budgets only;
+`--json` always retains the complete machine result.
+
 [README](../README.md) · [Configuration](configuration.md) · [Reports](reports.md) · [Working principles](../working-principle.md)
 
 Run the commands below from the repository root after installing
@@ -268,6 +284,15 @@ log records each change, and reports keep per-sample coverage.
 The dashboard adapts to narrow and short terminals and uses ASCII fallbacks
 for legacy encodings. A real interactive terminal is needed for controls;
 use headless mode when redirecting output or running in CI.
+
+## Preserve interrupted-run evidence
+
+To preserve evidence during a long run, add `--checkpoint PATH` and optionally
+`--checkpoint-interval 5s` to either monitoring mode. Use a new checkpoint path
+for each session. After interruption, `draintracer recover PATH --report-dir
+recovered` exports the saved prefix without controlling any process. The report
+remains partial; see [checkpoint recovery](reports.md#checkpoint-recovery) for
+bounds, validation, failure behavior, and comparison qualification.
 
 ## Exclude startup growth
 

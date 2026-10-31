@@ -28,6 +28,7 @@ classifiers = [
 draintracer = "draintracer.__main__:main"
 draintracer-report = "draintracer.report_contract:main"
 draintracer-baseline = "draintracer.baseline_control:main"
+draintracer-workload = "draintracer.workload:main"
 
 [project.urls]
 Homepage = "https://github.com/JunaidAhamed-7777/DrainTracer"
