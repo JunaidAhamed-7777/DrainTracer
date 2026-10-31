@@ -55,6 +55,29 @@ The agent refuses attached-target pause/resume even when launch pause is
 authorized: a crash between an OS suspension and a durable record cannot
 prove ownership safely enough to resume that process after restart.
 
+### Launch ownership on Windows
+
+Agent launches currently accept trusted `.exe` and `.py` files beneath the
+configured launch roots; use an explicit trusted wrapper for batch commands.
+The agent creates the process suspended, assigns it to an unnamed,
+noninheritable Windows job with kill-on-close enabled and breakaway disabled,
+then resumes its primary thread exactly once. Failed assignment stops the
+still-suspended process before user code can run. Only an explicit NUL handle
+is inherited; stdin, stdout, and stderr cannot consume the agent console.
+Ordinary cleanup closes the job, and abrupt agent exit closes it in the OS.
+
+Normal `CreateProcess` descendants inherit the job. This is an ownership
+mechanism for cooperating development workloads, not isolation for hostile
+code: Windows documents exceptions such as children created through
+`Win32_Process.Create`. Do not authorize untrusted launch roots. The regular
+interactive CLI launch behavior remains separate from this opt-in adapter.
+
+The implementation follows Microsoft's [job object ownership rules](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects),
+[suspended process creation flags](https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags),
+and [primary-thread resume semantics](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-resumethread).
+Native drills cover assignment failure before execution and abrupt agent
+termination while an owned root and child run alongside an unrelated process.
+
 ## Bounds and failure semantics
 
 Session count, concurrent workers, queued work, retained events, request size,
