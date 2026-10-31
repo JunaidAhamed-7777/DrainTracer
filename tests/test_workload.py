@@ -41,6 +41,26 @@ class RecipeTests(unittest.TestCase):
         return WorkloadRunner(self.recipe(), report_dir=self.folder / "reports",
                               console=Console(file=io.StringIO(), force_terminal=False))
 
+    def test_checkpointed_recipe_writes_a_valid_bounded_prefix_without_monitor_errors(self) -> None:
+        from src.checkpoints import CHECKPOINT_SAMPLES, read_checkpoint
+
+        checkpoint = self.folder / "recipe-checkpoint.json"
+        config = self.folder / "checkpoint.toml"
+        config.write_text('sample_interval="100ms"\nwindows=["600ms"]\n'
+                          'checkpoint="recipe-checkpoint.json"\ncheckpoint_interval="1s"\n', encoding="utf-8")
+        self.data.update(timeout=1.3, config=config.name)
+        runner = self.runner()
+        self.assertEqual(runner.run(), 0)
+        saved = read_checkpoint(checkpoint, app_version=runner.VERSION)
+        self.assertLessEqual(len(saved["snapshots"]), CHECKPOINT_SAMPLES)
+        self.assertGreater(saved["sample_count"], 0)
+        self.assertEqual(saved["outcome"]["monitor_errors"], [])
+        self.assertIn("workload", saved)
+        self.assertFalse(runner.manager.has_tracked_processes)
+        bounded = runner.build_report(snapshot_limit=2)
+        self.assertLessEqual(len(bounded["snapshots"]), 2)
+        self.assertEqual(bounded["outcome"]["workload"]["state"], "complete")
+
     def test_relative_paths_resolve_from_recipe_and_values_never_enter_provenance(self) -> None:
         self.data["environment"] = {"PRIVATE": "seeded-literal-value",
                                     "TOKEN": {"from_env": "WORKLOAD_TEST_SECRET"}}
