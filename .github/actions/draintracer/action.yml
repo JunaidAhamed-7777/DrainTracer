@@ -14,7 +14,7 @@ inputs:
     description: Optional locally built candidate wheel matching version; omit to install from PyPI.
     default: ''
   artifact-name:
-    description: Name of the private-workflow evidence artifact.
+    description: Evidence artifact name; access follows repository visibility.
     default: draintracer-evidence
 outputs:
   report-directory:

@@ -518,6 +518,8 @@ and comparison exit codes.
 
 ## Documentation
 
+- [Maintained Windows CI action](docs/ci-workloads.md) — exact version installs,
+  bounded workload execution, strict comparison, and evidence after failures.
 - [Usage and troubleshooting](docs/usage.md) — launch, attach, controls, warm-up,
   headless operation, and diagnostic logging.
 - [Configuration](docs/configuration.md) — TOML discovery, profiles, thresholds,
