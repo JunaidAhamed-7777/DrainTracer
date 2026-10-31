@@ -10,6 +10,10 @@
 
 <h1 align="center">DrainTracer</h1>
 
+Python integrations can use the [supported session API](docs/python-api.md)
+for launch/attach, immutable snapshots, bounded subscriptions, cancellation,
+and explicit cleanup/export outcomes without initializing the dashboard.
+
 <p align="center">
   <strong>Release series: v5.4.0</strong> ·
   <a href="RELEASES.md">Current version and release notes</a>
@@ -70,6 +74,9 @@ values and process IDs vary by run.*
   samples go stale; reports add coverage and the monitor's own CPU and memory.
   The Monitor view also shows host CPU and available physical memory, sampled
   every five seconds with age and cost. These are host context, not target usage.
+  [Measured component budgets](docs/host-budget-results.md) cover refresh and
+  cached-call costs on the recorded Windows/WSL environments; they do not imply
+  that the separate full observer soak passed every timing ceiling.
 - **Ask why.** Focused views rank growing processes, show each detection
   window's checks behind a verdict, annotate a timeline with your markers, and
   report monitor health, without pausing sampling.
@@ -84,6 +91,10 @@ values and process IDs vary by run.*
 - **Check in CI.** Run headless with a time limit, configurable failure
   severity, optional policies and absolute budgets, GitHub Actions
   annotations, and a job summary.
+
+Opt-in [local team storage](docs/team-access.md) adds project-scoped roles,
+revocable credentials, server-side report privacy, retention, controlled logical
+snapshots and explicitly client-computed comparison receipts.
 
 ## Get started
 
@@ -212,6 +223,16 @@ Once the installation check passes, `draintracer` offers two startup choices:
 Hook selection keeps the program's PID and creation time through attachment.
 If that identity changes or cannot be verified, select the program again.
 An explicit `--pid` selects the process current when attachment begins.
+
+On Windows, tracked PID creation times must match exactly: a sub-10 ms change
+identifies a replacement, which is left untouched by the old target's controls.
+See [process identity verification](docs/process-identities.md) for native
+stability evidence and the limits of this check.
+
+An unreadable current or original creation identity permits observation but
+refuses process control. A later readable PID holder does not automatically
+gain the old target's control authority; attach again with a verified identity.
+An owed resume remains pending until it can be retried safely.
 
 Use **Up/Down** to highlight a startup choice, then **Spacebar** (or Enter)
 to select it. Navigation help appears below the Get Started box. Redirected
@@ -356,6 +377,8 @@ readable fallback when it cannot be read as UTF-8 or displayed.
 Use `draintracer doctor --target PATH` to validate the current settings and
 target/report paths before monitoring. It shows configuration origins and
 duration/permission problems without starting or controlling the target.
+Checkpoint paths and cadence include their origins; existing checkpoint
+destinations are blocked without creating directories or writer locks.
 `doctor --json` provides a structured diagnostic result. The output-directory
 check writes and removes a temporary probe in the nearest existing directory.
 See [Preflight](docs/preflight.md) for the command and initialization contracts.
@@ -421,6 +444,11 @@ coverage records or failed samples. Paused samples are excluded; combine it
 with `--fail-on-inconclusive` to also require a judged detection window.
 Reports include structured startup and cleanup results in `outcome`, and
 headless startup or cleanup failures attempt to export available evidence.
+For longer runs, opt in with `--checkpoint state/session.json`; the default
+cadence is 30s (`--checkpoint-interval 1s` through `1h`). Recover an interrupted
+prefix with `draintracer recover state/session.json --report-dir recovered`.
+Recovery never reattaches or controls a process, and recovered reports remain
+explicitly partial. See [checkpoint recovery](docs/reports.md#checkpoint-recovery).
 The [headless guide](docs/usage.md#run-without-a-dashboard) covers outcome
 priority and GitHub Actions integration.
 
@@ -469,6 +497,10 @@ and explains the recorded episode count. Reports with recorded severity but
 no episode counts still identify the signal and qualify the missing detail.
 A failed HTML companion is recorded in the retained JSON when the outcome
 update can be written.
+An offline retained-sample table and CSV download expose plotted values
+without hovering over charts.
+Labeled range fields, native signal Zoom buttons, and focusable data tables
+support keyboard use. See the [HTML accessibility checks](docs/html-accessibility.md).
 
 ![The exported HTML report shows the HIGH memory signal, resource trend charts, recorded events, and growing processes](docs/assets/html-report.gif)
 
@@ -476,6 +508,16 @@ update can be written.
 resource trends, events, and process growth after recording.*
 
 Use the JSON reports for scripts and comparisons:
+
+`draintracer-report investigate run.json --runtime python --format text`
+creates a privacy-transformed, copyable [investigation summary](docs/investigation-summary.md)
+with resource/window/contributor/coverage evidence and relevant profiler next steps.
+
+Preview an explicit privacy transformation locally with
+`draintracer-report redact run.json --profile share`; add
+`--output-dir shared` to write the same transformed data as JSON and HTML.
+The `minimal` profile also removes event and attribution detail. Review both
+files before sharing; see the [privacy guide](docs/privacy.md).
 
 `draintracer-report validate run.json` checks the public report contract;
 `draintracer-report summary run.json` emits a versioned JSON summary without
@@ -506,6 +548,14 @@ exits `4`. Detection windows are compared by their numeric values, even when
 rounded duration labels look identical. Coverage caveats use recorded whole-session counts when available,
 including wholly unreadable samples, even after chart history is thinned.
 
+Compare repeated runs by adding `--before-run` and `--after-run` for each extra
+report: `draintracer diff a1.json b1.json --before-run a2.json --after-run b2.json`.
+Groups require 2–20 distinct reports per side, at most 128 MiB combined JSON,
+and always enforce strict comparability across every run pair. Output includes
+median and observed min/max drift and peaks. Overlapping noisy drift ranges
+produce an inconclusive result, rather than a favorable single-pair improvement.
+These observed ranges describe the supplied runs; they are not confidence intervals.
+
 Use comparable workloads, durations, warm-ups, and settings. Long sessions
 count evicted event messages separately as `event_counts`; the HTML event
 section shows observed, retained, and discarded totals. They also
@@ -520,6 +570,8 @@ and comparison exit codes.
 
 ## Documentation
 
+- [Service observation recipe](docs/service-observation.md) — inspect an
+  authorized disposable Windows service and verify it survives ordinary detach.
 - [Usage and troubleshooting](docs/usage.md) — launch, attach, controls, warm-up,
   headless operation, and diagnostic logging.
 - [Configuration](docs/configuration.md) — TOML discovery, profiles, thresholds,
@@ -576,3 +628,44 @@ whole report. Review both JSON and embedded HTML data before sharing.
 ## License
 
 [MIT](LICENSE) · Copyright © 2026 Junaid Ahamed.
+
+### Optional foreground Windows agent
+
+`draintracer-agent serve` starts an authenticated, per-user local agent explicitly.
+Use `draintracer-agent start --pid PID --create-time CREATION_TIME --timeout 30`
+from a second terminal to observe a same-user process, then `status`, `events`,
+`export`, or `cancel` its session UUID. Attachments default to observation;
+launch, launch pause/resume, and explicit kill require separate server flags.
+See the [local agent contract and commands](docs/local-agent.md) for private
+state permissions, limits, trusted launch roots, cleanup, and failure states.
+
+The optional agent saves bounded admission state before starting a session.
+After restart it marks old active sessions interrupted and can export their
+latest intact checkpoint as partial evidence; it never retries a launch or
+reattaches automatically. See [agent scheduling and recovery](docs/agent-recovery.md)
+for retention, storage admission limits, and failure semantics.
+
+`draintracer-agent diagnose` exposes live readiness/freshness/queue/storage or
+read-only offline state. `recover SESSION_UUID` previews an intact partial
+checkpoint; add `--out-dir DIRECTORY` to save it. `stop` requests ordinary
+cleanup, and `remove` previews stopped-only control-file removal while keeping
+evidence and unrelated data. `support` previews typed, redacted diagnostics;
+add up to two explicit `--include-report SESSION_UUID` selections and `--out
+PATH.zip` for an exclusive local archive. Nothing is uploaded. Follow the
+[agent operations guide](docs/agent-operations.md) for installation, upgrade,
+rollback, removal, privacy review, and command bounds.
+
+Agent removal and startup share a permanent private control fence. An interrupted
+removal blocks startup until an explicit removal retry validates and finishes
+it; reports, checkpoints, unrelated files, and the harmless fence file remain.
+
+`draintracer-ops` measures a disposable local operating reference with a named
+operator/contact. Its default local baseline exercises ingestion, committed
+durability, authority/permission/retention refusals, sanitized restoration and
+local collection; Windows also measures agent freshness, completed
+runs, cleanup and crash-prefix recovery. It writes bounded private readiness
+evidence with explicit counts and local budgets. See the
+[operating objectives and recovery runbook](docs/service-operations.md) for the
+new-workspace command, limits, explicit optional `--with-transport` TLS extension
+and deployment prerequisites. A passing fixture
+is not a hosted SLA, live deployment approval, human consent or pilot result.

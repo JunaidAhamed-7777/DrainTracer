@@ -8,6 +8,39 @@ label redaction is not whole-report sanitization. See
 [Privacy and safe sharing](privacy.md) and the [privacy policy](../PRIVACY.md)
 for storage, network behavior, retention, and deletion.
 
+## Compare repeated runs
+
+Supply independently collected reports on both sides:
+
+```powershell
+draintracer diff a1.json b1.json --before-run a2.json --before-run a3.json --after-run b2.json --after-run b3.json --json
+```
+
+Each group needs 2–20 reports. Paths and recorded report IDs must be distinct
+across both groups: the same run cannot supply either side's evidence twice.
+Legacy reports without IDs cannot prove independence; collect separate runs
+and preserve their original files. Ordinary source file sizes and canonical
+decoded JSON must each fit a combined 128 MiB; decoded size is checked as each
+report loads, including when a file changes after its initial size check.
+The ordinary per-report validation still applies. `--plain`, `--quiet`,
+`--no-color`, and complete `--json` output also apply to repeated comparisons.
+Repeated mode always checks strict comparability for every within-group
+and across-group pair. Every caveat retains its run labels, such as A2/B3, and
+blocks a strict claim when the ordinary comparison engine would block it.
+
+For each resource, JSON and terminal output show median and observed minimum and
+maximum drift (bytes or counts per second in JSON) and whole-run peaks. Improvement
+requires all after-run drift values below all before-run drift values beyond the
+existing resource noise band, or every after-run signal below every before-run
+signal. A new strongest after-run signal is a regression. Large median differences
+with overlapping ranges remain inconclusive. Mixed resource improvements and
+regressions remain mixed. Peaks describe usage; budgets apply to the largest peak
+across all after runs. Existing regression and budget exit flags still apply.
+
+These are observed ranges, not confidence intervals or calibrated probabilities.
+No detector thresholds change. The shared `compare_repeated_reports` engine is
+also the basis for controlled baseline checks, so those checks use the same rule.
+
 ## Export a session
 
 Press `E` in the dashboard to export the samples collected so far. Each
@@ -65,6 +98,12 @@ The report includes:
   Observed signal severity remains visible alongside coverage qualifications.
 - Memory, handles, handle categories, threads, and CPU charts. Hover for
   values, drag to zoom, and use legend entries to toggle series.
+- A collapsible retained-sample table and offline CSV download with elapsed
+  seconds, private/RSS bytes, handle/thread counts, and CPU percent. These
+  use the plotted retained arrays; `n/a` remains unknown, and thinned data
+  is explicitly qualified rather than presented as every observation.
+  Retained handle-category values use a second table and CSV at their own
+  classification cadence.
 - Markers where signals appeared or escalated, warm-up and pause bands,
   and the time the root exited.
 - Continuous signal episodes, events, and the final available process list.
@@ -83,6 +122,13 @@ interpreting a paused or failed sample as a measured zero.
 The HTML and JSON use the same report dictionary, so their exported samples
 agree. Handle classifications are less frequent than the main sampling
 interval and use their own timestamps.
+
+For keyboard access, enter elapsed seconds in From/To and activate Apply
+range; Escape resets. Each signal has a native Zoom button. Tables have
+named horizontal scroll regions and column headers, while the retained
+sample disclosure and CSV links use native browser controls. Verdict,
+coverage, units, and process evidence remain readable without chart
+interaction or JavaScript. See [accessibility verification](html-accessibility.md).
 
 ## Use the JSON data
 
@@ -208,6 +254,59 @@ coverage, while `--fail-on-inconclusive` separately requires a judged leak
 window. Coverage is recorded as `coverage.full`, `measured_samples`, and
 `fully_measured_samples`, also mirrored in `session_facts.coverage`; the
 measurement outcome includes `full_coverage`.
+
+### Checkpoint recovery
+
+Checkpointing is disabled by default. Choose a new file for a session:
+
+```powershell
+draintracer --headless --target .\torture\steady.py --timeout 2m --checkpoint .\state\run.json --checkpoint-interval 5s
+draintracer recover .\state\run.json --report-dir .\recovered
+```
+
+The fixture is available from a source checkout. Installed users can substitute
+their own target. Linux uses the same options with `/` path separators.
+Both dashboard and headless monitoring support checkpoints. The first is saved
+after startup; later writes happen when the main loop polls after the cadence
+elapses. Sampling stays on its background thread, and no disk write holds the
+facts lock. Filesystem stalls can delay the UI and checkpoint cadence while
+sampling continues within its existing bounds.
+
+A checkpoint keeps at most 128 representative chart snapshots, including the
+first and newest retained observations, and the normal bounded event/process
+detail. Whole-prefix peaks, signals, episodes, sample counts, and coverage stay
+exact independently of that extra chart thinning. Files are capped at 64 MiB
+and use the standard bounded JSON reader (depth 64 and one million values).
+Writes flush a temporary sibling and atomically replace the previous checkpoint.
+An OS-held file lock prevents a second writer and releases after a crash; its
+one-byte `.lock` sidecar can remain afterward. A new session refuses existing
+checkpoint files rather than overwriting earlier evidence. Writing failure is
+reported, and the last successfully written checkpoint remains usable.
+
+The checkpoint validates its format, compatible Semantic Version, session UUID,
+monitor PID and creation time, target PID and available creation time, and a
+SHA-256 corruption checksum. The cutoff is the last recorded observation, not
+the later disk-write time. Newer writer versions or another major version are
+rejected; older compatible writers remain readable. `--expect-session UUID`
+optionally pins the session identity during recovery. The checksum does not
+authenticate a report or make its contents trustworthy.
+
+Recovery reads evidence only: it never reattaches, resumes, launches, or kills
+a target. It writes a fresh JSON/HTML pair with a new report ID. `recovery.partial`
+is true, `exact_through_cutoff` identifies the preserved facts, and
+`final_outcome_confirmed` is false. The missing tail, final target outcome, and
+cleanup cannot be inferred. A prior headless decision is retained as
+`decision_as_of_checkpoint`; the final `headless.exit_code` is unknown. The
+original writer version remains on the evidence, while `recovery.tool_version`
+identifies the recovery tool.
+
+HTML labels the recording PARTIAL, and machine summaries preserve the recovery
+qualification. Ordinary diffs qualify the result; strict diffs return
+`INSUFFICIENT COVERAGE`. `recover --json` prints `recovery_result_schema: 1`
+and the generated paths. It exits `0` for a recovered pair and `2` for invalid
+input or an export error; JSON already written is retained if HTML fails.
+Recovery does not change the original checkpoint. Checkpoints contain report
+data and are subject to the same [sharing and retention rules](privacy.md).
 
 The `experiment` section records the optional labels (`workload_id`,
 `build`, `operations`, `note`), the mode, `arguments` (`count` and a
