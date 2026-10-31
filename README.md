@@ -336,6 +336,8 @@ readable fallback when it cannot be read as UTF-8 or displayed.
 Use `draintracer doctor --target PATH` to validate the current settings and
 target/report paths before monitoring. It shows configuration origins and
 duration/permission problems without starting or controlling the target.
+Checkpoint paths and cadence include their origins; existing checkpoint
+destinations are blocked without creating directories or writer locks.
 `doctor --json` provides a structured diagnostic result. The output-directory
 check writes and removes a temporary probe in the nearest existing directory.
 See [Preflight](docs/preflight.md) for the command and initialization contracts.
