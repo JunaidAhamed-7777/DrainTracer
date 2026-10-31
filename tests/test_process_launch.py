@@ -86,6 +86,10 @@ class StdinTests(unittest.TestCase):
 
 @unittest.skipUnless(sys.platform == "win32", "batch files run through cmd.exe on Windows")
 class BatchLaunchTests(unittest.TestCase):
+    def test_selected_command_interpreter_is_used(self) -> None:
+        manager = ProcessManager("C:/apps/work.cmd", env={"COMSPEC": "C:/selected/cmd.exe"})
+        self.assertTrue(manager._build_command().startswith('"C:/selected/cmd.exe" /d '))
+
     def test_batch_files_receive_hostile_arguments_intact(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             folder = Path(temp) / "dir with spaces"

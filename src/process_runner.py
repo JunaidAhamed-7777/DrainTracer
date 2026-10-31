@@ -647,7 +647,8 @@ class ProcessManager:
             # quoted for cmd. /d skips AutoRun commands, /e:on enables the
             # substring syntax the % escape relies on, and /v:off keeps !
             # literal.
-            comspec = os.environ.get("COMSPEC") or "cmd.exe"
+            environment = self.env if self.env is not None else os.environ
+            comspec = environment.get("COMSPEC") or "cmd.exe"
             inner = " ".join(_quote_for_cmd(part) for part in (str(path), *self.args))
             return f'"{comspec}" /d /e:on /v:off /s /c "{inner}"'
         if suffix in {".bat", ".cmd"}:
