@@ -119,3 +119,13 @@ WSL Linux: each recorded 41 samples with zero timing/paused counters, clean
 promotion/check returned `unchanged`/0, and selected/inherited groups were
 refused without changing the audit. Native Windows and Linux counter semantics
 remain qualified by their recorded platform provenance.
+
+
+Final assembled verification passed 935 tests on native Windows (25 platform
+skips) and Linux (43 skips), including 24 focused baseline cases. The added
+cases recompute mutated caller data and keep every overlapping resource outside
+regression suppressions and explicit replacement approval. Clean source and
+isolated-wheel builds passed strict metadata checks; all 53 Python members
+matched the intentional runtime inventory. Fresh installed verification passed
+CLI/API exports, four ordinary baseline recordings and the eight-recipe clean
+admission/environment-refusal workflow.
