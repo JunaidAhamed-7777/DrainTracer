@@ -28,11 +28,12 @@ CREATE TABLE credentials (
  PRIMARY KEY(project_id,id), FOREIGN KEY(project_id) REFERENCES projects(id));
 CREATE TABLE reports (
  project_id TEXT NOT NULL, id TEXT NOT NULL, created_at REAL NOT NULL, expires_at REAL NOT NULL,
- payload BLOB NOT NULL, summary BLOB NOT NULL, sha256 TEXT NOT NULL, stored_bytes INTEGER NOT NULL,
+ payload BLOB, summary BLOB, sha256 TEXT NOT NULL, stored_bytes INTEGER NOT NULL,
+ privacy_profile TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('active','deleted','expired')), history_until REAL NOT NULL,
  PRIMARY KEY(project_id,id), FOREIGN KEY(project_id) REFERENCES projects(id));
 CREATE TABLE requests (
  project_id TEXT NOT NULL, request_id TEXT NOT NULL, input_sha256 TEXT NOT NULL,
- report_id TEXT NOT NULL, created_at REAL NOT NULL, expires_at REAL NOT NULL,
+ target_id TEXT NOT NULL, operation TEXT NOT NULL, created_at REAL NOT NULL, expires_at REAL NOT NULL,
  state TEXT NOT NULL CHECK(state IN ('committed','deleted','expired')),
  PRIMARY KEY(project_id,request_id), FOREIGN KEY(project_id) REFERENCES projects(id));
 CREATE TABLE backups (

@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from .team_database import _Database
+from .team_evidence import _Evidence
 from .team_models import (
     Actor,
     ProjectPolicy,
@@ -54,7 +55,7 @@ class _ExpiredCredential(Exception):
         self.row = row
 
 
-class TeamStore(_Database):
+class TeamStore(_Evidence, _Database):
     """No server/listener activation and no trust in a caller's cached role."""
 
     def _now(self) -> float:
@@ -145,7 +146,16 @@ class TeamStore(_Database):
                                 "denied", {}, now, policy)
                     connection.commit()
                     raise TeamError("forbidden", "Credential role does not permit this operation")
-                yield connection, row, policy, now
+                self._purge(connection, actor.project_id, now, policy)
+                connection.execute("SAVEPOINT operation")
+                try:
+                    yield connection, row, policy, now
+                except TeamError:
+                    connection.execute("ROLLBACK TO operation")
+                    connection.execute("RELEASE operation")
+                    connection.commit()
+                    raise
+                connection.execute("RELEASE operation")
                 if action:
                     self._audit(connection, actor.project_id, actor.credential_id, action, "ok", details or {}, now, policy)
                 connection.commit()
