@@ -191,7 +191,7 @@ class LoadTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "deep.json"
             path.write_text("{}", encoding="utf-8")
-            with mock.patch("src.report_diff.json.loads", side_effect=RecursionError):
+            with mock.patch("src.report_contract.json.loads", side_effect=RecursionError):
                 with self.assertRaisesRegex(DiffError, "JSON nested too deeply to be a report"):
                     load_report(path)
 

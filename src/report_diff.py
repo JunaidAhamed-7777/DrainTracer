@@ -23,7 +23,6 @@ verdict with ``not comparable`` or ``insufficient coverage``.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -40,6 +39,7 @@ from .analysis import (
 )
 from .budgets import BudgetCheck, check_budgets
 from .events import METRIC_LABELS
+from .report_contract import ReportContractError, read_report
 from .experiment import ExperimentData, load_experiment
 from .handle_types import CATEGORIES as HANDLE_CATEGORIES
 from .report import target_filename
@@ -348,23 +348,12 @@ def load_report(path: str | Path) -> LoadedReport:
     """Read a JSON report from disk and summarize it."""
     report_path = Path(path)
     try:
-        text = report_path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        raise DiffError(f"{report_path}: no such file") from None
-    except UnicodeDecodeError:
-        raise DiffError(f"{report_path}: not a UTF-8 JSON report") from None
-    except OSError as exc:
-        raise DiffError(f"{report_path}: cannot read the file ({exc.strerror or exc})") from None
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise DiffError(f"{report_path}: not valid JSON ({exc.msg} at line {exc.lineno})") from None
-    except RecursionError:
-        raise DiffError(f"{report_path}: JSON nested too deeply to be a report") from None
-    except ValueError as exc:  # such as an integer too long to convert
-        raise DiffError(f"{report_path}: not a usable JSON report ({exc})") from None
-    if not isinstance(data, dict) or not isinstance(data.get("snapshots"), list):
-        raise DiffError(f"{report_path}: not a DrainTracer report (no snapshots list)")
+        data = read_report(report_path)
+    except ReportContractError as exc:
+        message = str(exc)
+        if message.startswith("$"):
+            message = f"not a DrainTracer report ({message})"
+        raise DiffError(f"{report_path}: {message}") from None
     if not data["snapshots"]:
         raise DiffError(f"{report_path}: the report has no snapshots to compare")
     try:

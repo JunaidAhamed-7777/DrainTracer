@@ -358,6 +358,8 @@ fractional growth-rate thresholds remain supported.
 
 The summary and report keep the target outcome, the measurement outcome
 (conclusive, partial coverage, or inconclusive), and monitor errors apart.
+Headless signal rows label each unjudged resource as inconclusive or unavailable;
+`clear` means a window was judged, and earlier signals remain visible.
 The default failure threshold is `high`. Allow enough time after warm-up for
 a detection window to fill, and inspect the verdict as well as the exit code.
 Use `--require-full-coverage` with `--headless` to exit `3` when any live
@@ -421,6 +423,11 @@ update can be written.
 resource trends, events, and process growth after recording.*
 
 Use the JSON reports for scripts and comparisons:
+
+`draintracer-report validate run.json` checks the public report contract;
+`draintracer-report summary run.json` emits a versioned JSON summary without
+loading the terminal UI. See the [schemas and machine-output contract](docs/report-contract.md)
+for supported versions, unknown values, units, and input limits.
 
 ```powershell
 draintracer diff .\before.json .\after.json
