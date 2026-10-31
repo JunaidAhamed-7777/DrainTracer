@@ -118,6 +118,17 @@ def load_samples(report: Mapping[str, Any]) -> list[Sample]:
             ):
                 alerts[str(alert["resource"])] = alert
         processes = item.get("processes")
+        coverage = _coverage_counts(item.get("coverage")) or {}
+        if isinstance(processes, _SEQUENCES):
+            readings = [process for process in processes if isinstance(process, Mapping)]
+            missing = any(process.get("unmeasured") or process.get("access_denied") for process in readings)
+            for metric in TOTAL_KEYS:
+                if metric in coverage or not missing:
+                    continue
+                count = sum(1 for process in readings if not process.get("access_denied")
+                            and metric not in (process.get("unmeasured")
+                                               if isinstance(process.get("unmeasured"), _SEQUENCES) else ()))
+                coverage[metric] = (count, len(readings))
         metadata = item.get("metadata")
         handle_types = _handle_counts(item.get("handle_types"))
         samples.append(
@@ -131,7 +142,7 @@ def load_samples(report: Mapping[str, Any]) -> list[Sample]:
                 error=isinstance(metadata, Mapping) and bool(metadata.get("sampling_error")),
                 handle_types=handle_types,
                 warming_up=bool(item.get("warming_up")),
-                coverage=_coverage_counts(item.get("coverage")),
+                coverage=coverage or None,
             )
         )
     samples.sort(key=lambda sample: sample.timestamp)
@@ -694,6 +705,12 @@ def chart_payload(
         ],
         "exits": exits,
         "events": events,
+        "user_markers": [
+            {"t": offset(stamp), "label": str(marker.get("label", "marker"))[:80],
+             "index": marker.get("index")}
+            for marker in (report.get("markers") or [])[:500]
+            if isinstance(marker, Mapping) and (stamp := finite(marker.get("timestamp"))) is not None
+        ] if isinstance(report.get("markers"), _SEQUENCES) else [],
         "warmup": [offset(summary.warmup[0]), offset(summary.warmup[1])] if summary.warmup else None,
         "handle_types": _handle_type_series(samples, offset),
     }

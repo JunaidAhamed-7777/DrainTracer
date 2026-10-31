@@ -10,14 +10,17 @@ from a JSON payload and only ever inserts text with ``textContent``.
 from __future__ import annotations
 
 import base64
+import csv
 import hashlib
 import html
+import io
 import json
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from .analysis import (
     RESOURCES,
@@ -42,6 +45,12 @@ _RESOURCE_TITLES = {
 _LEVELS = {"ok", "info", "warn", "alert", "error"}
 
 
+def _partial_evidence(report: Mapping[str, Any]) -> bool:
+    recovery = report.get("recovery")
+    return (isinstance(recovery, Mapping) and recovery.get("partial") is True
+            or isinstance(report.get("checkpoint"), Mapping))
+
+
 def render_html_report(report: Mapping[str, Any]) -> str:
     """Return the complete HTML document for an exported report."""
     style = _load_frame("report.css")
@@ -63,6 +72,8 @@ def render_html_report(report: Mapping[str, Any]) -> str:
             _verdict(report, summary),
             _cards(report, summary, _sample_count(report, summary)),
             _charts_panel(),
+            _user_markers_panel(payload),
+            _sample_table_panel(payload, summary.chart_stride),
             _episodes_panel(summary, start),
             _events_panel(report, start),
             _processes_panel(report),
@@ -117,7 +128,8 @@ def _masthead(
     if stride > 1:
         # Say plainly what the thinning costs: the chart, or also the totals.
         thinned = f"; chart thinned 1:{stride} (" + (
-            "peaks, signals and counts are exact)"
+            ("peaks, signals and counts are exact through the checkpoint)" if _partial_evidence(report)
+             else "peaks, signals and counts are exact)")
             if summary.exact
             else "peaks and signal episodes come from the kept samples only)"
         )
@@ -127,8 +139,9 @@ def _masthead(
         ("Mode", mode),
         ("Root PID", str(report.get("root_pid") or "—")),
         ("Started", _local_time(report.get("session_started_at"))),
-        ("Ended", _local_time(report.get("session_ended_at"), "still running at export")),
-        ("Monitored", format_clock(summary.duration)),
+        ("Ended", "unknown after checkpoint" if _partial_evidence(report)
+         else _local_time(report.get("session_ended_at"), "still running at export")),
+        ("Saved prefix" if _partial_evidence(report) else "Monitored", format_clock(summary.duration)),
         (
             "Samples",
             f"{_sample_count(report, summary):,}"
@@ -137,6 +150,9 @@ def _masthead(
         ),
         ("Processes", f"up to {summary.max_processes}"),
     ]
+    privacy = report.get("privacy")
+    if isinstance(privacy, Mapping):
+        facts.append(("Privacy", f"{privacy.get('profile', 'transformed')} · review before sharing"))
     facts_data = summary.facts
     if facts_data is not None and facts_data.evaluated_seconds is not None:
         facts.append(("Evaluated", format_clock(facts_data.evaluated_seconds)))
@@ -230,6 +246,8 @@ def _partial_coverage(report: Mapping[str, Any], summary: ReportSummary) -> bool
 
 
 def _verdict_label(report: Mapping[str, Any], summary: ReportSummary) -> str:
+    if _partial_evidence(report):
+        return "PARTIAL" if summary.worst == "none" else f"{summary.worst.upper()} / PARTIAL"
     if summary.worst != "none":
         return summary.worst.upper()
     if all(item.coverage_samples > 0 and item.unavailable_samples == item.coverage_samples
@@ -244,6 +262,21 @@ def _verdict(report: Mapping[str, Any], summary: ReportSummary) -> str:
     worst = summary.worst
     badge = _verdict_label(report, summary)
     partial = _partial_coverage(report, summary)
+    if _partial_evidence(report):
+        badge = "PARTIAL" if worst == "none" else f"{worst.upper()} / PARTIAL"
+        evidence = (f"A {worst.upper()} signal was recorded before the checkpoint. "
+                    if worst != "none" else "No full-session verdict is available. ")
+        recovery = report.get("recovery") or {}
+        exact = isinstance(recovery, Mapping) and recovery.get("exact_through_cutoff") is True and summary.exact
+        detail = evidence + ("Saved session facts are exact through the checkpoint. " if exact
+                             else "Only saved observations are available. ")
+        detail += "The missing tail, final outcome, and cleanup are unknown."
+        severity = worst if worst != "none" else "low"
+        return (
+            f'<section class="verdict sev-{severity}" aria-label="Verdict">'
+            f'<span class="badge sev-{severity}">{_e(badge)}</span>'
+            f'<div><h2>Partial checkpoint evidence</h2><p>{_e(detail)}</p></div></section>'
+        )
     if badge in ("INCONCLUSIVE", "UNAVAILABLE"):
         # Older reports lack the field; only an explicit False is inconclusive.
         headline = "No resource measurements were available" if badge == "UNAVAILABLE" else (
@@ -361,19 +394,87 @@ def _charts_panel() -> str:
     return (
         '<section class="panel" id="trends" aria-label="Trends">'
         '<div class="panel-head"><h2>Trends</h2>'
-        '<p class="hint">Hover for values · drag across a chart to zoom · '
-        "double-click or Esc to reset · red dots mark where a leak signal was raised "
+        '<p class="hint">Read the sample table for values, or use the range fields to zoom. '
+        'Pointer users can hover or drag. '
+        "Double-click or Esc to reset · red dots mark where a leak signal was raised "
         "or escalated</p>"
         '<button type="button" class="reset" id="reset-zoom" hidden>Reset zoom</button></div>'
+        '<form id="range-controls" class="chart-range" novalidate hidden>'
+        '<label for="zoom-start">From (seconds)</label>'
+        '<input id="zoom-start" type="number" step="any" aria-describedby="range-status">'
+        '<label for="zoom-end">To (seconds)</label>'
+        '<input id="zoom-end" type="number" step="any" aria-describedby="range-status">'
+        '<button class="reset" type="submit">Apply range</button>'
+        '<p id="range-status" role="status" aria-live="polite"></p></form>'
         '<div id="charts"><noscript><p class="empty">Charts need JavaScript; the tables '
         "below have the same findings.</p></noscript></div>"
         "</section>"
     )
 
 
+def _sample_table_panel(payload: Mapping[str, Any], stride: int) -> str:
+    """A script-free equivalent of the retained main-chart points, plus offline CSV."""
+    times = payload.get("t", ())
+    series = payload.get("series", {})
+    columns = (("private", "Private bytes (bytes)"), ("rss", "RSS (working set, bytes)"),
+               ("handles", "Handles (count)"), ("threads", "Threads (count)"), ("cpu", "CPU (%)"))
+    headings = ["Elapsed (seconds)", *(label for _key, label in columns)]
+    output = io.StringIO(newline="")
+    writer = csv.writer(output)
+    writer.writerow(headings)
+    rows = []
+    for index, stamp in enumerate(times):
+        values = [series.get(key, ())[index] for key, _label in columns]
+        csv_values = [f"{stamp:.3f}", *("n/a" if value is None else str(value) for value in values)]
+        writer.writerow(csv_values)
+        cells = [f"{stamp:,.3f}", *("n/a" if value is None else
+                 f"{value:,.1f}" if key == "cpu" else f"{value:,.0f}"
+                 for (key, _label), value in zip(columns, values))]
+        rows.append("<tr>" + "".join(f'<td class="num">{_e(value)}</td>' for value in cells) + "</tr>")
+    body = (_table(tuple((heading, "num") for heading in headings), rows) if rows else
+            '<p class="empty">No retained chart samples were recorded.</p>')
+    thinning = f" The chart keeps 1 in {stride} observations." if stride > 1 else ""
+    download = "data:text/csv;charset=utf-8," + quote(output.getvalue(), safe="")
+    return (
+        '<details class="panel sample-data" id="sample-data">'
+        f'<summary>Retained chart sample values ({len(times):,} rows)</summary>'
+        '<p class="hint">Elapsed time starts at the first retained sample. These are the plotted '
+        f'retained samples, not a complete whole-run sample log.{_e(thinning)} '
+        'n/a means a counter was not measured, including paused, failed, or unreadable samples.</p>'
+        f'<p><a class="download" download="retained-chart-samples.csv" href="{download}">'
+        'Download retained samples as CSV</a></p>'
+        f"{body}{_handle_sample_table(payload)}</details>"
+    )
+
+
+def _handle_sample_table(payload: Mapping[str, Any]) -> str:
+    types = payload.get("handle_types", {})
+    times, categories = types.get("t", ()), types.get("categories", ())
+    if not times or not categories:
+        return ""
+    headings = ["Elapsed (seconds)", *(f"{category} (count)" for category in categories)]
+    output = io.StringIO(newline="")
+    writer = csv.writer(output)
+    # Unknown category names are untrusted; prevent spreadsheet formula injection.
+    writer.writerow(["'" + heading if heading.lstrip().startswith(("=", "+", "-", "@")) else heading
+                     for heading in headings])
+    rows = []
+    for index, stamp in enumerate(times):
+        values = [types.get("series", {}).get(category, ())[index] for category in categories]
+        cells = [f"{stamp:.3f}", *("n/a" if value is None else str(value) for value in values)]
+        writer.writerow(cells)
+        rows.append("<tr>" + "".join(f'<td class="num">{_e(value)}</td>' for value in cells) + "</tr>")
+    download = "data:text/csv;charset=utf-8," + quote(output.getvalue(), safe="")
+    return ('<h3>Retained handle classifications</h3>'
+            '<p class="hint">Counts use their own classification cadence; elapsed time shares the chart origin.</p>'
+            f'<p><a class="download" download="retained-handle-categories.csv" href="{download}">'
+            'Download retained handle classifications as CSV</a></p>'
+            + _table(tuple((heading, "num") for heading in headings), rows))
+
+
 def _episodes_panel(summary: ReportSummary, start: float | None) -> str:
     recorded = sum(item.episodes for item in summary.resources.values())
-    hint = "One row per continuous signal; click a row to zoom the charts."
+    hint = "One row per continuous signal; use its Zoom button to inspect the charts."
     if recorded > len(summary.episodes):
         # Thinning kept fewer episodes than the session counted; say so.
         hint += (
@@ -397,11 +498,15 @@ def _episodes_panel(summary: ReportSummary, start: float | None) -> str:
             if start is not None:
                 attributes = (
                     f' data-t="{episode.start - start:.3f}" data-t1="{episode.end - start:.3f}"'
-                    ' title="Click to zoom the charts to this signal"'
                 )
+            resource_cell = _e(episode.resource)
+            if attributes:
+                resource_cell = (f'<button type="button" class="signal-zoom" '
+                                 f'aria-label="Zoom charts to {_e(episode.resource)} signal at '
+                                 f'{_e(_offset(episode.start, start))}">Zoom {_e(episode.resource)}</button>')
             rows.append(
                 f"<tr{attributes}>"
-                f"<td>{_e(episode.resource)}</td>"
+                f"<td>{resource_cell}</td>"
                 f'<td><span class="badge sev-{_e(episode.severity)}">{_e(episode.severity.upper())}</span></td>'
                 f'<td class="num">{_e(_offset(episode.start, start))}</td>'
                 f'<td class="num">{_e(format_clock(episode.duration))}</td>'
@@ -417,6 +522,22 @@ def _episodes_panel(summary: ReportSummary, start: float | None) -> str:
         f'<p class="hint">{_e(hint)}</p></div>'
         f"{body}</section>"
     )
+
+
+def _user_markers_panel(payload: Mapping[str, Any]) -> str:
+    markers = payload.get("user_markers") or []
+    if not markers:
+        return ""
+    rows = [
+        f'<tr data-t="{marker["t"]}" data-t1="{marker["t"]}">'
+        '<td><button type="button" class="signal-zoom" '
+        f'aria-label="Zoom charts to marker {_e(marker["label"])} at +{format_clock(marker["t"])}">'
+        f'Zoom +{format_clock(marker["t"])}</button></td><td>{_e(marker["label"])}</td></tr>'
+        for marker in markers
+    ]
+    return ('<section class="panel"><div class="panel-head"><h2>Named markers</h2>'
+            '<p class="hint">Timing annotations, not cause. Use a marker\'s Zoom button to inspect its interval.</p>'
+            '</div>' + _table(("Elapsed time", "Label"), rows) + '</section>')
 
 
 def _monitor_panel(summary: ReportSummary) -> str:
@@ -495,6 +616,19 @@ def _monitor_panel(summary: ReportSummary) -> str:
                 f"{format_clock(facts.after_warmup_seconds or 0.0)} after warm-up",
             )
         )
+    host = monitor.get("host_context")
+    if isinstance(host, Mapping):
+        cpu = finite(host.get("cpu_percent"))
+        available = finite(host.get("available_memory_bytes"))
+        age = finite(host.get("age_seconds"))
+        cost = finite(host.get("collection_ms"))
+        rows += [
+            ("Host CPU context", f"{cpu:.1f}% of host capacity" if cpu is not None else "n/a"),
+            ("Host available physical memory", format_bytes(available) if available is not None else "n/a"),
+            ("Host sampling", (f"{age:.1f}s old at final sample" if age is not None else "age n/a")
+             + (f" · {cost:.2f} ms pass" if cost is not None else " · cost n/a")
+             + " · every 5s; whole host context, not target usage or cause"),
+        ]
     body = _table(
         ("Measure", "Value"),
         [f"<tr><td>{_e(label)}</td><td>{_e(value)}</td></tr>" for label, value in rows],
@@ -556,7 +690,8 @@ def _events_panel(report: Mapping[str, Any], start: float | None) -> str:
     return (
         '<section class="panel" aria-label="Event log">'
         '<div class="panel-head"><h2>Event log</h2>'
-        f'<p class="hint">{retention}Hover a row to find it on the charts.</p></div>'
+        f'<p class="hint">{retention}Elapsed time locates each event on the charts; '
+        'use the range fields to inspect it.</p></div>'
         f"{body}</section>"
     )
 
@@ -744,9 +879,11 @@ def _table(headers: Sequence[str | tuple[str, str]], rows: Sequence[str]) -> str
     cells = []
     for header in headers:
         label, css = header if isinstance(header, tuple) else (header, "")
-        cells.append(f'<th class="{css}">{_e(label)}</th>' if css else f"<th>{_e(label)}</th>")
+        cells.append(f'<th scope="col" class="{css}">{_e(label)}</th>' if css else f'<th scope="col">{_e(label)}</th>')
+    label = "Table: " + ", ".join(header[0] if isinstance(header, tuple) else header for header in headers[:3])
     return (
-        f'<div class="table-scroll"><table><thead><tr>{"".join(cells)}</tr></thead>'
+        f'<div class="table-scroll" tabindex="0" role="region" aria-label="{_e(label)}">'
+        f'<table><thead><tr>{"".join(cells)}</tr></thead>'
         f'<tbody>{"".join(rows)}</tbody></table></div>'
     )
 

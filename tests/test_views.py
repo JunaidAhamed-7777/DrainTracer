@@ -617,6 +617,61 @@ class TimelineViewTests(ViewRenderingMixin, unittest.TestCase):
         self.assertFalse(app.timeline_frozen)
         self.assertIn("30 samples", render_text(app))
 
+    def test_process_scope_uses_selected_identity_and_freezes_its_points(self) -> None:
+        app = self._app()
+        app._proc_selected = (2, 2.0)
+        app._handle_key("p")
+        points, _marks, alerts = app._timeline_data()
+        self.assertEqual(points[-1][1], (30 + 24 * 4) * MB)
+        self.assertEqual(alerts, ())
+        self.assertIn("PID 2 worker.exe", render_text(app))
+        app._handle_key("f")
+        growing_session_more(app)
+        self.assertEqual(app._timeline_data()[0], points)
+        app._handle_key("p")
+        self.assertEqual(app._timeline_identity, (2, 2.0))
+        app._handle_key("f")
+        self.assertNotEqual(app._timeline_data()[0], points)
+        self.assertFalse(app.detector.is_paused)
+        app._timeline_identity = (555, 123.0)
+        self.assertIn("Unavailable or too little retained measured history", render_text(app))
+
+    def test_historical_ranges_pan_only_within_retained_points(self) -> None:
+        app = self._app()
+        app._handle_key("r")
+        recent = app._timeline_data()[0]
+        self.assertLessEqual(recent[-1][0] - recent[0][0], 10)
+        app._handle_key("[")
+        earlier = app._timeline_data()[0]
+        self.assertLess(earlier[-1][0], recent[-1][0])
+        app._handle_key("]")
+        self.assertEqual(app._timeline_data()[0], recent)
+        self.assertIn("selected retained range", app._decimation_text(len(recent), 10, 1).plain)
+        self.assertFalse(app.detector.is_paused)
+
+    def test_named_marker_editor_is_bounded_and_cancelable(self) -> None:
+        from unittest import mock
+
+        app = self._app(80, 24)
+        app._handle_key("n")
+        with mock.patch.object(app.manager, "pause") as pause, mock.patch.object(app.manager, "kill") as kill:
+            for char in "start work kq " + "x" * 100:
+                app._handle_key(char)
+            self.assertEqual(len(app._marker_draft), 80)
+            pause.assert_not_called()
+            kill.assert_not_called()
+        self.assertIn("ENTER save", render_text(app).splitlines()[-1])
+        app._handle_key("enter")
+        self.assertTrue(app.markers[-1].label.startswith("start work kq "))
+        self.assertEqual(len(app.markers[-1].label), 80)
+        app._handle_key("n")
+        app._handle_key("x")
+        app._handle_key(ESCAPE)
+        self.assertEqual(len(app.markers), 1)
+        with mock.patch.object(app.manager, "pause", return_value=True) as pause:
+            app._handle_key(" ")
+        pause.assert_called_once()
+
     def test_frozen_caption_distinguishes_new_samples_from_retention_loss(self) -> None:
         app = _app()
         sample_trees(app, [[make_process(100)]] * 3)
@@ -675,7 +730,7 @@ def growing_session_more(app: DashboardApp, samples: int = 5) -> None:
 class MonitorViewTests(ViewRenderingMixin, unittest.TestCase):
     VIEW_KEY = "5"
 
-    def test_shows_cadence_cost_coverage_and_missing_host_context(self) -> None:
+    def test_shows_cadence_cost_coverage_and_host_context(self) -> None:
         output = " ".join(self.rendered(120, 40).split())
         self.assertIn("MONITOR DIAGNOSTICS", output)
         self.assertIn("requested 500 ms", output)
@@ -683,7 +738,8 @@ class MonitorViewTests(ViewRenderingMixin, unittest.TestCase):
         self.assertIn("PID 7 access denied", output)
         self.assertIn("1 process unreadable (PID 7)", output)
         self.assertIn("handle types unavailable", output)
-        self.assertIn("not collected", output)
+        self.assertIn("HOST CONTEXT", output)
+        self.assertIn("not target usage or", output)
         self.assertIn("25 collected", output)
 
     def test_before_any_sample(self) -> None:
@@ -692,6 +748,40 @@ class MonitorViewTests(ViewRenderingMixin, unittest.TestCase):
         output = render_text(app)
         self.assert_fills(output, 80, 24)
         self.assertIn("none yet", output)
+
+    def test_host_values_match_report_and_remain_reachable_in_narrow_terminals(self) -> None:
+        from unittest import mock
+
+        from helpers import make_snapshot
+
+        from src.events import HostPressure, MonitorDiagnostics
+        from src.html_report import render_html_report
+
+        app = _app(80, 24, LEGACY)
+        host = HostPressure(1000, age_seconds=2, cpu_percent=0,
+                            available_memory_bytes=0, total_memory_bytes=MB, collection_ms=0.25)
+        app._accept_snapshot(replace(make_snapshot(timestamp=1002),
+                                     diagnostics=MonitorDiagnostics(500, host=host)))
+        app._handle_key("5")
+        app._handle_key("end")
+        with mock.patch("src.view_monitor.time.time", return_value=1002):
+            text = " ".join(render_text(app).split())
+        self.assertIn("0.0% of host capacity", text)
+        self.assertIn("0.0 B available physical", text)
+        self.assertIn("2.0s old at sample; 0.25 ms", text)
+        with mock.patch("src.view_monitor.time.time", return_value=7002):
+            rows_after_clock_step = dict(app._monitor_host_rows())
+        self.assertIn("2.0s old at sample", rows_after_clock_step["Age / cost"])
+        report = app.build_report()
+        self.assertEqual(report["session_facts"]["monitor"]["host_context"]["age_seconds"], 2)
+        document = render_html_report(report)
+        self.assertIn("0.0% of host capacity", document)
+        self.assertIn("2.0s old at final sample", document)
+        self.assertIn("0.25 ms pass", document)
+        app._diagnostics = MonitorDiagnostics(500, host=HostPressure(1000))
+        rows = dict(app._monitor_host_rows())
+        self.assertEqual(rows["CPU"], "n/a")
+        self.assertEqual(rows["Memory"], "n/a")
 
 
 if __name__ == "__main__":
