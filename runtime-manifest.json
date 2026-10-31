@@ -11,6 +11,7 @@
     "src/agent_command.py",
     "src/agent_jobs.py",
     "src/agent_service.py",
+    "src/agent_state.py",
     "src/agent_transport.py",
     "src/analysis.py",
     "src/api.py",
