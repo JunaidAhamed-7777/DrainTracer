@@ -87,6 +87,10 @@ values and process IDs vary by run.*
   severity, optional policies and absolute budgets, GitHub Actions
   annotations, and a job summary.
 
+Opt-in [local team storage](docs/team-access.md) adds project-scoped roles,
+revocable credentials, server-side report privacy, retention, controlled logical
+snapshots and explicitly client-computed comparison receipts.
+
 ## Get started
 
 You need **Windows 10/11 or Linux** and **Python 3.10+**. Windows examples
