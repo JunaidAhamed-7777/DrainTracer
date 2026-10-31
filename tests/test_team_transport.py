@@ -11,6 +11,7 @@ import unittest
 from pathlib import Path
 
 from src.team_transport import (
+    ALPN,
     MAX_FRAME,
     Endpoint,
     SharingError,
@@ -54,6 +55,7 @@ class TLSRoundTripTests(unittest.TestCase):
     def setUp(self):
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.minimum_version = ssl.TLSVersion.TLSv1_2
+        context.set_alpn_protocols([ALPN])
         context.load_cert_chain(FIXTURES / "cert.pem", FIXTURES / "key.pem")
         self.received = []
 

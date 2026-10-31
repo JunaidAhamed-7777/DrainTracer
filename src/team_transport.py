@@ -19,6 +19,7 @@ from urllib.parse import urlsplit
 MAX_FRAME = 16 * 1024 * 1024
 MAX_VALUES = 100_000
 MAX_DEPTH = 32
+ALPN = "draintracer-team/1"
 
 
 class SharingError(ValueError):
@@ -172,6 +173,7 @@ def client_context(cafile=None) -> ssl.SSLContext:
         context.load_verify_locations(cafile=str(cafile))
     # Never enable TLS session-key logging from ambient SSLKEYLOGFILE.
     context.keylog_filename = None
+    context.set_alpn_protocols([ALPN])
     return context
 
 
@@ -188,6 +190,8 @@ def request(endpoint: Endpoint, message: dict, *, cafile=None, timeout: float = 
         with socket.create_connection((endpoint.connect_ip, endpoint.port), timeout=_remaining(deadline)) as plain:
             plain.settimeout(_remaining(deadline))
             with context.wrap_socket(plain, server_hostname=endpoint.hostname) as connection:
+                if connection.selected_alpn_protocol() != ALPN:
+                    raise SharingError("certificate", "Server did not negotiate the team protocol")
                 connection.settimeout(_remaining(deadline))
                 connection.sendall(struct.pack("!I", len(raw)) + raw)
                 return receive_frame(connection, deadline)
@@ -247,6 +251,8 @@ class SharingServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
         try:
             connection.settimeout(self.request_timeout)
             with self.context.wrap_socket(connection, server_side=True) as secured:
+                if secured.selected_alpn_protocol() != ALPN:
+                    return
                 super().process_request_thread(secured, address)
         except (OSError, ssl.SSLError):
             self.shutdown_request(connection)
