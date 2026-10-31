@@ -109,10 +109,17 @@ class NativeTransportTests(unittest.TestCase):
     def test_inherited_data_files_accept_only_verified_owner_and_privileged_principals(self) -> None:
         inherited = self.directory / "database.sqlite3"
         inherited.write_bytes(b"private database placeholder")
+        # Elevated tokens may default newly created files to an Administrators
+        # owner. This fixture specifically exercises a verified current-user
+        # owner with an inherited DACL; leave that DACL unchanged.
+        subprocess.run(["icacls", str(inherited), "/setowner", "*" + current_user_sid()],
+                       check=True, capture_output=True)
         verify_private_data_path(inherited)
         with tempfile.NamedTemporaryFile(dir=self.directory, delete=False) as temporary:
             temporary.write(b"private temporary or SQLite sidecar")
             protected = Path(temporary.name)
+        subprocess.run(["icacls", str(protected), "/setowner", "*" + current_user_sid()],
+                       check=True, capture_output=True)
         verify_private_data_path(protected)
         subprocess.run(["icacls", str(inherited), "/grant", "*S-1-1-0:(R)"], check=True, capture_output=True)
         with self.assertRaisesRegex(AgentTransportError, "another principal"):
