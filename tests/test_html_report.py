@@ -59,6 +59,15 @@ def _data_block(document: str) -> str:
 
 
 class RenderTests(unittest.TestCase):
+    def test_incomplete_workflow_qualifies_banner_without_erasing_signal_evidence(self) -> None:
+        for state, label in (("failed", "WORKLOAD FAILED"), ("interrupted", "WORKLOAD INTERRUPTED"),
+                             ("running", "WORKLOAD INCOMPLETE"), ("future-state", "WORKLOAD INCOMPLETE")):
+            with self.subTest(state=state):
+                document = html.unescape(render_html_report(_report(outcome={"workload": {"state": state}})))
+                self.assertIn(f"<title>DrainTracer · worker.exe · {label}</title>", document)
+                self.assertIn("highest retained leak signal is HIGH", document)
+                self.assertIn("Resource measurements below describe only the evidence collected", document)
+
     def test_checkpoint_reports_never_present_a_complete_clear_verdict(self) -> None:
         for flags in ({"recovery": {"partial": True, "exact_through_cutoff": True,
                                      "final_outcome_confirmed": False}}, {"checkpoint": {"schema": 1}}):
@@ -92,6 +101,19 @@ class RenderTests(unittest.TestCase):
                 document = render_html_report(_report(event_counts=counts))
                 self.assertIn("Event retention counts unavailable for this report.", document)
                 self.assertIn("Launched worker.exe", document)
+    def test_evicted_timing_detail_still_qualifies_the_report_from_exact_counts(self) -> None:
+        report = _report(detection_ran=True, event_log=[], session_facts={"schema": 1,
+            "monitor": {"clock_adjustments": 1, "sampling_gaps": 2}})
+        report["snapshots"] = [snapshot_to_dict(make_snapshot(timestamp=1000 + index)) for index in range(3)]
+        document = html.unescape(render_html_report(report))
+        self.assertIn("<title>DrainTracer · worker.exe · EVIDENCE GAPS</title>", document)
+        self.assertIn("No leak signals in interrupted observations", document)
+        self.assertIn("Earlier judgments do not establish continuous observation", document)
+        self.assertIn("1 clock adjustment · 2 sampling gaps", document)
+        report["snapshots"] = _report()["snapshots"]
+        document = html.unescape(render_html_report(report))
+        self.assertIn("<title>DrainTracer · worker.exe · HIGH</title>", document)
+        self.assertIn("Earlier judgments do not establish continuous observation", document)
 
     def test_partial_coverage_qualifies_verdict_and_resource_cards(self) -> None:
         from helpers import make_denied

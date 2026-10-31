@@ -91,6 +91,20 @@
             "string",
             "null"
           ]
+        },
+        "clock_adjustments": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "sampling_gaps": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
         }
       }
     },
@@ -102,6 +116,19 @@
       "items": {
         "type": "string"
       }
+    },
+    "workload_state": {
+      "enum": [
+        null,
+        "not_started",
+        "starting",
+        "running",
+        "complete",
+        "failed",
+        "interrupted",
+        "monitor_error",
+        "startup_failed"
+      ]
     },
     "peaks": {
       "type": "object",

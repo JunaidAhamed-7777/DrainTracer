@@ -21,6 +21,7 @@ from .events import (
     RESOURCE_METRICS,
     DetectionCriteria,
     EvidenceState,
+    HostPressure,
     LeakAlert,
     LeakResource,
     LeakSeverity,
@@ -145,6 +146,8 @@ class _ResourceSeries:
         self.segment = None
 
     def add(self, timestamp: float, value: float, max_age_seconds: float) -> None:
+        if self.points and timestamp <= self.points[-1].timestamp:
+            self.points.clear()
         self.points.append(_SamplePoint(timestamp, value))
         cutoff = timestamp - max_age_seconds
         while self.points and self.points[0].timestamp < cutoff:
@@ -235,10 +238,17 @@ class LeakDetector:
         # handle classification, and the monitor's own CPU-time baseline.
         self._collect_starts: deque[float] = deque(maxlen=CADENCE_SAMPLES)
         self._failed_samples = 0
+        self._last_timing: tuple[float, float] | None = None
+        self._clock_adjustments = 0
+        self._sampling_gaps = 0
         self._classified_at: float | None = None
         self._classify_cost_ms: float | None = None
         self._self_process: psutil.Process | None = None
         self._self_cpu_baseline: tuple[float, float] | None = None
+        self._host_reading: HostPressure | None = None
+        self._host_sampled_at: float | None = None
+        self._host_cpu_primed = False
+        self._host_cpu_thread: int | None = None
 
         # Warm-up: sampling runs but leak heuristics wait until this much
         # active (unpaused) sampling time has passed.
@@ -333,6 +343,9 @@ class LeakDetector:
         while not self._stop_event.wait(max(0.0, next_tick - time.monotonic())):
             try:
                 if self._pause_event.is_set():
+                    if self._last_timing is not None:
+                        self._restart_temporal_windows()
+                    self._last_timing = None
                     # Paused time does not count toward the warm-up.
                     self._last_active_sample = None
                     # A pause is not a slow sample: restart the cadence.
@@ -431,7 +444,9 @@ class LeakDetector:
     def _collect_snapshot(self) -> MetricsSnapshot:
         now = time.time()
         started = time.perf_counter()
-        self._collect_starts.append(time.monotonic())
+        monotonic = time.monotonic()
+        timing = self._check_timing(now, monotonic)
+        self._collect_starts.append(monotonic)
         self.process_manager.refresh_process_tree()
         processes = self._sample_processes()
         lifecycle = self._process_history.observe(now, processes)
@@ -475,7 +490,7 @@ class LeakDetector:
             alerts=tuple(alerts),
             severity=severity,
             sample_interval_ms=self.sample_interval_ms,
-            metadata={"tracked_pids": sorted(self.process_manager.tracked_pids)},
+            metadata={"tracked_pids": sorted(self.process_manager.tracked_pids), **timing},
             handle_types=handle_types,
             warming_up=warming_up,
             coverage=coverage,
@@ -487,11 +502,41 @@ class LeakDetector:
             diagnostics=diagnostics,
         )
 
+    def _restart_temporal_windows(self) -> None:
+        for series in self._series().values():
+            series.interrupt()
+        self._handle_type_history.clear()
+        self._process_history.restart_windows()
+        self._last_windows = {}
+        self._last_active_sample = None
+
+    def _check_timing(self, now: float, monotonic: float) -> dict:
+        previous, self._last_timing = self._last_timing, (now, monotonic)
+        if previous is None:
+            return {}
+        wall_gap, sample_gap = now - previous[0], monotonic - previous[1]
+        # The clocks are read together. A backwards/non-advancing wall clock,
+        # or a step exceeding one second relative to monotonic time, changes
+        # the meaning of every wall-clock detection/attribution window.
+        adjusted = wall_gap <= 0 or sample_gap < 0 or abs(wall_gap - sample_gap) > 1.0
+        # Missing more than the shortest window's uncovered allowance cannot
+        # help fill it. Keep cadence diagnostics so the delay stays visible.
+        gap_limit = self.sample_interval_ms / 1000 + self.window_seconds[0] * (1 - MIN_WINDOW_COVERAGE)
+        gap = sample_gap > gap_limit
+        if not adjusted and not gap:
+            return {}
+        self._clock_adjustments += int(adjusted)
+        self._sampling_gaps += int(gap)
+        self._restart_temporal_windows()
+        return {"timing_reset": "clock_adjustment" if adjusted else "sampling_gap",
+                "sample_gap_seconds": max(0.0, sample_gap),
+                "clock_adjustment_seconds": wall_gap - sample_gap}
+
     def _diagnostics(self, collection_ms: float | None) -> MonitorDiagnostics:
         """The monitor's own cadence, cost and footprint for this snapshot.
 
-        Everything here is bookkeeping the detector already has, plus one
-        cheap read of its own process, so diagnostics never slow sampling.
+        Includes the monitor footprint and cached host context. Host queries
+        run at most once per five seconds and report their own collection cost.
         """
         starts = self._collect_starts
         interval = (
@@ -514,7 +559,47 @@ class LeakDetector:
             monitor_cpu_percent=cpu,
             monitor_rss_bytes=rss,
             monitor_private_bytes=private,
+            clock_adjustments=self._clock_adjustments,
+            sampling_gaps=self._sampling_gaps,
+            host=self._sample_host(refresh=collection_ms is not None),
         )
+
+    HOST_INTERVAL_SECONDS = 5.0
+
+    def _sample_host(self, *, refresh: bool = True) -> HostPressure | None:
+        """Bound host context collection to one nonblocking pass per five seconds."""
+        now = time.monotonic()
+        if refresh and (self._host_sampled_at is None or
+                        now - self._host_sampled_at >= self.HOST_INTERVAL_SECONDS):
+            started = time.perf_counter()
+            cpu = available = total = None
+            try:
+                value = float(psutil.cpu_percent(interval=None))
+                thread = threading.get_ident()
+                if (self._host_cpu_primed and self._host_cpu_thread == thread
+                        and math.isfinite(value) and 0 <= value <= 100):
+                    cpu = value
+                self._host_cpu_primed = True
+                self._host_cpu_thread = thread
+            except (psutil.Error, OSError, AttributeError, ValueError):
+                self._host_cpu_primed = False
+                self._host_cpu_thread = None
+            try:
+                memory = psutil.virtual_memory()
+                available, total = int(memory.available), int(memory.total)
+                if not 0 <= available <= total or total <= 0:
+                    available = total = None
+            except (psutil.Error, OSError, AttributeError, ValueError, OverflowError):
+                pass
+            self._host_reading = HostPressure(
+                sampled_at=time.time(), cpu_percent=cpu,
+                available_memory_bytes=available, total_memory_bytes=total,
+                collection_ms=max(0.0, (time.perf_counter() - started) * 1000),
+            )
+            self._host_sampled_at = now
+        if self._host_reading is None or self._host_sampled_at is None:
+            return None
+        return replace(self._host_reading, age_seconds=max(0.0, now - self._host_sampled_at))
 
     def _sample_self(self) -> tuple[float | None, int | None, int | None]:
         """DrainTracer's own CPU % of one core since the last call, RSS, and private bytes."""
