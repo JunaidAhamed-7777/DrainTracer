@@ -30,6 +30,7 @@
     "src/leak_detector.py",
     "src/main.py",
     "src/picker_input.py",
+    "src/preflight.py",
     "src/privacy.py",
     "src/process_history.py",
     "src/process_picker.py",

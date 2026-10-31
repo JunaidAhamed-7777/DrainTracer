@@ -291,6 +291,9 @@ Use the target's own file logging when needed. See the
 - `O` — open the latest HTML export.
 - `M` — add a numbered marker (`marker N`) to the event log, timeline, and report.
 - `?` / `H` — show help and active settings; arrows scroll it, `Esc` closes it.
+  Configured budgets appear with their units. The dashboard displays ceilings;
+  headless runs and report comparisons enforce them. CLI budget flags require
+  headless mode.
   While help is open, only scrolling, closing help, and view selection are active.
   Close it before using target controls, exporting, or quitting.
 
@@ -337,6 +340,36 @@ encodings. Startup artwork still comes from [TITLE.txt](TITLE.txt), with a
 readable fallback when it cannot be read as UTF-8 or displayed.
 
 ## Run a leak check in CI
+
+Use `draintracer doctor --target PATH` to validate the current settings and
+target/report paths before monitoring. It shows configuration origins and
+duration/permission problems without starting or controlling the target.
+Checkpoint paths and cadence include their origins; existing checkpoint
+destinations are blocked without creating directories or writer locks.
+`doctor --json` provides a structured diagnostic result. The output-directory
+check writes and removes a temporary probe in the nearest existing directory.
+See [Preflight](docs/preflight.md) for the command and initialization contracts.
+`draintracer init` previews a validated project configuration; add `--write`
+to create it. Existing files are always preserved, and the parent directory
+must already exist.
+
+Use `--no-color` to disable terminal colors in normal or headless runs, or
+`draintracer diff BEFORE.json AFTER.json --no-color` for comparisons. This
+overrides forced color; otherwise Rich follows its normal `NO_COLOR`,
+`FORCE_COLOR`, and terminal detection. Verdict words, unknown readings, and
+text emphasis remain available without relying on color.
+
+`--plain` uses static, unstyled headless text with no screen clearing or live
+redraws. `--quiet` also selects headless mode and suppresses the startup banner,
+routine events, and STAT lines; warnings, signals, errors, and the final summary
+remain visible. Both require `--target` or `--pid`; combine them if needed.
+Inspect progress and the final summary as text, use Ctrl+C or `--timeout` to
+finish, and open the automatically saved JSON/HTML reports. Launched targets
+are cleaned up; attached targets are released. Dashboard Space controls remain
+available in the ordinary interactive mode.
+For comparisons, `diff --plain` prints labeled text without panel borders;
+`diff --quiet` keeps the verdict, caveats, and budget checks. `--json` takes
+precedence over presentation flags and preserves literal report strings.
 
 From the source checkout, use the included stable workload:
 
