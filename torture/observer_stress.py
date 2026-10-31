@@ -212,11 +212,13 @@ def attached_shutdown(directory):
     # detach-only. Its owner cleans the same unreaped process afterward.
     child = subprocess.Popen([PYTHON, "-c", "import time; time.sleep(15)"],
                              stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    process = psutil.Process(child.pid)
-    created = process.create_time()
-    session = HeadlessRunner(None, attach_pid=child.pid, attach_create_time=created,
-                             console=Console(file=io.StringIO()), report_dir=directory)
+    session = None
     try:
+        process = psutil.Process(child.pid)
+        created = process.create_time()
+        session = HeadlessRunner(None, attach_pid=child.pid,
+                                 console=Console(file=io.StringIO()), report_dir=directory)
+        session.attach_create_time = created
         session.start()
         require(session.manager.pause(), "Explicit attached pause failed")
         require(wait_for(lambda: process.status() == psutil.STATUS_STOPPED), "Attached fixture was not suspended")
@@ -229,7 +231,7 @@ def attached_shutdown(directory):
                 "monitor_terminated_attached_target": False}
     finally:
         try:
-            if session.manager.has_tracked_processes:
+            if session is not None and session.manager.has_tracked_processes:
                 session.manager.detach()
         finally:
             child.kill()
