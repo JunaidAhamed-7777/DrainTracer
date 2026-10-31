@@ -530,11 +530,13 @@ def _user_markers_panel(payload: Mapping[str, Any]) -> str:
         return ""
     rows = [
         f'<tr data-t="{marker["t"]}" data-t1="{marker["t"]}">'
-        f'<td>+{format_clock(marker["t"])}</td><td>{_e(marker["label"])}</td></tr>'
+        '<td><button type="button" class="signal-zoom" '
+        f'aria-label="Zoom charts to marker {_e(marker["label"])} at +{format_clock(marker["t"])}">'
+        f'Zoom +{format_clock(marker["t"])}</button></td><td>{_e(marker["label"])}</td></tr>'
         for marker in markers
     ]
     return ('<section class="panel"><div class="panel-head"><h2>Named markers</h2>'
-            '<p class="hint">Timing annotations, not cause. Activate a row to inspect its interval.</p>'
+            '<p class="hint">Timing annotations, not cause. Use a marker\'s Zoom button to inspect its interval.</p>'
             '</div>' + _table(("Elapsed time", "Label"), rows) + '</section>')
 
 

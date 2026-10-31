@@ -186,6 +186,12 @@ class RenderTests(unittest.TestCase):
         self.assertIn("Named markers", document)
         self.assertIn(html.escape("[red]load " + HOSTILE, quote=True), document)
         self.assertIn('data-t="1.0" data-t1="1.0"', document)
+        panel = document.split("<h2>Named markers</h2>", 1)[1].split("</section>", 1)[0]
+        self.assertIn('type="button" class="signal-zoom"', panel)
+        self.assertIn('aria-label="Zoom charts to marker '
+                      + html.escape("[red]load " + HOSTILE, quote=True) + ' at +00:00:01"', panel)
+        self.assertIn(">Zoom +00:00:01</button>", panel)
+        self.assertNotIn("Activate a row", panel)
         report["markers"] = [{"timestamp": 1001, "label": "x" * 100, "index": i}
                              for i in range(510)]
         payload = chart_payload(report)
