@@ -43,7 +43,9 @@ truncating.
 strict repeated-run statistics. Report-sourced peak budgets must agree in all
 approved baseline runs; explicit `--budget-private`, `--budget-handles`, and
 `--budget-threads` replace only the supplied metrics. Unknown peaks and
-inconclusive overlapping ranges cannot pass a controlled check. An approved
+inconclusive overlapping ranges in any resource cannot pass a controlled
+check or promotion, even when another resource has a suppressed regression
+that dominates the descriptive headline. An approved
 baseline is a policy choice, not proof that a workload is free of leaks. The sole
 permitted informational caveat is the engine-generated `clean recipe platform
 basics` with no blocking verdict. It records omitted OS location values for an
