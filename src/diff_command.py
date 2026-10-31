@@ -41,6 +41,7 @@ from .report_diff import (
 )
 from .theme import ASCII_GLYPHS, PALETTE, Glyphs, plain_console, select_glyphs
 from .units import format_duration
+from .widgets import LegacySafe
 
 EXIT_OK = 0
 EXIT_REGRESSION = 1
@@ -175,9 +176,11 @@ def run_diff(argv: list[str], console: Console) -> int:
             soft_wrap=True,
         )
     elif args.plain or args.quiet:
-        console.print(_plain_comparison(comparison, quiet=args.quiet))
+        rendered = _plain_comparison(comparison, quiet=args.quiet)
+        console.print(LegacySafe(rendered, console.encoding) if LegacySafe.needed(console.encoding) else rendered)
     else:
-        console.print(render_comparison(comparison, select_glyphs(console), console.width))
+        rendered = render_comparison(comparison, select_glyphs(console), console.width)
+        console.print(LegacySafe(rendered, console.encoding) if LegacySafe.needed(console.encoding) else rendered)
     if comparison.blocked:
         return EXIT_NOT_COMPARABLE
     if comparison.over_budget:
@@ -213,6 +216,7 @@ def _plain_comparison(comparison: ReportComparison, *, quiet: bool = False) -> T
                 lines.append(f"{item.resource} growth per operation: {_per_operation_text(item, ASCII_GLYPHS)}")
         for kind, (before, after) in comparison.handle_type_growth.items():
             lines.append(f"Handle type {kind}: {amount('handles', before)} to {amount('handles', after)}")
+        lines.extend(_process_attribution_lines(comparison))
     lines.extend(f"Budget: {check.describe()}" for check in comparison.budgets)
     return Text("\n".join(lines))
 
@@ -282,6 +286,52 @@ def render_repeated_comparison(comparison: RepeatedComparison, *, plain: bool = 
 WIDE_COLUMNS = 125
 
 
+def _process_attribution_lines(comparison: ReportComparison) -> list[str]:
+    lines = ["Top retained process evidence: A and B are ranked independently; identities are not paired."]
+
+    def process_label(resource, row):
+        name = row["name"][:24]
+        return f"PID {row['pid']} {name} +{format_amount(resource, row['delta'])}"
+
+    for label, report in (("A", comparison.before), ("B", comparison.after)):
+        available = False
+        for resource, ranking in (report.summary.process_attribution or {}).items():
+            lifetime, alert = ranking["lifetime"], ranking["alert"]
+            if not lifetime["available"] and not alert["available"]:
+                continue
+            available = True
+            row = lifetime["rows"][0] if lifetime["rows"] else None
+            detail = process_label(resource, row) if row else "no positive retained change" if lifetime["available"] else "unavailable"
+            if row and row["exited"]:
+                detail += " (exited)"
+            lines.append(f"{label} {resource} lifetime first-to-last: {detail}; startup included.")
+            row = alert["rows"][0] if alert["rows"] else None
+            detail = process_label(resource, row) if row else "contributor unavailable"
+            if row:
+                detail += (" (new worker)" if row["new_process"] is True else " (existing worker)"
+                           if row["new_process"] is False else " (capacity flag unknown)")
+            if alert["available"]:
+                window = alert["window_seconds"]
+                interval = f"{window:g}s" if window is not None else "unknown interval"
+                lines.append(f"{label} {resource} recorded {alert['severity'].upper()} alert, {interval}: {detail}.")
+            else:
+                lines.append(f"{label} {resource} alert contribution: unavailable (no retained alert).")
+            if lifetime["unknown_identity_rows"] or alert["unknown_identity_rows"]:
+                lines.append(f"{label} {resource}: some creation times are unknown; identity precision is limited.")
+            if lifetime["duplicate_identity_rows_omitted"] or alert["duplicate_identity_rows_omitted"]:
+                lines.append(f"{label} {resource}: duplicate identity rows were omitted.")
+            if lifetime["invalid_summaries"] or alert["invalid_contributors"]:
+                lines.append(f"{label} {resource}: unusable retained rows were skipped.")
+            if (lifetime["summaries_omitted"] or alert["snapshots_omitted"]
+                    or alert["alerts_omitted"] or alert["contributors_omitted"]):
+                lines.append(f"{label} {resource}: a bounded scan omitted retained detail; see --json counts.")
+        if not available:
+            lines.append(f"{label} process attribution: unavailable (not recorded or no usable retained detail).")
+    lines.append("Lifetime and alert intervals differ. Retained rankings may be incomplete and do not identify allocation causes.")
+    lines.append("--json includes up to five positive contributors per run, resource and scope, with scan limits and omissions.")
+    return lines
+
+
 def render_comparison(
     comparison: ReportComparison, glyphs: Glyphs, width: int = WIDE_COLUMNS
 ) -> RenderableType:
@@ -320,6 +370,8 @@ def render_comparison(
         parts.append(
             Text.assemble(("per operation  ", f"bold {PALETTE.muted}"), f" {sep} ".join(entries))
         )
+    parts.append(Text(""))
+    parts.append(Text("\n".join(_process_attribution_lines(comparison))))
     for check in comparison.budgets:
         mark, style = (glyphs.warn, PALETTE.danger) if check.exceeded else (glyphs.ok, PALETTE.ok)
         if not check.measured:

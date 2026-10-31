@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 import copy
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
-from helpers import make_snapshot
+from helpers import make_console, make_snapshot
+from test_report_diff import _run
 
 from src.analysis import PROCESS_SUMMARY_SCAN_LIMIT, process_attribution, summarize
+from src.diff_command import run_diff
 from src.events import ProcessSummary
 from src.report import process_summary_to_dict, snapshot_to_dict
+from src.report_diff import compare_reports, load_report
 
 
 def lifetime(pid=100, created=10.0, before=1, after=9, **changes):
@@ -82,6 +88,34 @@ class ProcessAttributionTests(unittest.TestCase):
         self.assertEqual(report, before)
         report["processes"]["live"][0]["name"] = "changed"
         self.assertEqual(summary.process_attribution["memory"]["lifetime"]["rows"][0]["name"], "worker")
+
+    def test_comparison_keeps_independent_sides_and_rankings_do_not_change_verdict(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = [Path(directory) / name for name in ("a.json", "b.json")]
+            for path, delta in zip(paths, (8, 20)):
+                path.write_text(json.dumps(_run(processes={"live": [lifetime(after=delta + 1)]})), encoding="utf-8")
+            comparison = compare_reports(*(load_report(path) for path in paths))
+            value = comparison.to_dict()
+            self.assertEqual(value["verdict"], "unchanged")
+            before = value["before"]["process_attribution"]["memory"]["lifetime"]["rows"][0]
+            after = value["after"]["process_attribution"]["memory"]["lifetime"]["rows"][0]
+            self.assertEqual((before["pid"], after["pid"], before["delta"], after["delta"]), (100, 100, 8, 20))
+            before["delta"] = 999
+            self.assertEqual(comparison.to_dict()["before"]["process_attribution"]["memory"]["lifetime"]["rows"][0]["delta"], 8)
+
+    def test_narrow_legacy_and_plain_output_keep_process_labels_literal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "report.json"
+            path.write_text(json.dumps(_run(processes={"live": [lifetime(name="[red]漢字🙂[/red]")]})), encoding="utf-8")
+            for width in (50, 80):
+                for flags in ([], ["--plain"]):
+                    console = make_console(width=width, encoding="cp437")
+                    self.assertEqual(run_diff([str(path), str(path), *flags], console), 0)
+                    output = console.file.getvalue()
+                    output.encode("cp437")
+                    self.assertIn("[red]", output)
+                    self.assertIn("ranked independently", " ".join(output.split()))
+                    self.assertTrue(all(len(line) <= width for line in output.splitlines()))
 
 
 if __name__ == "__main__":

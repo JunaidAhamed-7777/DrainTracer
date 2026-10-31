@@ -24,6 +24,7 @@ verdict with ``not comparable`` or ``insufficient coverage``.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -298,7 +299,7 @@ class ReportComparison:
                 "exact_facts": report.summary.exact,
                 "chart_stride": report.summary.chart_stride,
                 "experiment": _experiment_side(report.experiment),
-                "process_attribution": dict(report.summary.process_attribution or {}),
+                "process_attribution": deepcopy(report.summary.process_attribution or {}),
             }
 
         return {
