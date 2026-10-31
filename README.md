@@ -607,3 +607,14 @@ rollback, removal, privacy review, and command bounds.
 Agent removal and startup share a permanent private control fence. An interrupted
 removal blocks startup until an explicit removal retry validates and finishes
 it; reports, checkpoints, unrelated files, and the harmless fence file remain.
+
+`draintracer-ops` measures a disposable local operating reference with a named
+operator/contact. Its default local baseline exercises ingestion, committed
+durability, authority/permission/retention refusals, sanitized restoration and
+local collection; Windows also measures agent freshness, completed
+runs, cleanup and crash-prefix recovery. It writes bounded private readiness
+evidence with explicit counts and local budgets. See the
+[operating objectives and recovery runbook](docs/service-operations.md) for the
+new-workspace command, limits, explicit optional `--with-transport` TLS extension
+and deployment prerequisites. A passing fixture
+is not a hosted SLA, live deployment approval, human consent or pilot result.

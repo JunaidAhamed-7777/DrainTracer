@@ -94,3 +94,90 @@ never revive an old token or deleted evidence to improve apparent availability.
 An endpoint outage is recorded separately from a leak verdict and does not
 authorize another launch. Preserve partial evidence, diagnose locally and
 verify recovery before resuming clients.
+
+## Run the bounded reference exercise
+
+Install the current package and choose a **new** workspace.
+The command refuses every existing workspace, including an empty directory.
+It never accepts a live deployment store, modifies supplied key/certificate
+files, starts a remote target, or contacts a service outside loopback.
+
+```powershell
+draintracer-ops --workspace "$HOME\draintracer-ops-fixture" --operator "Named operator" --contact "Support contact"
+```
+
+The default baseline imports no network transport and needs no TLS files.
+Windows defaults to local authority, collection and agent exercises; Linux
+defaults to local authority and collection. Use
+`--components team` for a deliberately team-only reference. The agent case
+starts a distinct foreground process and owns every workload it launches.
+Use a controlled account and private/trusted ancestors, as for the agent
+itself. The fixture remains for local inspection; it contains private
+authority data and intentionally damaged/missing-authority
+examples. Keep it private and remove it only after inspecting the evidence.
+Do not upload the workspace as a support attachment.
+
+The command prints one JSON object with the private evidence path and
+`operating_prerequisites_met`; exit 0 means the requested disposable reference
+checks passed, and exit 2 means a failed check or unusable configuration.
+`operating-evidence.json` retains unsuccessful/partial probes without raw
+exceptions or credentials. Missing samples, restore evidence, requested
+components, operator/contact or passing budgets block the readiness result.
+A disk failure can prevent creating the artifact; the command then returns a
+fixed error instead of reporting success. Existing results are never replaced.
+
+Reference defaults can be declared explicitly through `--readiness-seconds`,
+`--freshness-seconds`, `--upload-seconds`, `--read-seconds`,
+`--cleanup-seconds` and `--sampled-rss-mib`. The evidence records the actual
+budgets, package/dependency versions, component scope and UTC exercise dates.
+Every duration budget is finite and at most 60 seconds; memory is capped at
+4 GiB. Resource samples run every 20 ms for at most two minutes, plus a final
+sample. CPU is observed process CPU seconds, not a machine-normalized CPU
+percentage. RSS remains a sampled lower bound.
+
+## What passing evidence establishes
+
+- Five authorized store reads have explicit success/attempt counts.
+  Expected role and expiry refusals are
+  separate probes, excluded from baseline availability numerators.
+- Direct sanitized report ingestion measures local upload/commit latency.
+  Reopening storage must preserve the committed bytes and their hash. A real
+  local monitor must complete with cleanup and readable JSON/HTML on both
+  supported platforms, independently of any sharing listener.
+- Windows measures two baseline accepted/completed runs: natural exit and
+  cancellation. Both require complete cleanup and readable JSON/HTML. A third
+  deliberately crashed run is separate from that completion-rate denominator;
+  its owned job must stop, and offline recovery must remain partial and
+  unconfirmed through the saved cutoff. Recovery never restarts the agent.
+- A damaged report payload must be detected, restored by a current admin,
+  and readable with the same hash/original expiry by two technical credentials.
+  A viewer cannot restore; a revoked cached actor stays revoked. Deletion
+  invalidates old snapshots/retries, stricter privacy invalidates an older
+  snapshot, and restore is audited. Report/snapshot retention uses an explicitly
+  stepped disposable clock; credential expiry uses actual elapsed time.
+- Missing/corrupt/future/unrelated authority fails closed. A missing current
+  database is never recreated by restore. An interrupted SQL transaction must
+  roll back and reopen under the exact retained authority.
+
+## Optional transport extension
+
+After the optional sharing transport is available, explicitly add
+`--with-transport --certificate PRIVATE_CERT --key PRIVATE_KEY --ca PRIVATE_CA`.
+The certificate must identify `localhost`; all supplied files remain private
+and unchanged. This extension lazily imports the sharing modules and starts
+only a disposable loopback listener. It adds actual TLS upload latency, three
+authorized TLS export probes, durable queue replay after a simulated lost
+acknowledgement, detected listener outage, local collection during that outage,
+and explicit listener restart/queue recovery. These additional observations
+become mandatory readiness gates only when the extension is selected.
+The TLS service runs in the driver process, so its CPU/RSS is included there.
+Transport fixture credential files remain private in the retained workspace.
+
+The output is recent local exercise evidence for the named operator to review.
+It does not establish the actual deployment's disk durability under power loss,
+off-host authority disaster recovery, long-term uptime, a staffed incident
+response, human consent or pilot completion. The operator must separately
+verify the live deployment's current configuration, owner/contact, private
+authoritative-state protection and this runbook before an external pilot.
+Do not carry a passing old fixture artifact forward as authorization to ignore
+a changed release, permission policy, expiry/deletion state or failed restore.
