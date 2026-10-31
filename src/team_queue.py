@@ -234,12 +234,16 @@ class UploadQueue:
                 try:
                     send = client.ingest_prepared if item["operation"] == "ingest" else client.create_record_prepared
                     result = send(base64.b64decode(item["payload"], validate=True), item["id"],
-                                  timeout=min(10, remaining, lifetime))
+                                  timeout=min(10, remaining, lifetime), deadline=deadline, expires_at=item["expires_at"])
                     object_id = result.get("report_id" if item["operation"] == "ingest" else "record_id")
                     if (not isinstance(object_id, str) or not _UUID.fullmatch(object_id)
                             or result.get("request_id") != item["id"]):
                         raise SharingError("invalid")
                 except (TeamError, SharingError) as error:
+                    if time.time() >= item["expires_at"]:
+                        self._expire_item(state, item)
+                        self._save(state)
+                        continue
                     code = error.code
                     item["last_error"] = code
                     item["state"] = "pending" if code in _RETRY and item["attempts"] < 20 else "blocked"

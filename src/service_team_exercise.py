@@ -68,8 +68,9 @@ def exercise_transport(store, admin, root: Path, certificate, key, ca, evidence:
             def __init__(self):
                 self.lost = False
 
-            def ingest_prepared(self, raw, request_id, *, timeout):
-                reply = writer.ingest_prepared(raw, request_id, timeout=timeout)
+            def ingest_prepared(self, raw, request_id, *, timeout, deadline=None, expires_at=None):
+                reply = writer.ingest_prepared(raw, request_id, timeout=timeout,
+                                               deadline=deadline, expires_at=expires_at)
                 if not self.lost:
                     self.lost = True
                     # Explicit synthetic acknowledgement loss AFTER an actual

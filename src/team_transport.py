@@ -105,17 +105,43 @@ def decode_message(raw: bytes) -> dict:
         raise SharingError("invalid") from error
 
 
-def _remaining(deadline: float) -> float:
+def _finite(value) -> bool:
+    try:
+        return type(value) in (int, float) and math.isfinite(value)
+    except OverflowError:
+        return False
+
+
+def request_deadline(timeout, *, deadline=None, expires_at=None) -> float:
+    """Keep one monotonic budget through preparation and every socket stage."""
+    if (not _finite(timeout) or not 0 < timeout <= 60
+            or deadline is not None and not _finite(deadline)
+            or expires_at is not None and not _finite(expires_at)):
+        raise SharingError("invalid")
+    bounded = time.monotonic() + timeout
+    if deadline is not None:
+        bounded = min(bounded, deadline)
+    # Convert the remaining persisted wall-clock TTL once to a monotonic
+    # ceiling, while retaining wall-clock checks for forward adjustments.
+    if expires_at is not None:
+        bounded = min(bounded, time.monotonic() + (expires_at - time.time()))
+    _remaining(bounded, expires_at=expires_at)
+    return bounded
+
+
+def _remaining(deadline: float, *, expires_at=None) -> float:
     remaining = deadline - time.monotonic()
+    if expires_at is not None:
+        remaining = min(remaining, expires_at - time.time())
     if remaining <= 0:
         raise SharingError("unavailable")
     return remaining
 
 
-def _receive(connection: socket.socket, count: int, deadline: float) -> bytes:
+def _receive(connection: socket.socket, count: int, deadline: float, *, expires_at=None) -> bytes:
     chunks = bytearray()
     while len(chunks) < count:
-        connection.settimeout(_remaining(deadline))
+        connection.settimeout(_remaining(deadline, expires_at=expires_at))
         part = connection.recv(min(65536, count - len(chunks)))
         if not part:
             raise SharingError("unavailable")
@@ -123,12 +149,12 @@ def _receive(connection: socket.socket, count: int, deadline: float) -> bytes:
     return bytes(chunks)
 
 
-def receive_frame(connection: socket.socket, deadline: float) -> dict:
-    size = struct.unpack("!I", _receive(connection, 4, deadline))[0]
+def receive_frame(connection: socket.socket, deadline: float, *, expires_at=None) -> dict:
+    size = struct.unpack("!I", _receive(connection, 4, deadline, expires_at=expires_at))[0]
     if not 1 <= size <= MAX_FRAME:
         raise SharingError("quota")
-    message = decode_message(_receive(connection, size, deadline))
-    _remaining(deadline)
+    message = decode_message(_receive(connection, size, deadline, expires_at=expires_at))
+    _remaining(deadline, expires_at=expires_at)
     return message
 
 
@@ -177,24 +203,25 @@ def client_context(cafile=None) -> ssl.SSLContext:
     return context
 
 
-def request(endpoint: Endpoint, message: dict, *, cafile=None, timeout: float = 10) -> dict:
-    if type(timeout) not in (int, float) or not math.isfinite(timeout) or not 0 < timeout <= 60:
-        raise SharingError("invalid")
+def request(endpoint: Endpoint, message: dict, *, cafile=None, timeout: float = 10,
+            deadline=None, expires_at=None) -> dict:
+    deadline = request_deadline(timeout, deadline=deadline, expires_at=expires_at)
     raw = encode_message(message)
+    _remaining(deadline, expires_at=expires_at)
     try:
         context = client_context(cafile)
     except (OSError, ssl.SSLError) as error:
         raise SharingError("certificate", "TLS trust configuration could not be loaded") from error
-    deadline = time.monotonic() + timeout
     try:
-        with socket.create_connection((endpoint.connect_ip, endpoint.port), timeout=_remaining(deadline)) as plain:
-            plain.settimeout(_remaining(deadline))
+        with socket.create_connection((endpoint.connect_ip, endpoint.port),
+                                      timeout=_remaining(deadline, expires_at=expires_at)) as plain:
+            plain.settimeout(_remaining(deadline, expires_at=expires_at))
             with context.wrap_socket(plain, server_hostname=endpoint.hostname) as connection:
                 if connection.selected_alpn_protocol() != ALPN:
                     raise SharingError("certificate", "Server did not negotiate the team protocol")
-                connection.settimeout(_remaining(deadline))
+                connection.settimeout(_remaining(deadline, expires_at=expires_at))
                 connection.sendall(struct.pack("!I", len(raw)) + raw)
-                return receive_frame(connection, deadline)
+                return receive_frame(connection, deadline, expires_at=expires_at)
     except ssl.SSLCertVerificationError as error:
         raise SharingError("certificate", "Server certificate or hostname verification failed") from error
     except (OSError, ssl.SSLError) as error:
@@ -227,7 +254,7 @@ class SharingServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     def __init__(self, address, context: ssl.SSLContext, dispatch: Callable[[dict], dict], *, timeout=10):
         host, port = address
         parsed = ipaddress.ip_address(host)
-        if type(timeout) not in (int, float) or not math.isfinite(timeout) or not 0 < timeout <= 60:
+        if not _finite(timeout) or not 0 < timeout <= 60:
             raise SharingError("invalid")
         if context.minimum_version < ssl.TLSVersion.TLSv1_2:
             raise SharingError("invalid", "TLS 1.2 or newer is required")

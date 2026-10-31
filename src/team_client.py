@@ -12,7 +12,13 @@ from .privacy import redact_report
 from .report_contract import parse_report
 from .team_models import TeamError
 from .team_security import read_credential_file
-from .team_transport import Endpoint, SharingError, decode_message, request
+from .team_transport import (
+    Endpoint,
+    SharingError,
+    decode_message,
+    request,
+    request_deadline,
+)
 
 MAX_UPLOAD = 8 * 1024 * 1024
 ERROR_CODES = {"unauthorized", "forbidden", "not_found", "invalid", "quota", "busy", "storage", "conflict",
@@ -60,7 +66,9 @@ class TeamClient:
     def project_id(self):
         return self._project_id
 
-    def call(self, operation: str, params: dict | None = None, *, timeout=None):
+    def call(self, operation: str, params: dict | None = None, *, timeout=None, deadline=None, expires_at=None):
+        timeout = self.timeout if timeout is None else timeout
+        deadline = request_deadline(timeout, deadline=deadline, expires_at=expires_at)
         credentials = read_credential_file(self.credential_file)
         if credentials["project_id"] != self._project_id:
             # A legitimate atomic credential rotation may race with a queued
@@ -69,7 +77,7 @@ class TeamClient:
         reply = request(self.endpoint, {"team_schema": 1, "project_id": credentials["project_id"],
                                        "token": credentials["token"], "operation": operation,
                                        "params": {} if params is None else params},
-                        cafile=_trusted_ca(self.cafile), timeout=self.timeout if timeout is None else timeout)
+                        cafile=_trusted_ca(self.cafile), timeout=timeout, deadline=deadline, expires_at=expires_at)
         if (set(reply) - {"team_schema", "ok", "result", "error"} or type(reply.get("team_schema")) is not int
                 or reply["team_schema"] != 1 or type(reply.get("ok")) is not bool):
             raise SharingError("invalid", "Server returned an unsupported response")
@@ -82,16 +90,21 @@ class TeamClient:
             raise SharingError("invalid", "Server returned an unsupported result")
         return reply["result"]
 
-    def ingest_prepared(self, raw: bytes, request_id: str, *, timeout=None):
+    def ingest_prepared(self, raw: bytes, request_id: str, *, timeout=None, deadline=None, expires_at=None):
+        timeout = self.timeout if timeout is None else timeout
+        deadline = request_deadline(timeout, deadline=deadline, expires_at=expires_at)
         if not isinstance(raw, bytes) or len(raw) > MAX_UPLOAD:
             raise SharingError("quota")
         return self.call("ingest", {"report": base64.b64encode(raw).decode("ascii"), "request_id": request_id},
-                         timeout=timeout)
+                         timeout=timeout, deadline=deadline, expires_at=expires_at)
 
-    def create_record_prepared(self, raw: bytes, request_id: str, *, timeout=None):
+    def create_record_prepared(self, raw: bytes, request_id: str, *, timeout=None, deadline=None, expires_at=None):
+        timeout = self.timeout if timeout is None else timeout
+        deadline = request_deadline(timeout, deadline=deadline, expires_at=expires_at)
         if not isinstance(raw, bytes) or len(raw) > 128 * 1024:
             raise SharingError("quota")
         params = decode_message(raw)
         if "request_id" in params:
             raise SharingError("invalid")
-        return self.call("create_record", {**params, "request_id": request_id}, timeout=timeout)
+        return self.call("create_record", {**params, "request_id": request_id},
+                         timeout=timeout, deadline=deadline, expires_at=expires_at)
