@@ -143,6 +143,43 @@ class DurableQueueTests(unittest.TestCase):
             self.assertEqual(len(self.queue.inspect()["entries"]), 1)
         self.assertEqual(secure_directory(self.queue_path), self.queue_path)
 
+    def test_later_entry_expiring_during_an_earlier_upload_never_reaches_network(self):
+        clock = [1000.0]
+        client = DeduplicatingClient()
+        ingest = client.ingest_prepared
+
+        def slow_first(raw, request_id, *, timeout):
+            self.assertLessEqual(timeout, 1)
+            clock[0] = 1002
+            return ingest(raw, request_id, timeout=timeout)
+
+        with mock.patch("src.team_queue.time.time", side_effect=lambda: clock[0]):
+            self.queue.enqueue(self.raw, ttl_seconds=1)
+            second = self.queue.enqueue(self.raw, ttl_seconds=1)
+            with mock.patch.object(client, "ingest_prepared", side_effect=slow_first):
+                result = self.queue.flush(client)
+            self.assertEqual(len(client.calls), 1)
+            self.assertEqual(result["expired"], 1)
+            self.assertEqual(result["pending"], 0)
+            self.assertIn({"id": second["id"], "state": "expired", "report_id": None}, result["history"])
+
+    def test_durable_save_exhausting_flush_deadline_does_not_start_a_network_call(self):
+        self.queue.enqueue(self.raw)
+        clock = [1000.0]
+        save = self.queue._save
+
+        def slow_save(state):
+            save(state)
+            clock[0] = 1002
+
+        client = DeduplicatingClient()
+        with (mock.patch("src.team_queue.time.monotonic", side_effect=lambda: clock[0]),
+              mock.patch.object(self.queue, "_save", side_effect=slow_save)):
+            result = self.queue.flush(client, deadline_seconds=1)
+        self.assertEqual(client.calls, [])
+        self.assertEqual(result["pending"], 1)
+        self.assertEqual(self.reopen().inspect()["entries"][0]["attempts"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

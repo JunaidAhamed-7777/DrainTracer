@@ -127,9 +127,12 @@ class UploadQueue:
     def _expire(self, state, now):
         for item in tuple(state["entries"]):
             if now >= item["expires_at"]:
-                state["entries"].remove(item)
-                state["expired"] += 1
-                self._history(state, item, "expired")
+                self._expire_item(state, item)
+
+    def _expire_item(self, state, item):
+        state["entries"].remove(item)
+        state["expired"] += 1
+        self._history(state, item, "expired")
 
     def enqueue(self, raw: bytes, *, profile="share", ttl_seconds=MAX_TTL):
         if not _number(ttl_seconds) or not 1 <= ttl_seconds <= MAX_TTL:
@@ -170,6 +173,10 @@ class UploadQueue:
             for item in tuple(state["entries"]):
                 if attempted >= limit or time.monotonic() >= deadline:
                     break
+                if time.time() >= item["expires_at"]:
+                    self._expire_item(state, item)
+                    self._save(state)
+                    continue
                 if item["state"] == "blocked" and not retry_blocked:
                     continue
                 if item["next_at"] > time.time() and not retry_blocked:
@@ -182,9 +189,17 @@ class UploadQueue:
                 # Persist intent before an uncertain network result; same UUID
                 # and identical prepared bytes survive process termination.
                 self._save(state)
+                lifetime = item["expires_at"] - time.time()
+                if lifetime <= 0:
+                    self._expire_item(state, item)
+                    self._save(state)
+                    continue
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
                 try:
                     result = client.ingest_prepared(base64.b64decode(item["report"], validate=True), item["id"],
-                                                    timeout=min(10, max(0.001, deadline - time.monotonic())))
+                                                    timeout=min(10, remaining, lifetime))
                     report_id = result.get("report_id")
                     if not isinstance(report_id, str) or not _UUID.fullmatch(report_id):
                         raise SharingError("invalid")
