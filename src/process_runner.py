@@ -95,7 +95,7 @@ def describe_pid(pid: int) -> str:
 # milliseconds later is a different one. Linux derives them from boot time
 # and clock ticks, but repeated reads still identify the same start tick;
 # a one-second tolerance could mistake a quickly reused PID for its owner.
-_SAME_START = 0.01 if sys.platform == "win32" else 0.001
+_SAME_START = 0.0 if sys.platform == "win32" else 0.001
 
 
 @dataclass(frozen=True)
