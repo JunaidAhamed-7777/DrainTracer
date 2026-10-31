@@ -8,6 +8,39 @@ label redaction is not whole-report sanitization. See
 [Privacy and safe sharing](privacy.md) and the [privacy policy](../PRIVACY.md)
 for storage, network behavior, retention, and deletion.
 
+## Compare repeated runs
+
+Supply independently collected reports on both sides:
+
+```powershell
+draintracer diff a1.json b1.json --before-run a2.json --before-run a3.json --after-run b2.json --after-run b3.json --json
+```
+
+Each group needs 2–20 reports. Paths and recorded report IDs must be distinct
+across both groups: the same run cannot supply either side's evidence twice.
+Legacy reports without IDs cannot prove independence; collect separate runs
+and preserve their original files. Ordinary source file sizes and canonical
+decoded JSON must each fit a combined 128 MiB; decoded size is checked as each
+report loads, including when a file changes after its initial size check.
+The ordinary per-report validation still applies. `--plain`, `--quiet`,
+`--no-color`, and complete `--json` output also apply to repeated comparisons.
+Repeated mode always checks strict comparability for every within-group
+and across-group pair. Every caveat retains its run labels, such as A2/B3, and
+blocks a strict claim when the ordinary comparison engine would block it.
+
+For each resource, JSON and terminal output show median and observed minimum and
+maximum drift (bytes or counts per second in JSON) and whole-run peaks. Improvement
+requires all after-run drift values below all before-run drift values beyond the
+existing resource noise band, or every after-run signal below every before-run
+signal. A new strongest after-run signal is a regression. Large median differences
+with overlapping ranges remain inconclusive. Mixed resource improvements and
+regressions remain mixed. Peaks describe usage; budgets apply to the largest peak
+across all after runs. Existing regression and budget exit flags still apply.
+
+These are observed ranges, not confidence intervals or calibrated probabilities.
+No detector thresholds change. The shared `compare_repeated_reports` engine is
+also the basis for controlled baseline checks, so those checks use the same rule.
+
 ## Export a session
 
 Press `E` in the dashboard to export the samples collected so far. Each
