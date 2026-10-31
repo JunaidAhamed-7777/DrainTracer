@@ -70,6 +70,9 @@ values and process IDs vary by run.*
   samples go stale; reports add coverage and the monitor's own CPU and memory.
   The Monitor view also shows host CPU and available physical memory, sampled
   every five seconds with age and cost. These are host context, not target usage.
+  [Measured component budgets](docs/host-budget-results.md) cover refresh and
+  cached-call costs on the recorded Windows/WSL environments; they do not imply
+  that the separate full observer soak passed every timing ceiling.
 - **Ask why.** Focused views rank growing processes, show each detection
   window's checks behind a verdict, annotate a timeline with your markers, and
   report monitor health, without pausing sampling.
