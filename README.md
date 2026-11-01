@@ -19,7 +19,7 @@ repeated-run approvals, reviewable audit history, report-sourced budgets and
 scoped expiring exceptions for reproducible regression checks.
 
 <p align="center">
-  <strong>Release series: v5.5.0</strong> ·
+  <strong>Release series: v5.6.0</strong> ·
   <a href="RELEASES.md">Current version and release notes</a>
 </p>
 
