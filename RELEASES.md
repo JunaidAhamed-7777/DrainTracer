@@ -1,9 +1,115 @@
-# Current version: v5.4.0
+# Current version: v5.5.0
 
-Published releases are listed newest first. The exact version here matches
-`DashboardApp.VERSION` in [src/dashboard.py](src/dashboard.py). The README
-shows the release series as `vMAJOR.MINOR.0`; for example, `v5.0.1` still
-belongs to series `v5.0.0`.
+Release records and development milestones are listed newest first. The
+current runtime version here matches `DashboardApp.VERSION` in
+[src/dashboard.py](src/dashboard.py). The README shows the release series
+as `vMAJOR.MINOR.0`; patch releases stay in that series. A prepared version
+entry alone does not establish publication: check its matching release tag
+and PyPI distribution.
+
+The v5.4.0 and v5.3.3 entries below record development candidates that were
+not separately published to PyPI. Their changes are included in v5.5.0.
+Historical entries and source-pinned measurements retain the versions under
+which they were prepared or collected.
+
+## v5.5.0 — 2026-11-01
+
+- Added Linux and WSL monitoring alongside Windows, including launch,
+  process attachment, recursive process tracking, terminal controls,
+  headless checks and offline JSON/HTML exports. Linux private memory is USS
+  and handles are open file descriptors; reports record those definitions,
+  and strict comparisons reject incompatible counters.
+- Hardened process identity and cleanup. Picker selections retain their
+  creation time, rejected descendants remain rejected, rate baselines restart
+  on identity changes, and controls refuse unreadable or changed identities.
+  Partial pause rollback retains owed resumes; ordinary detach preserves
+  attached applications and pre-existing stops.
+- Made incomplete evidence explicit across the dashboard, machine output,
+  HTML and comparisons. Unknown counters remain unknown, unjudged windows
+  remain collecting/inconclusive, and exact peaks, strongest signals and
+  event-eviction counts survive chart thinning or queue overflow. Structured
+  outcomes distinguish startup, target, measurement, monitor and cleanup
+  failures; optional policies require full coverage or conclusive evidence.
+- Added opt-in atomic checkpoints and qualified interrupted-run recovery.
+  Recovered prefixes state their cutoff and unconfirmed tail; recovery never
+  grants authority to restart or control a saved process identity. Dense
+  exports stay within the public reader's bounds while retaining exact facts.
+- Added safe setup diagnostics and configuration previews, explicit no-color,
+  plain and quiet output, visible configured budgets, process-scoped timeline
+  ranges and named markers, sampled host pressure with age, and a saved-report
+  comparison view that leaves monitoring running.
+- Made offline HTML evidence usable without chart interaction: semantic
+  evidence/sample tables, CSV downloads, labeled range and Zoom controls,
+  visible focus, text qualifications and tested light/dark contrast. Recorded
+  browser and accessibility-interface checks have explicit client and native
+  keyboard coverage limits.
+- Published bounded report and summary contracts with a standalone validator,
+  a supported typed Python session API with immutable snapshots and isolated
+  callbacks, and a redacted investigation summary with optional profiler
+  handoff guidance. Privacy profiles provide a local preview and apply the
+  same typed allowlist to JSON and HTML; transformed numerical evidence is
+  not guaranteed anonymous.
+- Added bounded workload recipes with explicit interpreter, working directory
+  and environment choices, readiness checks, exercise steps and separate
+  opt-in redacted log capture. Workload failures remain distinct from leak
+  signals. Secret selected/inherited environment values are never recorded;
+  their unknown equivalence blocks strict comparisons.
+- Added repeated-run comparisons and deliberate controlled-baseline approval,
+  with recorded actor/reason/source, per-resource overlap/unknown refusal,
+  resource budgets and scoped expiring exceptions. Missing provenance or
+  interrupted sampling cannot be waived into a pass. Process contribution
+  rankings remain independent for each run and describe positive growth,
+  including offsets from exits/decreases, rather than allocation cause.
+- Added an opt-in per-user foreground Windows agent with authenticated local
+  IPC, bounded admission, explicit capabilities, durable session recovery,
+  diagnostics, previewable support bundles and stopped-only removal.
+  It installs no unattended service account or network listener. Added local
+  private project storage with transactional roles, revocation, sanitized
+  ingestion, quotas, retention, deletion and authority-preserving logical
+  evidence restore; this local core exposes no hosted sharing endpoint.
+- Added technically checked install/measure/change/compare, separate-Python,
+  native/batch and dedicated disposable-service observation guides. Service
+  verification checks same-identity survival after detach and guarded fixture
+  cleanup. These command checks are separate from first-time user acceptance.
+- Expanded protected PR/release verification across Windows 2022/2025 and
+  Python 3.10/3.14 plus Linux, installed-wheel checks and bounded failure
+  artifacts. Added a pinned Windows workload action/template and an explicit
+  published-package verification mode with unchanged strict outcome and
+  artifact gates.
+
+Validation and remaining limits:
+
+- Recorded source-pinned calibration includes 72 repeated Windows/WSL
+  runs with benign startup/cache warnings and slow-growth HIGH-policy misses
+  preserved. The separate worker-policy study retains all 18 runs and keeps
+  aggregate severity; no detection thresholds were tuned to hide misses.
+- Observer reference/verification includes repeated tree sizes, failure drills
+  and one 30-minute 31-process soak per OS. Both verification sets retain
+  `budget_failures`: seven timing-ceiling breaches across five of twenty
+  cases. Functional evidence, reader bounds, identity/cleanup checks and the
+  declared CPU/RSS ceilings passed. An unexpected Windows thread-growth
+  signal remains recorded with its origin unknown. The separate host-call
+  component proof passed its frozen ceilings; it does not make the broader
+  T5 performance gate pass. See
+  [observer verification](docs/observer-verification-results.md) and
+  [host component results](docs/host-budget-results.md).
+- Historic measurements identify their actual v5.4.0 development source and
+  environment. They are not relabeled as v5.5.0 measurements or universal
+  throughput, accuracy or cleanup guarantees. Physical sleep/wake, forced
+  kernel PID reuse and a consented human pilot were not established.
+- The first-time contributor, human pilot, demand-led diagnostics,
+  notifications and broader deployment work remain open in issues
+  [#31](https://github.com/JunaidAhamed-7777/DrainTracer/issues/31),
+  [#49](https://github.com/JunaidAhamed-7777/DrainTracer/issues/49),
+  [#50](https://github.com/JunaidAhamed-7777/DrainTracer/issues/50),
+  [#51](https://github.com/JunaidAhamed-7777/DrainTracer/issues/51) and
+  [#53](https://github.com/JunaidAhamed-7777/DrainTracer/issues/53).
+  Synthetic operating exercises establish bounded local observations, not
+  participant consent, a production SLA or long-term service availability.
+- The maintained CI action's candidate-wheel example passed; its exact
+  v5.5.0 PyPI-install check is a post-publication gate. Keep
+  [#44](https://github.com/JunaidAhamed-7777/DrainTracer/issues/44) open until
+  that pinned published-package run and its retained evidence pass.
 
 ## v5.4.0 — 2026-10-29
 
