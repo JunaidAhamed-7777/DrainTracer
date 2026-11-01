@@ -692,7 +692,9 @@ local collection; Windows also measures agent freshness, completed
 runs, cleanup and crash-prefix recovery. It writes bounded private readiness
 evidence with explicit counts and local budgets. Credential and retention
 expiry drills use separate stepped fixture clocks; baseline timings use real
-clocks. See the
+clocks. Local collection uses its declared cleanup deadline and includes the
+existing bounded safety close in the measured duration; missed deadlines stay
+failed. See the
 [operating objectives and recovery runbook](docs/service-operations.md) for the
 new-workspace command, limits, explicit optional `--with-transport` TLS extension
 and deployment prerequisites. A passing fixture

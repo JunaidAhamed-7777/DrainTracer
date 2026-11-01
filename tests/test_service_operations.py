@@ -164,9 +164,10 @@ class OperatingEvidenceTests(unittest.TestCase):
             evidence = ExerciseEvidence(OperatingBudgets(readiness_seconds=10, cleanup_seconds=20))
             with ResourceSampler() as sampler:
                 sampler.add("driver", os.getpid())
-                self.assertTrue(exercise_agent(root, evidence, sampler))
+                completed = exercise_agent(root, evidence, sampler)
             evidence.resources = sampler.close()
             document = evidence.document()
+            self.assertTrue(completed, document)
             self.assertTrue(document["checks_passed"], document)
             self.assertEqual(document["rates"]["agent_completed_runs"],
                              {"successful": 2, "total": 2, "ratio": 1.0})

@@ -135,6 +135,15 @@ Every duration budget is finite and at most 60 seconds; memory is capped at
 sample. CPU is observed process CPU seconds, not a machine-normalized CPU
 percentage. RSS remains a sampled lower bound.
 
+The local monitor uses one cleanup deadline from startup through its wait,
+using the declared cleanup budget (20 seconds by default). Its existing
+10-second safety close still runs after a missed deadline to attempt owned
+cleanup. The recorded cleanup duration includes that close; a timeout cannot
+become a pass because cancellation later finishes. Startup consumes the same
+deadline, and unconfirmed cleanup remains a failure. The safety grace is not
+an extra acceptance budget or a hard bound on the entire command, which also
+includes fixture setup and other operating checks.
+
 ## What passing evidence establishes
 
 - Five authorized store reads have explicit success/attempt counts.
