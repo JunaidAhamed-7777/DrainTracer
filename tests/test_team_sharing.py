@@ -244,8 +244,12 @@ class SharedEvidenceTests(unittest.TestCase):
               Session.launch(str(script), options=SessionOptions(sample_interval_ms=100, windows_seconds=(1,),
                                                                 timeout_seconds=3, report_dir=self.root / "reports")) as session):
             result = session.wait(5)
+            self.assertIsNotNone(result, f"Local outage collection exceeded 5s: {session.status!r}")
+        self.assertEqual(result.reason, "target_exited")
         self.assertEqual(result.startup, "started")
         self.assertEqual(result.cleanup, "complete")
+        self.assertEqual(result.target_exit_code, 0)
+        self.assertFalse(result.errors)
         self.assertTrue(result.exports.json_path.is_file())
         self.assertTrue(result.exports.html_path.is_file())
         self.thread = self.start_listener()
