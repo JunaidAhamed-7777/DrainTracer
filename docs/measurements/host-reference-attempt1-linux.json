@@ -1,0 +1,12 @@
+{
+  "host_measurement_schema": 1,
+  "mode": "reference",
+  "state": "failed",
+  "runs": [],
+  "started_at": "2026-10-31T15:02:41.056944+00:00",
+  "samples_per_replicate": 200,
+  "replicates": 3,
+  "interval_seconds": 5.0,
+  "error_type": "CalledProcessError",
+  "finished_at": "2026-10-31T15:02:41.073988+00:00"
+}

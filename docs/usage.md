@@ -205,6 +205,9 @@ identify which processes and transitions explain a change.
 - `S`: cycle the process table through tree, memory, handles, and CPU order.
 - `M`: add a numbered marker such as "opened document" timing to the event
   log, timeline, and report.
+- `N`: name a marker (up to 80 characters); Enter saves and Esc cancels.
+  Space inserts a space while editing the label; outside text entry it
+  continues to pause/resume the target.
 - `?` or `H`: show help and the active monitoring settings; the arrow and
   paging keys scroll it, and `Esc` closes it.
 - `Q`: end the session and clean up or detach according to its launch mode.
@@ -236,6 +239,12 @@ views never pauses sampling or changes the target.
   and restarts, pauses, unreadable processes, signal changes, the active
   window start, and markers. `F` freezes this view only; sampling, detection,
   and the target continue, and `TIMELINE FROZEN` stays visible.
+  `P` selects tree scope or the process selected in view 2, identified by PID
+  and start time. Process charts retain private bytes, handles and threads;
+  unavailable history stays unavailable. `R` cycles configured window lengths
+  or all retained points; `[` and `]` move a range earlier or later. The view
+  never reconstructs discarded points. Release freeze before switching scope.
+  Named markers also appear on HTML charts and in an accessible elapsed-time list.
 - `5` Monitor: requested and actual cadence, collection time, sample counts,
   dropped snapshots, unreadable processes, evidence and handle-type
   freshness, and DrainTracer's own CPU and memory. Host CPU and available
@@ -243,6 +252,13 @@ views never pauses sampling or changes the target.
   cost; these are host context rather than target usage. Unknown readings
   stay `n/a`, and CPU needs a second refresh to establish its baseline.
   Use arrows, paging keys, Home or End to reach all sections in a small terminal.
+- `6` Compare: press `B` to load a saved JSON baseline path, then Enter to
+  confirm or Esc to cancel. It shows strict comparability and caveats before
+  measured differences, using the same engine and renderer as `diff --strict`.
+  It includes drift, peaks, coverage, episodes and, when recorded on both sides,
+  per-operation values. File loading runs separately from the UI and sampler.
+  `R` refreshes the captured current session; scrolling uses arrows, paging,
+  Home and End. Failed loads retain the previous comparison.
 
 Pausing keeps the last totals and alert visible without adding trend
 samples. CPU is summed across the tree relative to one core, so it can
