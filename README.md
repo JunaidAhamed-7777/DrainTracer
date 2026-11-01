@@ -19,7 +19,7 @@ repeated-run approvals, reviewable audit history, report-sourced budgets and
 scoped expiring exceptions for reproducible regression checks.
 
 <p align="center">
-  <strong>Release series: v5.5.0</strong> ·
+  <strong>Release series: v5.6.0</strong> ·
   <a href="RELEASES.md">Current version and release notes</a>
 </p>
 
@@ -98,6 +98,10 @@ values and process IDs vary by run.*
 Opt-in [local team storage](docs/team-access.md) adds project-scoped roles,
 revocable credentials, server-side report privacy, retention, controlled logical
 snapshots and explicitly client-computed comparison receipts.
+The optional [sharing commands](docs/team-sharing.md) add an explicit foreground
+TLS listener, privacy preview, a bounded durable upload queue and role-scoped
+receipt retrieval. Starting ordinary monitoring never starts a listener or an
+upload; serving requires current passing local operating evidence.
 
 ## Get started
 

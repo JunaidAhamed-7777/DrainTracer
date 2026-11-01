@@ -113,6 +113,8 @@ def verify_distribution(wheel: Path) -> str:
         _require("--operator" in operations_help and "--workspace" in operations_help, "Operating CLI help is incomplete.")
         _run([str(python), str(Path(__file__).parent.resolve() / "installed_operating_probe.py")],
              cwd=cwd, environment=environment, timeout=120)
+        _run([str(python), str(Path(__file__).parent.resolve() / "installed_transport_operating_probe.py")],
+             cwd=cwd, environment=environment, timeout=120)
         _run([str(python), "-c", ("import sys; from draintracer.agent_command import AgentClient; "
               "assert 'draintracer.dashboard' not in sys.modules; "
               "assert 'draintracer.main' not in sys.modules")], cwd=cwd, environment=environment)

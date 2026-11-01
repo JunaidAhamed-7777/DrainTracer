@@ -1,4 +1,4 @@
-# Current version: v5.5.0
+# Current version: v5.6.0
 
 Release records and development milestones are listed newest first. The
 current runtime version here matches `DashboardApp.VERSION` in
@@ -11,6 +11,77 @@ The v5.4.0 and v5.3.3 entries below record development candidates that were
 not separately published to PyPI. Their changes are included in v5.5.0.
 Historical entries and source-pinned measurements retain the versions under
 which they were prepared or collected.
+
+## v5.6.0 — 2026-11-01
+
+- Added optional foreground sharing through `draintracer-share`: an explicit
+  TLS listener and client on an organization-controlled host. The listener
+  defaults to loopback; a network bind requires an explicit opt-in.
+  Certificate, hostname and protocol verification are mandatory; frames,
+  concurrent workers and socket I/O are bounded.
+- Kept project roles, revocation, retention and deletion under live authority.
+  Credentials come from private files, and each request rechecks the current
+  project and role. Reports are shared as JSON transformed by privacy profiles,
+  with local preview and a second server-side transformation. Uploaded HTML,
+  anonymous public links and remote target execution are not exposed.
+- Added a private offline queue with bounded storage, entry counts, expiry,
+  attempts and backoff. Stable request and payload identities deduplicate
+  retries, including a lost acknowledgement; changed payloads conflict, and
+  deletion does not permit resurrection. Outages leave collection, local
+  JSON/HTML export and process cleanup independent of sharing.
+- Added administrator approval of a validated controlled-baseline revision and
+  audit head, plus typed comparison receipts keyed to repository, commit and
+  workload. An operator and a separate viewer can retrieve the same stored
+  comparison. Receipts remain **client-computed**: private W4 checks run on the
+  controlled runner, and unknowns, budget breaches and scoped exceptions keep
+  their qualifications. The server does not attest to private measurements.
+- Pinned each client to its original project across credential rotation and
+  rechecked CA-file write authority, including trusted ancestors, before each
+  connection. A same-project rotation refreshes the secret; a different project
+  is refused before sending.
+- Carried the original flush deadline and entry expiry through credential and
+  trust reads, serialization, connection and credential transmission. Each
+  flush has a bounded network budget; synchronous local preparation and fsync
+  cannot be preempted, so it is not a hard whole-command time limit. A lost
+  reply remains uncertain until an explicit retry resolves it.
+- Required private passing operating evidence from the current version, no
+  older than seven days, before listener admission. It must include actual
+  TLS read/upload and queue-recovery observations plus a named operator and
+  support contact; local-only evidence cannot admit sharing. This is an
+  operator-controlled readiness gate, not signed measurement attestation.
+- Added reproducible archive, sdist, isolated-wheel and installed sharing
+  workflow helpers. Historical candidate runs and failed attempts retain
+  their original source/version identities; they do not substitute for new
+  current-version release evidence.
+
+The preceding v5.5.0 release was published by the
+[tagged workflow](https://github.com/JunaidAhamed-7777/DrainTracer/actions/runs/41300739840)
+from `7b6989ea83d1ab551b63faaaf7c07c7293ea846e`. Fresh official PyPI
+installations, CLI/API exports and unchanged default-budget operating checks
+passed on Windows and WSL. The actual
+[published-package example](https://github.com/JunaidAhamed-7777/DrainTracer/actions/runs/41301570764)
+installed exact 5.5.0 with empty candidate-wheel inputs: growth returned 1,
+steady returned 0, strict comparison was comparable/improved with memory
+resolved, and the deliberate short run returned 3. All three retained report
+sets recorded complete cleanup with zero remaining processes. This closed
+#44; the preceding entry's publication-time pending statement remains history.
+
+Release verification separates current-version source and installed-workflow
+checks from public distribution checks. Tag/PyPI publication, fresh official
+PyPI installations and the tagged maintained CI example are postpublication
+gates. Record their actual outcomes in the GitHub release notes and CI
+receipts after those results exist.
+
+See [sharing](docs/team-sharing.md), [team access](docs/team-access.md) and
+[operating procedures](docs/service-operations.md). This release provides an
+operator-run TLS listener. Managed hosting, a production SLA, private-source
+attestation and human-pilot acceptance are outside its scope. Technical
+credentials are not recruited participants or consent.
+The earlier candidate operating RSS refusal and later independent pass remain
+recorded without an identified cause. Known broader observer timing breaches
+remain recorded, and the broader
+performance and human/demand goals are unmet. Sharing does not convert those
+results into passes.
 
 ## v5.5.0 — 2026-11-01
 

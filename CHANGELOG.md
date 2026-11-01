@@ -8,6 +8,42 @@ follow Semantic Versioning once per published release, with major bumps
 reserved for the repository owner. See [RELEASES.md](RELEASES.md) for the
 current release and [AGENTS.md](AGENTS.md) for the release policy.
 
+## v5.6.0 — 2026-11-01
+
+### Added
+
+- Optional explicit foreground TLS sharing with project roles, revocation,
+  privacy-transformed JSON, history/export and an offline bounded retry queue.
+  Repeated requests with the same identity produce one logical record.
+- Controlled-baseline approvals and qualified **client-computed** comparison
+  receipts. Separate operator/viewer credentials read the same stored result;
+  private W4 checking stays on the controlled runner.
+- Current-version private operating evidence is required to admit a listener,
+  including transport read/upload and queue-recovery observations. Local
+  collection, export and cleanup remain independent of sharing outages.
+- Source-archive and installed-workflow proof helpers with retained failures,
+  package hashes and explicit source/version identities.
+
+### Fixed
+
+- Refused cross-project credential replacement before transmission while
+  allowing same-project secret rotation.
+- Revalidated custom CA write authority before each connection.
+- Preserved the original deadline/expiry through preparation and the
+  pre-connect/pre-credential boundaries; preparation cannot restart the budget.
+- Refused local-only readiness evidence at the sharing admission gate.
+
+### Verification
+
+Current-version source and installed-workflow checks are separate from
+verification of the public distribution. Matching-tag publication, fresh
+PyPI installations and the tagged CI example are postpublication gates;
+record actual outcomes in the GitHub release notes and CI receipts.
+
+Sharing adds no hosted SLA, source attestation or consented human-pilot claim.
+Recorded observer budget failures and broader roadmap limits remain explicit.
+See [RELEASES.md](RELEASES.md) for scope and evidence.
+
 ## v5.5.0 — 2026-11-01
 
 ### Added
