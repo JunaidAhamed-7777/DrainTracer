@@ -110,11 +110,14 @@ def settings_record(settings):
     names = (
         "sample_interval_ms", "windows", "warmup", "timeout", "fail_on",
         "fail_on_inconclusive", "fail_on_target_error", "require_full_coverage", "report_dir",
+        "checkpoint", "checkpoint_interval",
     )
     values = {name: getattr(settings, name) for name in names if hasattr(settings, name)}
     values["fail_on"] = settings.fail_on.value
     values["windows"] = list(settings.windows)
     values["report_dir"] = str(_resolved_path(settings.report_dir))
+    if settings.checkpoint is not None:
+        values["checkpoint"] = str(_resolved_path(settings.checkpoint))
     values["budgets"] = dict(settings.budgets)
     values["thresholds"] = {
         resource.value: {
@@ -184,6 +187,35 @@ def _target_access(target: str, arguments: list[str], checks):
         _check(checks, "target", "error", f"Target cannot be used: {error}")
 
 
+def _checkpoint_access(value: str | None, checks):
+    """Inspect checkpoint destinations without creating stores, folders or locks."""
+    if value is None:
+        _check(checks, "checkpoint", "ok", "Checkpoints are disabled.")
+        return
+    try:
+        path = _resolved_path(value)
+        try:
+            path.lstat()
+        except FileNotFoundError:
+            pass
+        else:
+            _check(checks, "checkpoint", "error",
+                   f"Checkpoint destination already exists: {path}. Choose a fresh path; use recover for saved evidence.")
+            return
+        nearest = path.parent
+        while not nearest.exists() and nearest.parent != nearest:
+            nearest = nearest.parent
+        if not nearest.is_dir():
+            raise OSError("an existing checkpoint parent is not a directory")
+        missing = path.parent != nearest
+        _check(checks, "checkpoint", "warning" if missing else "ok",
+               f"Checkpoint destination is new: {path}. "
+               + ("Its parent does not exist yet. " if missing else "")
+               + "No checkpoint directory or lock was created; write access is checked when monitoring starts.")
+    except (ValueError, OSError, RuntimeError) as error:
+        _check(checks, "checkpoint", "error", f"Checkpoint path cannot be used: {error}")
+
+
 def _pid_access(pid: int, checks):
     if pid == os.getpid():
         _check(checks, "pid", "error", "DrainTracer cannot attach to itself.")
@@ -233,6 +265,7 @@ def run_doctor(arguments, console, *, parser_factory, settings_resolver):
         for warning in settings.warnings():
             _check(checks, "duration", "warning", warning)
         _report_access(settings.report_dir, checks)
+        _checkpoint_access(settings.checkpoint, checks)
         if args.target is not None:
             forwarded = list(args.target_args or [])
             _target_access(args.target, forwarded[1:] if forwarded[:1] == ["--"] else forwarded, checks)

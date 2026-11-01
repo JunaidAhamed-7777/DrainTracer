@@ -34,6 +34,7 @@ from .events import (
 from .config import MonitorSettings
 from .handle_types import describe_type_growth
 from .keys import (
+    BACKSPACE,
     DOWN,
     END,
     ESCAPE,
@@ -48,6 +49,7 @@ from .report import DEFAULT_REPORT_DIR
 from .session import MonitorSession
 from .theme import PALETTE
 from .units import format_duration
+from .view_comparison import ComparisonViewMixin
 from .view_evidence import EvidenceViewMixin
 from .view_monitor import MonitorViewMixin
 from .view_processes import ProcessesViewMixin
@@ -67,6 +69,7 @@ VIEWS = {
     "3": ("evidence", "EVIDENCE", "EVID"),
     "4": ("timeline", "TIMELINE", "TIME"),
     "5": ("monitor", "MONITOR", "MON"),
+    "6": ("comparison", "COMPARE", "DIFF"),
 }
 VIEW_NAMES = tuple(name for name, _label, _short in VIEWS.values())
 # Lines the help panel scrolls per key; Home jumps back to the top.
@@ -74,7 +77,8 @@ HELP_SCROLL = {UP: -1, DOWN: 1, PAGE_UP: -10, PAGE_DOWN: 10, HOME: -10**6, END: 
 
 
 class DashboardApp(
-    ProcessesViewMixin, EvidenceViewMixin, TimelineViewMixin, MonitorViewMixin, MonitorSession
+    ProcessesViewMixin, EvidenceViewMixin, TimelineViewMixin, MonitorViewMixin,
+    ComparisonViewMixin, MonitorSession
 ):
     """Render a monitor session live in the terminal and handle its controls.
 
@@ -119,6 +123,7 @@ class DashboardApp(
         self._quit_requested = False
         self._loop_errors: set[str] = set()
         self._show_help = False
+        self._marker_draft: str | None = None
         self._help_offset = 0
         self._sort_mode = SORT_MODES[0]
         self._kill_armed_until = 0.0
@@ -128,6 +133,8 @@ class DashboardApp(
         self._init_processes_view()
         self._init_evidence_view()
         self._init_timeline_view()
+        self._init_monitor_view()
+        self._init_comparison_view()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -257,6 +264,21 @@ class DashboardApp(
             return
         key = normalize_key(key)
         normalized = key.lower()
+        if self._comparison_input_key(key):
+            return
+
+        if self._marker_draft is not None:
+            if key == ESCAPE:
+                self._marker_draft = None
+            elif key == "enter":
+                label, self._marker_draft = self._marker_draft.strip(), None
+                if label:
+                    self.add_marker(label)
+            elif key == BACKSPACE:
+                self._marker_draft = self._marker_draft[:-1]
+            elif len(key) == 1 and key.isprintable() and len(self._marker_draft) < 80:
+                self._marker_draft += key
+            return
 
         if self._show_help and key == ESCAPE:
             self._show_help = False
@@ -354,6 +376,8 @@ class DashboardApp(
         elif normalized == "m":
             # Works in every view; marks timing only, it does not touch the target.
             self.add_marker()
+        elif normalized == "n":
+            self._marker_draft = ""
         elif normalized == "q":
             self._quit_requested = True
             self._append_event("Quit requested", "info")
@@ -386,6 +410,7 @@ class DashboardApp(
         "evidence": "why a signal was or was not raised: each window's checks and values",
         "timeline": "one chart at a time with process, pause, signal and marker annotations",
         "monitor": "sampling cadence and cost, coverage, freshness, monitor footprint",
+        "comparison": "load a saved baseline and inspect strict comparability before differences",
     }
 
     def _render(self) -> RenderableType:
@@ -548,6 +573,7 @@ class DashboardApp(
             ),
             ("M", "Add a numbered marker to the event log, timeline and report "
                   "(marks timing, not cause)"),
+            ("N", "Name a marker (Enter saves; Esc cancels; up to 80 characters)"),
             ("? / H", "Show or hide this help; Esc closes it"),
             ("Q", quit_text),
         ):
@@ -733,6 +759,14 @@ class DashboardApp(
 
     def _render_footer(self) -> RenderableType:
         palette = self.palette
+        if self._marker_draft is not None:
+            room = max(1, self.console.size.width - 36)
+            return Text(f" MARKER {self._marker_draft[-room:]}_  ENTER save  ESC cancel",
+                        style=f"bold {palette.teal}", no_wrap=True, overflow="ellipsis")
+        if self._baseline_draft is not None:
+            room = max(1, self.console.size.width - 38)
+            return Text(f" BASELINE {self._baseline_draft[-room:]}_  ENTER load  ESC cancel",
+                        style=f"bold {palette.accent}", no_wrap=True, overflow="ellipsis")
         roomy = self.console.size.width >= 120
         keys = Text(no_wrap=True, overflow="ellipsis")
         quit_label = ("detach & quit" if roomy else "detach") if self.attached else "quit"

@@ -311,6 +311,16 @@ class EquivalenceTests(unittest.TestCase):
                 self.assertIn(f"windows {first!r}s vs {second!r}s", " | ".join(ordinary.warnings))
                 self.assertEqual(self._compare(before, after, strict=True).verdict, NOT_COMPARABLE)
 
+    def test_checkpoint_prefixes_are_qualified_even_with_complete_metric_coverage(self) -> None:
+        before = _run()
+        for metadata in ({"recovery": {"partial": True}}, {"checkpoint": {"schema": 1}}):
+            with self.subTest(metadata=metadata):
+                after = _run(**metadata)
+                ordinary = self._compare(before, after)
+                self.assertTrue(ordinary.qualified)
+                self.assertIn("recovered checkpoint", [item.kind for item in ordinary.caveats])
+                self.assertEqual(self._compare(before, after, strict=True).verdict, INSUFFICIENT_COVERAGE)
+
     def test_equivalent_numeric_windows_remain_comparable(self) -> None:
         before, after = _run(), _run()
         before["settings"]["windows_seconds"] = [60, 120]
@@ -423,6 +433,50 @@ class EquivalenceTests(unittest.TestCase):
         result = self._compare(_run(experiment=_experiment(args=())),
                                _run(experiment=_experiment(args=())), strict=True)
         self.assertEqual(result.caveats, ())
+
+class RecipeComparabilityTests(unittest.TestCase):
+    setUp = ComparisonTests.setUp
+    _load = ComparisonTests._load
+
+    @staticmethod
+    def recipe(**changes):
+        return {"schema": 1, "command": {"target": "worker.py", "interpreter": "python"},
+                "cwd": ".", "timeout_seconds": 60, "readiness": {"kind": "none"},
+                "exercise": [], "log_capture": {"enabled": False},
+                "environment": {"mode": "selected", "values_recorded": False},
+                "outcome": {"state": "complete"}} | changes
+
+    def test_equal_recipe_names_cannot_prove_equal_private_environment_values(self) -> None:
+        report = _run(workload=self.recipe())
+        result = compare_reports(self._load("a.json", report), self._load("b.json", report), strict=True)
+        self.assertEqual(result.verdict, NOT_COMPARABLE)
+        self.assertIn("intentionally unrecorded", " | ".join(result.warnings))
+
+    def test_missing_changed_and_failed_recipe_provenance_is_qualified(self) -> None:
+        for other in (None, self.recipe(cwd="elsewhere"), self.recipe(outcome={"state": "failed"})):
+            with self.subTest(other=other):
+                result = compare_reports(self._load("a.json", _run(workload=self.recipe())),
+                                         self._load("b.json", _run(workload=other)), strict=True)
+                self.assertTrue(result.blocked)
+                self.assertTrue(any(item.kind in {"recipe", "recipe outcome"} for item in result.caveats))
+
+    def test_explicit_clean_environment_can_compare_without_private_selected_values(self) -> None:
+        clean = {"mode": "selected", "selected": [], "platform_basics": [],
+                 "values_recorded": False, "values_compared": False}
+        report = _run(workload=self.recipe(environment=clean))
+        result = compare_reports(self._load("a.json", report), self._load("b.json", report), strict=True)
+        self.assertFalse(result.blocked)
+        self.assertEqual(result.caveats[0].kind, "clean recipe platform basics")
+        self.assertIsNone(result.caveats[0].blocks)
+        for environment in ({**clean, "mode": "inherit"}, {**clean, "selected": [{"name": "TOKEN", "source": "literal"}]},
+                            {**clean, "future": "unknown"}, {**clean, "platform_basics": ["PRIVATE_TOKEN"]},
+                            {**clean, "selected": None}, {**clean, "selected": ""}, {**clean, "selected": False},
+                            {**clean, "platform_basics": ["TEMP", "TEMP"]}):
+            with self.subTest(environment=environment):
+                report = _run(workload=self.recipe(environment=environment))
+                result = compare_reports(self._load("a.json", report), self._load("b.json", report), strict=True)
+                self.assertTrue(result.blocked)
+
 
 class PeakAndBudgetTests(unittest.TestCase):
     setUp = ComparisonTests.setUp

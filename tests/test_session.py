@@ -27,6 +27,19 @@ def _wait_for(predicate, timeout: float = 15.0) -> bool:
 
 
 class ReportExportTests(unittest.TestCase):
+    def test_html_interruption_is_recorded_in_saved_json_before_propagating(self) -> None:
+        import json
+
+        with tempfile.TemporaryDirectory() as temp:
+            session = _Session("worker.exe", console=make_console(), report_dir=temp)
+            with mock.patch("src.session.write_html_report", side_effect=KeyboardInterrupt), \
+                    self.assertRaises(KeyboardInterrupt):
+                session.export_log()
+            saved = json.loads(session._last_report.read_text(encoding="utf-8"))
+            self.assertIn("HTML report interrupted", saved["outcome"]["monitor_errors"])
+            self.assertEqual(saved["outcome"], session._last_report_data["outcome"])
+            self.assertIsNone(session._last_html_report)
+
     def test_html_failure_is_recorded_in_json_and_cached_report(self) -> None:
         import json
 
@@ -490,19 +503,26 @@ class SessionLifecycleTests(unittest.TestCase):
             str(self._script("import time\ntime.sleep(60)\n")), console=make_console()
         )
         calls: list[int] = []
+        timer = threading.Timer(5.0, setattr, args=(app, "_quit_requested", True))
 
         def broken_render():
             calls.append(1)
+            if len(calls) == 1:
+                # Bound render retries, not real process/telemetry startup.
+                timer.start()
             if len(calls) >= 3:
                 app._quit_requested = True
             raise ValueError("layout bug")
 
         # Broken from the very first frame.
         app._render = broken_render  # type: ignore[method-assign]
-        # Bound a failed retry loop without making redraw count depend on startup speed.
-        timer = threading.Timer(5.0, setattr, args=(app, "_quit_requested", True))
-        timer.start()
-        self.addCleanup(timer.cancel)
+
+        def cancel_timer():
+            timer.cancel()
+            if timer.ident is not None:
+                timer.join(1)
+
+        self.addCleanup(cancel_timer)
         with self.assertLogs("src.dashboard", "ERROR") as logs:
             self.assertEqual(app.run(), 0)
         self.assertEqual(len(logs.records), 1)  # the traceback, once

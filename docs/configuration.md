@@ -69,6 +69,12 @@ are rejected before a process is launched or attached.
   whole tree and no sample failed; default `false`. Unknown coverage fails
   this policy. Pauses are excluded, and detection judgement is controlled
   separately by `fail_on_inconclusive`. CLI: `--require-full-coverage`.
+- `checkpoint`: opt-in checkpoint file path, resolved relative to the config
+  file. Existing files are refused for a new session, even if they contain an
+  earlier checkpoint. CLI: `--checkpoint PATH`.
+- `checkpoint_interval`: duration from `"1s"` through `"1h"`, default `"30s"`.
+  It sets the cadence only; a `checkpoint` path is still required to enable
+  persistence. CLI: `--checkpoint-interval DURATION`.
 - `workload_id`, `build`, `note`: non-empty strings recorded in the report's
   `experiment` section for comparisons; secret-looking values are redacted.
   CLI: `--workload-id ID`, `--build LABEL`, `--note TEXT`.
@@ -133,6 +139,12 @@ smaller increase can produce a low signal below a critical reference.
 Changing them preserves the positive-slope, monotonicity, recovery, and
 window-coverage checks described in
 [working-principle.md](../working-principle.md).
+
+Use the [repeated calibration results](calibration-results.md) to understand
+tested duration and policy limits. The default HIGH policy missed the tested
+slow-memory growth within 75 seconds, while LOW also warned on benign cache
+filling. Keep matched growth and non-growth controls before choosing a
+workload profile; example profiles do not carry an accuracy guarantee.
 
 Durations accept numeric seconds or strings such as `"250ms"`, `"90s"`,
 `"5m"`, and `"1h30m"`. Memory amounts accept bytes or strings such as

@@ -78,15 +78,53 @@ help, and version-only commands stay free of update checks.
 
 ## Do's and Don'ts
 
+Offline HTML reports retain their existing instrument-panel layout. The
+canonical web palette and native controls live in leak_reports/frames/report.css
+and report.js; Python owns static semantic tables and summaries. Dark muted
+text is #8e97bf for contrast on tooltip surfaces. Light badge fills use
+#347b24 (clear), #946108 (low), #b2500d (medium), #d0324f (high), and
+#a3001f (critical) with white text. These web adjustments do not alter terminal
+theme tokens. Native number fields and Apply range provide a keyboard
+alternative to drag zoom; native details/table/CSV expose values without a
+pointer. Focus outlines, semantic labels, and text verdicts accompany color.
+Tables own horizontal scrolling; they never constrain page height.
+
 - Reuse shared keyboard input, palette, and Rich components.
 - Keep visible help adjacent to the controls it describes.
 - Confirm choices explicitly; arrow movement alone never launches or attaches.
 - Render UI on the main thread and keep monitoring independent of network work.
 - Verify keyboard cancellation, narrow widths, redirected input, and legacy output.
 
+The Monitor view is scrollable with Up/Down, Page Up/Down and Home/End, so all
+diagnostics remain reachable in narrow terminals. Host pressure is labeled as
+whole-host context, with unknown readings, sample age and collection cost.
+
+Named-marker input owns keyboard actions until Enter saves or Escape cancels.
+Space inserts label text only during that explicit input state; otherwise Space
+retains target pause/resume. Timeline scope uses the process inspector's selected
+PID and creation time. Range controls stay within bounded retained history; freezing
+captures the current scope and never stops sampling. HTML provides the same named
+annotations as visible chart labels and an escaped textual list.
+
+Compare is view 6. It uses the shared strict report-diff engine and renderer,
+with comparability and caveats above differences. Baseline path input owns keys
+until Enter or Escape; background loading never controls the target. Comparison
+results are captured on request, show their capture time, and refresh with R.
+The scrollable view preserves the previous result after a failed load.
+
+Repeated report comparisons display strict comparability and run-specific caveats
+before resource differences. They use medians with observed ranges, state the
+conservative decision rule, and preserve unknown values. Text remains readable
+without color and wraps at narrow terminal widths.
+
 Dashboard help owns keyboard input while open: scrolling, closing help, and view
 selection remain active. Its footer shows those actions only. Target controls and
 session actions require closing help first.
+
+Checkpoint and recovered reports show a partial-evidence verdict using the
+existing report badge, panel, and text styles. They name the saved prefix and
+unconfirmed tail, final outcome, and cleanup. A recovered recording never gets
+an unqualified full-session CLEAR verdict; recorded signal tiers remain visible.
 
 The shared Rich Console owns terminal color policy across normal, headless,
 and diff output. Explicit `--no-color` wins over forced color; absent that flag,
