@@ -594,6 +594,10 @@ an interruption. Earlier judged signals remain historical evidence.
 
 ## Documentation
 
+- [Maintained Windows CI action](docs/ci-workloads.md) — exact version installs,
+  bounded workload execution, strict comparison, and evidence after failures.
+  Its [published-package dispatch](docs/ci-workloads.md#verify-a-published-package)
+  verifies PyPI artifacts after the matching release tag and package exist.
 - [First result walkthrough](docs/first-result.md) — install, measure bounded
   growth, inspect coverage, change the workload, and compare exported reports.
 - [Python worker recipe](docs/python-worker.md) — monitor a worker's own
