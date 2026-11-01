@@ -10,6 +10,7 @@ import tempfile
 from pathlib import Path
 
 from draintracer.team_security import secure_directory
+from installed_probe_failure import retain_probe_failure
 
 
 def main():
@@ -28,16 +29,17 @@ def main():
                                  "--contact", "Local fixture only", "--with-transport", "--certificate", str(certificates / "cert.pem"),
                                  "--key", str(certificates / "key.pem"), "--ca", str(certificates / "cert.pem"),
                                  "--readiness-seconds", "10"], capture_output=True, text=True, timeout=100, check=False)
-        if result.returncode:
-            raise RuntimeError(f"Installed operating exercise failed: {result.stdout}{result.stderr}")
-        receipt = json.loads(result.stdout)
-        document = json.loads(Path(receipt["evidence"]).read_bytes())
-        if not receipt["operating_prerequisites_met"] or not all(document["readiness_gates"].values()):
-            raise RuntimeError("Installed operating exercise did not satisfy its declared checks")
-        if document["rates"]["tls_authorized_read_availability"]["successful"] != 3:
-            raise RuntimeError("Installed exercise did not perform actual TLS reads")
-        if os.name == "nt" and document["rates"]["agent_completed_runs"]["successful"] != 2:
-            raise RuntimeError("Installed exercise did not complete both native agent runs")
+        with retain_probe_failure(root, result):
+            if result.returncode:
+                raise RuntimeError(f"Installed operating exercise failed: {result.stdout}{result.stderr}")
+            receipt = json.loads(result.stdout)
+            document = json.loads(Path(receipt["evidence"]).read_bytes())
+            if not receipt["operating_prerequisites_met"] or not all(document["readiness_gates"].values()):
+                raise RuntimeError("Installed operating exercise did not satisfy its declared checks")
+            if document["rates"]["tls_authorized_read_availability"]["successful"] != 3:
+                raise RuntimeError("Installed exercise did not perform actual TLS reads")
+            if os.name == "nt" and document["rates"]["agent_completed_runs"]["successful"] != 2:
+                raise RuntimeError("Installed exercise did not complete both native agent runs")
         print(json.dumps({"operating_prerequisites_met": True, "components": document["components"],
                           "probe_count": len(document["probes"])}))
 
