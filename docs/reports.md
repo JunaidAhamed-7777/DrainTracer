@@ -8,6 +8,39 @@ label redaction is not whole-report sanitization. See
 [Privacy and safe sharing](privacy.md) and the [privacy policy](../PRIVACY.md)
 for storage, network behavior, retention, and deletion.
 
+## Compare repeated runs
+
+Supply independently collected reports on both sides:
+
+```powershell
+draintracer diff a1.json b1.json --before-run a2.json --before-run a3.json --after-run b2.json --after-run b3.json --json
+```
+
+Each group needs 2–20 reports. Paths and recorded report IDs must be distinct
+across both groups: the same run cannot supply either side's evidence twice.
+Legacy reports without IDs cannot prove independence; collect separate runs
+and preserve their original files. Ordinary source file sizes and canonical
+decoded JSON must each fit a combined 128 MiB; decoded size is checked as each
+report loads, including when a file changes after its initial size check.
+The ordinary per-report validation still applies. `--plain`, `--quiet`,
+`--no-color`, and complete `--json` output also apply to repeated comparisons.
+Repeated mode always checks strict comparability for every within-group
+and across-group pair. Every caveat retains its run labels, such as A2/B3, and
+blocks a strict claim when the ordinary comparison engine would block it.
+
+For each resource, JSON and terminal output show median and observed minimum and
+maximum drift (bytes or counts per second in JSON) and whole-run peaks. Improvement
+requires all after-run drift values below all before-run drift values beyond the
+existing resource noise band, or every after-run signal below every before-run
+signal. A new strongest after-run signal is a regression. Large median differences
+with overlapping ranges remain inconclusive. Mixed resource improvements and
+regressions remain mixed. Peaks describe usage; budgets apply to the largest peak
+across all after runs. Existing regression and budget exit flags still apply.
+
+These are observed ranges, not confidence intervals or calibrated probabilities.
+No detector thresholds change. The shared `compare_repeated_reports` engine is
+also the basis for controlled baseline checks, so those checks use the same rule.
+
 ## Export a session
 
 Press `E` in the dashboard to export the samples collected so far. Each
@@ -65,6 +98,12 @@ The report includes:
   Observed signal severity remains visible alongside coverage qualifications.
 - Memory, handles, handle categories, threads, and CPU charts. Hover for
   values, drag to zoom, and use legend entries to toggle series.
+- A collapsible retained-sample table and offline CSV download with elapsed
+  seconds, private/RSS bytes, handle/thread counts, and CPU percent. These
+  use the plotted retained arrays; `n/a` remains unknown, and thinned data
+  is explicitly qualified rather than presented as every observation.
+  Retained handle-category values use a second table and CSV at their own
+  classification cadence.
 - Markers where signals appeared or escalated, warm-up and pause bands,
   and the time the root exited.
 - Continuous signal episodes, events, and the final available process list.
@@ -83,6 +122,13 @@ interpreting a paused or failed sample as a measured zero.
 The HTML and JSON use the same report dictionary, so their exported samples
 agree. Handle classifications are less frequent than the main sampling
 interval and use their own timestamps.
+
+For keyboard access, enter elapsed seconds in From/To and activate Apply
+range; Escape resets. Each signal has a native Zoom button. Tables have
+named horizontal scroll regions and column headers, while the retained
+sample disclosure and CSV links use native browser controls. Verdict,
+coverage, units, and process evidence remain readable without chart
+interaction or JavaScript. See [accessibility verification](html-accessibility.md).
 
 ## Use the JSON data
 
@@ -186,11 +232,16 @@ every observed live counter was readable; it cannot prove continuous sampling
 through a gap. Check temporal counters alongside coverage before using a run
 as a regression baseline.
 
-The top-level `markers` list holds the markers added with `M` during a
-dashboard session: `index`, `label` (`marker N`), `timestamp`, `time`, and
+The top-level `markers` list holds the markers added with `M` or `N` during a
+dashboard session: `index`, `label` (`marker N` or an entered label), `timestamp`, `time`, and
 `elapsed_seconds` since monitoring started. Markers record when the user
 noted something; they do not establish cause. Reports without the field
 have no markers.
+HTML charts draw the same named timing annotations, and a separate marker
+table preserves their full labels and elapsed times without requiring hover.
+Activating a marker's Zoom button with Enter or Space inspects its interval. Marker labels are
+limited to 80 characters in the dashboard and chart payload; the payload retains
+at most 500 user markers independently of chart thinning.
 
 ### Startup and cleanup outcomes
 

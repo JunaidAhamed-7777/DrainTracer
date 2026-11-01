@@ -475,7 +475,7 @@ def connect(name: str, *, timeout: float = IO_TIMEOUT) -> Pipe:
             break
         error = ctypes.get_last_error()
         if error not in (2, 231) or time.monotonic() >= deadline:
-            raise AgentTransportError("local agent is unavailable or access was denied")
+            raise AgentTransportError("local agent is unavailable or access was denied") from ctypes.WinError(error)
         time.sleep(0.01)
     mode = wintypes.DWORD(1)  # byte mode, nonblocking
     if not kernel.SetNamedPipeHandleState(handle, ctypes.byref(mode), None, None):

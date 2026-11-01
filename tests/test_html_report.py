@@ -187,6 +187,82 @@ class RenderTests(unittest.TestCase):
         self.assertNotIn("n/a", rows[1])
         self.assertEqual(rows[2].count("n/a"), 6)
 
+    def test_named_markers_are_retained_bounded_and_escaped_for_charts_and_text(self) -> None:
+        from src.analysis import chart_payload
+
+        report = _report(markers=[{"timestamp": 1001, "label": "[red]load " + HOSTILE,
+                                  "index": 1}, {"timestamp": "bad", "label": "bad"}])
+        payload = chart_payload(report)
+        self.assertEqual(payload["user_markers"][0]["t"], 1)
+        self.assertEqual(len(payload["user_markers"]), 1)
+        document = render_html_report(report)
+        self.assertIn("Named markers", document)
+        self.assertIn(html.escape("[red]load " + HOSTILE, quote=True), document)
+        self.assertIn('data-t="1.0" data-t1="1.0"', document)
+        panel = document.split("<h2>Named markers</h2>", 1)[1].split("</section>", 1)[0]
+        self.assertIn('type="button" class="signal-zoom"', panel)
+        self.assertIn('aria-label="Zoom charts to marker '
+                      + html.escape("[red]load " + HOSTILE, quote=True) + ' at +00:00:01"', panel)
+        self.assertIn(">Zoom +00:00:01</button>", panel)
+        self.assertNotIn("Activate a row", panel)
+        report["markers"] = [{"timestamp": 1001, "label": "x" * 100, "index": i}
+                             for i in range(510)]
+        payload = chart_payload(report)
+        self.assertEqual(len(payload["user_markers"]), 500)
+        self.assertEqual(len(payload["user_markers"][0]["label"]), 80)
+
+    def test_offline_keyboard_and_table_semantics_are_explicit(self) -> None:
+        document = render_html_report(_report())
+        self.assertIn('<form id="range-controls" class="chart-range" novalidate hidden>', document)
+        self.assertIn('<label for="zoom-start">From (seconds)</label>', document)
+        self.assertIn('<label for="zoom-end">To (seconds)</label>', document)
+        self.assertIn('role="status" aria-live="polite"', document)
+        self.assertIn('class="signal-zoom" aria-label="Zoom charts to memory signal', document)
+        self.assertIn('class="table-scroll" tabindex="0" role="region" aria-label="Table:', document)
+        self.assertIn('<th scope="col"', document)
+
+    def test_handle_category_values_have_an_offline_equivalent_and_safe_csv_headers(self) -> None:
+        from urllib.parse import unquote
+
+        snapshots = [snapshot_to_dict(make_snapshot(timestamp=1000 + index)) for index in range(2)]
+        for index, sample in enumerate(snapshots):
+            sample["handle_types"] = {"file": 10 + index, "=SENSITIVE()": 1}
+        document = render_html_report(_report(snapshots=snapshots))
+        self.assertIn("Retained handle classifications", document)
+        self.assertIn("file (count)", document)
+        href = re.search(r'download="retained-handle-categories.csv" href="([^"]+)"', document).group(1)
+        content = unquote(href.split(",", 1)[1])
+        self.assertIn("'=SENSITIVE() (count)", content)
+        self.assertIn("0.000,10,1", content)
+
+    def test_retained_sample_table_and_csv_match_plotted_values_offline(self) -> None:
+        import csv
+        import io
+        from urllib.parse import unquote
+
+        from helpers import make_denied
+
+        snapshots = [snapshot_to_dict(make_snapshot(timestamp=1000, processes=(make_process(100),),
+                                                    measured_coverage=True)),
+                     snapshot_to_dict(make_snapshot(timestamp=1001, processes=(make_denied(100),),
+                                                    measured_coverage=True))]
+        document = render_html_report(_report(snapshots=snapshots, snapshot_stride=8))
+        panel = document.split('<details class="panel sample-data"', 1)[1].split("</details>", 1)[0]
+        self.assertIn("Retained chart sample values (2 rows)", panel)
+        self.assertIn("not a complete whole-run sample log", panel)
+        self.assertIn("1 in 8 observations", panel)
+        self.assertIn("Private bytes (bytes)", panel)
+        self.assertIn("Handles (count)", panel)
+        self.assertIn("n/a", panel)
+        href = re.search(r'href="(data:text/csv;charset=utf-8,[^"]+)"', panel).group(1)
+        rows = list(csv.reader(io.StringIO(unquote(href.split(",", 1)[1]))))
+        payload = json.loads(_data_block(document))
+        self.assertEqual(rows[0][0], "Elapsed (seconds)")
+        self.assertEqual(float(rows[1][1]), payload["series"]["private"][0])
+        self.assertEqual(rows[2][1:6], ["n/a"] * 5)
+        self.assertIsNone(payload["series"]["cpu"][1])
+        self.assertIn('<td class="num">10,485,760</td>', panel)
+
     def test_linux_counter_definitions_and_paths_render_on_either_platform(self) -> None:
         report = _report(target_path="/opt/worker\\name")
         report["experiment"] = {"environment": {
@@ -211,7 +287,8 @@ class RenderTests(unittest.TestCase):
         document = render_html_report(_report())
         self.assertIn("Memory · private bytes", document)
         self.assertIn("peak private 10.0 MB · RSS (working set) 10.0 MB", document)
-        self.assertIn("<th class=\"num\">Private</th><th class=\"num\">RSS (working set)</th>", document)
+        self.assertIn('<th scope="col" class="num">Private</th>'
+                      '<th scope="col" class="num">RSS (working set)</th>', document)
         self.assertIn('label: "RSS (working set)"', document)
 
     def test_experiment_provenance_renders_redacted(self) -> None:
