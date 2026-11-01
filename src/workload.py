@@ -430,8 +430,8 @@ class WorkloadRunner(HeadlessRunner):
                     if not stream.closed:
                         stream.close()
 
-    def build_report(self) -> dict:
-        report = super().build_report()
+    def build_report(self, *, snapshot_limit: int | None = None) -> dict:
+        report = super().build_report(snapshot_limit=snapshot_limit)
         report["outcome"]["workload"] = {"state": self.workflow["state"]}
         report["workload"] = self.recipe.provenance() | {
             "outcome": self.workflow, "logs": [log.record() for log in self._logs]}

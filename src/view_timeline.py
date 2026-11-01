@@ -25,7 +25,13 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from .events import RESOURCE_METRICS, LeakAlert, TimelineKind, TimelineMark
+from .events import (
+    RESOURCE_METRICS,
+    TRACKED_METRICS,
+    LeakAlert,
+    TimelineKind,
+    TimelineMark,
+)
 from .keys import BACKTAB, DOWN, END, HOME, LEFT, PAGE_DOWN, PAGE_UP, RIGHT, TAB, UP
 from .units import format_bytes, format_duration
 from .widgets import Sized
@@ -80,6 +86,7 @@ class FrozenTimeline:
     marks: tuple[TimelineMark, ...]
     alerts: tuple[LeakAlert, ...]
     sample_count: int
+    scope: str = "tree"
 
 
 def mark_symbol(mark: TimelineMark) -> str:
@@ -156,6 +163,10 @@ class TimelineViewMixin:
         self._timeline_metric = 0
         self._timeline_offset = 0
         self._timeline_frozen: FrozenTimeline | None = None
+        self._timeline_identity: tuple[int, float | None] | None = None
+        self._timeline_scope = "tree"
+        self._timeline_range: float | None = None
+        self._timeline_pan = 0.0
 
     @property
     def timeline_frozen(self) -> bool:
@@ -168,7 +179,32 @@ class TimelineViewMixin:
     def _timeline_key(self, key: str) -> bool:
         if key in (LEFT, RIGHT, TAB, BACKTAB):
             step = -1 if key in (LEFT, BACKTAB) else 1
-            self._timeline_metric = (self._timeline_metric + step) % len(TIMELINE_METRICS)
+            metrics = TRACKED_METRICS if self._timeline_identity is not None else TIMELINE_METRICS
+            self._timeline_metric = (self._timeline_metric + step) % len(metrics)
+            return True
+        if key.lower() == "p":
+            if self.timeline_frozen:
+                self._append_event("Release the frozen timeline before changing process scope", "info")
+            elif self._timeline_identity is not None:
+                self._timeline_identity, self._timeline_scope = None, "tree"
+            else:
+                row = self._selected_row(self._inspector_rows())
+                if row is not None and row.identity[1] is not None:
+                    self._timeline_identity = row.identity
+                    self._timeline_scope = f"PID {row.pid} {row.name}"
+                    self._timeline_metric %= len(TRACKED_METRICS)
+                else:
+                    self._append_event("Select a retained process with a known start time in view 2", "warn")
+            self._timeline_pan = 0.0
+            return True
+        if key.lower() == "r":
+            ranges = (None, *self.detector.window_seconds)
+            self._timeline_range = ranges[(ranges.index(self._timeline_range) + 1) % len(ranges)]
+            self._timeline_pan = 0.0
+            return True
+        if key in ("[", "]"):
+            step = self._timeline_range or self.detector.window_seconds[0]
+            self._timeline_pan = max(0.0, self._timeline_pan + (step if key == "[" else -step))
             return True
         if key.lower() == "f":
             self._toggle_freeze()
@@ -188,20 +224,25 @@ class TimelineViewMixin:
         snapshot = self.snapshot
         self._timeline_frozen = FrozenTimeline(
             frozen_at=time.time(),
-            history={key: tuple(series) for key, series in self._history.items()},
+            history=self._timeline_histories(),
             marks=self.timeline,
-            alerts=snapshot.alerts if snapshot is not None else (),
+            alerts=snapshot.alerts if snapshot is not None and self._timeline_identity is None else (),
             sample_count=self._sample_count,
+            scope=self._timeline_scope,
         )
         self._append_event("Timeline view frozen; sampling continues", "info")
 
     def _timeline_controls(self) -> list[tuple[str, str, str]]:
         palette, glyphs = self.palette, self.glyphs
         arrows = "<>" if glyphs.arrow == "->" else "←→"
+        if self.console.size.width < 100:
+            return [(arrows, "chart", palette.accent), ("F", "freeze", palette.warn),
+                    ("P/R/[]", "scope/range", palette.accent)]
         return [
             (arrows, "chart", palette.accent),
-            ("F", "unfreeze view" if self.timeline_frozen else "freeze view", palette.warn),
-            ("M", "marker", palette.teal),
+            ("F", "live" if self.timeline_frozen else "freeze", palette.warn),
+            ("N", "label", palette.teal),
+            ("P/R/[]", "scope/range", palette.accent),
             (f"{glyphs.up}{glyphs.down}", "events", palette.muted),
         ]
 
@@ -210,6 +251,9 @@ class TimelineViewMixin:
             ("Left/Right", "Chart private bytes, handles, threads, RSS, or CPU (Tab too)"),
             ("F", "Freeze or release this view only; sampling and the target continue"),
             ("M", "Add a numbered marker at the current time"),
+            ("N", "Enter a marker label; Enter saves, Esc cancels (80 characters)"),
+            ("P", "Tree/selected-process scope; choose the process in view 2 first"),
+            ("R / [ / ]", "Cycle retained range / move one range earlier / later"),
             ("Up/Down", "Scroll the annotations listed under the chart"),
         ]
 
@@ -218,6 +262,12 @@ class TimelineViewMixin:
         frozen = self._timeline_frozen
         metric = self.timeline_metric
         title = Text(f" TIMELINE  {_TITLES[metric]} ", style=f"bold {palette.accent}")
+        if self._timeline_identity is not None:
+            title.append(self._timeline_scope + " ")
+        if self._timeline_range is not None:
+            title.append(f" {format_duration(self._timeline_range)} range ")
+        if self._timeline_pan:
+            title.append(f" {format_duration(self._timeline_pan)} before latest ")
         if frozen is not None:
             new = self._sample_count - frozen.sample_count
             title.append(
@@ -241,17 +291,41 @@ class TimelineViewMixin:
         frozen = self._timeline_frozen
         metric = self.timeline_metric
         if frozen is not None:
-            return frozen.history.get(metric, ()), frozen.marks, frozen.alerts
+            points, marks, alerts = frozen.history.get(metric, ()), frozen.marks, frozen.alerts
+        else:
+            snapshot = self.snapshot
+            alerts = snapshot.alerts if snapshot is not None and self._timeline_identity is None else ()
+            points, marks = self._timeline_histories().get(metric, ()), self.timeline
+        if points and (self._timeline_range is not None or self._timeline_pan):
+            span = self._timeline_range or max(0.0, points[-1][0] - points[0][0])
+            end = max(points[0][0] + span, points[-1][0] - self._timeline_pan)
+            end = min(points[-1][0], end)
+            self._timeline_pan = max(0.0, points[-1][0] - end)
+            points = tuple(point for point in points if end - span <= point[0] <= end)
+        return points, marks, alerts
+
+    def _timeline_histories(self) -> dict[str, tuple[tuple[float, float], ...]]:
+        if self._timeline_identity is None:
+            return {key: tuple(series) for key, series in self._history.items()}
         snapshot = self.snapshot
-        alerts = snapshot.alerts if snapshot is not None else ()
-        return tuple(self._history[metric]), self.timeline, alerts
+        points = self.detector.process_history.points(self._timeline_identity)
+        until = snapshot.timestamp if snapshot is not None else float("inf")
+        return {
+            metric: tuple((stamp, values[metric]) for stamp, values in points
+                          if stamp <= until and metric in values)[-self.HISTORY_LIMIT:]
+            for metric in TRACKED_METRICS
+        }
 
     def _timeline_body(self, width: int, height: int | None) -> RenderableType:
         palette, glyphs = self.palette, self.glyphs
         points, marks, alerts = self._timeline_data()
         metric = self.timeline_metric
         if len(points) < 2:
-            return Text("Collecting samples for the timeline...", style=palette.muted)
+            if self._timeline_identity is None and self._timeline_range is None:
+                return Text("Collecting samples for the timeline...", style=palette.muted)
+            return Text("Unavailable or too little retained measured history in this scope/range. "
+                        "Press P for tree scope or R to change range; sampling continues.",
+                        style=palette.muted)
         height = height or 20
         start, end = points[0][0], points[-1][0]
         in_range = [mark for mark in marks if start <= mark.timestamp <= end]
@@ -332,6 +406,12 @@ class TimelineViewMixin:
     def _decimation_text(self, samples: int, span: float, per_column: float) -> Text:
         sep = f" {self.glyphs.sep} "
         text = f"{samples:,} samples over {format_duration(span)}"
+        if self._timeline_identity is not None or self._timeline_range is not None or self._timeline_pan:
+            text += f"{sep}selected retained range; older/unreadable history may be unavailable"
+            text += f"{sep}last {self.HISTORY_LIMIT} retained points at most; report charts may be thinned"
+            if per_column > 1.05:
+                text += f"{sep}~{per_column:.1f} samples per column, highest shown"
+            return Text(text, style=self.palette.muted)
         if per_column > 1.05:
             text += f"{sep}~{per_column:.1f} samples per column, highest shown"
         else:

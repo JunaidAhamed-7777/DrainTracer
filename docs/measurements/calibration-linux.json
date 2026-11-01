@@ -1,0 +1,6170 @@
+{
+  "calibration_schema": 1,
+  "kind": "preregistered_calibration",
+  "state": "complete",
+  "started_at": "2026-10-31T12:29:01.443863+00:00",
+  "source": {
+    "commit": "6d398f7c1e79e6a3608e03d0a7b31e5faccaf226",
+    "tracked_changes": false,
+    "runtime_version": "v5.4.0",
+    "sha256": {
+      "docs/calibration-protocol.md": "1120ce7ab9e521241a8160e384a8f7e8de02972c9b7985d0ac1186bb9b9d99e8",
+      "runtime-manifest.json": "4c8d2fd43497ea7ca29fefdbe2053e1bff77c91e1f657615e8fe36b3c8e711fd",
+      "src/__init__.py": "f296781197dde0d36fb259e57333770c553851dccfe502407d22673cc782b166",
+      "src/__main__.py": "628c0dd3319414fa7bec3f6ef166e3976837a92728fb224149ba8d328322e6fb",
+      "src/analysis.py": "d9bdbc4780d43034c9dcd9a5f3e6aefebd5526fdd3d9ca2b35e6bd3dcb0b9dd3",
+      "src/budgets.py": "888d53828fced19f79ce0dbe7718aebd715b32c49c38286b33edfbe41e79ce77",
+      "src/config.py": "78dcc362f3676375b0d97e557581d87d0e02f1854b80b284a3c1dffb7bae908b",
+      "src/dashboard.py": "e56550e7c93dc36fc20a46a1ac2806408e478e7f5403302d65b0134c806f3574",
+      "src/diff_command.py": "3bf0fbc675e7422a719ba2eaa37be8f54d85ba09d5a025ade90762683a970778",
+      "src/events.py": "680d36b1016221cd2992473b92738316532f560b95f3ab1333eac91a0508294b",
+      "src/experiment.py": "57786e70ddc1e72810cd5bc744c83e5444ae439059c7af0c133d3e37f386ceeb",
+      "src/file_picker.py": "914c42a2f804cf77d8994b8c4b673d153987ded397dfad673a20bebf17257715",
+      "src/handle_types.py": "38c04c62631275a1df2341f0f539d9e26601e0841d125fd8624720a741295ce8",
+      "src/headless.py": "65bc545624e68910ff78eff79296004cee7fec277ea340298bc8086a8d42ec96",
+      "src/history.py": "01dc99636e7d80c1b6ab033c6c097c3fad2606681c429a5c36ad947ecb0a64cb",
+      "src/html_report.py": "30f7870651d2aa458ff80afa183ce25c2051ae9ff50e42dff891ad7534862e3d",
+      "src/keys.py": "0080695a752ac875b17fcbda98da35c6b60bb10244104211fc53402bd586ba16",
+      "src/leak_detector.py": "ae2987c993896c2596a1821a10e0018f74c912a8518b04dbc54d5920594bd709",
+      "src/main.py": "f3b14854cf6f0615d17588cba417557a8c8b0bfe2d17c05487df4cdbc3ef5e78",
+      "src/picker_input.py": "5f96d4b9ac08711bafb8c7f50e2d03acdb943e632045afab912b0bc98f5b820c",
+      "src/preflight.py": "f67831087aa92b248d501d16cf1c28008b76a2dd716107391bc09a35a85988bb",
+      "src/process_history.py": "13bb64362b69265f44806bb77393d3e3b3008e367c96777d16dd0f96269fd5b3",
+      "src/process_picker.py": "47d34d1b37e695feda4d5ef0f3d5a640392c0b873d9ae15c585c3e83409e3cce",
+      "src/process_runner.py": "ee9c136992fffc9b3e588324f1381488fc4d7dd9a0c0e8b9d4eec7354ae92c81",
+      "src/process_table.py": "855ce860ada3114fe56e46b8824c0a39cd7376a40bbabf0c37212257257b313b",
+      "src/report.py": "a12d452ad7910a3ecbbdc170d8352612d846598a34c5b802469b3f7e95e5f73d",
+      "src/report_diff.py": "74fe24044f8aabb225d37a3cf440f2e47b0c2a7b6b9fe0128edeb29cfff2bbe8",
+      "src/resources.py": "e1c0890bdc64691a902f6c9718fcc24a964752751e249190dd42e55e149add83",
+      "src/running_processes.py": "55abd9fb182c73deed8662142c27128cd6e485a7a24184432d25bdd44a55824c",
+      "src/session.py": "753273c52a7a11af6174381f224dbbf5bf70f6ef300431c5fc7ec268876667ec",
+      "src/session_facts.py": "b341ca703d2b0a602b99f2a7099b9bd175f151f6eb21cb8b859f71d7003feb1d",
+      "src/startup.py": "249c233dc3337b5f372a9f5b05396bfe68589c36a8555d335330af8d748dd1df",
+      "src/stats.py": "3a9d0d339d5c2c263e42881286624965397d42f3016420f4e878ba0bb51b994e",
+      "src/theme.py": "771d7dc0e22fbc30c8cdfebe94178a5d65a0bd8a535ba9e72c3d9608a4030356",
+      "src/units.py": "ff736bb33d7c28c6c4a65d580881a2a2d8e4dc0beae2e95f5530091be1b0765d",
+      "src/updates.py": "8daebbb1d667b24afaf7f94d671cb9cb448140419a0bb956cc8b877372c0a212",
+      "src/view_evidence.py": "aa05775a9e6d54f2f0ff0a7e62412b3ad48466202f2bfe6f0fa22d4f18db8d66",
+      "src/view_monitor.py": "5898b714a2cbdec698a21fe7ee690ed7c7a54d5a6c74a001b8845b24e9e5b869",
+      "src/view_processes.py": "0efabcfc4aa779f5f563c89d5701f911398d53c565186e22dae032715e0a724d",
+      "src/view_timeline.py": "3d58ddc8a464751203070a0c4532bd08f8349f1e45e7adc60a4ab21ff36bd6fd",
+      "src/widgets.py": "05a5c341a5aef1203523bfb6b20be1d563fd66bc84619b95aa95949e4b8bbfb1",
+      "torture/burst_recovery.py": "0e5e67bf8c3a406b413a9d04f244b22eff241bb5d7013ad615cd2025e6057e6e",
+      "torture/calibrate.py": "22f894215bb31958bf1c57c59766cfbdfbe18cc7a90544ce962b3729059689a0",
+      "torture/calibration_target.py": "a269e28f3c2f9e7ab8136006467e90ad29b87de0937923c0e597121ef8d979d2",
+      "torture/handle_leak.py": "626edd4c61541790320f23262d55e78d5a007fcabcbe7aee14a252dfa1220ba6",
+      "torture/memory_leak.py": "045959c4ad9560d56764fbe9155fe54beb099f00fe1e330e98669d3411d9e1c3",
+      "torture/parent_exits.py": "266c373b0a8334605da9d286a2ca97ad66da59f903d2a35fab00c193f63d0ab6",
+      "torture/process_tree.py": "b772a7116e99c164cdb98d7051d584a7d8803258f4f16b27bd7e0d8e9156b6e5",
+      "torture/socket_leak.py": "71236c9ed51343c585b02f5a303ad07cff919fa89d59764fc50b6a901f9cdcb8",
+      "torture/startup_spike.py": "13ed59f8d9d49f946b6c2bd58948bc9b9635d5cc7533a535c9e5006b3d3b3d5d",
+      "torture/steady.py": "dc1bdb64d5051b7350bd088d54e6b2eb1168c838a8a430f745f4b42e0f0f8172",
+      "torture/thread_leak.py": "538498a0470d6bf48f0e783b655564625d36c67828336dfb769b7897b044aab7",
+      "torture/verify_suite.py": "c108483bd5f9558e04545d1c8362d0a175e7185235b2d744e40794736d48f9ab"
+    }
+  },
+  "environment": {
+    "os": "Linux",
+    "release": "6.18.33.2-microsoft-standard-WSL2",
+    "version": "#1 SMP PREEMPT_DYNAMIC Thu Jun 18 21:54:43 UTC 2026",
+    "machine": "x86_64",
+    "python": "3.14.4",
+    "psutil": "7.2.2",
+    "rich": "15.0.0",
+    "logical_cpus": 16,
+    "physical_memory_bytes": 7977201664,
+    "available_memory_bytes_at_start": 7190278144,
+    "host_cpu_percent_at_start": 7.1,
+    "concurrent_windows_wsl": true
+  },
+  "settings": {
+    "interval_ms": 500,
+    "windows_seconds": [
+      10,
+      30,
+      60
+    ],
+    "duration_seconds": 75,
+    "repetitions": 3,
+    "thresholds": {
+      "memory": {
+        "critical_delta": 52428800,
+        "critical_slope": 5242880
+      },
+      "handles": {
+        "critical_delta": 500,
+        "critical_slope": 20
+      },
+      "threads": {
+        "critical_delta": 50,
+        "critical_slope": 2
+      }
+    }
+  },
+  "runs": [
+    {
+      "scenario": "stable",
+      "repeat": 1,
+      "purpose": "non-growth",
+      "intended_growth": null,
+      "injected_root_read_denial": false,
+      "fixture": "steady.py",
+      "target_arguments": [
+        "--memory-mb",
+        "8",
+        "--handles",
+        "4",
+        "--threads",
+        "2",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 3.0,
+      "exit_code": 0,
+      "duration_seconds": 75.0845,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.5068
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0068
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5067
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.5068
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0068
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5067
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.5068
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0068
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5067
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 25120768.0,
+        "vms_bytes": 182104064.0,
+        "private_bytes": 17092608.0,
+        "handles": 7.0,
+        "threads": 3.0,
+        "cpu_percent": 20.575265378509116,
+        "io_read_bytes_per_sec": 13909.922235192187,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 1,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 506.8
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 2.914,
+          "max": 31.995
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.33,
+          "max": 7.49
+        },
+        "monitor_rss_peak_bytes": 41512960,
+        "monitor_private_peak_bytes": 28491776,
+        "handle_classification_ms": {
+          "count": 34,
+          "mean": 0.128,
+          "max": 0.407
+        },
+        "handle_types_max_age_seconds": 2.0,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 2.9139,
+        "p95": 4.7865,
+        "max": 31.9954
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 55.5827,
+        "p95": 97.0237,
+        "max": 130.7037
+      },
+      "export_ms": 58.2472,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 6.2,
+        "available_memory_bytes": 7190560768
+      }
+    },
+    {
+      "scenario": "cache-plateau",
+      "repeat": 1,
+      "purpose": "benign retention",
+      "intended_growth": null,
+      "injected_root_read_denial": false,
+      "fixture": "calibration_target.py",
+      "target_arguments": [
+        "cache",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 0,
+      "exit_code": 0,
+      "duration_seconds": 75.0246,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "low",
+          "episodes": 3,
+          "first_signal_s": 8.5029,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 134,
+              "first_judged_s": 8.5029
+            },
+            "30": {
+              "judged_samples": 100,
+              "first_judged_s": 25.5029
+            },
+            "60": {
+              "judged_samples": 49,
+              "first_judged_s": 51.0029
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 134,
+              "first_judged_s": 8.5029
+            },
+            "30": {
+              "judged_samples": 100,
+              "first_judged_s": 25.5029
+            },
+            "60": {
+              "judged_samples": 49,
+              "first_judged_s": 51.0029
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 134,
+              "first_judged_s": 8.5029
+            },
+            "30": {
+              "judged_samples": 100,
+              "first_judged_s": 25.5029
+            },
+            "60": {
+              "judged_samples": 49,
+              "first_judged_s": 51.0029
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 41631744.0,
+        "vms_bytes": 47878144.0,
+        "private_bytes": 33591296.0,
+        "handles": 3.0,
+        "threads": 1.0,
+        "cpu_percent": 9.935392467665347,
+        "io_read_bytes_per_sec": 15487.355759321237,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 1,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 502.9
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 2.428,
+          "max": 3.984
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.11,
+          "max": 4.01
+        },
+        "monitor_rss_peak_bytes": 43802624,
+        "monitor_private_peak_bytes": 30523392,
+        "handle_classification_ms": {
+          "count": 34,
+          "mean": 0.08,
+          "max": 0.128
+        },
+        "handle_types_max_age_seconds": 2.0,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 2.4277,
+        "p95": 3.0432,
+        "max": 3.9836
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 49.397,
+        "p95": 98.1528,
+        "max": 103.2195
+      },
+      "export_ms": 51.9758,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 0.0,
+        "available_memory_bytes": 7319089152
+      }
+    },
+    {
+      "scenario": "startup",
+      "repeat": 1,
+      "purpose": "benign startup",
+      "intended_growth": null,
+      "injected_root_read_denial": false,
+      "fixture": "startup_spike.py",
+      "target_arguments": [
+        "--startup-seconds",
+        "2.5",
+        "--startup-mb",
+        "96",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 0,
+      "exit_code": 1,
+      "duration_seconds": 75.0196,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "critical",
+          "episodes": 3,
+          "first_signal_s": 8.5026,
+          "first_high_s": 8.5026,
+          "windows": {
+            "10": {
+              "judged_samples": 134,
+              "first_judged_s": 8.5026
+            },
+            "30": {
+              "judged_samples": 100,
+              "first_judged_s": 25.5027
+            },
+            "60": {
+              "judged_samples": 49,
+              "first_judged_s": 51.0027
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 134,
+              "first_judged_s": 8.5026
+            },
+            "30": {
+              "judged_samples": 100,
+              "first_judged_s": 25.5027
+            },
+            "60": {
+              "judged_samples": 49,
+              "first_judged_s": 51.0027
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 134,
+              "first_judged_s": 8.5026
+            },
+            "30": {
+              "judged_samples": 100,
+              "first_judged_s": 25.5027
+            },
+            "60": {
+              "judged_samples": 49,
+              "first_judged_s": 51.0027
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 116363264.0,
+        "vms_bytes": 123117568.0,
+        "private_bytes": 108298240.0,
+        "handles": 3.0,
+        "threads": 1.0,
+        "cpu_percent": 7.9489500147468055,
+        "io_read_bytes_per_sec": 11744.52570814994,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 1,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 502.6
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 2.974,
+          "max": 6.118
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.23,
+          "max": 4.01
+        },
+        "monitor_rss_peak_bytes": 43954176,
+        "monitor_private_peak_bytes": 30707712,
+        "handle_classification_ms": {
+          "count": 33,
+          "mean": 0.086,
+          "max": 0.181
+        },
+        "handle_types_max_age_seconds": 2.0,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 2.9739,
+        "p95": 3.6533,
+        "max": 6.1181
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 50.6478,
+        "p95": 99.3586,
+        "max": 104.207
+      },
+      "export_ms": 50.7952,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 0.6,
+        "available_memory_bytes": 7320547328
+      }
+    },
+    {
+      "scenario": "startup-warmup",
+      "repeat": 1,
+      "purpose": "non-growth after warm-up",
+      "intended_growth": null,
+      "injected_root_read_denial": false,
+      "fixture": "startup_spike.py",
+      "target_arguments": [
+        "--startup-seconds",
+        "2.5",
+        "--startup-mb",
+        "96",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 3.0,
+      "exit_code": 0,
+      "duration_seconds": 75.0063,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0034
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0034
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5034
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0034
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0034
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5034
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0034
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0034
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5034
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 116224000.0,
+        "vms_bytes": 123117568.0,
+        "private_bytes": 108347392.0,
+        "handles": 3.0,
+        "threads": 1.0,
+        "cpu_percent": 9.930644221864855,
+        "io_read_bytes_per_sec": 11738.242180674815,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 1,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 503.4
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 2.949,
+          "max": 3.662
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.16,
+          "max": 4.01
+        },
+        "monitor_rss_peak_bytes": 44068864,
+        "monitor_private_peak_bytes": 30810112,
+        "handle_classification_ms": {
+          "count": 34,
+          "mean": 0.076,
+          "max": 0.15
+        },
+        "handle_types_max_age_seconds": 2.0,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 2.9487,
+        "p95": 3.321,
+        "max": 3.6617
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 52.5553,
+        "p95": 98.3241,
+        "max": 103.8949
+      },
+      "export_ms": 46.1336,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 0.0,
+        "available_memory_bytes": 7327834112
+      }
+    },
+    {
+      "scenario": "recovery",
+      "repeat": 1,
+      "purpose": "recovering allocation",
+      "intended_growth": null,
+      "injected_root_read_denial": false,
+      "fixture": "calibration_target.py",
+      "target_arguments": [
+        "recovery",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 3.0,
+      "exit_code": 0,
+      "duration_seconds": 75.0057,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.5026
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5025
+            },
+            "60": {
+              "judged_samples": 43,
+              "first_judged_s": 54.0025
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.5026
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5025
+            },
+            "60": {
+              "judged_samples": 43,
+              "first_judged_s": 54.0025
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.5026
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5025
+            },
+            "60": {
+              "judged_samples": 43,
+              "first_judged_s": 54.0025
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 49938432.0,
+        "vms_bytes": 56172544.0,
+        "private_bytes": 41873408.0,
+        "handles": 3.0,
+        "threads": 1.0,
+        "cpu_percent": 7.948049766363888,
+        "io_read_bytes_per_sec": 15486.733027071867,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 1,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 502.5
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 2.17,
+          "max": 2.791
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.03,
+          "max": 4.01
+        },
+        "monitor_rss_peak_bytes": 43933696,
+        "monitor_private_peak_bytes": 30687232,
+        "handle_classification_ms": {
+          "count": 33,
+          "mean": 0.074,
+          "max": 0.101
+        },
+        "handle_types_max_age_seconds": 2.0,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 2.1698,
+        "p95": 2.6896,
+        "max": 2.7915
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 52.7142,
+        "p95": 98.6438,
+        "max": 103.0259
+      },
+      "export_ms": 44.3867,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 0.0,
+        "available_memory_bytes": 7330406400
+      }
+    },
+    {
+      "scenario": "worker-churn",
+      "repeat": 1,
+      "purpose": "bounded worker churn",
+      "intended_growth": null,
+      "injected_root_read_denial": false,
+      "fixture": "calibration_target.py",
+      "target_arguments": [
+        "churn",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 3.0,
+      "exit_code": 0,
+      "duration_seconds": 75.058,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.5029
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0029
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5029
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.5029
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0029
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5029
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.5029
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0029
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5029
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 26660864.0,
+        "vms_bytes": 39055360.0,
+        "private_bytes": 11501568.0,
+        "handles": 6.0,
+        "threads": 2.0,
+        "cpu_percent": 5.958621224862063,
+        "io_read_bytes_per_sec": 15480.50993371852,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 2,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 502.8
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 2.909,
+          "max": 5.547
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.31,
+          "max": 4.0
+        },
+        "monitor_rss_peak_bytes": 44347392,
+        "monitor_private_peak_bytes": 31092736,
+        "handle_classification_ms": {
+          "count": 33,
+          "mean": 0.114,
+          "max": 0.206
+        },
+        "handle_types_max_age_seconds": 2.0,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 2.9091,
+        "p95": 3.7219,
+        "max": 5.5473
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 48.6652,
+        "p95": 97.8214,
+        "max": 104.682
+      },
+      "export_ms": 61.8518,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 0.0,
+        "available_memory_bytes": 7298842624
+      }
+    },
+    {
+      "scenario": "fast-memory",
+      "repeat": 1,
+      "purpose": "known growth then cap",
+      "intended_growth": "memory",
+      "injected_root_read_denial": false,
+      "fixture": "memory_leak.py",
+      "target_arguments": [
+        "--chunk-mb",
+        "2",
+        "--interval",
+        "0.25",
+        "--max-mb",
+        "128",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 3.0,
+      "exit_code": 1,
+      "duration_seconds": 75.0237,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "high",
+          "episodes": 3,
+          "first_signal_s": 12.003,
+          "first_high_s": 12.003,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.003
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.003
+            },
+            "60": {
+              "judged_samples": 43,
+              "first_judged_s": 54.0029
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.003
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.003
+            },
+            "60": {
+              "judged_samples": 43,
+              "first_judged_s": 54.0029
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.003
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.003
+            },
+            "60": {
+              "judged_samples": 43,
+              "first_judged_s": 54.0029
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 150036480.0,
+        "vms_bytes": 156835840.0,
+        "private_bytes": 142036992.0,
+        "handles": 3.0,
+        "threads": 1.0,
+        "cpu_percent": 5.961582335345258,
+        "io_read_bytes_per_sec": 10730.86805656231,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 1,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 502.9
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 3.677,
+          "max": 9.393
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.36,
+          "max": 4.01
+        },
+        "monitor_rss_peak_bytes": 45191168,
+        "monitor_private_peak_bytes": 31928320,
+        "handle_classification_ms": {
+          "count": 34,
+          "mean": 0.09,
+          "max": 0.205
+        },
+        "handle_types_max_age_seconds": 2.001,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 3.6771,
+        "p95": 5.1509,
+        "max": 9.3927
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 50.7083,
+        "p95": 99.7719,
+        "max": 104.6762
+      },
+      "export_ms": 60.2997,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 0.0,
+        "available_memory_bytes": 7310761984
+      }
+    },
+    {
+      "scenario": "slow-memory",
+      "repeat": 1,
+      "purpose": "sustained known growth",
+      "intended_growth": "memory",
+      "injected_root_read_denial": false,
+      "fixture": "memory_leak.py",
+      "target_arguments": [
+        "--chunk-mb",
+        "0.25",
+        "--interval",
+        "0.5",
+        "--max-mb",
+        "48",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 3.0,
+      "exit_code": 0,
+      "duration_seconds": 75.0055,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "low",
+          "episodes": 1,
+          "first_signal_s": 54.5025,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0026
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0025
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5025
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0026
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0025
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5025
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0026
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0025
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5025
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 55365632.0,
+        "vms_bytes": 62291968.0,
+        "private_bytes": 47472640.0,
+        "handles": 3.0,
+        "threads": 1.0,
+        "cpu_percent": 7.955004062789685,
+        "io_read_bytes_per_sec": 3089904.806868737,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 1,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 502.5
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 2.348,
+          "max": 3.619
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.04,
+          "max": 4.0
+        },
+        "monitor_rss_peak_bytes": 45764608,
+        "monitor_private_peak_bytes": 32518144,
+        "handle_classification_ms": {
+          "count": 34,
+          "mean": 0.074,
+          "max": 0.099
+        },
+        "handle_types_max_age_seconds": 2.001,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 2.3477,
+        "p95": 2.9097,
+        "max": 3.6194
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 52.3808,
+        "p95": 98.4808,
+        "max": 103.1251
+      },
+      "export_ms": 43.6101,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 0.0,
+        "available_memory_bytes": 7322480640
+      }
+    },
+    {
+      "scenario": "handle-growth",
+      "repeat": 1,
+      "purpose": "known growth then cap",
+      "intended_growth": "handles",
+      "injected_root_read_denial": false,
+      "fixture": "handle_leak.py",
+      "target_arguments": [
+        "--handles-per-tick",
+        "10",
+        "--interval",
+        "0.25",
+        "--max-handles",
+        "800",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 3.0,
+      "exit_code": 1,
+      "duration_seconds": 75.0115,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.5026
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5026
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.503
+            }
+          }
+        },
+        "handles": {
+          "worst": "high",
+          "episodes": 3,
+          "first_signal_s": 11.5026,
+          "first_high_s": 11.5026,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.5026
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5026
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.503
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.5026
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5026
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.503
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 17162240.0,
+        "vms_bytes": 23752704.0,
+        "private_bytes": 9154560.0,
+        "handles": 803.0,
+        "threads": 1.0,
+        "cpu_percent": 5.969145570116439,
+        "io_read_bytes_per_sec": 933237.409401496,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 1,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 502.5
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 3.217,
+          "max": 9.458
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.23,
+          "max": 4.02
+        },
+        "monitor_rss_peak_bytes": 45772800,
+        "monitor_private_peak_bytes": 32501760,
+        "handle_classification_ms": {
+          "count": 33,
+          "mean": 2.938,
+          "max": 5.587
+        },
+        "handle_types_max_age_seconds": 2.0,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 3.2172,
+        "p95": 6.3051,
+        "max": 9.4583
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 51.2323,
+        "p95": 99.1256,
+        "max": 107.0216
+      },
+      "export_ms": 46.3295,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 0.0,
+        "available_memory_bytes": 7326134272
+      }
+    },
+    {
+      "scenario": "thread-growth",
+      "repeat": 1,
+      "purpose": "known growth then cap",
+      "intended_growth": "threads",
+      "injected_root_read_denial": false,
+      "fixture": "thread_leak.py",
+      "target_arguments": [
+        "--threads-per-tick",
+        "1",
+        "--interval",
+        "0.25",
+        "--max-threads",
+        "80",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 3.0,
+      "exit_code": 1,
+      "duration_seconds": 75.043,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.504
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0039
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5039
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.504
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0039
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5039
+            }
+          }
+        },
+        "threads": {
+          "worst": "high",
+          "episodes": 3,
+          "first_signal_s": 11.504,
+          "first_high_s": 11.504,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.504
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0039
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5039
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 17510400.0,
+        "vms_bytes": 6063841280.0,
+        "private_bytes": 9515008.0,
+        "handles": 3.0,
+        "threads": 81.0,
+        "cpu_percent": 5.956614486120985,
+        "io_read_bytes_per_sec": 151008.57923596303,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 1,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 503.9
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 2.78,
+          "max": 4.914
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.25,
+          "max": 4.01
+        },
+        "monitor_rss_peak_bytes": 45809664,
+        "monitor_private_peak_bytes": 32534528,
+        "handle_classification_ms": {
+          "count": 33,
+          "mean": 0.102,
+          "max": 0.162
+        },
+        "handle_types_max_age_seconds": 2.001,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 2.7805,
+        "p95": 4.376,
+        "max": 4.9139
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 48.3835,
+        "p95": 98.8399,
+        "max": 106.0164
+      },
+      "export_ms": 49.5854,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 0.0,
+        "available_memory_bytes": 7333810176
+      }
+    },
+    {
+      "scenario": "partial-access",
+      "repeat": 1,
+      "purpose": "injected root read denial",
+      "intended_growth": null,
+      "injected_root_read_denial": true,
+      "fixture": "process_tree.py",
+      "target_arguments": [
+        "--depth",
+        "1",
+        "--fanout",
+        "1",
+        "--memory-mb",
+        "1",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 3.0,
+      "exit_code": 0,
+      "duration_seconds": 75.0324,
+      "detection_ran": true,
+      "partial_coverage": true,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 151,
+            "unavailable_samples": 1
+          },
+          "handles": {
+            "partial_samples": 151,
+            "unavailable_samples": 1
+          },
+          "threads": {
+            "partial_samples": 151,
+            "unavailable_samples": 1
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0023
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5023
+            },
+            "60": {
+              "judged_samples": 43,
+              "first_judged_s": 54.0023
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0023
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5023
+            },
+            "60": {
+              "judged_samples": 43,
+              "first_judged_s": 54.0023
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0023
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5023
+            },
+            "60": {
+              "judged_samples": 43,
+              "first_judged_s": 54.0023
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 17707008.0,
+        "vms_bytes": 99311616.0,
+        "private_bytes": 9740288.0,
+        "handles": 3.0,
+        "threads": 2.0,
+        "cpu_percent": 2.0002969920957456,
+        "io_read_bytes_per_sec": 0.0,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 2,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 502.3
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 2.755,
+          "max": 5.296
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.24,
+          "max": 4.0
+        },
+        "monitor_rss_peak_bytes": 45813760,
+        "monitor_private_peak_bytes": 32550912,
+        "handle_classification_ms": {
+          "count": 34,
+          "mean": 0.091,
+          "max": 0.18
+        },
+        "handle_types_max_age_seconds": 2.0,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 2.7555,
+        "p95": 4.0489,
+        "max": 5.2962
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 48.5266,
+        "p95": 99.051,
+        "max": 105.2899
+      },
+      "export_ms": 53.0555,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 0.0,
+        "available_memory_bytes": 7331512320
+      }
+    },
+    {
+      "scenario": "larger-tree",
+      "repeat": 1,
+      "purpose": "stable fifteen-process tree",
+      "intended_growth": null,
+      "injected_root_read_denial": false,
+      "fixture": "process_tree.py",
+      "target_arguments": [
+        "--depth",
+        "3",
+        "--fanout",
+        "2",
+        "--memory-mb",
+        "1",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 3.0,
+      "exit_code": 0,
+      "duration_seconds": 75.0903,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.5026
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5026
+            },
+            "60": {
+              "judged_samples": 43,
+              "first_judged_s": 54.0027
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.5026
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5026
+            },
+            "60": {
+              "judged_samples": 43,
+              "first_judged_s": 54.0027
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.5026
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5026
+            },
+            "60": {
+              "judged_samples": 43,
+              "first_judged_s": 54.0027
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 266469376.0,
+        "vms_bytes": 1489674240.0,
+        "private_bytes": 146067456.0,
+        "handles": 45.0,
+        "threads": 30.0,
+        "cpu_percent": 5.787112211446323,
+        "io_read_bytes_per_sec": 20816.39911099201,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 15,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 502.6
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 13.497,
+          "max": 31.344
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 3.94,
+          "max": 8.03
+        },
+        "monitor_rss_peak_bytes": 45891584,
+        "monitor_private_peak_bytes": 32505856,
+        "handle_classification_ms": {
+          "count": 34,
+          "mean": 0.541,
+          "max": 0.965
+        },
+        "handle_types_max_age_seconds": 2.0,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 13.4969,
+        "p95": 21.3897,
+        "max": 31.3436
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 63.6734,
+        "p95": 109.6282,
+        "max": 117.3832
+      },
+      "export_ms": 62.188,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 4.9,
+        "available_memory_bytes": 7224422400
+      }
+    },
+    {
+      "scenario": "stable",
+      "repeat": 2,
+      "purpose": "non-growth",
+      "intended_growth": null,
+      "injected_root_read_denial": false,
+      "fixture": "steady.py",
+      "target_arguments": [
+        "--memory-mb",
+        "8",
+        "--handles",
+        "4",
+        "--threads",
+        "2",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 3.0,
+      "exit_code": 0,
+      "duration_seconds": 75.091,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0029
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0029
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5029
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0029
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0029
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5029
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0029
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0029
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5029
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 25153536.0,
+        "vms_bytes": 182104064.0,
+        "private_bytes": 17084416.0,
+        "handles": 7.0,
+        "threads": 3.0,
+        "cpu_percent": 7.950484873140634,
+        "io_read_bytes_per_sec": 14781.91605394505,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 1,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 502.9
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 2.306,
+          "max": 4.262
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.05,
+          "max": 4.01
+        },
+        "monitor_rss_peak_bytes": 48869376,
+        "monitor_private_peak_bytes": 35602432,
+        "handle_classification_ms": {
+          "count": 34,
+          "mean": 0.097,
+          "max": 0.166
+        },
+        "handle_types_max_age_seconds": 2.001,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 2.3057,
+        "p95": 2.8537,
+        "max": 4.262
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 49.5612,
+        "p95": 94.7981,
+        "max": 102.7904
+      },
+      "export_ms": 47.2708,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 0.0,
+        "available_memory_bytes": 7314829312
+      }
+    },
+    {
+      "scenario": "cache-plateau",
+      "repeat": 2,
+      "purpose": "benign retention",
+      "intended_growth": null,
+      "injected_root_read_denial": false,
+      "fixture": "calibration_target.py",
+      "target_arguments": [
+        "cache",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 0,
+      "exit_code": 0,
+      "duration_seconds": 75.0093,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "low",
+          "episodes": 3,
+          "first_signal_s": 8.5027,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 134,
+              "first_judged_s": 8.5027
+            },
+            "30": {
+              "judged_samples": 100,
+              "first_judged_s": 25.5027
+            },
+            "60": {
+              "judged_samples": 49,
+              "first_judged_s": 51.0027
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 134,
+              "first_judged_s": 8.5027
+            },
+            "30": {
+              "judged_samples": 100,
+              "first_judged_s": 25.5027
+            },
+            "60": {
+              "judged_samples": 49,
+              "first_judged_s": 51.0027
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 134,
+              "first_judged_s": 8.5027
+            },
+            "30": {
+              "judged_samples": 100,
+              "first_judged_s": 25.5027
+            },
+            "60": {
+              "judged_samples": 49,
+              "first_judged_s": 51.0027
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 41656320.0,
+        "vms_bytes": 47878144.0,
+        "private_bytes": 33579008.0,
+        "handles": 3.0,
+        "threads": 1.0,
+        "cpu_percent": 7.950704661116051,
+        "io_read_bytes_per_sec": 5582634.735981753,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 1,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 502.7
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 2.575,
+          "max": 9.727
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.15,
+          "max": 4.0
+        },
+        "monitor_rss_peak_bytes": 48873472,
+        "monitor_private_peak_bytes": 35622912,
+        "handle_classification_ms": {
+          "count": 34,
+          "mean": 0.085,
+          "max": 0.173
+        },
+        "handle_types_max_age_seconds": 2.0,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 2.5751,
+        "p95": 3.6404,
+        "max": 9.727
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 52.021,
+        "p95": 98.9187,
+        "max": 104.573
+      },
+      "export_ms": 1459.4877,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 1.9,
+        "available_memory_bytes": 7321079808
+      }
+    },
+    {
+      "scenario": "startup",
+      "repeat": 2,
+      "purpose": "benign startup",
+      "intended_growth": null,
+      "injected_root_read_denial": false,
+      "fixture": "startup_spike.py",
+      "target_arguments": [
+        "--startup-seconds",
+        "2.5",
+        "--startup-mb",
+        "96",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 0,
+      "exit_code": 1,
+      "duration_seconds": 75.0258,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "critical",
+          "episodes": 3,
+          "first_signal_s": 8.5046,
+          "first_high_s": 8.5046,
+          "windows": {
+            "10": {
+              "judged_samples": 134,
+              "first_judged_s": 8.5046
+            },
+            "30": {
+              "judged_samples": 100,
+              "first_judged_s": 25.5046
+            },
+            "60": {
+              "judged_samples": 49,
+              "first_judged_s": 51.0046
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 134,
+              "first_judged_s": 8.5046
+            },
+            "30": {
+              "judged_samples": 100,
+              "first_judged_s": 25.5046
+            },
+            "60": {
+              "judged_samples": 49,
+              "first_judged_s": 51.0046
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 134,
+              "first_judged_s": 8.5046
+            },
+            "30": {
+              "judged_samples": 100,
+              "first_judged_s": 25.5046
+            },
+            "60": {
+              "judged_samples": 49,
+              "first_judged_s": 51.0046
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 116318208.0,
+        "vms_bytes": 123117568.0,
+        "private_bytes": 108335104.0,
+        "handles": 3.0,
+        "threads": 1.0,
+        "cpu_percent": 11.879833559021117,
+        "io_read_bytes_per_sec": 11701.734732870238,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 1,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 505.0
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 3.304,
+          "max": 17.222
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.29,
+          "max": 5.85
+        },
+        "monitor_rss_peak_bytes": 48873472,
+        "monitor_private_peak_bytes": 35602432,
+        "handle_classification_ms": {
+          "count": 34,
+          "mean": 0.086,
+          "max": 0.156
+        },
+        "handle_types_max_age_seconds": 2.0,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 3.3044,
+        "p95": 4.6799,
+        "max": 17.2215
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 50.5744,
+        "p95": 100.3056,
+        "max": 118.8898
+      },
+      "export_ms": 49.6838,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 0.0,
+        "available_memory_bytes": 7327350784
+      }
+    },
+    {
+      "scenario": "startup-warmup",
+      "repeat": 2,
+      "purpose": "non-growth after warm-up",
+      "intended_growth": null,
+      "injected_root_read_denial": false,
+      "fixture": "startup_spike.py",
+      "target_arguments": [
+        "--startup-seconds",
+        "2.5",
+        "--startup-mb",
+        "96",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 3.0,
+      "exit_code": 0,
+      "duration_seconds": 75.0028,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0028
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0028
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5027
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0028
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0028
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5027
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0028
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0028
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5027
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 116383744.0,
+        "vms_bytes": 123117568.0,
+        "private_bytes": 108314624.0,
+        "handles": 3.0,
+        "threads": 1.0,
+        "cpu_percent": 5.959047364680072,
+        "io_read_bytes_per_sec": 11739.281941736299,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 1,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 502.7
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 3.061,
+          "max": 5.834
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.2,
+          "max": 4.01
+        },
+        "monitor_rss_peak_bytes": 48877568,
+        "monitor_private_peak_bytes": 35622912,
+        "handle_classification_ms": {
+          "count": 33,
+          "mean": 0.084,
+          "max": 0.183
+        },
+        "handle_types_max_age_seconds": 2.0,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 3.0607,
+        "p95": 4.3065,
+        "max": 5.8345
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 51.0524,
+        "p95": 96.4493,
+        "max": 102.7367
+      },
+      "export_ms": 45.732,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 0.6,
+        "available_memory_bytes": 7324409856
+      }
+    },
+    {
+      "scenario": "recovery",
+      "repeat": 2,
+      "purpose": "recovering allocation",
+      "intended_growth": null,
+      "injected_root_read_denial": false,
+      "fixture": "calibration_target.py",
+      "target_arguments": [
+        "recovery",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 3.0,
+      "exit_code": 0,
+      "duration_seconds": 75.0021,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 150,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 150,
+        "collected": 150,
+        "measured": 150,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 11.5042
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 28.5042
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.0042
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 11.5042
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 28.5042
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.0042
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 11.5042
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 28.5042
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.0042
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 49922048.0,
+        "vms_bytes": 56172544.0,
+        "private_bytes": 41889792.0,
+        "handles": 3.0,
+        "threads": 1.0,
+        "cpu_percent": 9.91524358563032,
+        "io_read_bytes_per_sec": 15456.449539716055,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 1,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 149,
+          "mean": 500.0,
+          "max": 504.2
+        },
+        "collection_ms": {
+          "count": 150,
+          "mean": 2.2,
+          "max": 4.602
+        },
+        "monitor_cpu_percent": {
+          "count": 149,
+          "mean": 1.03,
+          "max": 4.0
+        },
+        "monitor_rss_peak_bytes": 48881664,
+        "monitor_private_peak_bytes": 35635200,
+        "handle_classification_ms": {
+          "count": 34,
+          "mean": 0.084,
+          "max": 0.125
+        },
+        "handle_types_max_age_seconds": 2.001,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 150,
+        "mean": 2.1999,
+        "p95": 3.0898,
+        "max": 4.6015
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 150,
+        "mean": 51.6817,
+        "p95": 95.8918,
+        "max": 103.1005
+      },
+      "export_ms": 66.1032,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 0.0,
+        "available_memory_bytes": 7332495360
+      }
+    },
+    {
+      "scenario": "worker-churn",
+      "repeat": 2,
+      "purpose": "bounded worker churn",
+      "intended_growth": null,
+      "injected_root_read_denial": false,
+      "fixture": "calibration_target.py",
+      "target_arguments": [
+        "churn",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 3.0,
+      "exit_code": 0,
+      "duration_seconds": 75.0938,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.5039
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5039
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5039
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.5039
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5039
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5039
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.5039
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5039
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5039
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 26480640.0,
+        "vms_bytes": 39055360.0,
+        "private_bytes": 11534336.0,
+        "handles": 6.0,
+        "threads": 2.0,
+        "cpu_percent": 11.869564407165166,
+        "io_read_bytes_per_sec": 15418.145476149119,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 2,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 503.9
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 3.439,
+          "max": 5.278
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.56,
+          "max": 4.01
+        },
+        "monitor_rss_peak_bytes": 48885760,
+        "monitor_private_peak_bytes": 35553280,
+        "handle_classification_ms": {
+          "count": 34,
+          "mean": 0.133,
+          "max": 0.215
+        },
+        "handle_types_max_age_seconds": 2.0,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 3.4395,
+        "p95": 4.8828,
+        "max": 5.2782
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 50.736,
+        "p95": 97.8183,
+        "max": 104.6569
+      },
+      "export_ms": 54.7457,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 0.0,
+        "available_memory_bytes": 7246082048
+      }
+    },
+    {
+      "scenario": "fast-memory",
+      "repeat": 2,
+      "purpose": "known growth then cap",
+      "intended_growth": "memory",
+      "injected_root_read_denial": false,
+      "fixture": "memory_leak.py",
+      "target_arguments": [
+        "--chunk-mb",
+        "2",
+        "--interval",
+        "0.25",
+        "--max-mb",
+        "128",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 3.0,
+      "exit_code": 1,
+      "duration_seconds": 75.0139,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "high",
+          "episodes": 3,
+          "first_signal_s": 12.0029,
+          "first_high_s": 12.0029,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0029
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5029
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5029
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0029
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5029
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5029
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0029
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5029
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5029
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 149938176.0,
+        "vms_bytes": 156835840.0,
+        "private_bytes": 142053376.0,
+        "handles": 3.0,
+        "threads": 1.0,
+        "cpu_percent": 5.965175781004698,
+        "io_read_bytes_per_sec": 10736.73309163256,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 1,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 502.8
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 3.775,
+          "max": 6.097
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.36,
+          "max": 4.01
+        },
+        "monitor_rss_peak_bytes": 49156096,
+        "monitor_private_peak_bytes": 35905536,
+        "handle_classification_ms": {
+          "count": 34,
+          "mean": 0.081,
+          "max": 0.108
+        },
+        "handle_types_max_age_seconds": 2.0,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 3.7746,
+        "p95": 4.5572,
+        "max": 6.0967
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 51.1825,
+        "p95": 98.9131,
+        "max": 104.4855
+      },
+      "export_ms": 55.9144,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 0.0,
+        "available_memory_bytes": 7284060160
+      }
+    },
+    {
+      "scenario": "slow-memory",
+      "repeat": 2,
+      "purpose": "sustained known growth",
+      "intended_growth": "memory",
+      "injected_root_read_denial": false,
+      "fixture": "memory_leak.py",
+      "target_arguments": [
+        "--chunk-mb",
+        "0.25",
+        "--interval",
+        "0.5",
+        "--max-mb",
+        "48",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 3.0,
+      "exit_code": 0,
+      "duration_seconds": 75.0158,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "low",
+          "episodes": 1,
+          "first_signal_s": 54.0029,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.5029
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5029
+            },
+            "60": {
+              "judged_samples": 43,
+              "first_judged_s": 54.0029
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.5029
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5029
+            },
+            "60": {
+              "judged_samples": 43,
+              "first_judged_s": 54.0029
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.5029
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5029
+            },
+            "60": {
+              "judged_samples": 43,
+              "first_judged_s": 54.0029
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 55418880.0,
+        "vms_bytes": 62291968.0,
+        "private_bytes": 47464448.0,
+        "handles": 3.0,
+        "threads": 1.0,
+        "cpu_percent": 5.960673088344439,
+        "io_read_bytes_per_sec": 4975017.809269114,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 1,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 502.8
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 2.277,
+          "max": 3.061
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.04,
+          "max": 4.0
+        },
+        "monitor_rss_peak_bytes": 49160192,
+        "monitor_private_peak_bytes": 35913728,
+        "handle_classification_ms": {
+          "count": 34,
+          "mean": 0.073,
+          "max": 0.086
+        },
+        "handle_types_max_age_seconds": 2.001,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 2.277,
+        "p95": 2.9203,
+        "max": 3.0612
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 50.1378,
+        "p95": 97.8675,
+        "max": 103.2388
+      },
+      "export_ms": 47.6008,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 0.0,
+        "available_memory_bytes": 7320215552
+      }
+    },
+    {
+      "scenario": "handle-growth",
+      "repeat": 2,
+      "purpose": "known growth then cap",
+      "intended_growth": "handles",
+      "injected_root_read_denial": false,
+      "fixture": "handle_leak.py",
+      "target_arguments": [
+        "--handles-per-tick",
+        "10",
+        "--interval",
+        "0.25",
+        "--max-handles",
+        "800",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 3.0,
+      "exit_code": 1,
+      "duration_seconds": 75.011,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0027
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0027
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5027
+            }
+          }
+        },
+        "handles": {
+          "worst": "high",
+          "episodes": 3,
+          "first_signal_s": 12.0027,
+          "first_high_s": 12.0027,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0027
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0027
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5027
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0027
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0027
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5027
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 17186816.0,
+        "vms_bytes": 23752704.0,
+        "private_bytes": 9166848.0,
+        "handles": 803.0,
+        "threads": 1.0,
+        "cpu_percent": 5.962532649261442,
+        "io_read_bytes_per_sec": 932210.5355628618,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 1,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 502.7
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 3.371,
+          "max": 10.179
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.3,
+          "max": 4.01
+        },
+        "monitor_rss_peak_bytes": 49164288,
+        "monitor_private_peak_bytes": 35893248,
+        "handle_classification_ms": {
+          "count": 33,
+          "mean": 3.139,
+          "max": 5.27
+        },
+        "handle_types_max_age_seconds": 2.001,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 3.3708,
+        "p95": 6.759,
+        "max": 10.1793
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 52.8282,
+        "p95": 99.1819,
+        "max": 105.3286
+      },
+      "export_ms": 61.8439,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 0.0,
+        "available_memory_bytes": 7324389376
+      }
+    },
+    {
+      "scenario": "thread-growth",
+      "repeat": 2,
+      "purpose": "known growth then cap",
+      "intended_growth": "threads",
+      "injected_root_read_denial": false,
+      "fixture": "thread_leak.py",
+      "target_arguments": [
+        "--threads-per-tick",
+        "1",
+        "--interval",
+        "0.25",
+        "--max-threads",
+        "80",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 3.0,
+      "exit_code": 1,
+      "duration_seconds": 75.0047,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 150,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 150,
+        "collected": 150,
+        "measured": 150,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 11.5048
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 28.5048
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.0048
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 11.5048
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 28.5048
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.0048
+            }
+          }
+        },
+        "threads": {
+          "worst": "high",
+          "episodes": 3,
+          "first_signal_s": 11.5048,
+          "first_high_s": 11.5048,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 11.5048
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 28.5048
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.0048
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 17498112.0,
+        "vms_bytes": 6063841280.0,
+        "private_bytes": 9519104.0,
+        "handles": 3.0,
+        "threads": 81.0,
+        "cpu_percent": 11.885293322659054,
+        "io_read_bytes_per_sec": 150657.60742157575,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 1,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 149,
+          "mean": 500.0,
+          "max": 504.8
+        },
+        "collection_ms": {
+          "count": 150,
+          "mean": 2.321,
+          "max": 4.256
+        },
+        "monitor_cpu_percent": {
+          "count": 149,
+          "mean": 1.06,
+          "max": 4.0
+        },
+        "monitor_rss_peak_bytes": 49168384,
+        "monitor_private_peak_bytes": 35897344,
+        "handle_classification_ms": {
+          "count": 33,
+          "mean": 0.077,
+          "max": 0.14
+        },
+        "handle_types_max_age_seconds": 2.0,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 150,
+        "mean": 2.3209,
+        "p95": 3.1345,
+        "max": 4.2555
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 150,
+        "mean": 52.1864,
+        "p95": 97.0212,
+        "max": 102.5364
+      },
+      "export_ms": 51.3787,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 0.0,
+        "available_memory_bytes": 7331508224
+      }
+    },
+    {
+      "scenario": "partial-access",
+      "repeat": 2,
+      "purpose": "injected root read denial",
+      "intended_growth": null,
+      "injected_root_read_denial": true,
+      "fixture": "process_tree.py",
+      "target_arguments": [
+        "--depth",
+        "1",
+        "--fanout",
+        "1",
+        "--memory-mb",
+        "1",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 3.0,
+      "exit_code": 0,
+      "duration_seconds": 75.0411,
+      "detection_ran": true,
+      "partial_coverage": true,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 151,
+            "unavailable_samples": 1
+          },
+          "handles": {
+            "partial_samples": 151,
+            "unavailable_samples": 1
+          },
+          "threads": {
+            "partial_samples": 151,
+            "unavailable_samples": 1
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.5022
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0022
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5022
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.5022
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0022
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5022
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.5022
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0022
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5022
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 17727488.0,
+        "vms_bytes": 99311616.0,
+        "private_bytes": 9736192.0,
+        "handles": 3.0,
+        "threads": 2.0,
+        "cpu_percent": 1.994992365672766,
+        "io_read_bytes_per_sec": 0.0,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 2,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 502.2
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 2.483,
+          "max": 3.796
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.16,
+          "max": 4.0
+        },
+        "monitor_rss_peak_bytes": 49168384,
+        "monitor_private_peak_bytes": 35549184,
+        "handle_classification_ms": {
+          "count": 33,
+          "mean": 0.082,
+          "max": 0.137
+        },
+        "handle_types_max_age_seconds": 2.0,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 2.483,
+        "p95": 3.2759,
+        "max": 3.7959
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 48.8631,
+        "p95": 100.7921,
+        "max": 103.9894
+      },
+      "export_ms": 43.4039,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 7.4,
+        "available_memory_bytes": 7265288192
+      }
+    },
+    {
+      "scenario": "larger-tree",
+      "repeat": 2,
+      "purpose": "stable fifteen-process tree",
+      "intended_growth": null,
+      "injected_root_read_denial": false,
+      "fixture": "process_tree.py",
+      "target_arguments": [
+        "--depth",
+        "3",
+        "--fanout",
+        "2",
+        "--memory-mb",
+        "1",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 3.0,
+      "exit_code": 0,
+      "duration_seconds": 75.0397,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.5028
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5028
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5028
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.5028
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5028
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5028
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.5028
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5028
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5028
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 266620928.0,
+        "vms_bytes": 1489674240.0,
+        "private_bytes": 146067456.0,
+        "handles": 45.0,
+        "threads": 30.0,
+        "cpu_percent": 7.8070970009311225,
+        "io_read_bytes_per_sec": 21061.654800342403,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 15,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 502.8
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 12.65,
+          "max": 24.672
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 3.69,
+          "max": 6.1
+        },
+        "monitor_rss_peak_bytes": 49201152,
+        "monitor_private_peak_bytes": 35848192,
+        "handle_classification_ms": {
+          "count": 33,
+          "mean": 0.5,
+          "max": 0.931
+        },
+        "handle_types_max_age_seconds": 2.0,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 12.6502,
+        "p95": 18.9302,
+        "max": 24.6717
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 63.504,
+        "p95": 110.0992,
+        "max": 120.6849
+      },
+      "export_ms": 62.173,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 7.9,
+        "available_memory_bytes": 7064657920
+      }
+    },
+    {
+      "scenario": "stable",
+      "repeat": 3,
+      "purpose": "non-growth",
+      "intended_growth": null,
+      "injected_root_read_denial": false,
+      "fixture": "steady.py",
+      "target_arguments": [
+        "--memory-mb",
+        "8",
+        "--handles",
+        "4",
+        "--threads",
+        "2",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 3.0,
+      "exit_code": 0,
+      "duration_seconds": 75.0108,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0028
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0028
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5028
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0028
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0028
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5028
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0028
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0028
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5028
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 25370624.0,
+        "vms_bytes": 182108160.0,
+        "private_bytes": 17666048.0,
+        "handles": 7.0,
+        "threads": 3.0,
+        "cpu_percent": 9.939222588158142,
+        "io_read_bytes_per_sec": 14783.60379188717,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 1,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 502.8
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 2.292,
+          "max": 3.532
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.09,
+          "max": 4.0
+        },
+        "monitor_rss_peak_bytes": 50012160,
+        "monitor_private_peak_bytes": 36814848,
+        "handle_classification_ms": {
+          "count": 33,
+          "mean": 0.099,
+          "max": 0.173
+        },
+        "handle_types_max_age_seconds": 2.001,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 2.2918,
+        "p95": 2.9969,
+        "max": 3.5317
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 52.5401,
+        "p95": 99.5719,
+        "max": 103.7531
+      },
+      "export_ms": 56.4793,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 0.0,
+        "available_memory_bytes": 7279702016
+      }
+    },
+    {
+      "scenario": "cache-plateau",
+      "repeat": 3,
+      "purpose": "benign retention",
+      "intended_growth": null,
+      "injected_root_read_denial": false,
+      "fixture": "calibration_target.py",
+      "target_arguments": [
+        "cache",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 0,
+      "exit_code": 0,
+      "duration_seconds": 75.0232,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "low",
+          "episodes": 3,
+          "first_signal_s": 8.5032,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 134,
+              "first_judged_s": 8.5032
+            },
+            "30": {
+              "judged_samples": 100,
+              "first_judged_s": 25.5032
+            },
+            "60": {
+              "judged_samples": 49,
+              "first_judged_s": 51.0033
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 134,
+              "first_judged_s": 8.5032
+            },
+            "30": {
+              "judged_samples": 100,
+              "first_judged_s": 25.5032
+            },
+            "60": {
+              "judged_samples": 49,
+              "first_judged_s": 51.0033
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 134,
+              "first_judged_s": 8.5032
+            },
+            "30": {
+              "judged_samples": 100,
+              "first_judged_s": 25.5032
+            },
+            "60": {
+              "judged_samples": 49,
+              "first_judged_s": 51.0033
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 41775104.0,
+        "vms_bytes": 47882240.0,
+        "private_bytes": 34091008.0,
+        "handles": 3.0,
+        "threads": 1.0,
+        "cpu_percent": 7.945941077129196,
+        "io_read_bytes_per_sec": 15482.653855595212,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 1,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 503.1
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 2.832,
+          "max": 5.72
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.24,
+          "max": 4.01
+        },
+        "monitor_rss_peak_bytes": 50688000,
+        "monitor_private_peak_bytes": 37490688,
+        "handle_classification_ms": {
+          "count": 34,
+          "mean": 0.091,
+          "max": 0.248
+        },
+        "handle_types_max_age_seconds": 2.0,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 2.8324,
+        "p95": 4.3841,
+        "max": 5.7203
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 50.3431,
+        "p95": 99.8758,
+        "max": 104.8391
+      },
+      "export_ms": 72.0831,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 0.0,
+        "available_memory_bytes": 7289528320
+      }
+    },
+    {
+      "scenario": "startup",
+      "repeat": 3,
+      "purpose": "benign startup",
+      "intended_growth": null,
+      "injected_root_read_denial": false,
+      "fixture": "startup_spike.py",
+      "target_arguments": [
+        "--startup-seconds",
+        "2.5",
+        "--startup-mb",
+        "96",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 0,
+      "exit_code": 1,
+      "duration_seconds": 75.0111,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "critical",
+          "episodes": 2,
+          "first_signal_s": 8.5058,
+          "first_high_s": 8.5058,
+          "windows": {
+            "10": {
+              "judged_samples": 134,
+              "first_judged_s": 8.5058
+            },
+            "30": {
+              "judged_samples": 100,
+              "first_judged_s": 25.5057
+            },
+            "60": {
+              "judged_samples": 49,
+              "first_judged_s": 51.0057
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 134,
+              "first_judged_s": 8.5058
+            },
+            "30": {
+              "judged_samples": 100,
+              "first_judged_s": 25.5057
+            },
+            "60": {
+              "judged_samples": 49,
+              "first_judged_s": 51.0057
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 134,
+              "first_judged_s": 8.5058
+            },
+            "30": {
+              "judged_samples": 100,
+              "first_judged_s": 25.5057
+            },
+            "60": {
+              "judged_samples": 49,
+              "first_judged_s": 51.0057
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 116445184.0,
+        "vms_bytes": 123121664.0,
+        "private_bytes": 108752896.0,
+        "handles": 3.0,
+        "threads": 1.0,
+        "cpu_percent": 13.8000454829737,
+        "io_read_bytes_per_sec": 11651.60239667686,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 1,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 505.7
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 3.577,
+          "max": 6.582
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.35,
+          "max": 4.0
+        },
+        "monitor_rss_peak_bytes": 50806784,
+        "monitor_private_peak_bytes": 37588992,
+        "handle_classification_ms": {
+          "count": 34,
+          "mean": 0.083,
+          "max": 0.192
+        },
+        "handle_types_max_age_seconds": 2.001,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 3.5768,
+        "p95": 4.6987,
+        "max": 6.5818
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 54.2278,
+        "p95": 100.968,
+        "max": 104.3012
+      },
+      "export_ms": 46.9887,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 0.0,
+        "available_memory_bytes": 7284383744
+      }
+    },
+    {
+      "scenario": "startup-warmup",
+      "repeat": 3,
+      "purpose": "non-growth after warm-up",
+      "intended_growth": null,
+      "injected_root_read_denial": false,
+      "fixture": "startup_spike.py",
+      "target_arguments": [
+        "--startup-seconds",
+        "2.5",
+        "--startup-mb",
+        "96",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 3.0,
+      "exit_code": 0,
+      "duration_seconds": 75.0122,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0031
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5031
+            },
+            "60": {
+              "judged_samples": 43,
+              "first_judged_s": 54.0031
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0031
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5031
+            },
+            "60": {
+              "judged_samples": 43,
+              "first_judged_s": 54.0031
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0031
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5031
+            },
+            "60": {
+              "judged_samples": 43,
+              "first_judged_s": 54.0031
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 116539392.0,
+        "vms_bytes": 123121664.0,
+        "private_bytes": 108818432.0,
+        "handles": 3.0,
+        "threads": 1.0,
+        "cpu_percent": 7.943947127758129,
+        "io_read_bytes_per_sec": 11737.21388581637,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 1,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 503.0
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 3.623,
+          "max": 6.875
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.37,
+          "max": 4.0
+        },
+        "monitor_rss_peak_bytes": 50806784,
+        "monitor_private_peak_bytes": 37609472,
+        "handle_classification_ms": {
+          "count": 33,
+          "mean": 0.085,
+          "max": 0.143
+        },
+        "handle_types_max_age_seconds": 2.0,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 3.6227,
+        "p95": 5.3265,
+        "max": 6.8749
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 52.7559,
+        "p95": 99.3751,
+        "max": 104.6057
+      },
+      "export_ms": 47.0494,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 0.0,
+        "available_memory_bytes": 7282593792
+      }
+    },
+    {
+      "scenario": "recovery",
+      "repeat": 3,
+      "purpose": "recovering allocation",
+      "intended_growth": null,
+      "injected_root_read_denial": false,
+      "fixture": "calibration_target.py",
+      "target_arguments": [
+        "recovery",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 3.0,
+      "exit_code": 0,
+      "duration_seconds": 75.0094,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0033
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5033
+            },
+            "60": {
+              "judged_samples": 43,
+              "first_judged_s": 54.0033
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0033
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5033
+            },
+            "60": {
+              "judged_samples": 43,
+              "first_judged_s": 54.0033
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0033
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5033
+            },
+            "60": {
+              "judged_samples": 43,
+              "first_judged_s": 54.0033
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 50028544.0,
+        "vms_bytes": 56176640.0,
+        "private_bytes": 42385408.0,
+        "handles": 3.0,
+        "threads": 1.0,
+        "cpu_percent": 11.906163524794584,
+        "io_read_bytes_per_sec": 15466.160863545263,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 1,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 503.2
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 2.67,
+          "max": 5.391
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.2,
+          "max": 4.02
+        },
+        "monitor_rss_peak_bytes": 50806784,
+        "monitor_private_peak_bytes": 37625856,
+        "handle_classification_ms": {
+          "count": 34,
+          "mean": 0.089,
+          "max": 0.147
+        },
+        "handle_types_max_age_seconds": 2.0,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 2.6696,
+        "p95": 4.2424,
+        "max": 5.3913
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 50.5987,
+        "p95": 98.0995,
+        "max": 103.9162
+      },
+      "export_ms": 48.5046,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 0.0,
+        "available_memory_bytes": 7291813888
+      }
+    },
+    {
+      "scenario": "worker-churn",
+      "repeat": 3,
+      "purpose": "bounded worker churn",
+      "intended_growth": null,
+      "injected_root_read_denial": false,
+      "fixture": "calibration_target.py",
+      "target_arguments": [
+        "churn",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 3.0,
+      "exit_code": 0,
+      "duration_seconds": 75.0817,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.5031
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5034
+            },
+            "60": {
+              "judged_samples": 43,
+              "first_judged_s": 54.0031
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.5031
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5034
+            },
+            "60": {
+              "judged_samples": 43,
+              "first_judged_s": 54.0031
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 128,
+              "first_judged_s": 11.5031
+            },
+            "30": {
+              "judged_samples": 94,
+              "first_judged_s": 28.5034
+            },
+            "60": {
+              "judged_samples": 43,
+              "first_judged_s": 54.0031
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 37163008.0,
+        "vms_bytes": 55508992.0,
+        "private_bytes": 14962688.0,
+        "handles": 9.0,
+        "threads": 3.0,
+        "cpu_percent": 5.948510596452136,
+        "io_read_bytes_per_sec": 15454.250478341391,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 3,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 503.1
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 3.484,
+          "max": 7.044
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.55,
+          "max": 4.02
+        },
+        "monitor_rss_peak_bytes": 50810880,
+        "monitor_private_peak_bytes": 37629952,
+        "handle_classification_ms": {
+          "count": 33,
+          "mean": 0.128,
+          "max": 0.216
+        },
+        "handle_types_max_age_seconds": 2.001,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 3.4841,
+        "p95": 5.2126,
+        "max": 7.0442
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 50.8487,
+        "p95": 96.2937,
+        "max": 105.3371
+      },
+      "export_ms": 54.044,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 0.0,
+        "available_memory_bytes": 7263899648
+      }
+    },
+    {
+      "scenario": "fast-memory",
+      "repeat": 3,
+      "purpose": "known growth then cap",
+      "intended_growth": "memory",
+      "injected_root_read_denial": false,
+      "fixture": "memory_leak.py",
+      "target_arguments": [
+        "--chunk-mb",
+        "2",
+        "--interval",
+        "0.25",
+        "--max-mb",
+        "128",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 3.0,
+      "exit_code": 1,
+      "duration_seconds": 75.0297,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "high",
+          "episodes": 3,
+          "first_signal_s": 12.0032,
+          "first_high_s": 12.0032,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0032
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0034
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5033
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0032
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0034
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5033
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0032
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0034
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5033
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 150196224.0,
+        "vms_bytes": 156839936.0,
+        "private_bytes": 142528512.0,
+        "handles": 3.0,
+        "threads": 1.0,
+        "cpu_percent": 5.960535426077073,
+        "io_read_bytes_per_sec": 10729.41229093751,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 1,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 503.2
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 4.441,
+          "max": 9.056
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.67,
+          "max": 5.98
+        },
+        "monitor_rss_peak_bytes": 51351552,
+        "monitor_private_peak_bytes": 38170624,
+        "handle_classification_ms": {
+          "count": 34,
+          "mean": 0.099,
+          "max": 0.207
+        },
+        "handle_types_max_age_seconds": 2.0,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 4.4407,
+        "p95": 7.405,
+        "max": 9.0556
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 49.2949,
+        "p95": 100.8078,
+        "max": 106.523
+      },
+      "export_ms": 54.746,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 0.0,
+        "available_memory_bytes": 7251193856
+      }
+    },
+    {
+      "scenario": "slow-memory",
+      "repeat": 3,
+      "purpose": "sustained known growth",
+      "intended_growth": "memory",
+      "injected_root_read_denial": false,
+      "fixture": "memory_leak.py",
+      "target_arguments": [
+        "--chunk-mb",
+        "0.25",
+        "--interval",
+        "0.5",
+        "--max-mb",
+        "48",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 3.0,
+      "exit_code": 0,
+      "duration_seconds": 75.0178,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "low",
+          "episodes": 1,
+          "first_signal_s": 54.5027,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0027
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0027
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5027
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0027
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0027
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5027
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0027
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0027
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5027
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 54837248.0,
+        "vms_bytes": 62296064.0,
+        "private_bytes": 47865856.0,
+        "handles": 3.0,
+        "threads": 1.0,
+        "cpu_percent": 5.965984687727512,
+        "io_read_bytes_per_sec": 10738.778652458228,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 1,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 503.0
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 2.834,
+          "max": 6.125
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.28,
+          "max": 4.01
+        },
+        "monitor_rss_peak_bytes": 51351552,
+        "monitor_private_peak_bytes": 38170624,
+        "handle_classification_ms": {
+          "count": 34,
+          "mean": 0.084,
+          "max": 0.126
+        },
+        "handle_types_max_age_seconds": 2.0,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 2.8344,
+        "p95": 4.4218,
+        "max": 6.1247
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 52.5327,
+        "p95": 99.0751,
+        "max": 104.4197
+      },
+      "export_ms": 41.2332,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 0.0,
+        "available_memory_bytes": 7280558080
+      }
+    },
+    {
+      "scenario": "handle-growth",
+      "repeat": 3,
+      "purpose": "known growth then cap",
+      "intended_growth": "handles",
+      "injected_root_read_denial": false,
+      "fixture": "handle_leak.py",
+      "target_arguments": [
+        "--handles-per-tick",
+        "10",
+        "--interval",
+        "0.25",
+        "--max-handles",
+        "800",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 3.0,
+      "exit_code": 1,
+      "duration_seconds": 75.0941,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0033
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0033
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5033
+            }
+          }
+        },
+        "handles": {
+          "worst": "high",
+          "episodes": 3,
+          "first_signal_s": 12.0033,
+          "first_high_s": 12.0033,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0033
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0033
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5033
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0033
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0033
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5033
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 17215488.0,
+        "vms_bytes": 23756800.0,
+        "private_bytes": 10194944.0,
+        "handles": 803.0,
+        "threads": 1.0,
+        "cpu_percent": 5.956810905003451,
+        "io_read_bytes_per_sec": 6039049.068207558,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 1,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 503.3
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 3.389,
+          "max": 8.298
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.31,
+          "max": 4.03
+        },
+        "monitor_rss_peak_bytes": 51351552,
+        "monitor_private_peak_bytes": 38170624,
+        "handle_classification_ms": {
+          "count": 34,
+          "mean": 3.004,
+          "max": 4.384
+        },
+        "handle_types_max_age_seconds": 2.0,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 3.389,
+        "p95": 6.4886,
+        "max": 8.298
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 51.0236,
+        "p95": 97.1035,
+        "max": 104.4309
+      },
+      "export_ms": 55.4666,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 0.0,
+        "available_memory_bytes": 7297220608
+      }
+    },
+    {
+      "scenario": "thread-growth",
+      "repeat": 3,
+      "purpose": "known growth then cap",
+      "intended_growth": "threads",
+      "injected_root_read_denial": false,
+      "fixture": "thread_leak.py",
+      "target_arguments": [
+        "--threads-per-tick",
+        "1",
+        "--interval",
+        "0.25",
+        "--max-threads",
+        "80",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 3.0,
+      "exit_code": 1,
+      "duration_seconds": 75.0252,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0036
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0036
+            },
+            "60": {
+              "judged_samples": 43,
+              "first_judged_s": 54.0036
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0036
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0036
+            },
+            "60": {
+              "judged_samples": 43,
+              "first_judged_s": 54.0036
+            }
+          }
+        },
+        "threads": {
+          "worst": "high",
+          "episodes": 3,
+          "first_signal_s": 12.0036,
+          "first_high_s": 12.0036,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0036
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0036
+            },
+            "60": {
+              "judged_samples": 43,
+              "first_judged_s": 54.0036
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 17543168.0,
+        "vms_bytes": 6063845376.0,
+        "private_bytes": 10280960.0,
+        "handles": 3.0,
+        "threads": 81.0,
+        "cpu_percent": 7.948143419207749,
+        "io_read_bytes_per_sec": 12756.931201374693,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 1,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 503.6
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 2.647,
+          "max": 4.798
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.21,
+          "max": 4.01
+        },
+        "monitor_rss_peak_bytes": 51351552,
+        "monitor_private_peak_bytes": 38109184,
+        "handle_classification_ms": {
+          "count": 34,
+          "mean": 0.084,
+          "max": 0.155
+        },
+        "handle_types_max_age_seconds": 2.0,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 2.6468,
+        "p95": 4.1254,
+        "max": 4.7983
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 48.9259,
+        "p95": 99.5559,
+        "max": 103.0271
+      },
+      "export_ms": 48.3399,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 5.0,
+        "available_memory_bytes": 7237623808
+      }
+    },
+    {
+      "scenario": "partial-access",
+      "repeat": 3,
+      "purpose": "injected root read denial",
+      "intended_growth": null,
+      "injected_root_read_denial": true,
+      "fixture": "process_tree.py",
+      "target_arguments": [
+        "--depth",
+        "1",
+        "--fanout",
+        "1",
+        "--memory-mb",
+        "1",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 3.0,
+      "exit_code": 0,
+      "duration_seconds": 75.0373,
+      "detection_ran": true,
+      "partial_coverage": true,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 151,
+            "unavailable_samples": 1
+          },
+          "handles": {
+            "partial_samples": 151,
+            "unavailable_samples": 1
+          },
+          "threads": {
+            "partial_samples": 151,
+            "unavailable_samples": 1
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0026
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0027
+            },
+            "60": {
+              "judged_samples": 43,
+              "first_judged_s": 54.0027
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0026
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0027
+            },
+            "60": {
+              "judged_samples": 43,
+              "first_judged_s": 54.0027
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.0026
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.0027
+            },
+            "60": {
+              "judged_samples": 43,
+              "first_judged_s": 54.0027
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 17887232.0,
+        "vms_bytes": 99315712.0,
+        "private_bytes": 9756672.0,
+        "handles": 3.0,
+        "threads": 2.0,
+        "cpu_percent": 1.9996023270884813,
+        "io_read_bytes_per_sec": 0.0,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 2,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 502.6
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 2.606,
+          "max": 5.566
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 1.21,
+          "max": 4.01
+        },
+        "monitor_rss_peak_bytes": 51351552,
+        "monitor_private_peak_bytes": 38170624,
+        "handle_classification_ms": {
+          "count": 33,
+          "mean": 0.094,
+          "max": 0.244
+        },
+        "handle_types_max_age_seconds": 2.0,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 2.6057,
+        "p95": 3.9751,
+        "max": 5.5658
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 48.7456,
+        "p95": 99.3325,
+        "max": 105.1307
+      },
+      "export_ms": 50.0772,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 0.0,
+        "available_memory_bytes": 7302430720
+      }
+    },
+    {
+      "scenario": "larger-tree",
+      "repeat": 3,
+      "purpose": "stable fifteen-process tree",
+      "intended_growth": null,
+      "injected_root_read_denial": false,
+      "fixture": "process_tree.py",
+      "target_arguments": [
+        "--depth",
+        "3",
+        "--fanout",
+        "2",
+        "--memory-mb",
+        "1",
+        "--duration",
+        "90"
+      ],
+      "warmup_seconds": 3.0,
+      "exit_code": 0,
+      "duration_seconds": 75.0367,
+      "detection_ran": true,
+      "partial_coverage": false,
+      "coverage": {
+        "samples": 151,
+        "metrics": {
+          "private_bytes": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "handles": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          },
+          "threads": {
+            "partial_samples": 0,
+            "unavailable_samples": 0
+          }
+        }
+      },
+      "samples": {
+        "taken": 151,
+        "collected": 151,
+        "measured": 151,
+        "paused": 0,
+        "failed": 0
+      },
+      "signals": {
+        "memory": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.003
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.003
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5031
+            }
+          }
+        },
+        "handles": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.003
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.003
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5031
+            }
+          }
+        },
+        "threads": {
+          "worst": "none",
+          "episodes": 0,
+          "first_signal_s": null,
+          "first_high_s": null,
+          "windows": {
+            "10": {
+              "judged_samples": 127,
+              "first_judged_s": 12.003
+            },
+            "30": {
+              "judged_samples": 93,
+              "first_judged_s": 29.003
+            },
+            "60": {
+              "judged_samples": 42,
+              "first_judged_s": 54.5031
+            }
+          }
+        }
+      },
+      "target_peaks": {
+        "rss_bytes": 268161024.0,
+        "vms_bytes": 1489735680.0,
+        "private_bytes": 146034688.0,
+        "handles": 45.0,
+        "threads": 30.0,
+        "cpu_percent": 7.860702147978666,
+        "io_read_bytes_per_sec": 21206.0280230401,
+        "io_write_bytes_per_sec": 0.0
+      },
+      "maximum_processes": 15,
+      "monitor": {
+        "requested_interval_ms": 500,
+        "interval_ms": {
+          "count": 150,
+          "mean": 500.0,
+          "max": 503.1
+        },
+        "collection_ms": {
+          "count": 151,
+          "mean": 12.36,
+          "max": 27.633
+        },
+        "monitor_cpu_percent": {
+          "count": 150,
+          "mean": 3.64,
+          "max": 6.07
+        },
+        "monitor_rss_peak_bytes": 51351552,
+        "monitor_private_peak_bytes": 38170624,
+        "handle_classification_ms": {
+          "count": 33,
+          "mean": 0.477,
+          "max": 0.953
+        },
+        "handle_types_max_age_seconds": 2.0,
+        "failed_samples": 0,
+        "dropped_snapshots": 0
+      },
+      "collection_ms": {
+        "count": 151,
+        "mean": 12.3599,
+        "p95": 16.7767,
+        "max": 27.6334
+      },
+      "snapshot_age_at_consumption_ms": {
+        "count": 151,
+        "mean": 63.5576,
+        "p95": 110.0806,
+        "max": 115.0258
+      },
+      "export_ms": 67.243,
+      "monitor_error_count": 0,
+      "operational_error": false,
+      "export_failed": false,
+      "cleanup_complete": true,
+      "report_pair_written": true,
+      "host_conditions_before_run": {
+        "host_cpu_percent": 0.0,
+        "available_memory_bytes": 7303827456
+      }
+    }
+  ],
+  "finished_at": "2026-10-31T13:14:12.325136+00:00"
+}

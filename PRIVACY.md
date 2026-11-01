@@ -82,6 +82,9 @@ workload ID, build label, operation count, and note identify your experiment.
 
 Reports also include operating-system and Python versions, machine
 architecture, CPU count, total physical memory, and DrainTracer's version.
+Diagnostics additionally record host CPU utilization and available physical
+memory, sampled at most once every five seconds, with sampling time, age and
+collection cost. These counters describe the whole host, not target activity.
 There are no dedicated hostname or username fields in this environment
 record, but usernames, customer names, and machine identifiers can still
 appear in paths or free text.

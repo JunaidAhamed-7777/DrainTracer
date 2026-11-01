@@ -18,10 +18,10 @@ from .config import MonitorSettings
 from .events import (
     RESOURCE_METRICS,
     LeakAlert,
-    LifecycleEvent,
-    LifecycleKind,
     LeakResource,
     LeakSeverity,
+    LifecycleEvent,
+    LifecycleKind,
     MetricsSnapshot,
     MetricsStream,
     MonitorDiagnostics,
@@ -45,9 +45,10 @@ from .process_runner import (
 from .report import (
     DEFAULT_REPORT_DIR,
     REPORT_SCHEMA,
+    coverage_to_dict,
     iso_timestamp,
     new_report_id,
-    coverage_to_dict,
+    prepare_report_export,
     process_summary_to_dict,
     report_directory,
     snapshot_to_dict,
@@ -69,6 +70,27 @@ LIFECYCLE_DETAIL_LIMIT = 3
 # Windows errors for files that cannot be started as programs: bad image,
 # bad format, wrong signature, or the wrong machine type.
 _NOT_A_PROGRAM = {129, 191, 193, 216}
+
+
+def session_exit_code(*, startup_failed: bool, signal_breached: bool, cancelled: bool,
+                      monitor_failed: bool, over_budget: bool, target_failed: bool,
+                      inconclusive: bool) -> int:
+    """Apply the same outcome precedence for CLI and Python integrations."""
+    if startup_failed:
+        return 2
+    if signal_breached:
+        return 1
+    if cancelled:
+        return 130
+    if monitor_failed:
+        return 2
+    if over_budget:
+        return 5
+    if target_failed:
+        return 4
+    if inconclusive:
+        return 3
+    return 0
 
 
 class MonitorSession:
@@ -190,6 +212,7 @@ class MonitorSession:
         self._markers: list[TimelineMark] = []
         self._marker_count = 0
         self._checkpoint_store: CheckpointStore | None = None
+        self._checkpoint_session_id: str | None = None
         self._checkpoint_next = 0.0
         self._checkpoint_error: str | None = None
         self._target_created: float | None = None
@@ -375,7 +398,9 @@ class MonitorSession:
         """
         try:
             if self.settings.checkpoint is not None:
-                self._checkpoint_store = CheckpointStore(self.settings.checkpoint, self.VERSION)
+                self._checkpoint_store = CheckpointStore(
+                    self.settings.checkpoint, self.VERSION, session_id=self._checkpoint_session_id
+                )
             if self.attached:
                 self.manager.attach(self.attach_pid, expected_create_time=self.attach_create_time)
             else:
@@ -676,6 +701,11 @@ class MonitorSession:
             self._last_sampling_error = failure
             return
         self._last_sampling_error = None
+
+        timing = snapshot.metadata.get("timing_reset")
+        if timing in {"clock_adjustment", "sampling_gap"}:
+            cause = "System clock changed" if timing == "clock_adjustment" else "Sampling gap exceeded window coverage allowance"
+            self._append_event(cause + "; resource windows restarted with fresh evidence", "warn")
 
         previous = self.snapshot
         self.snapshot = snapshot
@@ -1036,7 +1066,7 @@ class MonitorSession:
         effort: if it cannot be rendered or written, the JSON report still
         stands and the failure is logged.
         """
-        report = self.build_report()
+        report = prepare_report_export(self.build_report())
         directory = report_directory(report, self.report_dir)
         path = write_json_report(report, directory)
         self._last_report = path
@@ -1045,19 +1075,30 @@ class MonitorSession:
         self._last_html_report = None
         try:
             self._last_html_report = write_html_report(report, directory)
-        except Exception as exc:  # never lose the JSON report to a rendering bug
-            self._append_event(f"HTML report failed: {exc}", "error")
-            self._note_monitor_error(f"HTML report failed: {exc}")
+        except (Exception, KeyboardInterrupt) as exc:  # preserve the usable JSON when rendering fails or is cancelled
+            interrupted = isinstance(exc, KeyboardInterrupt)
+            if interrupted:
+                self._on_export_interrupted(report)
+            message = "HTML report interrupted" if interrupted else f"HTML report failed: {exc}"
+            self._append_event(message, "error")
+            self._note_monitor_error(message)
             report["outcome"] = self._outcome_record()
             try:
                 # Atomically replace the same report, retaining the first JSON if this fails.
+                report = prepare_report_export(report)
+                self._last_report_data = report
                 write_json_report(report, directory)
             except Exception as update_error:  # noqa: BLE001 - preserve the usable first JSON
                 message = f"Could not record HTML export failure in JSON: {update_error}"
                 self._append_event(message, "error")
                 self._note_monitor_error(message)
                 report["outcome"] = self._outcome_record()
+            if interrupted:
+                raise
         return path
+
+    def _on_export_interrupted(self, report: dict[str, Any]) -> None:
+        """Let a caller update its outcome before the same-ID JSON is corrected."""
 
     def build_report(self, *, snapshot_limit: int | None = None) -> dict[str, Any]:
         """Assemble the report dictionary for the session so far."""
@@ -1183,11 +1224,19 @@ class MonitorSession:
             parts.append(f"monitor CPU {cpu:.1f}% mean")
         if monitor["dropped_snapshots"]:
             parts.append(f"{monitor['dropped_snapshots']:,} dropped")
+        if monitor["clock_adjustments"]:
+            count = monitor["clock_adjustments"]
+            parts.append(f"{count:,} clock adjustment{'s' if count != 1 else ''}")
+        if monitor["sampling_gaps"]:
+            count = monitor["sampling_gaps"]
+            parts.append(f"{count:,} sampling gap{'s' if count != 1 else ''}")
         return sep.join(parts) or None
 
     def chart_thinning_text(self) -> str | None:
         """``chart thinned 1:N, summary facts exact`` once history was thinned, else ``None``."""
         stride = self._snapshot_history.stride
+        if self._last_report_data is not None:
+            stride = max(stride, self._last_report_data.get("snapshot_stride", 1))
         if stride <= 1:
             return None
         return f"report chart thinned 1:{stride}; peaks, signals and counts stay exact"
@@ -1325,4 +1374,4 @@ class MonitorSession:
     _format_duration = staticmethod(format_clock)
 
 
-__all__ = ["HISTORY_KEYS", "MonitorSession"]
+__all__ = ["HISTORY_KEYS", "MonitorSession", "session_exit_code"]

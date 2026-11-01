@@ -10,14 +10,17 @@ from a JSON payload and only ever inserts text with ``textContent``.
 from __future__ import annotations
 
 import base64
+import csv
 import hashlib
 import html
+import io
 import json
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from .analysis import (
     RESOURCES,
@@ -69,6 +72,8 @@ def render_html_report(report: Mapping[str, Any]) -> str:
             _verdict(report, summary),
             _cards(report, summary, _sample_count(report, summary)),
             _charts_panel(),
+            _user_markers_panel(payload),
+            _sample_table_panel(payload, summary.chart_stride),
             _episodes_panel(summary, start),
             _events_panel(report, start),
             _processes_panel(report),
@@ -240,6 +245,17 @@ def _partial_coverage(report: Mapping[str, Any], summary: ReportSummary) -> bool
             or measurement.get("result") == "partial")
 
 
+def _timing_interrupted(summary: ReportSummary) -> bool:
+    monitor = summary.facts.monitor if summary.facts is not None else None
+    return isinstance(monitor, Mapping) and any(
+        type(monitor.get(key)) is int and monitor[key] > 0 for key in ("clock_adjustments", "sampling_gaps")
+    )
+
+
+_TIMING_DETAIL = (" The clock changed or sampling was interrupted, so windows restarted. "
+                  "Earlier judgments do not establish continuous observation.")
+
+
 def _verdict_label(report: Mapping[str, Any], summary: ReportSummary) -> str:
     if _partial_evidence(report):
         return "PARTIAL" if summary.worst == "none" else f"{summary.worst.upper()} / PARTIAL"
@@ -258,6 +274,8 @@ def _verdict_label(report: Mapping[str, Any], summary: ReportSummary) -> str:
         return "UNAVAILABLE"
     if report.get("detection_ran", _measurement(report).get("detection_ran")) is False:
         return "INCONCLUSIVE"
+    if _timing_interrupted(summary):
+        return "EVIDENCE GAPS"
     return "PARTIAL" if _partial_coverage(report, summary) else "CLEAR"
 
 
@@ -301,6 +319,8 @@ def _verdict(report: Mapping[str, Any], summary: ReportSummary) -> str:
             if partial:
                 detail += " Coverage was partial or unavailable."
             detail += " A clean result here says nothing about leaks; monitor for longer."
+        if _timing_interrupted(summary):
+            detail += _TIMING_DETAIL
         return (
             '<section class="verdict sev-low" aria-label="Verdict">'
             f'<span class="badge sev-low">{badge}</span>'
@@ -309,7 +329,8 @@ def _verdict(report: Mapping[str, Any], summary: ReportSummary) -> str:
             "</section>"
         )
     if worst == "none":
-        headline = "No leak signals in the measured subset" if partial else "No leak signals"
+        headline = "No leak signals in interrupted observations" if badge == "EVIDENCE GAPS" else (
+            "No leak signals in the measured subset" if partial else "No leak signals")
         detail = (
             "No measured resource showed sustained growth that met the detector's criteria. "
             "That is not proof the program is leak-free."
@@ -328,7 +349,9 @@ def _verdict(report: Mapping[str, Any], summary: ReportSummary) -> str:
         detail = "; ".join(parts) + "."
     if partial:
         detail += " Coverage was partial or unavailable; unreadable processes may hide growth."
-    tone = "low" if badge == "PARTIAL" else worst
+    if _timing_interrupted(summary):
+        detail += _TIMING_DETAIL
+    tone = "low" if badge in {"PARTIAL", "EVIDENCE GAPS"} else worst
     return (
         f'<section class="verdict sev-{_e(tone)}" aria-label="Verdict">'
         f'<span class="badge sev-{_e(tone)}">{_e(badge)}</span>'
@@ -405,19 +428,87 @@ def _charts_panel() -> str:
     return (
         '<section class="panel" id="trends" aria-label="Trends">'
         '<div class="panel-head"><h2>Trends</h2>'
-        '<p class="hint">Hover for values · drag across a chart to zoom · '
-        "double-click or Esc to reset · red dots mark where a leak signal was raised "
+        '<p class="hint">Read the sample table for values, or use the range fields to zoom. '
+        'Pointer users can hover or drag. '
+        "Double-click or Esc to reset · red dots mark where a leak signal was raised "
         "or escalated</p>"
         '<button type="button" class="reset" id="reset-zoom" hidden>Reset zoom</button></div>'
+        '<form id="range-controls" class="chart-range" novalidate hidden>'
+        '<label for="zoom-start">From (seconds)</label>'
+        '<input id="zoom-start" type="number" step="any" aria-describedby="range-status">'
+        '<label for="zoom-end">To (seconds)</label>'
+        '<input id="zoom-end" type="number" step="any" aria-describedby="range-status">'
+        '<button class="reset" type="submit">Apply range</button>'
+        '<p id="range-status" role="status" aria-live="polite"></p></form>'
         '<div id="charts"><noscript><p class="empty">Charts need JavaScript; the tables '
         "below have the same findings.</p></noscript></div>"
         "</section>"
     )
 
 
+def _sample_table_panel(payload: Mapping[str, Any], stride: int) -> str:
+    """A script-free equivalent of the retained main-chart points, plus offline CSV."""
+    times = payload.get("t", ())
+    series = payload.get("series", {})
+    columns = (("private", "Private bytes (bytes)"), ("rss", "RSS (working set, bytes)"),
+               ("handles", "Handles (count)"), ("threads", "Threads (count)"), ("cpu", "CPU (%)"))
+    headings = ["Elapsed (seconds)", *(label for _key, label in columns)]
+    output = io.StringIO(newline="")
+    writer = csv.writer(output)
+    writer.writerow(headings)
+    rows = []
+    for index, stamp in enumerate(times):
+        values = [series.get(key, ())[index] for key, _label in columns]
+        csv_values = [f"{stamp:.3f}", *("n/a" if value is None else str(value) for value in values)]
+        writer.writerow(csv_values)
+        cells = [f"{stamp:,.3f}", *("n/a" if value is None else
+                 f"{value:,.1f}" if key == "cpu" else f"{value:,.0f}"
+                 for (key, _label), value in zip(columns, values))]
+        rows.append("<tr>" + "".join(f'<td class="num">{_e(value)}</td>' for value in cells) + "</tr>")
+    body = (_table(tuple((heading, "num") for heading in headings), rows) if rows else
+            '<p class="empty">No retained chart samples were recorded.</p>')
+    thinning = f" The chart keeps 1 in {stride} observations." if stride > 1 else ""
+    download = "data:text/csv;charset=utf-8," + quote(output.getvalue(), safe="")
+    return (
+        '<details class="panel sample-data" id="sample-data">'
+        f'<summary>Retained chart sample values ({len(times):,} rows)</summary>'
+        '<p class="hint">Elapsed time starts at the first retained sample. These are the plotted '
+        f'retained samples, not a complete whole-run sample log.{_e(thinning)} '
+        'n/a means a counter was not measured, including paused, failed, or unreadable samples.</p>'
+        f'<p><a class="download" download="retained-chart-samples.csv" href="{download}">'
+        'Download retained samples as CSV</a></p>'
+        f"{body}{_handle_sample_table(payload)}</details>"
+    )
+
+
+def _handle_sample_table(payload: Mapping[str, Any]) -> str:
+    types = payload.get("handle_types", {})
+    times, categories = types.get("t", ()), types.get("categories", ())
+    if not times or not categories:
+        return ""
+    headings = ["Elapsed (seconds)", *(f"{category} (count)" for category in categories)]
+    output = io.StringIO(newline="")
+    writer = csv.writer(output)
+    # Unknown category names are untrusted; prevent spreadsheet formula injection.
+    writer.writerow(["'" + heading if heading.lstrip().startswith(("=", "+", "-", "@")) else heading
+                     for heading in headings])
+    rows = []
+    for index, stamp in enumerate(times):
+        values = [types.get("series", {}).get(category, ())[index] for category in categories]
+        cells = [f"{stamp:.3f}", *("n/a" if value is None else str(value) for value in values)]
+        writer.writerow(cells)
+        rows.append("<tr>" + "".join(f'<td class="num">{_e(value)}</td>' for value in cells) + "</tr>")
+    download = "data:text/csv;charset=utf-8," + quote(output.getvalue(), safe="")
+    return ('<h3>Retained handle classifications</h3>'
+            '<p class="hint">Counts use their own classification cadence; elapsed time shares the chart origin.</p>'
+            f'<p><a class="download" download="retained-handle-categories.csv" href="{download}">'
+            'Download retained handle classifications as CSV</a></p>'
+            + _table(tuple((heading, "num") for heading in headings), rows))
+
+
 def _episodes_panel(summary: ReportSummary, start: float | None) -> str:
     recorded = sum(item.episodes for item in summary.resources.values())
-    hint = "One row per continuous signal; click a row to zoom the charts."
+    hint = "One row per continuous signal; use its Zoom button to inspect the charts."
     if recorded > len(summary.episodes):
         # Thinning kept fewer episodes than the session counted; say so.
         hint += (
@@ -441,11 +532,15 @@ def _episodes_panel(summary: ReportSummary, start: float | None) -> str:
             if start is not None:
                 attributes = (
                     f' data-t="{episode.start - start:.3f}" data-t1="{episode.end - start:.3f}"'
-                    ' title="Click to zoom the charts to this signal"'
                 )
+            resource_cell = _e(episode.resource)
+            if attributes:
+                resource_cell = (f'<button type="button" class="signal-zoom" '
+                                 f'aria-label="Zoom charts to {_e(episode.resource)} signal at '
+                                 f'{_e(_offset(episode.start, start))}">Zoom {_e(episode.resource)}</button>')
             rows.append(
                 f"<tr{attributes}>"
-                f"<td>{_e(episode.resource)}</td>"
+                f"<td>{resource_cell}</td>"
                 f'<td><span class="badge sev-{_e(episode.severity)}">{_e(episode.severity.upper())}</span></td>'
                 f'<td class="num">{_e(_offset(episode.start, start))}</td>'
                 f'<td class="num">{_e(format_clock(episode.duration))}</td>'
@@ -461,6 +556,22 @@ def _episodes_panel(summary: ReportSummary, start: float | None) -> str:
         f'<p class="hint">{_e(hint)}</p></div>'
         f"{body}</section>"
     )
+
+
+def _user_markers_panel(payload: Mapping[str, Any]) -> str:
+    markers = payload.get("user_markers") or []
+    if not markers:
+        return ""
+    rows = [
+        f'<tr data-t="{marker["t"]}" data-t1="{marker["t"]}">'
+        '<td><button type="button" class="signal-zoom" '
+        f'aria-label="Zoom charts to marker {_e(marker["label"])} at +{format_clock(marker["t"])}">'
+        f'Zoom +{format_clock(marker["t"])}</button></td><td>{_e(marker["label"])}</td></tr>'
+        for marker in markers
+    ]
+    return ('<section class="panel"><div class="panel-head"><h2>Named markers</h2>'
+            '<p class="hint">Timing annotations, not cause. Use a marker\'s Zoom button to inspect its interval.</p>'
+            '</div>' + _table(("Elapsed time", "Label"), rows) + '</section>')
 
 
 def _monitor_panel(summary: ReportSummary) -> str:
@@ -531,6 +642,11 @@ def _monitor_panel(summary: ReportSummary) -> str:
             f"{int(finite(monitor.get('dropped_snapshots')) or 0):,} dropped before display",
         ),
     ]
+    timing = []
+    for key, label in (("clock_adjustments", "clock adjustment"), ("sampling_gaps", "sampling gap")):
+        value = monitor.get(key)
+        timing.append(f"{value:,} {label}{'s' if value != 1 else ''}" if type(value) is int and value >= 0 else f"{label}s unknown")
+    rows.append(("Observation timing", " · ".join(timing)))
     if facts is not None and facts.evaluated_seconds is not None:
         rows.append(
             (
@@ -539,6 +655,19 @@ def _monitor_panel(summary: ReportSummary) -> str:
                 f"{format_clock(facts.after_warmup_seconds or 0.0)} after warm-up",
             )
         )
+    host = monitor.get("host_context")
+    if isinstance(host, Mapping):
+        cpu = finite(host.get("cpu_percent"))
+        available = finite(host.get("available_memory_bytes"))
+        age = finite(host.get("age_seconds"))
+        cost = finite(host.get("collection_ms"))
+        rows += [
+            ("Host CPU context", f"{cpu:.1f}% of host capacity" if cpu is not None else "n/a"),
+            ("Host available physical memory", format_bytes(available) if available is not None else "n/a"),
+            ("Host sampling", (f"{age:.1f}s old at final sample" if age is not None else "age n/a")
+             + (f" · {cost:.2f} ms pass" if cost is not None else " · cost n/a")
+             + " · every 5s; whole host context, not target usage or cause"),
+        ]
     body = _table(
         ("Measure", "Value"),
         [f"<tr><td>{_e(label)}</td><td>{_e(value)}</td></tr>" for label, value in rows],
@@ -600,7 +729,8 @@ def _events_panel(report: Mapping[str, Any], start: float | None) -> str:
     return (
         '<section class="panel" aria-label="Event log">'
         '<div class="panel-head"><h2>Event log</h2>'
-        f'<p class="hint">{retention}Hover a row to find it on the charts.</p></div>'
+        f'<p class="hint">{retention}Elapsed time locates each event on the charts; '
+        'use the range fields to inspect it.</p></div>'
         f"{body}</section>"
     )
 
@@ -788,9 +918,11 @@ def _table(headers: Sequence[str | tuple[str, str]], rows: Sequence[str]) -> str
     cells = []
     for header in headers:
         label, css = header if isinstance(header, tuple) else (header, "")
-        cells.append(f'<th class="{css}">{_e(label)}</th>' if css else f"<th>{_e(label)}</th>")
+        cells.append(f'<th scope="col" class="{css}">{_e(label)}</th>' if css else f'<th scope="col">{_e(label)}</th>')
+    label = "Table: " + ", ".join(header[0] if isinstance(header, tuple) else header for header in headers[:3])
     return (
-        f'<div class="table-scroll"><table><thead><tr>{"".join(cells)}</tr></thead>'
+        f'<div class="table-scroll" tabindex="0" role="region" aria-label="{_e(label)}">'
+        f'<table><thead><tr>{"".join(cells)}</tr></thead>'
         f'<tbody>{"".join(rows)}</tbody></table></div>'
     )
 
