@@ -93,10 +93,21 @@ Validation and remaining limits:
   T5 performance gate pass. See
   [observer verification](docs/observer-verification-results.md) and
   [host component results](docs/host-budget-results.md).
-- Historic measurements identify their actual v5.4.0 development source and
+- The studies above identify their actual v5.4.0 development source and
   environment. They are not relabeled as v5.5.0 measurements or universal
   throughput, accuracy or cleanup guarantees. Physical sleep/wake, forced
   kernel PID reuse and a consented human pilot were not established.
+- The unpublished v5.5.0 candidate
+  (`5b93f13c2f677cfab39a3ff7b046185d973ccc69`) returned native
+  combined-verifier Ops readiness false; its gate is unknown because temporary
+  evidence was deleted. A separate persistent trial passed all 66 functional
+  probes, timing budgets, rates and final cleanup but exceeded the unchanged
+  268,435,456-byte RSS limit (driver 400,912,384; agent 402,669,568). A later
+  independent trial of the same wheel passed at 47,386,624/50,384,896 bytes.
+  These used the predeclared 10-second helper readiness protocol, separate
+  from default 2-second/PyPI verification. The earlier RSS cause remains
+  unknown. Recorded passes do not establish a universal resource bound or
+  explain earlier failures.
 - The first-time contributor, human pilot, demand-led diagnostics,
   notifications and broader deployment work remain open in issues
   [#31](https://github.com/JunaidAhamed-7777/DrainTracer/issues/31),

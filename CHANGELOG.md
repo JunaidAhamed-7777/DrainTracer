@@ -78,6 +78,12 @@ current release and [AGENTS.md](AGENTS.md) for the release policy.
   credential lifecycle. Process controls, recovery and removal never acquire
   authority merely from a saved PID or cached permission observation.
 
+- After CI returned policy exit `1` (triggering resource unknown), PR #148
+  removes the checkpoint test's unconditional exit-`0` assumption. It
+  separately requires a valid run-bound checkpoint, successful
+  target/workflow/export, no monitor errors and complete cleanup. Detector
+  thresholds, fixture timing and policy behavior remain unchanged.
+
 ### Measurement and acceptance status
 
 - Retained all 72 calibration and 18 worker-policy runs, including benign
@@ -88,6 +94,9 @@ current release and [AGENTS.md](AGENTS.md) for the release policy.
   Windows thread-growth signal. CPU/RSS and functional/owned-cleanup checks
   passed; broader T5 timing acceptance remains unmet. Separate source-pinned
   host-call checks passed their own frozen ceilings.
+- Recorded candidate operating-check failures and later independent passes
+  without changing budgets; earlier RSS cause remains unknown. Helper trials
+  are separate from default-budget PyPI verification.
 - Historical source versions and Windows/WSL environments remain attached to
   measurements. No universal accuracy/performance claim, production SLA,
   allocation-leak proof or consented human pilot follows from these fixtures.
