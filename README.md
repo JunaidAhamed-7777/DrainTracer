@@ -19,7 +19,7 @@ repeated-run approvals, reviewable audit history, report-sourced budgets and
 scoped expiring exceptions for reproducible regression checks.
 
 <p align="center">
-  <strong>Release series: v5.4.0</strong> ·
+  <strong>Release series: v5.5.0</strong> ·
   <a href="RELEASES.md">Current version and release notes</a>
 </p>
 
@@ -45,8 +45,7 @@ scoped expiring exceptions for reproducible regression checks.
 DrainTracer is a Python CLI/TUI that watches an executable or script and its
 recursive child processes. It shows resource usage in a live terminal dashboard
 and flags sustained growth in **private memory, handles (file descriptors on
-Linux), and threads**. **Linux support has been added in v5.4.0**, including
-WSL.
+Linux), and threads**. **Linux support includes WSL.**
 
 Use it to investigate a worker that grows over time, catch resource regressions
 in a Windows or Linux CI job, or compare the same workload before and after a fix.
