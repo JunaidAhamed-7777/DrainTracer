@@ -54,6 +54,45 @@ class DoctorTests(unittest.TestCase):
         self.assertIn("not a directory", text)
         self.assertEqual(destination.read_text(encoding="utf-8"), "keep this")
 
+    def test_checkpoint_settings_and_origins_are_reported_without_creating_state(self) -> None:
+        checkpoint = self.root / "not-created" / "checkpoint.json"
+        original = set(self.root.rglob("*"))
+        with mock.patch("src.checkpoints.CheckpointStore", side_effect=AssertionError("checkpoint store created")), \
+                mock.patch("src.process_runner.subprocess.Popen") as launched:
+            code, text = self._run("--checkpoint", str(checkpoint), "--checkpoint-interval", "2s", "--json")
+        self.assertEqual(code, 0)
+        launched.assert_not_called()
+        record = json.loads(text)["settings"]
+        self.assertEqual(record["values"]["checkpoint"], str(checkpoint.resolve()))
+        self.assertEqual(record["values"]["checkpoint_interval"], 2)
+        self.assertEqual(record["origins"]["checkpoint"], "command line")
+        self.assertEqual(record["origins"]["checkpoint_interval"], "command line")
+        self.assertEqual(set(self.root.rglob("*")), original)
+        self.assertIn("No checkpoint directory or lock was created", text)
+
+    def test_existing_checkpoint_is_blocked_without_opening_or_rewriting_it(self) -> None:
+        checkpoint = self.root / "checkpoint.json"
+        checkpoint.write_bytes(b"existing private saved evidence")
+        with mock.patch("src.checkpoints.CheckpointStore", side_effect=AssertionError("checkpoint store created")):
+            code, text = self._run("--checkpoint", str(checkpoint), "--json")
+        self.assertEqual(code, 2)
+        self.assertIn("already exists", text)
+        self.assertEqual(checkpoint.read_bytes(), b"existing private saved evidence")
+        self.assertFalse(checkpoint.with_name(checkpoint.name + ".lock").exists())
+
+    def test_checkpoint_config_and_profile_origins_remain_distinct(self) -> None:
+        source = self.root / "settings.toml"
+        source.write_text('checkpoint = "new.json"\ncheckpoint_interval = "5s"\n'
+                          '[profiles.ci]\ncheckpoint_interval = "2s"\n', encoding="utf-8")
+        console = make_console()
+        code = cli._main(console, ["doctor", "--config", str(source), "--profile", "ci",
+                                  "--report-dir", str(self.root / "reports"), "--json"])
+        self.assertEqual(code, 0)
+        record = json.loads(console.file.getvalue())["settings"]
+        self.assertEqual(record["origins"]["checkpoint"], "config file")
+        self.assertEqual(record["origins"]["checkpoint_interval"], "profile ci")
+        self.assertFalse((self.root / "new.json").exists())
+
     def test_profile_origins_are_explicit_and_experiment_labels_are_not_dumped(self) -> None:
         source = self.root / "settings.toml"
         source.write_text('sample_interval = "1s"\nnote = "token=private-label"\n'

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import errno
+import math
 import sys
 import time
 from collections import deque
@@ -12,14 +13,15 @@ from typing import Any
 
 from rich.console import Console
 
+from .checkpoints import CHECKPOINT_SAMPLES, CheckpointStore
 from .config import MonitorSettings
 from .events import (
     RESOURCE_METRICS,
     LeakAlert,
-    LifecycleEvent,
-    LifecycleKind,
     LeakResource,
     LeakSeverity,
+    LifecycleEvent,
+    LifecycleKind,
     MetricsSnapshot,
     MetricsStream,
     MonitorDiagnostics,
@@ -43,9 +45,10 @@ from .process_runner import (
 from .report import (
     DEFAULT_REPORT_DIR,
     REPORT_SCHEMA,
+    coverage_to_dict,
     iso_timestamp,
     new_report_id,
-    coverage_to_dict,
+    prepare_report_export,
     process_summary_to_dict,
     report_directory,
     snapshot_to_dict,
@@ -67,6 +70,27 @@ LIFECYCLE_DETAIL_LIMIT = 3
 # Windows errors for files that cannot be started as programs: bad image,
 # bad format, wrong signature, or the wrong machine type.
 _NOT_A_PROGRAM = {129, 191, 193, 216}
+
+
+def session_exit_code(*, startup_failed: bool, signal_breached: bool, cancelled: bool,
+                      monitor_failed: bool, over_budget: bool, target_failed: bool,
+                      inconclusive: bool) -> int:
+    """Apply the same outcome precedence for CLI and Python integrations."""
+    if startup_failed:
+        return 2
+    if signal_breached:
+        return 1
+    if cancelled:
+        return 130
+    if monitor_failed:
+        return 2
+    if over_budget:
+        return 5
+    if target_failed:
+        return 4
+    if inconclusive:
+        return 3
+    return 0
 
 
 class MonitorSession:
@@ -187,6 +211,13 @@ class MonitorSession:
         self._lifecycle_history: deque[LifecycleEvent] = deque(maxlen=self.LIFECYCLE_LIMIT)
         self._markers: list[TimelineMark] = []
         self._marker_count = 0
+        self._checkpoint_store: CheckpointStore | None = None
+        self._checkpoint_session_id: str | None = None
+        self._checkpoint_next = 0.0
+        self._checkpoint_error: str | None = None
+        self._target_created: float | None = None
+        if not math.isfinite(self.settings.checkpoint_interval) or not 1 <= self.settings.checkpoint_interval <= 3600:
+            raise ValueError("checkpoint interval must be between 1s and 1h")
 
     @property
     def attached(self) -> bool:
@@ -366,11 +397,16 @@ class MonitorSession:
         an attached one released before the error propagates.
         """
         try:
+            if self.settings.checkpoint is not None:
+                self._checkpoint_store = CheckpointStore(
+                    self.settings.checkpoint, self.VERSION, session_id=self._checkpoint_session_id
+                )
             if self.attached:
                 self.manager.attach(self.attach_pid, expected_create_time=self.attach_create_time)
             else:
                 self.manager.start()
             self._root_pid = self.manager.root_pid
+            self._target_created = self.manager.created_at(self._root_pid) if self._root_pid is not None else None
             self._started_at = time.time()
             if self.timeout is not None:
                 self._deadline = time.monotonic() + self.timeout
@@ -378,6 +414,7 @@ class MonitorSession:
             self.detector.start()
             self._log_start()
             self._startup_state = "started"
+            self._maybe_checkpoint()
         except BaseException as exc:
             self._startup_state = "failed"
             self._startup_error = str(exc) or type(exc).__name__
@@ -448,13 +485,41 @@ class MonitorSession:
         try:
             self.detector.stop()
         finally:
-            if self.attached:
-                self._attempt_cleanup("detach")
-            elif self.manager.has_tracked_processes:
-                self._mark_stopping()
-                self._attempt_cleanup("kill")
-            else:
-                self._cleanup_state = "complete"
+            try:
+                if self.attached:
+                    self._attempt_cleanup("detach")
+                elif self.manager.has_tracked_processes:
+                    self._mark_stopping()
+                    self._attempt_cleanup("kill")
+                else:
+                    self._cleanup_state = "complete"
+            finally:
+                self._close_checkpoint()
+
+    def _close_checkpoint(self) -> None:
+        if self._checkpoint_store is not None:
+            self._checkpoint_store.close()
+            self._checkpoint_store = None
+
+    def _maybe_checkpoint(self) -> None:
+        store = self._checkpoint_store
+        if store is None:
+            return
+        now = time.monotonic()
+        if now < self._checkpoint_next:
+            return
+        self._checkpoint_next = now + self.settings.checkpoint_interval
+        try:
+            report = self.build_report(snapshot_limit=CHECKPOINT_SAMPLES)
+            store.write(report, {"pid": self._root_pid, "create_time": self._target_created})
+        except (OSError, ValueError, TypeError) as exc:
+            error = f"Recovery checkpoint failed: {exc}"
+            if error != self._checkpoint_error:
+                self._append_event(error, "warn")
+                self._note_monitor_error(error)
+            self._checkpoint_error = error
+        else:
+            self._checkpoint_error = None
 
     def _attempt_cleanup(self, action: str) -> None:
         """Record ownership actions and failures without changing their policy."""
@@ -515,6 +580,7 @@ class MonitorSession:
             self._force_cleanup()
             raise
         finally:
+            self._close_checkpoint()
             if self._cleanup_state == "incomplete":
                 self._append_event(
                     "Cleanup incomplete; tracked processes remain. Inspect outcome.cleanup "
@@ -562,6 +628,7 @@ class MonitorSession:
         for snapshot in snapshots:
             self._accept_snapshot(snapshot, already_observed=already_observed)
         self._sync_facts()
+        self._maybe_checkpoint()
         return len(snapshots)
 
     def _warn_if_inaccessible(self) -> None:
@@ -634,6 +701,11 @@ class MonitorSession:
             self._last_sampling_error = failure
             return
         self._last_sampling_error = None
+
+        timing = snapshot.metadata.get("timing_reset")
+        if timing in {"clock_adjustment", "sampling_gap"}:
+            cause = "System clock changed" if timing == "clock_adjustment" else "Sampling gap exceeded window coverage allowance"
+            self._append_event(cause + "; resource windows restarted with fresh evidence", "warn")
 
         previous = self.snapshot
         self.snapshot = snapshot
@@ -994,7 +1066,7 @@ class MonitorSession:
         effort: if it cannot be rendered or written, the JSON report still
         stands and the failure is logged.
         """
-        report = self.build_report()
+        report = prepare_report_export(self.build_report())
         directory = report_directory(report, self.report_dir)
         path = write_json_report(report, directory)
         self._last_report = path
@@ -1003,24 +1075,46 @@ class MonitorSession:
         self._last_html_report = None
         try:
             self._last_html_report = write_html_report(report, directory)
-        except Exception as exc:  # never lose the JSON report to a rendering bug
-            self._append_event(f"HTML report failed: {exc}", "error")
-            self._note_monitor_error(f"HTML report failed: {exc}")
+        except (Exception, KeyboardInterrupt) as exc:  # preserve the usable JSON when rendering fails or is cancelled
+            interrupted = isinstance(exc, KeyboardInterrupt)
+            if interrupted:
+                self._on_export_interrupted(report)
+            message = "HTML report interrupted" if interrupted else f"HTML report failed: {exc}"
+            self._append_event(message, "error")
+            self._note_monitor_error(message)
             report["outcome"] = self._outcome_record()
             try:
                 # Atomically replace the same report, retaining the first JSON if this fails.
+                report = prepare_report_export(report)
+                self._last_report_data = report
                 write_json_report(report, directory)
             except Exception as update_error:  # noqa: BLE001 - preserve the usable first JSON
                 message = f"Could not record HTML export failure in JSON: {update_error}"
                 self._append_event(message, "error")
                 self._note_monitor_error(message)
                 report["outcome"] = self._outcome_record()
+            if interrupted:
+                raise
         return path
 
-    def build_report(self) -> dict[str, Any]:
+    def _on_export_interrupted(self, report: dict[str, Any]) -> None:
+        """Let a caller update its outcome before the same-ID JSON is corrected."""
+
+    def build_report(self, *, snapshot_limit: int | None = None) -> dict[str, Any]:
         """Assemble the report dictionary for the session so far."""
         state, facts = self._facts.capture()
         self._sync_facts(state)
+        snapshots = tuple(self._snapshot_history)
+        stride = self._snapshot_history.stride
+        if snapshot_limit is not None:
+            if type(snapshot_limit) is not int or snapshot_limit < 2:
+                raise ValueError("report snapshot limit must be at least two")
+            if len(snapshots) > snapshot_limit:
+                stride *= math.ceil(len(snapshots) / snapshot_limit)
+                snapshots = tuple(snapshots[index * (len(snapshots) - 1) // (snapshot_limit - 1)]
+                                  for index in range(snapshot_limit))
+        facts = self._facts_record(facts)
+        facts["chart"].update(stride=stride, stored=len(snapshots))
         return {
             "report_id": new_report_id(),
             "report_schema": REPORT_SCHEMA,
@@ -1058,14 +1152,14 @@ class MonitorSession:
             "coverage": self._coverage_record(),
             "outcome": self._outcome_record(),
             "processes": self._processes_record(),
-            "session_facts": self._facts_record(facts),
+            "session_facts": facts,
             # User markers: when the user said something happened (timing only).
             "markers": self._markers_record(),
             # Samples taken, and how many the snapshot list skips between
             # entries once a long session has been thinned (1: none).
             "sample_count": self._sample_count,
-            "snapshot_stride": self._snapshot_history.stride,
-            "snapshots": [snapshot_to_dict(snapshot) for snapshot in self._snapshot_history],
+            "snapshot_stride": stride,
+            "snapshots": [snapshot_to_dict(snapshot) for snapshot in snapshots],
         }
 
     @property
@@ -1130,11 +1224,19 @@ class MonitorSession:
             parts.append(f"monitor CPU {cpu:.1f}% mean")
         if monitor["dropped_snapshots"]:
             parts.append(f"{monitor['dropped_snapshots']:,} dropped")
+        if monitor["clock_adjustments"]:
+            count = monitor["clock_adjustments"]
+            parts.append(f"{count:,} clock adjustment{'s' if count != 1 else ''}")
+        if monitor["sampling_gaps"]:
+            count = monitor["sampling_gaps"]
+            parts.append(f"{count:,} sampling gap{'s' if count != 1 else ''}")
         return sep.join(parts) or None
 
     def chart_thinning_text(self) -> str | None:
         """``chart thinned 1:N, summary facts exact`` once history was thinned, else ``None``."""
         stride = self._snapshot_history.stride
+        if self._last_report_data is not None:
+            stride = max(stride, self._last_report_data.get("snapshot_stride", 1))
         if stride <= 1:
             return None
         return f"report chart thinned 1:{stride}; peaks, signals and counts stay exact"
@@ -1272,4 +1374,4 @@ class MonitorSession:
     _format_duration = staticmethod(format_clock)
 
 
-__all__ = ["HISTORY_KEYS", "MonitorSession"]
+__all__ = ["HISTORY_KEYS", "MonitorSession", "session_exit_code"]

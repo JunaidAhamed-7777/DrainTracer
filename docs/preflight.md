@@ -7,7 +7,7 @@ and cleanup rules described in [Usage](usage.md).
 ## Command contract
 
 `draintracer doctor` accepts the normal configuration, profile, sampling,
-target, PID, timeout, and budget flags. It resolves the same settings as a
+target, PID, timeout, budget, and checkpoint flags. It resolves the same settings as a
 monitoring run and shows each value's origin: default, config file, selected
 profile, or command line. It checks the selected target/interpreter, current
 PID readability when requested, report-directory access, and whether the
@@ -23,6 +23,13 @@ directory, or its nearest existing parent when the directory does not yet
 exist. It does not create the report directory. Readability checks describe
 the current state; permissions and processes can change before monitoring.
 Target arguments and environment variables are not printed or executed.
+
+Checkpoint destination and cadence include their configuration origins. Doctor
+statically refuses an existing destination, because a new monitoring session
+does not overwrite saved checkpoints. It reports missing parents without
+creating them and never opens a checkpoint store or creates its lock. Write
+access can still fail when monitoring starts; doctor does not claim that a
+static checkpoint-path check proves future write access.
 
 `doctor --json` emits diagnostic schema 1 with resolved settings, origins,
 and checks. Exit `0` means there are no blocking checks; warnings remain

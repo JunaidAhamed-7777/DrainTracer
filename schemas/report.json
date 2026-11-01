@@ -236,6 +236,23 @@
         "null"
       ]
     },
+    "recovery": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "partial": {
+          "type": "boolean"
+        },
+        "exact_through_cutoff": {
+          "type": "boolean"
+        },
+        "final_outcome_confirmed": {
+          "type": "boolean"
+        }
+      }
+    },
     "settings": {
       "type": [
         "object",
