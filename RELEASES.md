@@ -1,4 +1,4 @@
-# Current version: v5.6.0
+# Current version: v5.7.0
 
 Release records and development milestones are listed newest first. The
 current runtime version here matches `DashboardApp.VERSION` in
@@ -11,6 +11,19 @@ The v5.4.0 and v5.3.3 entries below record development candidates that were
 not separately published to PyPI. Their changes are included in v5.5.0.
 Historical entries and source-pinned measurements retain the versions under
 which they were prepared or collected.
+
+## v5.7.0 — 2026-11-01
+
+Prepared for release; not yet tagged or published to PyPI.
+
+- Added `draintracer-agent --request-timeout SECONDS` to configure the client
+  timeout independently of the monitored session's `start --timeout`.
+  Explicit values must be finite, greater than zero, and at most 60 seconds.
+- Preserved the 15-second normal client default and the one-second
+  `diagnose`/`support` default. Explicit values override either default;
+  invalid values are rejected before command dispatch.
+- Documented option placement and defaults, and added regression coverage
+  for diagnostic overrides, default behavior, and invalid input.
 
 ## v5.6.0 — 2026-11-01
 
