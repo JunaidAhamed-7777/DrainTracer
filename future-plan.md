@@ -8,7 +8,7 @@ dates. See the [README](README.md) for the current feature overview,
 changes, and [CONTRIBUTING.md](CONTRIBUTING.md) to propose or help with a
 change.
 
-**Reconciled 2026-10-31** against the linked implementations and recorded
+**Reconciled 2026-11-01** against the linked implementations and recorded
 verification below. Published versions remain in [RELEASES.md](RELEASES.md);
 merged implementation, candidate validation and published-package validation
 are separate states. Historical measurements retain their exact source and
