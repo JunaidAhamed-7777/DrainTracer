@@ -89,7 +89,9 @@ in here, with broader unmet goals kept open even when a scoped issue closes.
       markers and a view-only freeze, and monitor diagnostics, with decoded
       arrow and paging keys.
 
-13. **Windows and Linux monitoring** — implemented in v5.4.0 development source (unpublished)
+13. **Windows and Linux monitoring** — published in v5.5.0
+    - Developed under the unpublished v5.4.0 candidate; historical
+      source-pinned measurements retain that version.
     - Linux launch/attach/control semantics, USS private memory, open-file-
       descriptor counts and classification, terminal controls and offline
       reports, with platform definitions preserved in comparisons.
@@ -106,17 +108,18 @@ Windows batch targets. The current behavior is documented in
 
 - **Release verification:** pull-request matrices, bounded real-process cases,
   retained diagnostics and protected publishing checks are implemented (T1).
-  The maintained consumer action still needs its documented package pin
-  published and installed from PyPI before W3 closes.
+  The maintained consumer action also has an exact v5.5.0 PyPI-pin
+  verification, linked with its retained artifacts under W3.
 - **Calibration and cost:** repeated growth/non-growth results and profile
   guidance are recorded (T3). The full observer's frozen timing ceilings
   failed verification (T5); separate host component passes do not erase them.
 - **First use and demand:** tested guides and accessible evidence are available,
   while uncoached first-time acceptance and consented user feedback remain
   open (D3/O2/I6). Synthetic exercises do not establish demand.
-- **Optional sharing:** local access controls and recovery references are
-  implemented. The prepared controlled TLS/CLI slice is separate from hosted
-  comparison pages, pilot-derived objectives or a hosted availability promise.
+- **Optional sharing:** local access controls, recovery references and the
+  operator-run TLS/CLI slice are implemented. Browser comparison pages,
+  managed hosting, pilot-derived objectives and production availability
+  commitments remain separate work.
 - **Deeper attribution:** the representative worker-growth policy is decided
   (O3). A future tracer needs demonstrated need, privileges/privacy review
   and measured adapter cost; no adapter has been selected or claimed measured.
@@ -129,9 +132,9 @@ queue: [#31 first-time walkthrough acceptance](https://github.com/JunaidAhamed-7
 [#50 demand-led Windows diagnostics](https://github.com/JunaidAhamed-7777/DrainTracer/issues/50),
 [#51 pilot-informed notifications](https://github.com/JunaidAhamed-7777/DrainTracer/issues/51)
 and [#53 broader deployment demand](https://github.com/JunaidAhamed-7777/DrainTracer/issues/53).
-Publication/integration gates for W3/#44 and the scoped S2/#48 implementation
-remain separate from those five. The broader T5, S2 and O1 goals below are
-also not converted into passes by closing narrower implementation issues.
+Delivery evidence for W3/#44 and the scoped S2/#48 implementation is linked
+below. Closing those narrower issues does not satisfy the broader T5, S2
+and O1 goals or any of these five human/demand workstreams.
 
 The ten additional good first issues are bounded contributions with verified
 starting points and acceptance checks, not substitutes for those goals:
@@ -175,13 +178,14 @@ DrainTracer supports installed and source-based Windows and Linux use,
 launch/PID attachment, recursive process tracking, warm-up, profiles,
 headless checks, offline HTML/JSON and strict/repeated comparisons. The
 shared backend has a documented Python API, an opt-in per-user Windows
-agent, private local team storage, and pull-request/release verification.
-These strengthen the original evidence and ownership contracts. There is
-no hosted production service or automatic report upload.
+agent, private local team storage, explicit operator-run TLS sharing and
+pull-request/release verification. These strengthen the original evidence
+and ownership contracts. Sharing requires an explicit listener and client
+action; managed hosting and automatic report upload are outside this scope.
 
-Linux core support is implemented in v5.4.0 development source, an unpublished
-candidate with its own process and metric semantics; it does not inherit
-Windows counter meanings. Keep the offline
+Linux core support was developed under the unpublished v5.4.0 candidate
+and published in v5.5.0, with its own process and metric semantics; it does
+not inherit Windows counter meanings. Keep the offline
 CLI useful without an account. Execution remains on a developer-controlled
 machine or organization-owned runner. macOS, unattended Windows service
 accounts and broader enterprise deployments need their own evidence and
@@ -524,7 +528,7 @@ consented feedback under #49 remain outstanding.
   they block strict equivalence. Clean recipes state their limited platform-
   basics equivalence. Workload failure and owned cleanup remain explicit.
 
-- [ ] **W3. Supply a maintained Windows CI template and reusable action.**
+- [x] **W3. Supply a maintained Windows CI template and reusable action.**
   Build on existing annotations and job summaries with version-pinned setup,
   strict outcome policies, workload execution, and report retention even on
   failure. Explain runner permissions, costs, time limits, and artifact
@@ -534,12 +538,14 @@ consented feedback under #49 remain outstanding.
   a short inconclusive check fails under the selected policy, and a failing
   job retains enough evidence to reproduce its result.
   **Status:** [#44 / PR #120](https://github.com/JunaidAhamed-7777/DrainTracer/pull/120)
-  has the maintained [action/template](docs/ci-workloads.md) and a successful
-  [hosted candidate example](https://github.com/JunaidAhamed-7777/DrainTracer/actions/runs/41207484179)
-  with comparable evidence, opted-in short-run failure and retained artifacts.
-  Keep this item open until the documented exact package pin is published
-  and installed from PyPI. A candidate wheel/hosted fixture is not a
-  published-package installation check.
+  delivers the maintained [action/template](docs/ci-workloads.md). Its
+  [v5.5.0 published-package example](https://github.com/JunaidAhamed-7777/DrainTracer/actions/runs/41301570764), at source
+  `7b6989ea83d1ab551b63faaaf7c07c7293ea846e`, installed `draintracer==5.5.0` from PyPI with no candidate
+  wheel. Growth returned 1, steady returned 0, and the strict comparison was
+  comparable/improved with the memory signal resolved. The deliberate short
+  check returned 3. All three JSON/HTML artifacts retained complete owned
+  cleanup. This is the pinned workflow's evidence, separate from operating
+  budgets, broader performance acceptance and human task success.
 
 - [x] **W4. Turn comparisons into controlled baseline checks.** Extend
   existing `diff` with workload, source commit, settings, detector version,
@@ -575,9 +581,10 @@ consented feedback under #49 remain outstanding.
 **Phase gate:** T2/T4 and W1 precede automated baseline enforcement; T3
 supplies its calibration evidence. W2/W3 prove a complete CI workflow.
 The same lifecycle and result contracts must serve CLI and SDK users.
-**Gate status:** shared contracts and candidate CI evidence are implemented.
-W3 still requires published-pin installation; source-pinned calibration is
-historical evidence, not a new release-wide accuracy guarantee.
+**Gate status:** shared contracts, reproducible workloads and the pinned
+published-package CI example are implemented and linked above. Source-pinned
+calibration remains historical evidence, not a new release-wide accuracy
+guarantee or a pass for the broader T5 performance gate.
 
 ### Phase 4 — Pilot an optional local Windows service (P3)
 
@@ -658,16 +665,15 @@ Windows service-account deployment is implied by the local IPC exercises.
   **Done when:** two teammates can compare a CI run with an approved baseline,
   retries create one logical run, and a server outage does not interrupt
   local monitoring, report export, or target cleanup.
-  **Status:** the CLI-first controlled TLS scope is prepared in
-  [#48 / PR #141](https://github.com/JunaidAhamed-7777/DrainTracer/pull/141),
-  pending its integration. It adds project-bound clients, a private bounded
-  retry queue and literal comparison receipts keyed to repository/commit/
-  workload. W4 computes the private comparison locally; the service stores
-  an explicitly client-computed claim and does not attest or independently
-  recompute private evidence. Browser comparison pages, hosted private-
-  evidence analysis and a hosted availability promise are not implemented.
-  This broader item remains unchecked; no future service release is claimed
-  published, and technical credentials do not constitute a human pilot.
+  **Status:** [#48 / PR #141](https://github.com/JunaidAhamed-7777/DrainTracer/pull/141)
+  implements the CLI-first scope: an operator-run foreground TLS listener,
+  project-bound clients, a private bounded retry queue and typed comparison
+  receipts keyed to repository/commit/workload. W4 computes the private
+  comparison locally; the service stores an explicitly client-computed claim
+  and does not attest or independently recompute private evidence. Browser
+  comparison pages, hosted private-evidence analysis and managed availability
+  remain unimplemented. This broader item stays unchecked; technical
+  credentials do not constitute recruited participants or a human pilot.
 
 - [x] **S3. Establish access control and data lifecycle before sharing.**
   Threat-model uploads, stored reports, rendered HTML, API access, and
@@ -706,11 +712,12 @@ O2 pilot acceptance targets before collecting pilot results; mature the
 full objectives in Phase 6. Keep remote arbitrary-command execution outside
 this first service scope; revisit only with a separate design, demand, and
 security review.
-**Gate status:** local privacy/authority and the minimum O1 technical
-reference are implemented. Prepared PR #141 remains an integration gate for
-its controlled TLS slice. Each actual deployment must recheck current
-ownership, permissions and restore evidence; neither that fixture nor a
-future release substitutes for O2 consent or hosted operating results.
+**Gate status:** local privacy/authority, the minimum O1 technical reference
+and PR #141's controlled TLS slice are implemented. Listener admission
+requires recent current-version transport observations and a named operator
+and contact. Each deployment must recheck ownership, permissions and restore
+evidence. This bounded reference does not establish O2 consent, staffed
+production support or long-term availability.
 
 ### Phase 6 — Prove service reliability and guide further investment (P5)
 
@@ -784,16 +791,15 @@ future release substitutes for O2 consent or hosted operating results.
   labeled rather than inheriting Windows guarantees.
   **Status:** [#53](https://github.com/JunaidAhamed-7777/DrainTracer/issues/53)
   remains open for broader demand and maintainability evidence. Linux core
-  support is implemented in v5.4.0 development source, an unpublished
-  candidate; WSL measurements do not justify
-  arbitrary native-Linux deployments, macOS, enterprise hosting or unattended
-  Windows service-account guarantees.
+  was developed under the unpublished v5.4.0 candidate and published in
+  v5.5.0. WSL measurements do not justify arbitrary native-Linux deployments,
+  macOS, enterprise hosting or unattended Windows service-account guarantees.
 
 ### How to turn this checklist into delivered work
 
-1. Preserve the measured T5 failures and complete W3's published-package
-   check before claiming their gates passed. Keep S2's broader pages/hosted
-   analysis and O1's pilot-derived objectives open. Prioritize the five
+1. Preserve the measured T5 failures and retain W3's actual published-package
+   evidence when updating the action. Keep S2's broader pages/hosted analysis
+   and O1's pilot-derived objectives open. Prioritize the five
    original human/demand workstreams and the ten bounded starters above;
    do not substitute technical fixtures for first-time users or consent.
 2. Before implementation, give each selected item a maintainer/owner, scope,
