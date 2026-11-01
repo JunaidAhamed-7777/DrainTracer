@@ -46,11 +46,11 @@ The parent closes after its linked implementation scope is delivered.
 - **Configured budget display:**
   [#64 / PR #102](https://github.com/JunaidAhamed-7777/DrainTracer/pull/102).
   Effective resource limits are visible in dashboard settings/help.
-- **Budgets recorded in reports:** tracked by
-  [#37](https://github.com/JunaidAhamed-7777/DrainTracer/issues/37), including
-  explicit flag precedence and controlled baseline checks. This linked
-  implementation must be delivered before the I7 parent closes; this
-  reconciliation does not claim a pending change is already merged.
+- **Budgets recorded in reports:** delivered by
+  [#37 / PR #140](https://github.com/JunaidAhamed-7777/DrainTracer/pull/140),
+  merged before this reconciliation. The `--report-budgets` option supplies
+  recorded defaults, explicit flags override each corresponding metric,
+  and controlled baseline checks preserve strict evidence admission.
 
 ## Deliberate lifecycle-detail retention decision
 

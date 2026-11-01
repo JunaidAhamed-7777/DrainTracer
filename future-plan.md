@@ -295,8 +295,8 @@ do not change heuristic thresholds alongside presentation work.
   **Done when:** each added view answers a need recorded from a pilot user
   (O2) and has a measured collection cost.
 
-- [ ] **I7. Remaining consistency gaps.** Smaller issues found while
-  delivering milestone 12, reconciled on 2026-10-31 in the
+- [x] **I7. Remaining consistency gaps.** Smaller issues found while
+  delivering milestone 12, reconciled on 2026-11-01 in the
   [linked implementation/decision record](docs/consistency-tracking.md).
   No-window wording, unknown counters, HTML/strict coverage, headless live
   counts, whole-number budgets, help isolation and configured-budget display
@@ -304,10 +304,11 @@ do not change heuristic thresholds alongside presentation work.
   to analysis/diffs and explicit positive-growth arithmetic labels. Detailed
   lifecycle text remains intentionally bounded, with exact eviction counts;
   it is not a complete process audit or a new temporal rate limiter.
-  **Remaining integration gate:** deliver report-sourced comparison budgets
-  under [#37](https://github.com/JunaidAhamed-7777/DrainTracer/issues/37)
-  before closing the [#29](https://github.com/JunaidAhamed-7777/DrainTracer/issues/29)
-  umbrella. Keep this checkbox open until that linked scope is delivered.
+  Report-sourced comparison budgets and controlled baseline checks are
+  delivered under [#37 / PR #140](https://github.com/JunaidAhamed-7777/DrainTracer/pull/140),
+  merged before this reconciliation. Explicit command flags override the
+  corresponding recorded budget. The [#29](https://github.com/JunaidAhamed-7777/DrainTracer/issues/29)
+  umbrella preserves separate human acceptance and broader performance gates.
   **Done when:** each gap is fixed with a regression test or recorded as an
   intentional limitation in the relevant guide.
 
