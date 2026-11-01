@@ -8,6 +8,107 @@ follow Semantic Versioning once per published release, with major bumps
 reserved for the repository owner. See [RELEASES.md](RELEASES.md) for the
 current release and [AGENTS.md](AGENTS.md) for the release policy.
 
+## v5.5.0 — 2026-11-01
+
+### Added
+
+- Linux/WSL launch and attachment, recursive session ownership, terminal
+  controls, USS/private-memory and descriptor counters, and offline exports.
+  These changes were developed under the unpublished v5.4.0 candidate.
+- `doctor` and preview-first `init`; explicit no-color, plain and quiet
+  output; configured-budget help; process-scoped timeline ranges and named
+  markers; sampled host CPU/memory with age; and a bounded background-loaded
+  dashboard comparison view.
+- Offline static evidence and retained-sample tables/CSV, keyboard range and
+  Zoom controls, semantic labels/focus, and light/dark contrast checks.
+- Public versioned report/summary contracts and bounded validation commands;
+  a supported typed session API with explicit launch/attach ownership,
+  immutable snapshots, context cleanup and isolated subscriber callbacks.
+- Typed share/minimal privacy previews for matching JSON/HTML and a redacted
+  investigation summary with bounded profiler handoff guidance.
+- Explicit workload interpreter/cwd/environment choices, readiness markers,
+  bounded exercise steps and opt-in separately stored redacted logs.
+- Conservative comparisons of repeated runs, controlled baseline approval,
+  source/actor/reason audit, report/flag budget precedence and scoped expiring
+  exceptions. Every resource's overlapping/unknown evidence stays
+  inconclusive, even beside a suppressed regression.
+- Independent per-side lifetime and retained-alert contributor rankings.
+  Positive-growth shares and capacity flags do not pair identities between
+  runs, change the aggregate verdict or establish allocation cause.
+- A foreground per-user Windows agent using authenticated local IPC, bounded
+  scheduling, durable interrupted-session recovery, diagnostics, redacted
+  support-bundle previews and removal/startup fencing.
+- Optional OS-private local team storage/CLI with project roles, revocation,
+  server-side privacy transforms, exact quota accounting, retention/deletion,
+  bounded audit history and logical backups that cannot restore revoked
+  authority. This release scope starts no sharing listener or hosted pages.
+- A bounded local operating/recovery exercise and runbooks. Evidence retains
+  failed checks, positive observation denominators and deployment budgets;
+  synthetic technical credentials are not a human pilot or an SLA.
+- Technically checked Windows walkthrough and separate-Python, native/batch
+  and disposable-service recipes, with explicit permissions and cleanup.
+- Windows 2022/2025 and minimum/current Python/dependency checks, Linux
+  verification, isolated distribution checks and bounded failure artifacts.
+  A pinned CI workload action supports candidate wheels and an explicit
+  exact-version PyPI verification mode.
+
+### Fixed
+
+- Preserved chosen PID/creation-time identities throughout attachment,
+  descendant tracking and controls; refused unverified identities and retained
+  owed resumes across partial pause rollback. Restarted CPU/I/O baselines on
+  identity changes and reused available per-process history slots.
+- Preserved producer-owned worst signals/peaks through queue eviction and
+  exact event eviction counts through retention; separated frozen-out arrivals
+  from discarded earlier timeline samples.
+- Kept unknown or partial totals distinct from zero across TUI/HTML and strict
+  comparisons; compared exact window values and qualified one-sided argument
+  provenance, retained-only peaks and lost episode detail.
+- Prevented target controls while help is open, kept filtered live selection
+  distinct from exit, rendered literal process labels safely, and fell back
+  from invalid UTF-8 title artwork.
+- Recorded startup/cleanup and companion-export failures in structured
+  outcomes. Bounded checkpoint/export data without discarding exact facts.
+  Clock adjustments, sampling gaps and pauses restart evidence windows and
+  remain visible to strict baseline admission.
+- Rejected fractional whole-count budgets consistently, including the
+  complementary fixes developed under the unpublished v5.3.3 candidate.
+  Headless progress includes lifecycle counts and unjudged signal wording.
+- Hardened local authority schema/accounting validation, private paths and
+  credential lifecycle. Process controls, recovery and removal never acquire
+  authority merely from a saved PID or cached permission observation.
+
+- After CI returned policy exit `1` (triggering resource unknown), PR #148
+  removes the checkpoint test's unconditional exit-`0` assumption. It
+  separately requires a valid run-bound checkpoint, successful
+  target/workflow/export, no monitor errors and complete cleanup. Detector
+  thresholds, fixture timing and policy behavior remain unchanged.
+
+### Measurement and acceptance status
+
+- Retained all 72 calibration and 18 worker-policy runs, including benign
+  warnings, delays, coverage limitations and HIGH-policy misses; thresholds
+  remain unchanged.
+- Retained the observer verification's two `budget_failures` results and
+  seven timing breaches, all failure-drill provenance and the unexplained
+  Windows thread-growth signal. CPU/RSS and functional/owned-cleanup checks
+  passed; broader T5 timing acceptance remains unmet. Separate source-pinned
+  host-call checks passed their own frozen ceilings.
+- Recorded candidate operating-check failures and later independent passes
+  without changing budgets; earlier RSS cause remains unknown. Helper trials
+  are separate from default-budget PyPI verification.
+- Historical source versions and Windows/WSL environments remain attached to
+  measurements. No universal accuracy/performance claim, production SLA,
+  allocation-leak proof or consented human pilot follows from these fixtures.
+- Uncoached first-time acceptance and pilot/demand-led work remain open in
+  #31/#49/#50/#51/#53. The #44 exact published-package check remains pending
+  until its post-PyPI run passes; candidate-wheel validation is separate.
+  Broader sharing pages and hosted private-evidence analysis are not part of
+  this release's local core.
+
+See [RELEASES.md](RELEASES.md) for release details and
+[future-plan.md](future-plan.md) for the unchanged broader acceptance gates.
+
 ## v5.3.2 — 2026-10-26
 
 - Fixed short HTTP Basic credentials being retained in experiment labels
