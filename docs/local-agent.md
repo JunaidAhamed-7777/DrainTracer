@@ -137,6 +137,13 @@ Reports retain the normal [privacy and sharing requirements](privacy.md).
 
 ## Start and use the foreground agent
 
+Place `--request-timeout SECONDS` before the subcommand. It accepts finite
+values greater than zero and at most 60 seconds. Normal client commands default
+to 15 seconds; `diagnose` and `support` default to one second so an unavailable
+agent is reported quickly. An explicit value overrides either default for
+those commands as well. This bounds the client's wait for an agent reply;
+`start --timeout SECONDS` controls how long the monitored session runs.
+
 Install the current wheel in a virtual environment. Start the agent explicitly
 in a Windows terminal; its default state directory is
 `~\.draintracer-agent` (the current user profile). The parent of an explicit `--state-dir`

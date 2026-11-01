@@ -20,10 +20,21 @@ from unittest import mock
 import helpers  # noqa: F401
 import psutil
 
-from src.agent_command import AgentClient, AgentServer
+from src.agent_command import AgentClient, AgentServer, build_parser, main
 from src.agent_service import AgentError, AgentPolicy, AgentRegistry
 from src.api import CommandTimeoutError
 
+
+class AgentClientTimeoutCliTests(unittest.TestCase):
+    def test_request_timeout_is_independent_of_session_timeout(self):
+        args = build_parser().parse_args(["--request-timeout", "2.5", "start", "--target", "target.py",
+                                          "--timeout", "37"])
+        self.assertEqual(args.timeout, 37)
+        with mock.patch("src.agent_command.AgentClient") as client_type:
+            client_type.return_value.request.return_value = {"started": True}
+            self.assertEqual(main(["--request-timeout", "2.5", "start", "--target", "target.py",
+                                   "--timeout", "37"]), 0)
+        self.assertEqual(client_type.call_args.kwargs["timeout"], 2.5)
 
 def request(operation, params=None, identity=None):
     return {"protocol": 1, "id": identity or str(uuid.uuid4()), "operation": operation, "params": params or {}}

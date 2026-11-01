@@ -98,6 +98,12 @@ values and process IDs vary by run.*
 Opt-in [local team storage](docs/team-access.md) adds project-scoped roles,
 revocable credentials, server-side report privacy, retention, controlled logical
 snapshots and explicitly client-computed comparison receipts.
+
+The optional Windows agent accepts `--request-timeout SECONDS` before its
+subcommand (`0 < value <= 60`). Normal client commands default to 15 seconds;
+`diagnose` and `support` default to 1 second. This is the client wait for an
+agent response. `start --timeout SECONDS` instead sets the monitored session's
+duration. See the [local agent guide](docs/local-agent.md) for details.
 The optional [sharing commands](docs/team-sharing.md) add an explicit foreground
 TLS listener, privacy preview, a bounded durable upload queue and role-scoped
 receipt retrieval. Starting ordinary monitoring never starts a listener or an
