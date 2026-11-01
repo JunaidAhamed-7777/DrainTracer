@@ -434,7 +434,7 @@ class EvidenceViewTests(ViewRenderingMixin, unittest.TestCase):
         self.assertIn("Why: the 10s window qualified with slope +7.3 MB/s", output)
         self.assertIn("95% of steps not falling (needs 65%)", output)
         self.assertIn("10% below the running peak", output)
-        self.assertIn("Contributors: worker.exe PID 2 +80.0 MB", output)
+        self.assertIn("Contributors (share of positive growth): worker.exe PID 2 +80.0 MB", output)
         self.assertIn("not a probability", output)
         self.assertNotIn("probability of", output)
 
