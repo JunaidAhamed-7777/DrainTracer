@@ -3,10 +3,12 @@
 </p>
 
 <p align="center">
+  <a href="https://pepy.tech/projects/draintracer"><img src="https://static.pepy.tech/personalized-badge/draintracer?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLUE&right_color=BLACK&left_text=downloads" alt="PyPI Downloads"></a>
   <a href="docs/usage.md"><img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-101820?style=flat-square&labelColor=196F69" alt="Windows and Linux"></a>
   <a href="requirements.txt"><img src="https://img.shields.io/badge/python-3.10%2B-101820?style=flat-square&labelColor=196F69" alt="Python 3.10 or newer"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-101820?style=flat-square&labelColor=0069B8" alt="MIT license"></a>
 </p>
+
 
 <h1 align="center">DrainTracer</h1>
 
