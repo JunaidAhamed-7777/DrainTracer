@@ -251,22 +251,34 @@ def exercise_local_collection(root: Path, evidence: ExerciseEvidence):
                              ["-c", "import time;time.sleep(.4)"],
                              options=SessionOptions(sample_interval_ms=100, windows_seconds=(1,),
                                                     timeout_seconds=5, report_dir=reports))
-    try:
-        session.start()
-        result = evidence.probe("local_monitor_completed", lambda: session.wait(10), timing="cleanup")
-        complete = result is not None and result.startup == "started" and result.cleanup == "complete"
-        evidence.check("local_monitor_cleanup_complete", complete)
-        persisted = (result is not None and result.exports is not None and result.exports.json_path is not None
-                     and result.exports.html_path is not None and result.exports.json_path.is_file()
-                     and result.exports.html_path.is_file())
-        if persisted:
-            read_report(result.exports.json_path)
-        evidence.check("local_monitor_reports_readable", persisted)
-        evidence.rate("local_completed_runs", int(complete), 1)
-        evidence.rate("local_report_persistence", int(persisted), 1)
-        return complete and persisted
-    finally:
-        session.close(timeout=10)
+    def complete_and_close():
+        deadline = time.monotonic() + evidence.budgets.cleanup_seconds
+        try:
+            session.start()
+            result = session.wait(max(0.0, deadline - time.monotonic()))
+            if result is None:
+                raise TimeoutError("Local reference monitor missed its completion deadline")
+            return result
+        finally:
+            # Preserve the existing finite safety grace, even after the
+            # completion deadline. Its full elapsed time is measured too;
+            # cleanup after a missed deadline cannot turn it into success.
+            closed = session.close(timeout=10)
+            if closed is None or closed.cleanup != "complete":
+                raise RuntimeError("Local reference monitor cleanup was not confirmed")
+
+    result = evidence.probe("local_monitor_completed", complete_and_close, timing="cleanup")
+    complete = result is not None and result.startup == "started" and result.cleanup == "complete"
+    evidence.check("local_monitor_cleanup_complete", complete)
+    persisted = (result is not None and result.exports is not None and result.exports.json_path is not None
+                 and result.exports.html_path is not None and result.exports.json_path.is_file()
+                 and result.exports.html_path.is_file())
+    if persisted:
+        read_report(result.exports.json_path)
+    evidence.check("local_monitor_reports_readable", persisted)
+    evidence.rate("local_completed_runs", int(complete), 1)
+    evidence.rate("local_report_persistence", int(persisted), 1)
+    return complete and persisted
 
 
 def _label(value):

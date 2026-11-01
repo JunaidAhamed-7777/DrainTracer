@@ -503,19 +503,26 @@ class SessionLifecycleTests(unittest.TestCase):
             str(self._script("import time\ntime.sleep(60)\n")), console=make_console()
         )
         calls: list[int] = []
+        timer = threading.Timer(5.0, setattr, args=(app, "_quit_requested", True))
 
         def broken_render():
             calls.append(1)
+            if len(calls) == 1:
+                # Bound render retries, not real process/telemetry startup.
+                timer.start()
             if len(calls) >= 3:
                 app._quit_requested = True
             raise ValueError("layout bug")
 
         # Broken from the very first frame.
         app._render = broken_render  # type: ignore[method-assign]
-        # Bound a failed retry loop without making redraw count depend on startup speed.
-        timer = threading.Timer(5.0, setattr, args=(app, "_quit_requested", True))
-        timer.start()
-        self.addCleanup(timer.cancel)
+
+        def cancel_timer():
+            timer.cancel()
+            if timer.ident is not None:
+                timer.join(1)
+
+        self.addCleanup(cancel_timer)
         with self.assertLogs("src.dashboard", "ERROR") as logs:
             self.assertEqual(app.run(), 0)
         self.assertEqual(len(logs.records), 1)  # the traceback, once
