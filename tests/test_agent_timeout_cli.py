@@ -1,7 +1,7 @@
-import unittest
 import contextlib
 import io
 import json
+import unittest
 from unittest import mock
 
 from src.agent_command import build_parser, main
@@ -17,6 +17,22 @@ class AgentClientTimeoutCliTests(unittest.TestCase):
             self.assertEqual(main(["--request-timeout", "2.5", "start", "--timeout", "37",
                                    "--target", "target.py"]), 0)
         self.assertEqual(client_type.call_args.kwargs["timeout"], 2.5)
+
+    def test_diagnostic_clients_honor_override_and_keep_one_second_default(self):
+        for command in ("diagnose", "support"):
+            for option, expected_timeout in ((["--request-timeout", "0.05"], 0.05), ([], 1.0)):
+                with self.subTest(command=command, option=option):
+                    output = io.StringIO()
+                    diagnostics = {"ready": False}
+                    with mock.patch("src.agent_command.AgentClient") as client_type, \
+                            mock.patch("src.agent_diagnostics.inspect_agent", return_value=diagnostics), \
+                            mock.patch("src.agent_diagnostics.support_reports", return_value=[]), \
+                            mock.patch("src.agent_diagnostics.support_document", return_value={"ok": True}), \
+                            contextlib.redirect_stdout(output):
+                        result = main([*option, command])
+                    self.assertEqual(result, 2 if command == "diagnose" else 0)
+                    self.assertEqual(client_type.call_args.kwargs["timeout"], expected_timeout)
+
 
     def test_invalid_request_timeout_is_rejected_before_early_return_commands(self):
         commands = (
