@@ -157,7 +157,7 @@ topics into work that can be scoped, implemented, and verified. Phase names
 indicate dependency order, not promised dates or release versions. Keep the
 delivered milestones above as history.
 
-Status as of 2026-10-31: a checked item has its linked technical implementation
+Status as of 2026-11-01: a checked item has its linked technical implementation
 and recorded verification, with the scope qualifications below. An unchecked
 item retains an unmet goal or publication/pilot gate even if a narrower leaf
 issue is complete. Original **Done when** criteria are preserved. No phase
