@@ -9,14 +9,18 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
 import helpers  # noqa: F401
 import psutil
+from helpers import make_alert
 from rich.console import Console
 
-from src.events import LeakSeverity
+from src.checkpoints import CHECKPOINT_SAMPLES, CheckpointError, read_checkpoint
+from src.events import LeakSeverity, severity_rank
+from src.report_contract import read_report
 from src.workload import EXIT_WORKLOAD, RecipeError, WorkloadRunner, read_recipe
 
 PYTHON = getattr(sys, "_base_executable", None) or sys.executable
@@ -41,25 +45,93 @@ class RecipeTests(unittest.TestCase):
         return WorkloadRunner(self.recipe(), report_dir=self.folder / "reports",
                               console=Console(file=io.StringIO(), force_terminal=False))
 
-    def test_checkpointed_recipe_writes_a_valid_bounded_prefix_without_monitor_errors(self) -> None:
-        from src.checkpoints import CHECKPOINT_SAMPLES, read_checkpoint
-
+    def checkpoint_runner(self):
         checkpoint = self.folder / "recipe-checkpoint.json"
         config = self.folder / "checkpoint.toml"
         config.write_text('sample_interval="100ms"\nwindows=["600ms"]\n'
                           'checkpoint="recipe-checkpoint.json"\ncheckpoint_interval="1s"\n', encoding="utf-8")
         self.data.update(timeout=1.3, config=config.name)
-        runner = self.runner()
-        self.assertEqual(runner.run(), 0)
+        return self.runner(), checkpoint
+
+    def assert_completed_checkpoint_run(self, runner, code, checkpoint):
+        # A real startup may raise a policy signal. It must remain exit1;
+        # signal precedence must never conceal an operational failure here.
+        self.assertEqual(code, int(runner.breached))
+        self.assertFalse(runner._interrupted)
+        self.assertIsNone(runner._run_error)
+        self.assertIsNone(runner._export_error)
+        self.assertIsNone(runner._checkpoint_error)
+        self.assertEqual(runner.monitor_errors, ())
+        self.assertFalse(runner.manager.has_tracked_processes)
+        self.assertIsNotNone(runner._last_report)
+        self.assertIsNotNone(runner._last_html_report)
+        self.assertTrue(runner._last_html_report.is_file())
+        bounded = runner.build_report(snapshot_limit=2)
+        self.assertLessEqual(len(bounded["snapshots"]), 2)
+        for report in (bounded, read_report(runner._last_report)):
+            outcome = report["outcome"]
+            self.assertEqual(outcome["startup"], {"state": "started", "error": None})
+            self.assertEqual(outcome["workload"]["state"], "complete")
+            self.assertEqual(outcome["monitor_errors"], [])
+            cleanup = outcome["cleanup"]
+            self.assertEqual(cleanup["state"], "complete")
+            self.assertIs(type(cleanup["remaining_count"]), int)
+            self.assertEqual(cleanup["remaining_count"], 0)
+            self.assertEqual(cleanup["remaining_processes"], [])
+            self.assertEqual(cleanup["omitted_processes"], 0)
+            self.assertFalse(cleanup["resume_required"])
+            self.assertEqual(cleanup["errors"], [])
+            self.assertEqual(report["headless"]["exit_code"], code)
+            self.assertEqual(report["headless"]["breached"], runner.breached)
         saved = read_checkpoint(checkpoint, app_version=runner.VERSION)
         self.assertLessEqual(len(saved["snapshots"]), CHECKPOINT_SAMPLES)
         self.assertGreater(saved["sample_count"], 0)
         self.assertEqual(saved["outcome"]["monitor_errors"], [])
         self.assertIn("workload", saved)
-        self.assertFalse(runner.manager.has_tracked_processes)
-        bounded = runner.build_report(snapshot_limit=2)
-        self.assertLessEqual(len(bounded["snapshots"]), 2)
-        self.assertEqual(bounded["outcome"]["workload"]["state"], "complete")
+        return saved
+
+    def test_checkpointed_recipe_writes_a_valid_bounded_prefix_without_monitor_errors(self) -> None:
+        runner, checkpoint = self.checkpoint_runner()
+        self.assert_completed_checkpoint_run(runner, runner.run(), checkpoint)
+
+    def test_checkpoint_signal_retains_exit1_and_cannot_hide_operational_failures(self) -> None:
+        runner, checkpoint = self.checkpoint_runner()
+        collect = runner.detector._collect_snapshot
+
+        def injected_signal():
+            # An explicitly synthetic, already-judged producer signal tests
+            # checkpoint/policy handling, not detector thresholds or accuracy.
+            # Cover the initial synchronous sample as well as background ticks.
+            snapshot = collect()
+            severity = max((snapshot.severity, LeakSeverity.HIGH), key=severity_rank)
+            return replace(snapshot, alerts=(*snapshot.alerts, make_alert()), severity=severity)
+
+        with mock.patch.object(runner.detector, "_collect_snapshot", side_effect=injected_signal):
+            code = runner.run()
+        self.assertEqual(code, 1)
+        saved = self.assert_completed_checkpoint_run(runner, code, checkpoint)
+        self.assertEqual(saved["headless"]["exit_code"], 1)
+        self.assertTrue(saved["headless"]["breached"])
+
+        # These failures can otherwise sit behind exit1's policy precedence.
+        for name, value in (("_run_error", "injected monitor failure"),
+                            ("_export_error", "injected export failure"),
+                            ("_checkpoint_error", "injected checkpoint failure"),
+                            ("_startup_state", "failed"),
+                            ("_cleanup_state", "incomplete")):
+            with self.subTest(failure=name), mock.patch.object(runner, name, value), self.assertRaises(AssertionError):
+                self.assert_completed_checkpoint_run(runner, runner.exit_status(), checkpoint)
+        with mock.patch.dict(runner.workflow, state="failed"), self.assertRaises(AssertionError):
+            self.assert_completed_checkpoint_run(runner, runner.exit_status(), checkpoint)
+        original = checkpoint.read_bytes()
+        try:
+            corrupt = json.loads(original)
+            corrupt["sample_count"] += 1
+            checkpoint.write_text(json.dumps(corrupt), encoding="utf-8")
+            with self.assertRaises(CheckpointError):
+                self.assert_completed_checkpoint_run(runner, code, checkpoint)
+        finally:
+            checkpoint.write_bytes(original)
 
     def test_relative_paths_resolve_from_recipe_and_values_never_enter_provenance(self) -> None:
         self.data["environment"] = {"PRIVATE": "seeded-literal-value",
