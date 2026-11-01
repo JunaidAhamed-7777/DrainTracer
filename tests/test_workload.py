@@ -26,7 +26,7 @@ class RecipeTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
-        self.folder = Path(self.temporary.name)
+        self.folder = Path(self.temporary.name).resolve()
         self.script = self.folder / "target.py"
         self.script.write_text("import time; time.sleep(60)", encoding="utf-8")
         self.path = self.folder / "recipe.json"

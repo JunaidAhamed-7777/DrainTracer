@@ -78,6 +78,9 @@ values and process IDs vary by run.*
   samples go stale; reports add coverage and the monitor's own CPU and memory.
   The Monitor view also shows host CPU and available physical memory, sampled
   every five seconds with age and cost. These are host context, not target usage.
+  [Measured component budgets](docs/host-budget-results.md) cover refresh and
+  cached-call costs on the recorded Windows/WSL environments; they do not imply
+  that the separate full observer soak passed every timing ceiling.
 - **Ask why.** Focused views rank growing processes, show each detection
   window's checks behind a verdict, annotate a timeline with your markers, and
   report monitor health, without pausing sampling.
@@ -92,6 +95,10 @@ values and process IDs vary by run.*
 - **Check in CI.** Run headless with a time limit, configurable failure
   severity, optional policies and absolute budgets, GitHub Actions
   annotations, and a job summary.
+
+Opt-in [local team storage](docs/team-access.md) adds project-scoped roles,
+revocable credentials, server-side report privacy, retention, controlled logical
+snapshots and explicitly client-computed comparison receipts.
 
 ## Get started
 
@@ -308,6 +315,8 @@ Use the target's own file logging when needed. See the
 - `E` — export JSON and HTML reports.
 - `O` — open the latest HTML export.
 - `M` — add a numbered marker (`marker N`) to the event log, timeline, and report.
+- `N` — enter a named marker (up to 80 characters); Enter saves and Esc cancels.
+  While editing, Space inserts a label space; outside text entry it still pauses the target.
 - `?` / `H` — show help and active settings; arrows scroll it, `Esc` closes it.
   Configured budgets appear with their units. The dashboard displays ceilings;
   headless runs and report comparisons enforce them. CLI budget flags require
@@ -336,6 +345,15 @@ panel says so; `Esc` clears the filter and restores the retained selection.
 | `3` | Evidence: each window's points, slope, monotonic and drop ratios, score, and verdict | `←`/`→` resource, `↑`/`↓` scroll |
 | `4` | Timeline: one chart with process, pause, signal, and marker annotations | `←`/`→` chart, `F` freeze view, `↑`/`↓` annotations |
 | `5` | Monitor: cadence, collection cost, coverage, freshness, monitor footprint | — |
+| `6` | Compare: a saved baseline against a captured view of the current session | `B` load baseline, `R` refresh, `↑`/`↓` scroll |
+
+In Compare, press `B` and enter a JSON report path (spaces are supported); Enter
+loads it and Esc cancels. The view shows strict comparability and caveats before
+differences, using the same engine and rendering as `draintracer diff --strict`.
+It includes drift, peaks, coverage, signal episodes, and per-operation values
+when both runs recorded operation counts. `R` captures a fresh comparison;
+sampling continues while loading or inspecting the baseline. A failed load
+keeps the previous comparison available. Baselines are read without being modified.
 
 `F` freezes only the timeline view; `Space` still pauses the target.
 Markers record timing, not cause, and severity is a heuristic tier, not a
@@ -352,6 +370,13 @@ Evidence and inspector tree totals show `n/a` when unavailable and label partial
 totals as lower bounds; measured zero counters remain zero.
 The frozen timeline distinguishes newer samples collected since freezing from
 older samples outside the retained dashboard history. Exported charts may be thinned.
+In the Timeline view, `P` switches between the tree and the process selected in
+view 2. Process charts cover private bytes, handles and threads by PID and creation
+time. `R` cycles the detector's window lengths and all retained history; `[` / `]`
+move the interval earlier/later within retained points. Unavailable history is
+identified rather than reconstructed. Release a frozen view before changing scope.
+Named markers appear on HTML charts and in a keyboard-accessible list, with full
+labels and elapsed times. Markers establish timing, not cause.
 
 The layout adapts to terminal size and uses ASCII fallbacks for legacy Windows
 encodings. Startup artwork still comes from [TITLE.txt](TITLE.txt), with a
@@ -465,6 +490,9 @@ units, and [working-principle.md](working-principle.md) for the detection math.
 The [repeated Windows/Linux calibration](docs/calibration-results.md) records
 tested warning delays, benign startup/cache warnings, slow-growth misses,
 coverage, and duration/profile guidance with reproducible aggregate evidence.
+Growth dominated by new workers keeps its full aggregate severity; the
+[measured worker-growth policy](docs/worker-growth-policy.md) explains the
+capacity distinction, CI effects, and separately scoped tracing decision.
 
 ## Save and compare evidence
 
@@ -494,6 +522,10 @@ and explains the recorded episode count. Reports with recorded severity but
 no episode counts still identify the signal and qualify the missing detail.
 A failed HTML companion is recorded in the retained JSON when the outcome
 update can be written.
+An offline retained-sample table and CSV download expose plotted values
+without hovering over charts.
+Labeled range fields, native signal Zoom buttons, and focusable data tables
+support keyboard use. See the [HTML accessibility checks](docs/html-accessibility.md).
 
 ![The exported HTML report shows the HIGH memory signal, resource trend charts, recorded events, and growing processes](docs/assets/html-report.gif)
 
@@ -570,6 +602,18 @@ an interruption. Earlier judged signals remain historical evidence.
 
 ## Documentation
 
+- [Maintained Windows CI action](docs/ci-workloads.md) — exact version installs,
+  bounded workload execution, strict comparison, and evidence after failures.
+  Its [published-package dispatch](docs/ci-workloads.md#verify-a-published-package)
+  verifies PyPI artifacts after the matching release tag and package exist.
+- [First result walkthrough](docs/first-result.md) — install, measure bounded
+  growth, inspect coverage, change the workload, and compare exported reports.
+- [Python worker recipe](docs/python-worker.md) — monitor a worker's own
+  interpreter environment without importing its dependencies into DrainTracer.
+- [Native and batch recipes](docs/native-and-batch.md) — bounded Windows
+  executable and recursive-launcher investigations with cleanup expectations.
+- [Service observation recipe](docs/service-observation.md) — inspect an
+  authorized disposable Windows service and verify it survives ordinary detach.
 - [Usage and troubleshooting](docs/usage.md) — launch, attach, controls, warm-up,
   headless operation, and diagnostic logging.
 - [Configuration](docs/configuration.md) — TOML discovery, profiles, thresholds,
@@ -642,3 +686,32 @@ After restart it marks old active sessions interrupted and can export their
 latest intact checkpoint as partial evidence; it never retries a launch or
 reattaches automatically. See [agent scheduling and recovery](docs/agent-recovery.md)
 for retention, storage admission limits, and failure semantics.
+
+`draintracer-agent diagnose` exposes live readiness/freshness/queue/storage or
+read-only offline state. `recover SESSION_UUID` previews an intact partial
+checkpoint; add `--out-dir DIRECTORY` to save it. `stop` requests ordinary
+cleanup, and `remove` previews stopped-only control-file removal while keeping
+evidence and unrelated data. `support` previews typed, redacted diagnostics;
+add up to two explicit `--include-report SESSION_UUID` selections and `--out
+PATH.zip` for an exclusive local archive. Nothing is uploaded. Follow the
+[agent operations guide](docs/agent-operations.md) for installation, upgrade,
+rollback, removal, privacy review, and command bounds.
+
+Agent removal and startup share a permanent private control fence. An interrupted
+removal blocks startup until an explicit removal retry validates and finishes
+it; reports, checkpoints, unrelated files, and the harmless fence file remain.
+
+`draintracer-ops` measures a disposable local operating reference with a named
+operator/contact. Its default local baseline exercises ingestion, committed
+durability, authority/permission/retention refusals, sanitized restoration and
+local collection; Windows also measures agent freshness, completed
+runs, cleanup and crash-prefix recovery. It writes bounded private readiness
+evidence with explicit counts and local budgets. Credential and retention
+expiry drills use separate stepped fixture clocks; baseline timings use real
+clocks. Local collection uses its declared cleanup deadline and includes the
+existing bounded safety close in the measured duration; missed deadlines stay
+failed. See the
+[operating objectives and recovery runbook](docs/service-operations.md) for the
+new-workspace command, limits, explicit optional `--with-transport` TLS extension
+and deployment prerequisites. A passing fixture
+is not a hosted SLA, live deployment approval, human consent or pilot result.

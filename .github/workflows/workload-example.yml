@@ -1,0 +1,94 @@
+name: Verify maintained workload action
+on:
+  pull_request:
+    paths:
+      - '.github/actions/draintracer/**'
+      - '.github/ci/**'
+      - '.github/workflows/workload-example.yml'
+      - 'docs/ci-workloads.md'
+  workflow_dispatch:
+    inputs:
+      published_version:
+        description: 'Exact published MAJOR.MINOR.PATCH; leave empty to build this checkout'
+        required: false
+        type: string
+        default: ''
+permissions:
+  contents: read
+jobs:
+  example:
+    name: Compare bounded workloads and retain a failed short run
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.10'
+      - name: Select the published package or build this candidate, then prepare the fixture
+        id: candidate
+        shell: pwsh
+        env:
+          DRAIN_PUBLISHED_VERSION: ${{ inputs.published_version }}
+        run: |
+          $publishedVersion = $env:DRAIN_PUBLISHED_VERSION
+          if ([string]::IsNullOrEmpty($publishedVersion)) {
+            python -m pip install build
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            python -m build
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            python .github/ci/candidate.py >> $env:GITHUB_OUTPUT
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } else {
+            if ($publishedVersion -cnotmatch '\A(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\z') {
+              throw 'Use an exact published MAJOR.MINOR.PATCH version'
+            }
+            "version=$publishedVersion" >> $env:GITHUB_OUTPUT
+            'wheel=' >> $env:GITHUB_OUTPUT
+          }
+          Copy-Item torture/memory_leak.py .github/ci/worker.py
+      - name: Collect a known growing baseline without approving it
+        id: before
+        continue-on-error: true
+        uses: ./.github/actions/draintracer
+        with:
+          version: ${{ steps.candidate.outputs.version }}
+          wheel: ${{ steps.candidate.outputs.wheel }}
+          recipe: .github/ci/workload.json
+          artifact-name: workload-before-${{ github.run_id }}
+      - name: Substitute the steady fixture at the same target path
+        shell: pwsh
+        run: Copy-Item torture/steady.py .github/ci/worker.py -Force
+      - name: Compare the changed workload
+        id: after
+        continue-on-error: true
+        uses: ./.github/actions/draintracer
+        with:
+          version: ${{ steps.candidate.outputs.version }}
+          wheel: ${{ steps.candidate.outputs.wheel }}
+          recipe: .github/ci/workload.json
+          baseline: ${{ steps.before.outputs.report-file }}
+          artifact-name: workload-after-${{ github.run_id }}
+      - name: Prepare a deliberately inconclusive duration
+        shell: pwsh
+        run: python .github/ci/prepare_short.py
+      - name: Retain evidence from the expected failing short run
+        id: short
+        continue-on-error: true
+        uses: ./.github/actions/draintracer
+        with:
+          version: ${{ steps.candidate.outputs.version }}
+          wheel: ${{ steps.candidate.outputs.wheel }}
+          recipe: .github/ci/short.json
+          artifact-name: workload-short-failure-${{ github.run_id }}
+      - name: Verify actual machine outcomes and retained evidence
+        if: always()
+        shell: pwsh
+        env:
+          EXPECTED_VERSION: ${{ steps.candidate.outputs.version }}
+          BEFORE: ${{ steps.before.outputs.report-directory }}
+          AFTER: ${{ steps.after.outputs.report-directory }}
+          SHORT: ${{ steps.short.outputs.report-directory }}
+        run: python .github/ci/verify_example.py

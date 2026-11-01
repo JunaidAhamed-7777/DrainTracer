@@ -618,6 +618,61 @@ class TimelineViewTests(ViewRenderingMixin, unittest.TestCase):
         self.assertFalse(app.timeline_frozen)
         self.assertIn("30 samples", render_text(app))
 
+    def test_process_scope_uses_selected_identity_and_freezes_its_points(self) -> None:
+        app = self._app()
+        app._proc_selected = (2, 2.0)
+        app._handle_key("p")
+        points, _marks, alerts = app._timeline_data()
+        self.assertEqual(points[-1][1], (30 + 24 * 4) * MB)
+        self.assertEqual(alerts, ())
+        self.assertIn("PID 2 worker.exe", render_text(app))
+        app._handle_key("f")
+        growing_session_more(app)
+        self.assertEqual(app._timeline_data()[0], points)
+        app._handle_key("p")
+        self.assertEqual(app._timeline_identity, (2, 2.0))
+        app._handle_key("f")
+        self.assertNotEqual(app._timeline_data()[0], points)
+        self.assertFalse(app.detector.is_paused)
+        app._timeline_identity = (555, 123.0)
+        self.assertIn("Unavailable or too little retained measured history", render_text(app))
+
+    def test_historical_ranges_pan_only_within_retained_points(self) -> None:
+        app = self._app()
+        app._handle_key("r")
+        recent = app._timeline_data()[0]
+        self.assertLessEqual(recent[-1][0] - recent[0][0], 10)
+        app._handle_key("[")
+        earlier = app._timeline_data()[0]
+        self.assertLess(earlier[-1][0], recent[-1][0])
+        app._handle_key("]")
+        self.assertEqual(app._timeline_data()[0], recent)
+        self.assertIn("selected retained range", app._decimation_text(len(recent), 10, 1).plain)
+        self.assertFalse(app.detector.is_paused)
+
+    def test_named_marker_editor_is_bounded_and_cancelable(self) -> None:
+        from unittest import mock
+
+        app = self._app(80, 24)
+        app._handle_key("n")
+        with mock.patch.object(app.manager, "pause") as pause, mock.patch.object(app.manager, "kill") as kill:
+            for char in "start work kq " + "x" * 100:
+                app._handle_key(char)
+            self.assertEqual(len(app._marker_draft), 80)
+            pause.assert_not_called()
+            kill.assert_not_called()
+        self.assertIn("ENTER save", render_text(app).splitlines()[-1])
+        app._handle_key("enter")
+        self.assertTrue(app.markers[-1].label.startswith("start work kq "))
+        self.assertEqual(len(app.markers[-1].label), 80)
+        app._handle_key("n")
+        app._handle_key("x")
+        app._handle_key(ESCAPE)
+        self.assertEqual(len(app.markers), 1)
+        with mock.patch.object(app.manager, "pause", return_value=True) as pause:
+            app._handle_key(" ")
+        pause.assert_called_once()
+
     def test_frozen_caption_distinguishes_new_samples_from_retention_loss(self) -> None:
         app = _app()
         sample_trees(app, [[make_process(100)]] * 3)

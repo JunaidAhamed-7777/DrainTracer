@@ -125,6 +125,7 @@ class _Record:
     checkpoint: str = ""
     writer_identity: dict = field(default_factory=dict)
     identity_status: str = "not_checked"
+    last_progress_clock: float = field(default_factory=time.monotonic)
 
     def event(self, kind, **values):
         self.event_count += 1
@@ -296,6 +297,7 @@ class AgentRegistry:
                     record.target_pid = status.snapshot.root_pid
                     record.create_time = status.snapshot.root_create_time
                 record.updated_at, self._dirty = time.time(), True
+                record.last_progress_clock = time.monotonic()
             result = record.session.wait(0)
             if result is not None:
                 record.state = "failed" if result.reason == "failed" else "completed"
@@ -323,6 +325,8 @@ class AgentRegistry:
                 "full_coverage": status.full_coverage if status else record.last_full_coverage, "result": record.result,
                 "identity_status": record.identity_status, "last_observed_at": record.updated_at,
                 "target_identity": {"pid": record.target_pid, "create_time": record.create_time},
+                "observation_age_seconds": (max(0, time.monotonic() - record.last_progress_clock)
+                                            if status else max(0, time.time() - record.updated_at)),
                 "reports": self._report_names(record.exports)}
 
     def handle(self, request):
@@ -383,6 +387,29 @@ class AgentRegistry:
     def _dispatch(self, operation, params, *, identity, digest):
         if operation == "start":
             return self._start(params, request_id=identity, digest=digest)
+        if operation == "shutdown":
+            _keys(params, set())
+            self.stopping = True
+            return {"accepted": True, "cleanup_pending": True}
+        if operation == "diagnostics":
+            _keys(params, set())
+            active = [record for record in self.records.values() if record.result is None]
+            stale = []
+            for record in active:
+                interval = record.session.options.sample_interval_ms / 1000
+                if time.monotonic() - record.last_progress_clock > max(10, interval * 3):
+                    stale.append(record.identity)
+            try:
+                self._require_storage()
+            except AgentError:
+                pass  # The diagnostics expose the failed check below.
+            return {"diagnostics_schema": 1, "version": _version(), "responsive": True,
+                    "ready": not self.stopping and self.storage_error is None and not stale
+                             and len(active) < self.policy.max_sessions,
+                    "fresh": not stale, "stale_sessions": stale, "queue_depth": 0,
+                    "active_sessions": len(active), "session_limit": self.policy.max_sessions,
+                    "retained_records": len(self.records), "storage": self.storage_inventory,
+                    "storage_error": self.storage_error, "uptime_seconds": time.monotonic() - self.started}
         if operation == "status":
             _keys(params, {"session_id", "offset", "limit"})
             if "session_id" in params:
