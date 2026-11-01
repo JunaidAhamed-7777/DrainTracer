@@ -266,7 +266,8 @@ class ProcessesViewTests(ViewRenderingMixin, unittest.TestCase):
         root = replace(make_process(100, ppid=1, name="parent.exe"), create_time=1.0)
         with mock.patch.object(app.detector, "_sample_processes",
                                return_value=[root, _worker(2, 900)]), \
-                mock.patch("src.leak_detector.time.time", return_value=1000.0 + 25 * 0.5):
+                mock.patch("src.leak_detector.time.time", return_value=1000.0 + 25 * 0.5), \
+                mock.patch("src.leak_detector.time.monotonic", return_value=50.0 + 25 * 0.5):
             app.detector._collect_snapshot()
         app._proc_cache = None
         self.assertEqual(app._inspector_rows()[1].growth["private_bytes"].delta, displayed)

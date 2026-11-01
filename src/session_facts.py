@@ -124,6 +124,8 @@ class SessionFacts:
         self._unreadable_pids: dict[int, str] = {}
         self._errors: list[str] = []
         self._host: dict[str, Any] | None = None
+        self._clock_adjustments = 0
+        self._sampling_gaps = 0
 
     def observe(self, snapshot: MetricsSnapshot, *, dropped: int = 0) -> None:
         """Account for one snapshot, whatever its kind."""
@@ -174,6 +176,8 @@ class SessionFacts:
             if len(self._unreadable_pids) < _UNREADABLE_PID_LIMIT:
                 self._unreadable_pids.setdefault(pid, names.get(pid, ""))
         previous, self._previous = self._previous, snapshot
+        if snapshot.metadata.get("timing_reset"):
+            previous = None
         live = [p for p in snapshot.processes if p.status != psutil.STATUS_DEAD]
         if live:
             self.measured += 1
@@ -233,6 +237,8 @@ class SessionFacts:
         if diagnostics is None:
             return
         self.dropped = max(self.dropped, diagnostics.dropped_snapshots)
+        self._clock_adjustments = max(self._clock_adjustments, diagnostics.clock_adjustments)
+        self._sampling_gaps = max(self._sampling_gaps, diagnostics.sampling_gaps)
         if diagnostics.host is not None:
             self._host = asdict(diagnostics.host)
         if snapshot.monitoring_paused or snapshot.metadata.get("sampling_error"):
@@ -348,6 +354,8 @@ class SessionFacts:
                 ),
                 "failed_samples": self.failed,
                 "dropped_snapshots": self.dropped,
+                "clock_adjustments": self._clock_adjustments,
+                "sampling_gaps": self._sampling_gaps,
             },
         }
 

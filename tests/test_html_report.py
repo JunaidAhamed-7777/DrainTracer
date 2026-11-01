@@ -92,6 +92,19 @@ class RenderTests(unittest.TestCase):
                 document = render_html_report(_report(event_counts=counts))
                 self.assertIn("Event retention counts unavailable for this report.", document)
                 self.assertIn("Launched worker.exe", document)
+    def test_evicted_timing_detail_still_qualifies_the_report_from_exact_counts(self) -> None:
+        report = _report(detection_ran=True, event_log=[], session_facts={"schema": 1,
+            "monitor": {"clock_adjustments": 1, "sampling_gaps": 2}})
+        report["snapshots"] = [snapshot_to_dict(make_snapshot(timestamp=1000 + index)) for index in range(3)]
+        document = html.unescape(render_html_report(report))
+        self.assertIn("<title>DrainTracer · worker.exe · EVIDENCE GAPS</title>", document)
+        self.assertIn("No leak signals in interrupted observations", document)
+        self.assertIn("Earlier judgments do not establish continuous observation", document)
+        self.assertIn("1 clock adjustment · 2 sampling gaps", document)
+        report["snapshots"] = _report()["snapshots"]
+        document = html.unescape(render_html_report(report))
+        self.assertIn("<title>DrainTracer · worker.exe · HIGH</title>", document)
+        self.assertIn("Earlier judgments do not establish continuous observation", document)
 
     def test_partial_coverage_qualifies_verdict_and_resource_cards(self) -> None:
         from helpers import make_denied
