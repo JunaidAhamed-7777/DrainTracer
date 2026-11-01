@@ -106,7 +106,7 @@ class ProcessCleanupTests(unittest.TestCase):
     def test_exited_process_does_not_make_resume_fail(self) -> None:
         manager = self._manager()
         manager._suspended_pids = {101}
-        with mock.patch.object(manager, "_open_tracked", return_value=None):
+        with mock.patch.object(process_runner.psutil, "Process", side_effect=psutil.NoSuchProcess(101)):
             self.assertTrue(manager.resume())
         self.assertFalse(manager._suspended_pids)
 

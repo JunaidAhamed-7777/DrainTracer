@@ -62,6 +62,7 @@ _STATS = {"count": "count", "mean": "num", "max": "num"}
 _DIAGNOSTICS = {key: "num" for key in ("requested_interval_ms", "actual_interval_ms", "collection_ms",
     "handle_types_age_seconds", "handle_types_cost_ms", "monitor_cpu_percent", "monitor_rss_bytes",
     "monitor_private_bytes", "failed_samples", "dropped_snapshots")}
+_DIAGNOSTICS.update({"clock_adjustments": "count", "sampling_gaps": "count"})
 _LIFECYCLE = {"kind": _enum("started", "exited", "restarted"), "timestamp": "time", "pid": "pid",
               "ppid": "pid", "create_time": "identity", "name": "name", "replaces_pid": "pid"}
 _SNAPSHOT = {
@@ -69,7 +70,9 @@ _SNAPSHOT = {
     "processes": [_PROCESS], "totals": _METRICS, "alerts": [_ALERT], "severity": ("enum", set(SEVERITIES)),
     "sample_interval_ms": "num", "warming_up": "bool", "coverage": _COVERAGE,
     "evidence": _mapping(_RESOURCES, _EVIDENCE_ITEM), "handle_types": _TYPES,
-    "metadata": {"sampling_error": "error"}, "lifecycle": [_LIFECYCLE], "process_counts": _COUNTS,
+    "metadata": {"sampling_error": "error", "timing_reset": _enum("clock_adjustment", "sampling_gap"),
+                 "sample_gap_seconds": "num", "clock_adjustment_seconds": "num"},
+    "lifecycle": [_LIFECYCLE], "process_counts": _COUNTS,
     "diagnostics": _DIAGNOSTICS,
 }
 _FACTS = {
@@ -85,7 +88,8 @@ _FACTS = {
     "monitor": {"requested_interval_ms": "num", "interval_ms": _STATS, "collection_ms": _STATS,
                 "monitor_cpu_percent": _STATS, "handle_classification_ms": _STATS,
                 **{key: "num" for key in ("monitor_rss_peak_bytes", "monitor_private_peak_bytes",
-                   "handle_types_max_age_seconds", "failed_samples", "dropped_snapshots")}},
+                   "handle_types_max_age_seconds", "failed_samples", "dropped_snapshots")},
+                "clock_adjustments": "count", "sampling_gaps": "count"},
 }
 _SETTINGS = {"sample_interval_ms": "num", "windows_seconds": ["num"], "warmup_seconds": "num",
              "timeout_seconds": "num", "thresholds": _mapping(_RESOURCES,

@@ -112,6 +112,11 @@ truncated SHA-256 fingerprint for launch comparisons. A predictable argument
 can be checked by guessing and hashing it; the fingerprint is not a secure
 way to conceal a secret.
 
+Monitor diagnostics include host CPU utilization, available/total physical
+memory, and the host reading's timestamp, age and collection cost. The detector
+collects these locally at most once every five seconds; they are saved with
+reports and are not attributed to the target. No new network request is involved.
+
 Experiment labels pass through pattern-based removal of secret-looking
 assignments, flags, URL credentials, and Basic/Bearer credentials. Arbitrary
 names, paths, tokens in unexpected formats, configuration profile names,
@@ -123,6 +128,10 @@ or share preview in the current software. That work remains tracked in
 [issue #41](https://github.com/JunaidAhamed-7777/DrainTracer/issues/41).
 
 ## Before sharing evidence
+
+Privacy copies preserve typed clock-adjustment and sampling-gap counts and
+relative timing-reset diagnostics. These qualify measurement continuity;
+removing paths and identities must not remove a known evidence interruption.
 
 1. Prefer a minimal reproduction using a disposable, synthetic workload.
    Avoid real customer paths, credentials, or production process names at
@@ -210,3 +219,18 @@ For reviewers maintaining this guide:
 Changes to these data flows should trigger review of this guide and
 [PRIVACY.md](../PRIVACY.md). Proposed hosted sharing and user research need
 additional implementation and notices; these documents do not implement them.
+
+## Optional local agent support
+
+The opt-in agent stores a private credential, scheduling journal, checkpoints
+and reports beneath a verified local user-controlled path. Its authenticated
+pipe is local and never uploads evidence. `diagnose` is private operational
+output and may contain local session/process identities, paths and error text;
+do not paste it unreviewed. `support` previews an explicitly typed redacted
+document, excludes credentials and raw operational metadata, and can include
+up to two explicitly chosen privacy-transformed reports. JSON and offline HTML
+share the same transformed report object. Archive creation requires `--out`;
+there is no automatic publication. Numerical evidence can still identify a
+workload. Removal previews/applies only known control files after shutdown;
+reports, checkpoints and unrelated application files are preserved. See
+[agent operations](agent-operations.md) before sharing or removing data.
