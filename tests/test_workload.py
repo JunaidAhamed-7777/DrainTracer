@@ -12,6 +12,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 from unittest import mock
+from uuid import uuid4
 
 import helpers  # noqa: F401
 import psutil
@@ -51,7 +52,9 @@ class RecipeTests(unittest.TestCase):
         config.write_text('sample_interval="100ms"\nwindows=["600ms"]\n'
                           'checkpoint="recipe-checkpoint.json"\ncheckpoint_interval="1s"\n', encoding="utf-8")
         self.data.update(timeout=1.3, config=config.name)
-        return self.runner(), checkpoint
+        runner = self.runner()
+        runner._checkpoint_session_id = str(uuid4())
+        return runner, checkpoint
 
     def assert_completed_checkpoint_run(self, runner, code, checkpoint):
         # A real startup may raise a policy signal. It must remain exit1;
@@ -62,6 +65,7 @@ class RecipeTests(unittest.TestCase):
         self.assertIsNone(runner._export_error)
         self.assertIsNone(runner._checkpoint_error)
         self.assertEqual(runner.monitor_errors, ())
+        self.assertFalse(runner.target_failed)
         self.assertFalse(runner.manager.has_tracked_processes)
         self.assertIsNotNone(runner._last_report)
         self.assertIsNotNone(runner._last_html_report)
@@ -73,6 +77,7 @@ class RecipeTests(unittest.TestCase):
             self.assertEqual(outcome["startup"], {"state": "started", "error": None})
             self.assertEqual(outcome["workload"]["state"], "complete")
             self.assertEqual(outcome["monitor_errors"], [])
+            self.assertFalse(outcome["target"]["failed"])
             cleanup = outcome["cleanup"]
             self.assertEqual(cleanup["state"], "complete")
             self.assertIs(type(cleanup["remaining_count"]), int)
@@ -83,10 +88,12 @@ class RecipeTests(unittest.TestCase):
             self.assertEqual(cleanup["errors"], [])
             self.assertEqual(report["headless"]["exit_code"], code)
             self.assertEqual(report["headless"]["breached"], runner.breached)
-        saved = read_checkpoint(checkpoint, app_version=runner.VERSION)
+        self.assertIsNotNone(runner._checkpoint_session_id)
+        saved = read_checkpoint(checkpoint, app_version=runner.VERSION, session_id=runner._checkpoint_session_id)
         self.assertLessEqual(len(saved["snapshots"]), CHECKPOINT_SAMPLES)
         self.assertGreater(saved["sample_count"], 0)
         self.assertEqual(saved["outcome"]["monitor_errors"], [])
+        self.assertFalse(saved["outcome"]["target"]["failed"])
         self.assertIn("workload", saved)
         return saved
 
@@ -123,6 +130,15 @@ class RecipeTests(unittest.TestCase):
                 self.assert_completed_checkpoint_run(runner, runner.exit_status(), checkpoint)
         with mock.patch.dict(runner.workflow, state="failed"), self.assertRaises(AssertionError):
             self.assert_completed_checkpoint_run(runner, runner.exit_status(), checkpoint)
+        with mock.patch.object(WorkloadRunner, "target_failed", new_callable=mock.PropertyMock, return_value=True):
+            self.assertEqual(runner.exit_status(), 1)
+            with self.assertRaises(AssertionError):
+                self.assert_completed_checkpoint_run(runner, runner.exit_status(), checkpoint)
+        expected_session = runner._checkpoint_session_id
+        with mock.patch.object(runner, "_checkpoint_session_id", str(uuid4())), self.assertRaises(CheckpointError):
+            self.assert_completed_checkpoint_run(runner, code, checkpoint)
+        # The wrong-session refusal does not depend on a corrupt checksum.
+        read_checkpoint(checkpoint, app_version=runner.VERSION, session_id=expected_session)
         original = checkpoint.read_bytes()
         try:
             corrupt = json.loads(original)
