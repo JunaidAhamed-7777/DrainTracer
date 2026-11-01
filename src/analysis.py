@@ -8,10 +8,12 @@ share one code path. Missing or malformed values are skipped, never fatal.
 from __future__ import annotations
 
 import math
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from .events import ProcessSummary
 from .handle_types import CATEGORIES as HANDLE_CATEGORIES
 from .stats import least_squares_slope
 
@@ -118,6 +120,17 @@ def load_samples(report: Mapping[str, Any]) -> list[Sample]:
             ):
                 alerts[str(alert["resource"])] = alert
         processes = item.get("processes")
+        coverage = _coverage_counts(item.get("coverage")) or {}
+        if isinstance(processes, _SEQUENCES):
+            readings = [process for process in processes if isinstance(process, Mapping)]
+            missing = any(process.get("unmeasured") or process.get("access_denied") for process in readings)
+            for metric in TOTAL_KEYS:
+                if metric in coverage or not missing:
+                    continue
+                count = sum(1 for process in readings if not process.get("access_denied")
+                            and metric not in (process.get("unmeasured")
+                                               if isinstance(process.get("unmeasured"), _SEQUENCES) else ()))
+                coverage[metric] = (count, len(readings))
         metadata = item.get("metadata")
         handle_types = _handle_counts(item.get("handle_types"))
         samples.append(
@@ -131,7 +144,7 @@ def load_samples(report: Mapping[str, Any]) -> list[Sample]:
                 error=isinstance(metadata, Mapping) and bool(metadata.get("sampling_error")),
                 handle_types=handle_types,
                 warming_up=bool(item.get("warming_up")),
-                coverage=_coverage_counts(item.get("coverage")),
+                coverage=coverage or None,
             )
         )
     samples.sort(key=lambda sample: sample.timestamp)
@@ -437,6 +450,8 @@ class ReportSummary:
     facts: SessionFactsData | None = None
     peak_times: Mapping[str, float] | None = None
     chart_stride: int = 1
+    # Independently ranked within this report; never identity matches to another run.
+    process_attribution: Mapping[str, Any] | None = None
 
     @property
     def exact(self) -> bool:
@@ -575,6 +590,7 @@ def summarize(report: Mapping[str, Any], samples: Sequence[Sample] | None = None
         facts=facts,
         peak_times=peak_times,
         chart_stride=stride,
+        process_attribution={resource: process_attribution(report, resource) for resource in RESOURCES},
     )
 
 
@@ -593,6 +609,134 @@ def _ordered_categories(counts: Sequence[Mapping[str, int] | None]) -> list[str]
     present = {category for mapping in counts if mapping for category in mapping}
     known = [category for category in HANDLE_CATEGORIES if category in present]
     return known + sorted(present.difference(HANDLE_CATEGORIES))
+
+
+PROCESS_SUMMARY_SCAN_LIMIT = 4096
+ATTRIBUTION_SNAPSHOT_SCAN_LIMIT = 7200
+_ALERT_SCAN_LIMIT = 8
+_CONTRIBUTOR_SCAN_LIMIT = 256
+
+
+def _identity_fields(item: Mapping[str, Any]) -> tuple[int, float | None, str] | None:
+    pid = item.get("pid")
+    created = finite(item.get("create_time"))
+    if type(pid) is not int or not 0 < pid <= 2**31 - 1:
+        return None
+    if item.get("create_time") is not None and created is None:
+        return None
+    name = item.get("name")
+    name = name[:160] if isinstance(name, str) else "unknown process"
+    return pid, created, "".join(char if char.isprintable() else "?" for char in name)
+
+
+def _rank_attribution_rows(rows: list[dict[str, Any]], limit: int) -> tuple[list[dict[str, Any]], int]:
+    identities = Counter((row["pid"], row["create_time"]) for row in rows)
+    duplicates = sum(count for count in identities.values() if count > 1)
+    # A repeated identity can carry contradictory evidence. Do not merge it
+    # or count the same retained process twice, even when creation is unknown.
+    usable = [row for row in rows if identities[row["pid"], row["create_time"]] == 1 and row["delta"] > 0]
+    usable.sort(key=lambda row: (-row["delta"], row["pid"], row["create_time"] or 0))
+    return usable[:limit], duplicates
+
+
+def process_attribution(report: Mapping[str, Any], resource: str, *, limit: int = 5) -> dict[str, Any]:
+    """Bounded independent rankings within one report; never match runs.
+
+    Lifetime deltas reuse ProcessSummary.growth. Alert deltas/capacity flags
+    are the detector's recorded values, with no re-derived allocation math.
+    Neither ranking changes a resource signal or the comparison verdict.
+    """
+    if resource not in RESOURCES or type(limit) is not int or not 1 <= limit <= 20:
+        raise ValueError("Choose a signal resource and a ranking limit from 1 to 20")
+    metric = SIGNAL_TOTALS[resource]
+    section = report.get("processes")
+    section = section if isinstance(section, Mapping) else {}
+    summaries = []
+    summary_seen = summary_omitted = invalid_summaries = 0
+    for field in ("live", "exited"):
+        values = section.get(field)
+        if not isinstance(values, _SEQUENCES):
+            continue
+        remaining = max(0, PROCESS_SUMMARY_SCAN_LIMIT - summary_seen)
+        summary_omitted += max(0, len(values) - remaining)
+        for item in values[:remaining]:
+            summary_seen += 1
+            if not isinstance(item, Mapping) or (identity := _identity_fields(item)) is None:
+                invalid_summaries += 1
+                continue
+            first = finite(item.get("first", {}).get(metric)) if isinstance(item.get("first"), Mapping) else None
+            last = finite(item.get("last", {}).get(metric)) if isinstance(item.get("last"), Mapping) else None
+            started, ended = finite(item.get("first_seen")), finite(item.get("last_seen"))
+            samples = item.get("samples")
+            if (first is None or last is None or min(first, last) < 0 or started is None or ended is None
+                    or ended < started or type(samples) is not int or samples < 2):
+                invalid_summaries += 1
+                continue
+            pid, created, name = identity
+            summary = ProcessSummary(pid, created, name, None, started, ended, samples,
+                                     {metric: first}, {metric: last}, {})
+            summaries.append({"pid": pid, "create_time": created, "name": name,
+                "delta": summary.growth(metric), "first": first, "last": last, "samples": samples,
+                "exited": field == "exited", "identity_known": created is not None})
+    lifetime_rows, duplicates = _rank_attribution_rows(summaries, limit)
+    lifetime = {"basis": "retained process lifetime first-to-last", "startup_included": True,
+        "rows": lifetime_rows, "summaries_examined": summary_seen, "summaries_omitted": summary_omitted,
+        "invalid_summaries": invalid_summaries, "duplicate_identity_rows_omitted": duplicates,
+        "scan_limit": PROCESS_SUMMARY_SCAN_LIMIT, "top_limit": limit,
+        "available": bool(summaries), "unknown_identity_rows": sum(row["create_time"] is None for row in summaries)}
+
+    snapshots = report.get("snapshots")
+    snapshots = snapshots if isinstance(snapshots, _SEQUENCES) else ()
+    selected = None
+    alerts_omitted = 0
+    for sample in snapshots[:ATTRIBUTION_SNAPSHOT_SCAN_LIMIT]:
+        if not isinstance(sample, Mapping) or sample.get("monitoring_paused"):
+            continue
+        metadata = sample.get("metadata")
+        if isinstance(metadata, Mapping) and metadata.get("sampling_error"):
+            continue
+        stamp = finite(sample.get("timestamp"))
+        alerts = sample.get("alerts")
+        if stamp is None or not isinstance(alerts, _SEQUENCES):
+            continue
+        alerts_omitted += max(0, len(alerts) - _ALERT_SCAN_LIMIT)
+        for alert in alerts[:_ALERT_SCAN_LIMIT]:
+            if not isinstance(alert, Mapping) or alert.get("resource") != resource:
+                continue
+            rank = severity_rank(alert.get("severity"))
+            if rank and (selected is None or (rank, stamp) > selected[:2]):
+                selected = (rank, stamp, alert)
+    alert_rows, invalid_alert_rows, contributor_omitted = [], 0, 0
+    alert = selected[2] if selected else {}
+    values = alert.get("contributors")
+    values = values if isinstance(values, _SEQUENCES) else ()
+    contributor_omitted = max(0, len(values) - _CONTRIBUTOR_SCAN_LIMIT)
+    for item in values[:_CONTRIBUTOR_SCAN_LIMIT]:
+        identity = _identity_fields(item) if isinstance(item, Mapping) else None
+        delta = finite(item.get("delta")) if isinstance(item, Mapping) else None
+        if identity is None or delta is None:
+            invalid_alert_rows += 1
+            continue
+        pid, created, name = identity
+        alert_rows.append({"pid": pid, "create_time": created, "name": name, "delta": delta,
+            "new_process": item.get("new_process") if type(item.get("new_process")) is bool else None,
+            "exited": item.get("exited") if type(item.get("exited")) is bool else None,
+            "identity_known": created is not None})
+    ranked_alerts, alert_duplicates = _rank_attribution_rows(alert_rows, limit)
+    recorded = {"basis": "strongest retained alert; latest when equally severe", "rows": ranked_alerts,
+        "available": selected is not None, "severity": SEVERITIES[selected[0]] if selected else None,
+        "timestamp": selected[1] if selected else None, "window_seconds": finite(alert.get("window_seconds")),
+        "growth_from_new_processes": finite(alert.get("growth_from_new_processes")),
+        "growth_within_existing": finite(alert.get("growth_within_existing")),
+        "snapshot_scan_limit": ATTRIBUTION_SNAPSHOT_SCAN_LIMIT, "alerts_per_sample_limit": _ALERT_SCAN_LIMIT,
+        "contributor_scan_limit": _CONTRIBUTOR_SCAN_LIMIT, "top_limit": limit,
+        "snapshots_omitted": max(0, len(snapshots) - ATTRIBUTION_SNAPSHOT_SCAN_LIMIT),
+        "alerts_omitted": alerts_omitted, "contributors_omitted": contributor_omitted,
+        "invalid_contributors": invalid_alert_rows, "duplicate_identity_rows_omitted": alert_duplicates,
+        "unknown_identity_rows": sum(row["create_time"] is None for row in alert_rows)}
+    return {"resource": resource, "metric": metric, "lifetime": lifetime, "alert": recorded,
+        "qualification": "Independent within-run retained evidence; rankings may be incomplete. "
+                         "Lifetime and alert intervals differ; no cross-run identity match or allocation cause is inferred."}
 
 
 # Series plotted in HTML reports: payload key, totals key, decimal places.
@@ -694,6 +838,12 @@ def chart_payload(
         ],
         "exits": exits,
         "events": events,
+        "user_markers": [
+            {"t": offset(stamp), "label": str(marker.get("label", "marker"))[:80],
+             "index": marker.get("index")}
+            for marker in (report.get("markers") or [])[:500]
+            if isinstance(marker, Mapping) and (stamp := finite(marker.get("timestamp"))) is not None
+        ] if isinstance(report.get("markers"), _SEQUENCES) else [],
         "warmup": [offset(summary.warmup[0]), offset(summary.warmup[1])] if summary.warmup else None,
         "handle_types": _handle_type_series(samples, offset),
     }
@@ -742,6 +892,7 @@ __all__ = [
     "finite",
     "load_facts",
     "load_samples",
+    "process_attribution",
     "severity_rank",
     "signal_changes",
     "summarize",

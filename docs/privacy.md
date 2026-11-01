@@ -112,6 +112,11 @@ truncated SHA-256 fingerprint for launch comparisons. A predictable argument
 can be checked by guessing and hashing it; the fingerprint is not a secure
 way to conceal a secret.
 
+Monitor diagnostics include host CPU utilization, available/total physical
+memory, and the host reading's timestamp, age and collection cost. The detector
+collects these locally at most once every five seconds; they are saved with
+reports and are not attributed to the target. No new network request is involved.
+
 Experiment labels pass through pattern-based removal of secret-looking
 assignments, flags, URL credentials, and Basic/Bearer credentials. Arbitrary
 names, paths, tokens in unexpected formats, configuration profile names,
@@ -123,6 +128,10 @@ or share preview in the current software. That work remains tracked in
 [issue #41](https://github.com/JunaidAhamed-7777/DrainTracer/issues/41).
 
 ## Before sharing evidence
+
+Privacy copies preserve typed clock-adjustment and sampling-gap counts and
+relative timing-reset diagnostics. These qualify measurement continuity;
+removing paths and identities must not remove a known evidence interruption.
 
 1. Prefer a minimal reproduction using a disposable, synthetic workload.
    Avoid real customer paths, credentials, or production process names at

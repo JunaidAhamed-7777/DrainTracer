@@ -345,13 +345,14 @@ class EvidenceViewMixin:
                 f"{', exited' if item.exited else ''})"
                 for item in alert.contributors[:3]
             )
-            lines.append(Text(f"Contributors: {top}"))
+            lines.append(Text(f"Contributors (share of positive growth): {top}"))
             lines.append(Text(
-                f"Growth from processes started in the window "
-                f"{_quantity(alert.resource, alert.growth_from_new_processes)}{sep}within "
-                f"processes already running {_quantity(alert.resource, alert.growth_within_existing)}",
+                f"Positive growth: new processes {_quantity(alert.resource, alert.growth_from_new_processes)}"
+                f"{sep}existing processes {_quantity(alert.resource, alert.growth_within_existing)}",
                 style=palette.muted,
             ))
+            lines.append(Text("Exits and decreases can offset these positive contributions in the window change.",
+                              style=palette.muted))
         return Group(*lines)
 
     def _criteria_text(self, resource: LeakResource) -> Text:

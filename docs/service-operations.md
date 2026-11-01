@@ -135,6 +135,15 @@ Every duration budget is finite and at most 60 seconds; memory is capped at
 sample. CPU is observed process CPU seconds, not a machine-normalized CPU
 percentage. RSS remains a sampled lower bound.
 
+The local monitor uses one cleanup deadline from startup through its wait,
+using the declared cleanup budget (20 seconds by default). Its existing
+10-second safety close still runs after a missed deadline to attempt owned
+cleanup. The recorded cleanup duration includes that close; a timeout cannot
+become a pass because cancellation later finishes. Startup consumes the same
+deadline, and unconfirmed cleanup remains a failure. The safety grace is not
+an extra acceptance budget or a hard bound on the entire command, which also
+includes fixture setup and other operating checks.
+
 ## What passing evidence establishes
 
 - Five authorized store reads have explicit success/attempt counts.
@@ -145,7 +154,12 @@ percentage. RSS remains a sampled lower bound.
   local monitor must complete with cleanup and readable JSON/HTML on both
   supported platforms, independently of any sharing listener.
 - Windows measures two baseline accepted/completed runs: natural exit and
-  cancellation. Both require complete cleanup and readable JSON/HTML. A third
+  cancellation. Both require three live samples before the driver continues,
+  complete cleanup and readable JSON/HTML. The natural fixture waits for a
+  private release marker, then performs its 1.3-second work and exits normally;
+  its gate is bounded at 30 seconds. The existing 10-second sample wait,
+  45-second target limit and measured operating budgets remain unchanged.
+  Completed-state age is never substituted for live freshness. A third
   deliberately crashed run is separate from that completion-rate denominator;
   its owned job must stop, and offline recovery must remain partial and
   unconfirmed through the saved cutoff. Recovery never restarts the agent.
@@ -153,8 +167,13 @@ percentage. RSS remains a sampled lower bound.
   and readable with the same hash/original expiry by two technical credentials.
   A viewer cannot restore; a revoked cached actor stays revoked. Deletion
   invalidates old snapshots/retries, stricter privacy invalidates an older
-  snapshot, and restore is audited. Report/snapshot retention uses an explicitly
-  stepped disposable clock; credential expiry uses actual elapsed time.
+  snapshot, and restore is audited. Report/snapshot retention and cached-credential
+  expiry use separate disposable stores with explicitly stepped fixture clocks.
+  The credential drill commits and authenticates a credential, confirms its
+  protected read, then advances past its returned expiry and requires the same
+  cached actor to be refused. This tests the authority invariant without
+  measuring elapsed credential-expiry latency. Baseline readiness, read,
+  ingestion, cleanup and resource measurements use real clocks.
 - Missing/corrupt/future/unrelated authority fails closed. A missing current
   database is never recreated by restore. An interrupted SQL transaction must
   roll back and reopen under the exact retained authority.

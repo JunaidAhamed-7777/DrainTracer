@@ -490,6 +490,22 @@ class ProcessMetrics:
 
 
 @dataclass(frozen=True)
+class HostPressure:
+    """Host context, never attributed to the monitored process tree.
+
+    CPU is percent of total host capacity; memory values are physical bytes.
+    Unknown readings remain ``None``. Age uses a monotonic clock at publication.
+    """
+
+    sampled_at: float
+    age_seconds: float = 0.0
+    cpu_percent: float | None = None
+    available_memory_bytes: int | None = None
+    total_memory_bytes: int | None = None
+    collection_ms: float | None = None
+
+
+@dataclass(frozen=True)
 class MonitorDiagnostics:
     """How well and how cheaply the monitor itself sampled, at one snapshot.
 
@@ -515,6 +531,9 @@ class MonitorDiagnostics:
     monitor_cpu_percent: float | None = None
     monitor_rss_bytes: int | None = None
     monitor_private_bytes: int | None = None
+    host: HostPressure | None = None
+    clock_adjustments: int = 0
+    sampling_gaps: int = 0
 
     @property
     def cadence_lag_ms(self) -> float | None:

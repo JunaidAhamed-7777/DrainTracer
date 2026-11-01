@@ -35,6 +35,22 @@ from src.agent_transport import (
 
 
 class FrameTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "nt", "native Win32 error classification")
+    def test_connect_preserves_safe_busy_missing_and_denied_causes_without_endpoint_disclosure(self) -> None:
+        from src import agent_transport
+
+        kernel = mock.Mock()
+        kernel.CreateFileW.return_value = agent_transport._INVALID_HANDLE
+        for code in (2, 5, 231):
+            with (self.subTest(code=code), mock.patch.object(agent_transport, "_api", return_value=(kernel, None)),
+                  mock.patch.object(ctypes, "get_last_error", return_value=code),
+                  mock.patch.object(agent_transport.time, "monotonic", side_effect=[1, 2]),
+                  self.assertRaises(AgentTransportError) as caught):
+                agent_transport.connect("private-endpoint-name", timeout=0.3)
+            self.assertEqual(caught.exception.__cause__.winerror, code)
+            self.assertEqual(str(caught.exception), "local agent is unavailable or access was denied")
+            self.assertNotIn("private-endpoint-name", str(caught.exception.__cause__))
+
     def test_json_is_strict_and_structurally_bounded_before_decoding(self) -> None:
         self.assertEqual(_decode_frame(b'{"message":"[not nesting]","n":0}')["n"], 0)
         for raw in (b'{"a":1,"a":2}', b'{"a":NaN}', b'{"a":1e999}', b'[]', b'\xff',

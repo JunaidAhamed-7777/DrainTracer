@@ -1,0 +1,8 @@
+sample_interval = "250ms"
+windows = ["10s"]
+warmup = "2s"
+fail_on = "high"
+fail_on_inconclusive = true
+fail_on_target_error = true
+require_full_coverage = true
+workload_id = "ci-fixture-comparison"

@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "command": {"target": "worker.py", "args": ["--duration", "30"]},
+  "cwd": ".",
+  "inherit_environment": false,
+  "config": "monitor.toml",
+  "timeout": 16
+}
