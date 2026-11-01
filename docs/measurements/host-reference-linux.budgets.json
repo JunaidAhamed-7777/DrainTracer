@@ -1,0 +1,127 @@
+{
+  "host_budget_schema": 1,
+  "source": {
+    "commit": "68442ce1d1a2a294ff6d6d9c9120aa0154971441",
+    "runtime_version": "v5.4.0",
+    "sha256": {
+      "TITLE.txt": "668854d531007da4ede7e7060e957ef7b2726ebc78021c0114f1292cbdf59191",
+      "docs/host-budget-protocol.md": "9b32fea187abd7afaa8230ea7ac3616a961f06d28546f2cae3fce0ebb1d583ad",
+      "leak_reports/frames/report.css": "923fe279c9757ef8828ff4ad102be1bdcabb56e6f9a73db75ca89e822b40ce5c",
+      "leak_reports/frames/report.js": "1a2f7c2b48a53bf677717c58ab49434e7030f784413f9da810bc6ebf9db25729",
+      "requirements.txt": "3a22ed7050ee63914245a29ad5a8b970cbb18b23db2da2361eb1e4741c6a0ab8",
+      "runtime-manifest.json": "21656af8440f97c91b15306a8d16436b410e1dddac73ad9ceec5b3a92b72097d",
+      "src/__init__.py": "f296781197dde0d36fb259e57333770c553851dccfe502407d22673cc782b166",
+      "src/__main__.py": "628c0dd3319414fa7bec3f6ef166e3976837a92728fb224149ba8d328322e6fb",
+      "src/analysis.py": "d9bdbc4780d43034c9dcd9a5f3e6aefebd5526fdd3d9ca2b35e6bd3dcb0b9dd3",
+      "src/budgets.py": "888d53828fced19f79ce0dbe7718aebd715b32c49c38286b33edfbe41e79ce77",
+      "src/config.py": "d38ac2f8f0b92b2ade62adace52075e80d7d89bd8ebb72d43115461e1d6c4a91",
+      "src/dashboard.py": "4c5a987cae862f2300aec2937beb791c65cb7ae8585853f1c51253d3f58abf03",
+      "src/diff_command.py": "3bf0fbc675e7422a719ba2eaa37be8f54d85ba09d5a025ade90762683a970778",
+      "src/events.py": "5af933f090891175531e352e074cd3bcba597d5070e0800fa31fe1336213dc4c",
+      "src/experiment.py": "57786e70ddc1e72810cd5bc744c83e5444ae439059c7af0c133d3e37f386ceeb",
+      "src/file_picker.py": "914c42a2f804cf77d8994b8c4b673d153987ded397dfad673a20bebf17257715",
+      "src/handle_types.py": "38c04c62631275a1df2341f0f539d9e26601e0841d125fd8624720a741295ce8",
+      "src/headless.py": "53853bc974eb5879a7f7fe3450c0c202cdbc41b5b099b0e757a28eb057f9c425",
+      "src/history.py": "01dc99636e7d80c1b6ab033c6c097c3fad2606681c429a5c36ad947ecb0a64cb",
+      "src/html_report.py": "f1c0be4adabda430ca2dd0dda627d7d5f5e8841abe2b0cb31b99f955b6b2857c",
+      "src/keys.py": "0080695a752ac875b17fcbda98da35c6b60bb10244104211fc53402bd586ba16",
+      "src/leak_detector.py": "4a11c538f3f0deb422c55a97c2a8c59dda338f6aa35dad85249748baa744c89d",
+      "src/main.py": "f35f8e25db3da38b2342bbd9f6d97baf59bd1d7acbad7334df1d2ddae0239f97",
+      "src/picker_input.py": "5f96d4b9ac08711bafb8c7f50e2d03acdb943e632045afab912b0bc98f5b820c",
+      "src/preflight.py": "f67831087aa92b248d501d16cf1c28008b76a2dd716107391bc09a35a85988bb",
+      "src/process_history.py": "13bb64362b69265f44806bb77393d3e3b3008e367c96777d16dd0f96269fd5b3",
+      "src/process_picker.py": "47d34d1b37e695feda4d5ef0f3d5a640392c0b873d9ae15c585c3e83409e3cce",
+      "src/process_runner.py": "19f65765a8a21551bad4d66a9675ab0b592d66df329025e1b28f31ab02ec591e",
+      "src/process_table.py": "855ce860ada3114fe56e46b8824c0a39cd7376a40bbabf0c37212257257b313b",
+      "src/report.py": "a12d452ad7910a3ecbbdc170d8352612d846598a34c5b802469b3f7e95e5f73d",
+      "src/report_contract.py": "03f6b806a2d9ce6396b45df0a1dbb1e579d677b0a140a0fab01f80b581aa0030",
+      "src/report_diff.py": "c47ccf61e91a0b1d79fdeaeb7cf7d80915d22449b93f4f447ca4e1bd8c0b98f3",
+      "src/resources.py": "e1c0890bdc64691a902f6c9718fcc24a964752751e249190dd42e55e149add83",
+      "src/running_processes.py": "55abd9fb182c73deed8662142c27128cd6e485a7a24184432d25bdd44a55824c",
+      "src/session.py": "81b7b08f58fafc9569106c05306b8b9b338b6a63b74c7926fda7155c91a15e26",
+      "src/session_facts.py": "de9247f8232d26026154c07ba324b918bfdede89063378a07b8e9809c142255a",
+      "src/startup.py": "249c233dc3337b5f372a9f5b05396bfe68589c36a8555d335330af8d748dd1df",
+      "src/stats.py": "3a9d0d339d5c2c263e42881286624965397d42f3016420f4e878ba0bb51b994e",
+      "src/theme.py": "771d7dc0e22fbc30c8cdfebe94178a5d65a0bd8a535ba9e72c3d9608a4030356",
+      "src/units.py": "ff736bb33d7c28c6c4a65d580881a2a2d8e4dc0beae2e95f5530091be1b0765d",
+      "src/updates.py": "8daebbb1d667b24afaf7f94d671cb9cb448140419a0bb956cc8b877372c0a212",
+      "src/view_evidence.py": "aa05775a9e6d54f2f0ff0a7e62412b3ad48466202f2bfe6f0fa22d4f18db8d66",
+      "src/view_monitor.py": "d83181cc0674f106cd44f8860dddd0ca02d63bb35c9ef76f7682f3f139fd4124",
+      "src/view_processes.py": "0efabcfc4aa779f5f563c89d5701f911398d53c565186e22dae032715e0a724d",
+      "src/view_timeline.py": "3d58ddc8a464751203070a0c4532bd08f8349f1e45e7adc60a4ab21ff36bd6fd",
+      "src/widgets.py": "05a5c341a5aef1203523bfb6b20be1d563fd66bc84619b95aa95949e4b8bbfb1",
+      "torture/benchmark_host.py": "04eb6885ef9b58dc6d9a482c1a48186d7c19e8eaf2101799e9a3cafbca47fb5b",
+      "torture/verify_host_budget.py": "954e0bc1225c47bd095b6fd587618ff48eb334f4d486f04f5708841c905afcaa"
+    }
+  },
+  "environment_signature": {
+    "os": "Linux",
+    "release": "6.18.33.2-microsoft-standard-WSL2",
+    "kernel_version": "#1 SMP PREEMPT_DYNAMIC Thu Jun 18 21:54:43 UTC 2026",
+    "python": "3.14.4",
+    "psutil": "7.2.2",
+    "rich": "15.0.0",
+    "logical_cpus": 16,
+    "physical_memory_bytes": 7977201664
+  },
+  "samples_per_replicate": 200,
+  "replicates": 3,
+  "interval_seconds": 5.0,
+  "reference_sha256": "2601aafe16cbffd9431846399de0414cac31b30edc5b3e49f68d4ef2a6f5e5f5",
+  "reference_summaries": [
+    {
+      "refresh": {
+        "samples": 200,
+        "minimum": 0.081275,
+        "median": 0.13153,
+        "p99": 0.475337,
+        "max": 0.519416
+      },
+      "cached": {
+        "samples": 200,
+        "minimum": 0.003036,
+        "median": 0.0050644999999999996,
+        "p99": 0.018024,
+        "max": 0.323485
+      }
+    },
+    {
+      "refresh": {
+        "samples": 200,
+        "minimum": 0.068319,
+        "median": 0.1269765,
+        "p99": 0.35261,
+        "max": 0.495161
+      },
+      "cached": {
+        "samples": 200,
+        "minimum": 0.002275,
+        "median": 0.004689,
+        "p99": 0.01051,
+        "max": 0.039118
+      }
+    },
+    {
+      "refresh": {
+        "samples": 200,
+        "minimum": 0.070885,
+        "median": 0.112043,
+        "p99": 0.243823,
+        "max": 0.422192
+      },
+      "cached": {
+        "samples": 200,
+        "minimum": 0.002364,
+        "median": 0.003993,
+        "p99": 0.011011,
+        "max": 0.075844
+      }
+    }
+  ],
+  "ceilings_ms": {
+    "refresh.p99": 1.0,
+    "refresh.max": 2.0,
+    "cached.p99": 0.1,
+    "cached.max": 0.64697
+  }
+}

@@ -98,6 +98,12 @@ The report includes:
   Observed signal severity remains visible alongside coverage qualifications.
 - Memory, handles, handle categories, threads, and CPU charts. Hover for
   values, drag to zoom, and use legend entries to toggle series.
+- A collapsible retained-sample table and offline CSV download with elapsed
+  seconds, private/RSS bytes, handle/thread counts, and CPU percent. These
+  use the plotted retained arrays; `n/a` remains unknown, and thinned data
+  is explicitly qualified rather than presented as every observation.
+  Retained handle-category values use a second table and CSV at their own
+  classification cadence.
 - Markers where signals appeared or escalated, warm-up and pause bands,
   and the time the root exited.
 - Continuous signal episodes, events, and the final available process list.
@@ -116,6 +122,13 @@ interpreting a paused or failed sample as a measured zero.
 The HTML and JSON use the same report dictionary, so their exported samples
 agree. Handle classifications are less frequent than the main sampling
 interval and use their own timestamps.
+
+For keyboard access, enter elapsed seconds in From/To and activate Apply
+range; Escape resets. Each signal has a native Zoom button. Tables have
+named horizontal scroll regions and column headers, while the retained
+sample disclosure and CSV links use native browser controls. Verdict,
+coverage, units, and process evidence remain readable without chart
+interaction or JavaScript. See [accessibility verification](html-accessibility.md).
 
 ## Use the JSON data
 
@@ -219,11 +232,16 @@ every observed live counter was readable; it cannot prove continuous sampling
 through a gap. Check temporal counters alongside coverage before using a run
 as a regression baseline.
 
-The top-level `markers` list holds the markers added with `M` during a
-dashboard session: `index`, `label` (`marker N`), `timestamp`, `time`, and
+The top-level `markers` list holds the markers added with `M` or `N` during a
+dashboard session: `index`, `label` (`marker N` or an entered label), `timestamp`, `time`, and
 `elapsed_seconds` since monitoring started. Markers record when the user
 noted something; they do not establish cause. Reports without the field
 have no markers.
+HTML charts draw the same named timing annotations, and a separate marker
+table preserves their full labels and elapsed times without requiring hover.
+Activating a marker's Zoom button with Enter or Space inspects its interval. Marker labels are
+limited to 80 characters in the dashboard and chart payload; the payload retains
+at most 500 user markers independently of chart thinning.
 
 ### Startup and cleanup outcomes
 

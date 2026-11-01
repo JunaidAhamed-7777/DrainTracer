@@ -27,6 +27,31 @@ from .team_security import secure_directory, verify_data_file
 from .team_store import TeamStore
 
 
+def exercise_credential_expiry(root: Path, evidence: ExerciseEvidence):
+    """Inject expiry in a separate committed store without changing measured clocks."""
+    clock = [time.time()]
+    with TeamStore.create(root / "credential-expiry", _clock=lambda: clock[0]) as fixture:
+        initial = fixture.bootstrap_project("credential-expiry-fixture")
+        project = initial["project_id"]
+        admin = fixture.authenticate(initial["token"], project)
+        issued = fixture.issue_credential(admin, "viewer", ttl_seconds=1)
+        cached = fixture.authenticate(issued["token"], project)
+        policy = evidence.probe("stepped_clock_credential_read_before_expiry", lambda: fixture.get_policy(cached))
+        evidence.check("stepped_clock_cached_actor_matches_issued_credential",
+                       policy is not None and policy["project_id"] == project
+                       and cached.credential_id == issued["credential"]["id"])
+        # Step the supported private clock past this actual issued credential's
+        # returned cutoff. Scheduling delays cannot expire the setup actor.
+        cutoff = datetime.fromisoformat(issued["credential"]["expires_at"])
+        if cutoff.tzinfo is None:
+            raise ValueError("Credential expiry fixture needs an offset timestamp")
+        clock[0] = cutoff.timestamp() + 1
+        evidence.probe("stepped_clock_expired_cached_actor_refused", lambda: fixture.get_policy(cached),
+                       expected_code="unauthorized")
+        evidence.probe("stepped_clock_expired_credential_login_refused", lambda: fixture.authenticate(issued["token"], project),
+                       expected_code="unauthorized")
+
+
 def exercise_authority(store: TeamStore, evidence: ExerciseEvidence):
     """Exercise real committed credentials and cached-handle refusal semantics."""
     issued = store.bootstrap_project("operating-fixture")
@@ -51,12 +76,7 @@ def exercise_authority(store: TeamStore, evidence: ExerciseEvidence):
     cached = store.authenticate(revoked["token"], project)
     store.revoke_credential(admin, revoked["credential"]["id"])
     evidence.probe("revoked_cached_actor_refused", lambda: store.get_policy(cached), expected_code="unauthorized")
-    expiring = store.issue_credential(admin, "viewer", ttl_seconds=1)
-    cached_expiring = store.authenticate(expiring["token"], project)
-    # This is actual elapsed expiry, not a patched clock or a human exercise.
-    time.sleep(1.05)
-    evidence.probe("expired_cached_actor_refused", lambda: store.get_policy(cached_expiring),
-                   expected_code="unauthorized")
+    exercise_credential_expiry(store.directory.parent, evidence)
     evidence.check("two_distinct_technical_credentials", viewer.credential_id != operator.credential_id)
     return admin, viewer, operator
 
@@ -231,22 +251,34 @@ def exercise_local_collection(root: Path, evidence: ExerciseEvidence):
                              ["-c", "import time;time.sleep(.4)"],
                              options=SessionOptions(sample_interval_ms=100, windows_seconds=(1,),
                                                     timeout_seconds=5, report_dir=reports))
-    try:
-        session.start()
-        result = evidence.probe("local_monitor_completed", lambda: session.wait(10), timing="cleanup")
-        complete = result is not None and result.startup == "started" and result.cleanup == "complete"
-        evidence.check("local_monitor_cleanup_complete", complete)
-        persisted = (result is not None and result.exports is not None and result.exports.json_path is not None
-                     and result.exports.html_path is not None and result.exports.json_path.is_file()
-                     and result.exports.html_path.is_file())
-        if persisted:
-            read_report(result.exports.json_path)
-        evidence.check("local_monitor_reports_readable", persisted)
-        evidence.rate("local_completed_runs", int(complete), 1)
-        evidence.rate("local_report_persistence", int(persisted), 1)
-        return complete and persisted
-    finally:
-        session.close(timeout=10)
+    def complete_and_close():
+        deadline = time.monotonic() + evidence.budgets.cleanup_seconds
+        try:
+            session.start()
+            result = session.wait(max(0.0, deadline - time.monotonic()))
+            if result is None:
+                raise TimeoutError("Local reference monitor missed its completion deadline")
+            return result
+        finally:
+            # Preserve the existing finite safety grace, even after the
+            # completion deadline. Its full elapsed time is measured too;
+            # cleanup after a missed deadline cannot turn it into success.
+            closed = session.close(timeout=10)
+            if closed is None or closed.cleanup != "complete":
+                raise RuntimeError("Local reference monitor cleanup was not confirmed")
+
+    result = evidence.probe("local_monitor_completed", complete_and_close, timing="cleanup")
+    complete = result is not None and result.startup == "started" and result.cleanup == "complete"
+    evidence.check("local_monitor_cleanup_complete", complete)
+    persisted = (result is not None and result.exports is not None and result.exports.json_path is not None
+                 and result.exports.html_path is not None and result.exports.json_path.is_file()
+                 and result.exports.html_path.is_file())
+    if persisted:
+        read_report(result.exports.json_path)
+    evidence.check("local_monitor_reports_readable", persisted)
+    evidence.rate("local_completed_runs", int(complete), 1)
+    evidence.rate("local_report_persistence", int(persisted), 1)
+    return complete and persisted
 
 
 def _label(value):
@@ -334,7 +366,7 @@ def run_exercise(workspace, *, operator: str, contact: str, include_agent: bool 
                 + (["transport"] if with_transport else []), "budgets": asdict(budgets),
                 "environment": reference_environment(),
                 "qualifications": ["Disposable local reference; recheck actual deployment prerequisites before a pilot",
-                                   "Retention expiry uses an explicitly stepped fixture clock",
+                                   "Credential and retention expiry use separate explicitly stepped fixture clocks; elapsed expiry latency is not measured",
                                    "Managed restore repairs evidence payloads under current authority; it cannot recover lost authority"]
                                    + (["TLS service runs in the driver process; driver CPU/RSS includes the service",
                                        "Acknowledgement loss is injected after a real TLS commit"] if with_transport else []),
