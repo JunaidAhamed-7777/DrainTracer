@@ -18,6 +18,9 @@ import zipfile
 from email.parser import BytesParser
 from pathlib import Path
 
+from verify_baseline_distribution import verify_baseline_runtime
+from verify_controlled_workload import verify_controlled_workload
+
 
 def _require(condition: bool, message: str) -> None:
     if not condition:
@@ -247,6 +250,10 @@ print(json.dumps({'reason': result.reason, 'cleanup': result.cleanup, 'errors': 
                  f"errors={str(api_probe['errors'])[:500]}).")
         _require(Path(api_probe["json"]).is_file() and Path(api_probe["html"]).is_file(),
                  "The supported API did not export a complete report pair.")
+        source_commit = subprocess.check_output(["git", "rev-parse", "HEAD"],
+                                               cwd=Path(__file__).resolve().parent.parent, text=True).strip()
+        verify_baseline_runtime(python, cwd, environment, source_commit)
+        verify_controlled_workload(python, cwd, environment, source_commit)
     return version
 
 

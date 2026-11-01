@@ -31,6 +31,7 @@ draintracer-workload = "draintracer.workload:main"
 draintracer-agent = "draintracer.agent_command:main"
 draintracer-team = "draintracer.team_command:main"
 draintracer-ops = "draintracer.service_exercise:main"
+draintracer-baseline = "draintracer.baseline_control:main"
 
 [project.urls]
 Homepage = "https://github.com/JunaidAhamed-7777/DrainTracer"
