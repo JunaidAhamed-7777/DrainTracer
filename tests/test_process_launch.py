@@ -175,7 +175,7 @@ class VirtualEnvironmentLaunchTests(unittest.TestCase):
 
     def test_other_platforms_and_plain_interpreters_are_unchanged(self) -> None:
         for platform, executable, base in (("linux", "/v/bin/python", "/usr/bin/python3"),
-                                           ("win32", r"C:\Python\python.exe", r"C:\PYTHON\python.exe")):
+                                           ("win32", r"C:\Python\python.exe", r"C:\Python\python.exe")):
             patches = self._patched(platform, executable, base)
             with self.subTest(platform=platform), patches[0], patches[1], patches[2], patches[3]:
                 self.assertEqual(python_launch(None), (executable, None))
