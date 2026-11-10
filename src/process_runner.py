@@ -180,6 +180,25 @@ def _quote_for_cmd(argument: str) -> str:
     return '"' + argument.replace('"', '""').replace("%", "%%cd:~,%") + '"'
 
 
+def python_launch(environment: dict[str, str] | None) -> tuple[str, dict[str, str] | None]:
+    """Interpreter and environment that run a Python target as one process.
+
+    A Windows virtual environment's ``python.exe`` is a redirector that starts
+    the base interpreter as its child. Launching it would make the redirector
+    the monitored root and report the real interpreter as a new worker. Like
+    ``multiprocessing``, start the base interpreter directly and name the
+    environment through ``__PYVENV_LAUNCHER__``; the child consumes that
+    variable and does not pass it on.
+    """
+    base = getattr(sys, "_base_executable", None)
+    if (sys.platform != "win32" or not base or not os.path.isfile(base)
+            or os.path.normcase(os.path.abspath(base)) == os.path.normcase(os.path.abspath(sys.executable))):
+        return sys.executable, environment
+    redirected = dict(os.environ if environment is None else environment)
+    redirected["__PYVENV_LAUNCHER__"] = sys.executable
+    return base, redirected
+
+
 class ProcessManagerError(Exception):
     """Base error for process manager failures."""
 
@@ -359,9 +378,12 @@ class ProcessManager:
                 raise ProcessNotFoundError(f"Target file not found: {self.target_path}")
 
             command = self._build_command()
+            environment = self.env
+            if Path(self.target_path).suffix.lower() == ".py":
+                environment = self._python_launch()[1]
             popen_kwargs: dict = {
                 "cwd": self.cwd,
-                "env": self.env,
+                "env": environment,
                 # The dashboard owns keyboard input; a target reading the
                 # shared console could swallow its keys or block on them.
                 "stdin": subprocess.DEVNULL,
@@ -643,12 +665,20 @@ class ProcessManager:
                 processes.append(proc)
         return processes
 
+    # Subclasses whose launcher must inherit its own environment opt out.
+    REDIRECT_VENV_LAUNCHER = True
+
+    def _python_launch(self) -> tuple[str, dict[str, str] | None]:
+        if not self.REDIRECT_VENV_LAUNCHER:
+            return sys.executable, self.env
+        return python_launch(self.env)
+
     def _build_command(self) -> list[str] | str:
         path = Path(self.target_path)
         suffix = path.suffix.lower()
 
         if suffix in {".py"}:
-            return [sys.executable, str(path), *self.args]
+            return [self._python_launch()[0], str(path), *self.args]
         if suffix in {".bat", ".cmd"} and sys.platform == "win32":
             # cmd.exe parses its own command line, so Python's list quoting
             # is not enough: an argument such as "a b", "x&y", or "%PATH%"
