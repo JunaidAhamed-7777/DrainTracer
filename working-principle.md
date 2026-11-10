@@ -433,8 +433,14 @@ DrainTracer records each tracked process's creation time. Before it samples,
 suspends, or kills a PID, it opens that PID again and rejects it when the
 creation time differs. Both operating systems reuse PID values, so this
 check avoids operating on a different process that inherited a stale number.
-Windows uses a 10 ms creation-time tolerance; Linux uses a tighter 1 ms
-tolerance for timestamps derived from procfs clock ticks. The
+Windows compares creation times exactly; Linux uses a 1 ms tolerance for
+timestamps derived from procfs clock ticks. On Linux the boot time added to
+a process's start tick is pinned when DrainTracer first reads it, because the
+kernel recomputes boot time from the wall clock: after an NTP step,
+`date -s` or a VM resync, every recomputed creation time would otherwise
+shift and each tracked process would look like a reused PID. If the launched
+root's identity still stops matching, shutdown ends it through DrainTracer's
+own unreaped child handle, whose PID cannot have been reused. The
 root's creation time is kept after the root exits, so a process that later
 takes over an attached root's PID is never mistaken for it. Linux zombie and
 dead states are treated as exited. Windows also checks whether the process
