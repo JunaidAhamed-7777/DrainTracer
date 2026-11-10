@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+import json
 import os
 import subprocess
 import sys
@@ -117,6 +118,46 @@ class NativeJobTests(unittest.TestCase):
             if agent.poll() is None:
                 agent.kill()
             agent.communicate(timeout=5)
+
+    def test_environment_overrides_replace_one_name_and_keep_the_rest_inherited(self):
+        output = self.root / "env.json"
+        code = ("import json,os,sys; "
+                f"open({str(output)!r},'w').write(json.dumps("
+                "{k: os.environ.get(k) for k in ('DRAINTRACER_KEPT','DRAINTRACER_OVERRIDE','SYSTEMROOT')}))")
+        names = ("DrainTracer_Kept", "drainTracer_override")
+        for name, value in zip(names, ("kept", "old")):
+            os.environ[name] = value
+            self.addCleanup(os.environ.pop, name, None)
+        process = JobProcess([sys.executable, "-c", code],
+                             environment_overrides={"DRAINTRACER_OVERRIDE": "new"})
+        self.addCleanup(process.close)
+        wait_for(lambda: process.poll() is not None, timeout=15)
+        self.assertEqual(process.poll(), 0)
+        observed = json.loads(output.read_text())
+        self.assertEqual(observed["DRAINTRACER_KEPT"], "kept")
+        self.assertEqual(observed["DRAINTRACER_OVERRIDE"], "new")
+        self.assertEqual(observed["SYSTEMROOT"], os.environ["SYSTEMROOT"])
+        with self.assertRaises(ValueError):
+            JobProcess([sys.executable, "-c", "pass"], environment_overrides={"A=B": "x"})
+
+    @unittest.skipUnless(sys.prefix != sys.base_prefix, "needs a Windows virtual environment")
+    def test_venv_script_is_one_process_inside_the_environment(self):
+        output = self.root / "prefix.txt"
+        script = self.root / "probe.py"
+        script.write_text("import os, sys, time\n"
+                          f"open({str(output)!r}, 'w').write(sys.prefix + '|' + str('__PYVENV_LAUNCHER__' in os.environ))\n"
+                          "time.sleep(30)\n", encoding="utf-8")
+        manager = AgentProcessManager(str(script))
+        self.addCleanup(manager.kill)
+        pid = manager.start()
+        wait_for(lambda: output.exists() and output.stat().st_size > 0, timeout=15)
+        prefix, inherited = output.read_text(encoding="utf-8").split("|")
+        self.assertEqual(os.path.normcase(prefix), os.path.normcase(sys.prefix))
+        self.assertEqual(inherited, "False")
+        # Only the console host Windows attaches; no second interpreter.
+        self.assertEqual([child.name().lower() for child in psutil.Process(pid).children()
+                          if child.name().lower() != "conhost.exe"], [])
+        self.assertEqual(os.path.normcase(psutil.Process(pid).exe()), os.path.normcase(sys._base_executable))
 
     def test_adapter_preserves_process_manager_cleanup_and_rejects_batch(self):
         script = self.root / "sleep.py"

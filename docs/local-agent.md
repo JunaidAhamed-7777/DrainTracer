@@ -89,6 +89,18 @@ still-suspended process before user code can run. Only an explicit NUL handle
 is inherited; stdin, stdout, and stderr cannot consume the agent console.
 Ordinary cleanup closes the job, and abrupt agent exit closes it in the OS.
 
+Launched targets inherit the agent server's environment; requests cannot
+supply environment values. The one exception is a `.py` target while the
+agent runs from a Windows virtual environment: that environment's
+`python.exe` is a redirector that would start the real interpreter as its
+child. The agent instead starts the base interpreter directly and adds only
+`__PYVENV_LAUNCHER__` (naming the virtual environment's `python.exe`) to a
+copy of its own native environment block, as `multiprocessing` does. The
+target therefore runs as one process inside the virtual environment, and
+the interpreter removes that variable at startup, so the target's own
+children do not inherit it. All other entries, including their names' case,
+reach the target unchanged.
+
 Normal `CreateProcess` descendants inherit the job. This is an ownership
 mechanism for cooperating development workloads, not isolation for hostile
 code: Windows documents exceptions such as children created through
