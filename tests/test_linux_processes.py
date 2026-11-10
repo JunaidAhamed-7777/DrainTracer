@@ -413,6 +413,11 @@ class StartTimeIdentityTests(unittest.TestCase):
             with mock.patch.object(linux, "boot_time", return_value=stepped):
                 self.assertEqual(manager.refresh_process_tree(), before)
                 self.assertTrue(manager.pause())
+                # SIGSTOP is delivered asynchronously; give the kernel a moment.
+                stop_deadline = time.monotonic() + 5
+                while (psutil.Process(child).status() != psutil.STATUS_STOPPED
+                       and time.monotonic() < stop_deadline):
+                    time.sleep(0.02)
                 self.assertEqual(psutil.Process(child).status(), psutil.STATUS_STOPPED)
                 self.assertTrue(manager.resume())
                 manager.terminate(timeout=3)
