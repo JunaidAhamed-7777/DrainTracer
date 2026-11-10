@@ -65,7 +65,7 @@ class AgentServer:
                     # bounded receipt acknowledgement before reusing the pipe.
                     if self.listener.receive() != {"ack": request.get("id")}:
                         raise AgentTransportError("the local agent reply was not acknowledged")
-                except (AgentTransportError, OSError, ValueError):
+                except Exception:  # noqa: BLE001 - one bad connection must not stop every session
                     # No session data or credentials in authentication diagnostics.
                     self.rejected_connections += 1
                 finally:
