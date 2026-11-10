@@ -43,9 +43,18 @@ REDACTED = "<redacted>"
 LABEL_LIMIT = 200
 FINGERPRINT_LENGTH = 16
 
+# A key may be quoted (JSON) and carry a prefix with or without a separator
+# (``DB_PASSWORD``, ``PGPASSWORD``, ``clientSecret``) or a ``_key`` suffix.
+# Matches start only where a key-like run begins, which keeps long runs linear.
 _SECRET_ASSIGNMENT = re.compile(
-    r"(?i)\b((?:[\w.-]*[_.-])?(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|"
-    r"auth|credential)s?)(\s*[:=]\s*)(\"[^\"]*\"|'[^']*'|[^\s,;&]+)"
+    r"(?i)(?<![\w.-])([\"']?)([\w.-]{0,40}?(?:password|passwd|passphrase|pwd|secret|token|"
+    r"api[_-]?key|access[_-]?key|private[_-]?key|auth|credential|cookie)s?(?:[_.-]?key)?)\1"
+    r"(\s*[:=]\s*)(\"[^\"]*\"|'[^']*'|[^\s,;&]+)"
+)
+# Everything after an Authorization header name; a known scheme stays visible.
+_AUTHORIZATION = re.compile(
+    r"(?i)(?<![\w-])(authorization)(\s*[:=]\s*)"
+    r"((?:basic|bearer|token|digest|negotiate|ntlm|aws4-hmac-sha256)\s+)?[^\r\n]+"
 )
 # Command-line style secrets pasted into a note: ``--password hunter2``.
 # A following option (``--token --verbose``) is not taken as the value.
@@ -60,7 +69,10 @@ _SHORT_BASIC = re.compile(
     r"\b((?i:basic))(\s+)([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)"
     r"(?![A-Za-z0-9+/=])"
 )
-_URL_CREDENTIALS = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)[^/\s:@]+:[^/\s@]+@")
+# ``scheme://user:password@`` or a token alone as ``scheme://token@``.
+_URL_CREDENTIALS = re.compile(
+    r"(?i)(?<![a-z0-9+.-])([a-z][a-z0-9+.-]{0,31}://)[^/\s:@]+(?::[^/\s@]*)?@"
+)
 
 
 def _redact_short_basic(match: re.Match[str]) -> str:
@@ -93,8 +105,12 @@ class ExperimentInfo:
 def redact_text(value: str) -> str:
     """Replace secret-looking values in a free-text label with ``<redacted>``."""
     text = _URL_CREDENTIALS.sub(lambda match: f"{match.group(1)}{REDACTED}@", value)
+    text = _AUTHORIZATION.sub(
+        lambda match: f"{match.group(1)}{match.group(2)}{match.group(3) or ''}{REDACTED}", text
+    )
     text = _SECRET_ASSIGNMENT.sub(
-        lambda match: f"{match.group(1)}{match.group(2)}{REDACTED}", text
+        lambda match: f"{match.group(1)}{match.group(2)}{match.group(1)}{match.group(3)}{REDACTED}",
+        text,
     )
     text = _SECRET_FLAG.sub(lambda match: f"{match.group(1)}{match.group(2)}{REDACTED}", text)
     text = _BEARER.sub(lambda match: f"{match.group(1)}{match.group(2)}{REDACTED}", text)
@@ -109,7 +125,8 @@ def clean_label(value: Any) -> str | None:
     text = " ".join(str(value).split())
     if not text:
         return None
-    return redact_text(text)[:LABEL_LIMIT]
+    # Bound the work on very long input; only LABEL_LIMIT characters are kept.
+    return redact_text(text[:LABEL_LIMIT * 4])[:LABEL_LIMIT]
 
 
 def arguments_record(args: Sequence[str] | None) -> dict[str, Any]:
