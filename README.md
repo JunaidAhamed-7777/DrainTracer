@@ -103,9 +103,11 @@ snapshots and explicitly client-computed comparison receipts.
 
 The optional Windows agent accepts `--request-timeout SECONDS` before its
 subcommand (`0 < value <= 60`). Normal client commands default to 15 seconds;
-`diagnose` and `support` default to 1 second. This is the client wait for an
-agent response. `start --timeout SECONDS` instead sets the monitored session's
-duration. See the [local agent guide](docs/local-agent.md) for details.
+`diagnose` and `support` default to 1 second. This is one deadline for the
+whole client exchange. `start --timeout SECONDS` instead sets the monitored
+session's duration. Errors after a request was sent report `may_have_run` and
+its `request_id`; retry with `--request-id UUID` to replay instead of repeating
+the operation. See the [local agent guide](docs/local-agent.md) for details.
 The optional [sharing commands](docs/team-sharing.md) add an explicit foreground
 TLS listener, privacy preview, a bounded durable upload queue and role-scoped
 receipt retrieval. Starting ordinary monitoring never starts a listener or an

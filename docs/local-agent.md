@@ -141,8 +141,37 @@ Place `--request-timeout SECONDS` before the subcommand. It accepts finite
 values greater than zero and at most 60 seconds. Normal client commands default
 to 15 seconds; `diagnose` and `support` default to one second so an unavailable
 agent is reported quickly. An explicit value overrides either default for
-those commands as well. This bounds the client's wait for an agent reply;
-`start --timeout SECONDS` controls how long the monitored session runs.
+those commands as well. It is one deadline for the whole exchange
+(connection, authentication, request, reply, and acknowledgement), not a
+per-step limit; `start --timeout SECONDS` controls how long the monitored
+session runs.
+
+### Retrying a request safely
+
+Every client error is JSON with `code`, `message`, and `may_have_run`. Once
+the request frame has been written, the agent may have executed it even when
+the reply is lost or the deadline expires, so such failures report
+`"may_have_run": true` together with the `request_id` that was sent. A failure
+before the request was written (agent unavailable, authentication failure)
+reports `"may_have_run": false`. If a valid reply arrives but its receipt
+acknowledgement cannot be delivered, the client still prints the reply.
+
+To retry without repeating an operation, pass the reported identity back with
+`--request-id UUID` before the subcommand, using the same subcommand and
+arguments:
+
+```powershell
+draintracer-agent --request-id 0f8c2a4e-5d1b-4c7a-9e3f-2b6d8a1c4e70 start --pid $targetPid --create-time $created --timeout 30
+```
+
+The value must be a UUID; it is normalized to lowercase canonical form. It
+applies to agent operation commands only, not `serve`, `diagnose`, `support`,
+`recover`, or `remove`. A repeated identity with identical parameters returns
+the agent's original reply; different parameters return a `conflict` error.
+Replies are replayable for the last 256 requests while the agent runs, and
+accepted `start` identities also persist in the scheduling journal. After a
+replay window is lost (for example, an agent restart for non-`start`
+operations), inspect `status` before retrying process control.
 
 Install the current wheel in a virtual environment. Start the agent explicitly
 in a Windows terminal; its default state directory is
@@ -202,7 +231,8 @@ default, capped at the server's one-hour default maximum (configurable up to
 there are one through eight leak windows, each from one second to one hour.
 
 The single IPC handler consumes one authenticated exchange at a time. Every
-pipe read/write and incomplete peer is bounded by a three-second I/O deadline;
+pipe read/write and incomplete peer is bounded by a three-second I/O deadline
+on the agent side; the client bounds its whole exchange by `--request-timeout`;
 controller export/control calls have five-second command deadlines. A reply
 is acknowledged before the server disconnects the pipe, preventing Windows
 from discarding unread reply bytes. A client disconnect does not cancel a

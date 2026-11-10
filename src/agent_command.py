@@ -6,6 +6,7 @@ import argparse
 import json
 import math
 import threading
+import time
 import uuid
 from pathlib import Path
 
@@ -90,21 +91,44 @@ class AgentClient:
         self.timeout = timeout
 
     def request(self, operation, params=None, *, request_id=None):
+        """Perform one exchange within a single deadline covering every step.
+
+        Once the request frame has been written, the agent may execute it even
+        if the reply is lost, so any later failure carries ``may_have_run`` and
+        the ``request_id`` needed for an idempotent retry. A valid reply is
+        returned even when its receipt acknowledgement cannot be delivered.
+        """
         identity = request_id or str(uuid.uuid4())
-        pipe = connect(self.name, timeout=self.timeout)
+        deadline = time.monotonic() + self.timeout
+        sent = False
         try:
-            authenticate(pipe, self.secret, server=False)
-            pipe.send({"protocol": 1, "id": identity, "operation": operation, "params": params or {}})
-            response = pipe.receive()
-            pipe.send({"ack": identity})
-        finally:
-            pipe.close()
-        if response.get("protocol") != 1 or response.get("id") != identity or type(response.get("ok")) is not bool:
-            raise AgentTransportError("the agent returned an invalid response identity")
+            pipe = connect(self.name, timeout=self.timeout, deadline=deadline)
+            try:
+                authenticate(pipe, self.secret, server=False)
+                # A failed write leaves an incomplete frame, which the agent
+                # rejects as malformed, so only a completed send may run.
+                pipe.send({"protocol": 1, "id": identity, "operation": operation, "params": params or {}})
+                sent = True
+                response = pipe.receive()
+                if (response.get("protocol") != 1 or response.get("id") != identity
+                        or type(response.get("ok")) is not bool):
+                    raise AgentTransportError("the agent returned an invalid response identity")
+                try:
+                    pipe.send({"ack": identity})
+                except (AgentTransportError, OSError, ValueError):
+                    pass  # The agent already replied; a missing ack only affects its bookkeeping.
+            finally:
+                pipe.close()
+        except (AgentTransportError, OSError, ValueError) as error:
+            if sent:
+                error.may_have_run = True
+            error.request_id = identity
+            raise
         if not response["ok"]:
             error = response.get("error", {})
             exception = AgentError(error.get("code", "operation_failed"), error.get("message", "agent request failed"))
             exception.may_have_run = bool(error.get("may_have_run"))
+            exception.request_id = identity
             raise exception
         return response["result"]
 
@@ -114,7 +138,10 @@ def build_parser():
     parser.add_argument("--state-dir", default=str(Path.home() / ".draintracer-agent"))
     parser.add_argument("--profile", default="default", help="Local endpoint profile, not a monitor configuration profile.")
     parser.add_argument("--request-timeout", type=float, default=None,
-                        help="Client request timeout in seconds (0 < value <= 60; default: 15, or 1 for diagnose/support).")
+                        help="Whole-exchange client deadline in seconds (0 < value <= 60; default: 15, "
+                             "or 1 for diagnose/support).")
+    parser.add_argument("--request-id", metavar="UUID",
+                        help="Request identity for an idempotent retry of an agent operation (default: a new UUID).")
     commands = parser.add_subparsers(dest="command", required=True)
     server = commands.add_parser("serve", help="Start explicitly in the foreground; stop with Ctrl+C.")
     server.add_argument("--allow-launch", action="store_true")
@@ -165,6 +192,14 @@ def main(argv=None):
     try:
         if args.request_timeout is not None and (not math.isfinite(args.request_timeout) or not 0 < args.request_timeout <= 60):
             raise AgentError("invalid_input", "request timeout must be finite, greater than zero, and at most 60 seconds")
+        request_id = None
+        if args.request_id is not None:
+            if args.command in {"serve", "diagnose", "recover", "remove", "support"}:
+                raise AgentError("invalid_input", "request id applies only to agent operation commands")
+            try:
+                request_id = str(uuid.UUID(args.request_id))
+            except ValueError as error:
+                raise AgentError("invalid_input", "request id must be a UUID") from error
         if args.command == "serve":
             policy = AgentPolicy(allow_launch=args.allow_launch, allow_pause=args.allow_pause,
                                  allow_kill=args.allow_kill, launch_roots=tuple(map(Path, args.launch_root)),
@@ -214,7 +249,7 @@ def main(argv=None):
         timeout = args.request_timeout if args.request_timeout is not None else 15.0
         client = AgentClient(args.state_dir, profile=args.profile, timeout=timeout)
         if args.command == "stop":
-            print(json.dumps(client.request("shutdown"), indent=2, ensure_ascii=True))
+            print(json.dumps(client.request("shutdown", request_id=request_id), indent=2, ensure_ascii=True))
             return 0
         params = {}
         if args.command == "start":
@@ -241,11 +276,16 @@ def main(argv=None):
                 params["limit"] = args.limit
         if args.command == "events":
             params.update(cursor=args.cursor, limit=args.limit)
-        print(json.dumps(client.request(args.command, params), indent=2, ensure_ascii=True, allow_nan=False))
+        print(json.dumps(client.request(args.command, params, request_id=request_id), indent=2,
+                         ensure_ascii=True, allow_nan=False))
         return 0
     except (AgentTransportError, AgentError, OSError, ValueError) as error:
-        print(json.dumps({"error": {"code": getattr(error, "code", "unavailable"), "message": str(error),
-                                    "may_have_run": bool(getattr(error, "may_have_run", False))}}, ensure_ascii=True))
+        failure = {"code": getattr(error, "code", "unavailable"), "message": str(error),
+                   "may_have_run": bool(getattr(error, "may_have_run", False))}
+        if isinstance(getattr(error, "request_id", None), str):
+            # Retrying with --request-id replays the agent's reply instead of repeating the operation.
+            failure["request_id"] = error.request_id
+        print(json.dumps({"error": failure}, ensure_ascii=True))
         return 2
 
 
