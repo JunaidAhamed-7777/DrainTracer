@@ -399,9 +399,12 @@ def _decode_frame(raw: bytes) -> dict[str, Any]:
 class Pipe:
     """A single bounded exchange; stalled/truncated peers cannot hold a reader forever."""
 
-    def __init__(self, handle, *, timeout: float = IO_TIMEOUT) -> None:
+    def __init__(self, handle, *, timeout: float = IO_TIMEOUT, deadline: float | None = None) -> None:
         self.handle = handle
         self.timeout = timeout
+        # Optional absolute time.monotonic() limit shared by every transfer on
+        # this pipe, so a client exchange cannot wait once per step.
+        self.deadline = deadline
 
     def close(self) -> None:
         if self.handle is not None:
@@ -414,6 +417,8 @@ class Pipe:
         size = data if reading else len(data)
         buffer = ctypes.create_string_buffer(size) if reading else ctypes.create_string_buffer(data)
         offset, deadline = 0, time.monotonic() + self.timeout
+        if self.deadline is not None:
+            deadline = min(deadline, self.deadline)
         while offset < size:
             transferred = wintypes.DWORD()
             function = kernel.ReadFile if reading else kernel.WriteFile
@@ -464,9 +469,10 @@ class PipeListener(Pipe):
         _api()[0].DisconnectNamedPipe(self.handle)
 
 
-def connect(name: str, *, timeout: float = IO_TIMEOUT) -> Pipe:
+def connect(name: str, *, timeout: float = IO_TIMEOUT, deadline: float | None = None) -> Pipe:
+    """Open the endpoint; ``deadline`` bounds connection and every later transfer."""
     kernel, _security = _api()
-    deadline = time.monotonic() + timeout
+    limit = time.monotonic() + timeout if deadline is None else deadline
     while True:
         # SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION prevents a server
         # from impersonating a connecting client to gain its file/process rights.
@@ -474,14 +480,14 @@ def connect(name: str, *, timeout: float = IO_TIMEOUT) -> Pipe:
         if handle != _INVALID_HANDLE:
             break
         error = ctypes.get_last_error()
-        if error not in (2, 231) or time.monotonic() >= deadline:
+        if error not in (2, 231) or time.monotonic() >= limit:
             raise AgentTransportError("local agent is unavailable or access was denied") from ctypes.WinError(error)
         time.sleep(0.01)
     mode = wintypes.DWORD(1)  # byte mode, nonblocking
     if not kernel.SetNamedPipeHandleState(handle, ctypes.byref(mode), None, None):
         kernel.CloseHandle(handle)
         raise AgentTransportError("could not configure local agent connection")
-    return Pipe(handle, timeout=timeout)
+    return Pipe(handle, timeout=timeout, deadline=deadline)
 
 
 def _proof(secret: bytes, side: str, server: str, client: str) -> str:
