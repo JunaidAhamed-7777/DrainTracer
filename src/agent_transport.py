@@ -489,6 +489,16 @@ def _proof(secret: bytes, side: str, server: str, client: str) -> str:
                     hashlib.sha256).hexdigest()
 
 
+def _proof_matches(value: object, expected: str) -> bool:
+    """Compare a peer's proof as hex text; malformed input is a failed proof, not an error.
+
+    ``hmac.compare_digest`` raises TypeError for non-ASCII strings, which would
+    otherwise escape the serve loop and stop the agent on one hostile frame.
+    """
+    return (isinstance(value, str) and re.fullmatch("[0-9a-f]{64}", value) is not None
+            and hmac.compare_digest(value.encode("ascii"), expected.encode("ascii")))
+
+
 def authenticate(pipe: Pipe, secret: bytes, *, server: bool) -> None:
     """Fresh nonces, role separation, fixed protocol and no reusable credential on wire."""
     if server:
@@ -498,7 +508,7 @@ def authenticate(pipe: Pipe, secret: bytes, *, server: bool) -> None:
         client = response.get("challenge")
         if (response.get("protocol") != PROTOCOL or not isinstance(client, str)
                 or not re.fullmatch("[0-9a-f]{64}", client)
-                or not hmac.compare_digest(str(response.get("proof")), _proof(secret, "client", nonce, client))):
+                or not _proof_matches(response.get("proof"), _proof(secret, "client", nonce, client))):
             raise AgentTransportError("local agent authentication failed")
         pipe.send({"protocol": PROTOCOL, "proof": _proof(secret, "server", nonce, client)})
     else:
@@ -511,5 +521,5 @@ def authenticate(pipe: Pipe, secret: bytes, *, server: bool) -> None:
         pipe.send({"protocol": PROTOCOL, "challenge": client, "proof": _proof(secret, "client", nonce, client)})
         response = pipe.receive()
         if (response.get("protocol") != PROTOCOL
-                or not hmac.compare_digest(str(response.get("proof")), _proof(secret, "server", nonce, client))):
+                or not _proof_matches(response.get("proof"), _proof(secret, "server", nonce, client))):
             raise AgentTransportError("local agent authentication failed")

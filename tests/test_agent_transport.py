@@ -194,6 +194,25 @@ class NativeTransportTests(unittest.TestCase):
         finally:
             client.close()
 
+    def test_malformed_proofs_fail_authentication_instead_of_raising(self) -> None:
+        for proof in ("é", ["x"], "A" * 64, "0" * 63, "0" * 65, None, 7):
+            with self.subTest(proof=proof):
+                def server(pipe):
+                    authenticate(pipe, self.secret, server=True)
+
+                thread, errors = self._serve(server)
+                client = connect(self.name, timeout=0.5)
+                try:
+                    challenge = client.receive()
+                    self.assertIn("challenge", challenge)
+                    client.send({"protocol": 1, "challenge": "a" * 64, "proof": proof})
+                    thread.join(3)
+                    self.assertFalse(thread.is_alive())
+                    self.assertEqual(len(errors), 1)
+                    self.assertIsInstance(errors[0], AgentTransportError)
+                finally:
+                    client.close()
+
     def test_wrong_credential_cannot_read_authenticated_data(self) -> None:
         authenticated = []
 
