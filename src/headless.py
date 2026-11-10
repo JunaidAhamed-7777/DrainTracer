@@ -47,6 +47,51 @@ _LEVEL_TAGS = {
 }
 
 
+class _BestEffortOutput:
+    """Console stream that stops writing once its reader goes away.
+
+    A closed pipe, as in ``draintracer --headless ... | head``, must not skip
+    cleanup or the report export, and must not make the interpreter exit 120
+    while flushing standard output at shutdown.
+    """
+
+    def __init__(self, stream: Any) -> None:
+        self._stream = stream
+        self.lost = False
+
+    def write(self, text: str) -> int:
+        if not self.lost:
+            try:
+                return self._stream.write(text)
+            except (OSError, ValueError):
+                self._lose()
+        return len(text)
+
+    def flush(self) -> None:
+        if not self.lost:
+            try:
+                self._stream.flush()
+            except (OSError, ValueError):
+                self._lose()
+
+    def _lose(self) -> None:
+        self.lost = True
+        # Point the descriptor at the null device so buffered text and the
+        # interpreter's final flush succeed instead of failing again.
+        try:
+            descriptor = self._stream.fileno()
+            null = os.open(os.devnull, os.O_WRONLY)
+            try:
+                os.dup2(null, descriptor)
+            finally:
+                os.close(null)
+        except (OSError, ValueError, AttributeError):
+            pass
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._stream, name)
+
+
 class HeadlessRunner(MonitorSession):
     """Monitor a target without the dashboard and turn the result into an exit code.
 
@@ -90,6 +135,9 @@ class HeadlessRunner(MonitorSession):
             timeout=timeout,
             settings=settings,
         )
+        self._output = _BestEffortOutput(self.console.file)
+        self.console.file = self._output
+        self._output_loss_noted = False
         self.fail_on = fail_on
         self.fail_on_inconclusive = fail_on_inconclusive
         self.fail_on_target_error = fail_on_target_error
@@ -322,6 +370,11 @@ class HeadlessRunner(MonitorSession):
             message,
         )
         self.console.print(line, soft_wrap=True)
+        if self._output.lost and not self._output_loss_noted:
+            self._output_loss_noted = True
+            MonitorSession._append_event(
+                self, "Console output closed; monitoring, cleanup and export continue", "warn"
+            )
 
     def _print_banner(self) -> None:
         if self.quiet:
