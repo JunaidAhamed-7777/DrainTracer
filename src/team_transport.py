@@ -194,8 +194,11 @@ class Endpoint:
 def client_context(cafile=None) -> ssl.SSLContext:
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
-    context.load_default_certs()
-    if cafile is not None:
+    if cafile is None:
+        context.load_default_certs()
+    else:
+        # An explicit CA replaces the system store rather than adding to it, so
+        # a private deployment trusts only the authority its operator named.
         context.load_verify_locations(cafile=str(cafile))
     # Never enable TLS session-key logging from ambient SSLKEYLOGFILE.
     context.keylog_filename = None

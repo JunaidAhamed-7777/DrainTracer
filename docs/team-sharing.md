@@ -70,6 +70,8 @@ match the client hostname, its private key, and the intended CA chain. Keep
 these files under a trusted private local parent. Client CA files may be
 publicly readable, but their contents and ancestors must not be writable by
 untrusted users. The client rechecks this authority before every connection.
+`--ca` replaces the operating system's trust store for that connection: only
+the named CA file is trusted. Without `--ca`, the system store is used.
 There is no option to disable certificate or hostname verification. A private
 CA and the test certificates in this repository are different deployment
 choices: repository test keys are public fixtures and must never secure a
