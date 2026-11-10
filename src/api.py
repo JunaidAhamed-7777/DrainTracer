@@ -6,11 +6,13 @@ See ``docs/python-api.md`` for ownership, callback and compatibility guarantees.
 from __future__ import annotations
 
 import ast
+import atexit
 import copy
 import io
 import json
 import math
 import threading
+import weakref
 from collections import deque
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import Future
@@ -52,6 +54,22 @@ def _version() -> str:
                     if isinstance(value, str):
                         return value
     raise RuntimeError("canonical runtime version is missing")
+
+
+# Sessions still running when the interpreter exits. Their worker threads are
+# daemons, so without this a script that returns without close() would leave
+# a launched target running and its report unwritten.
+_STARTED: weakref.WeakSet = weakref.WeakSet()
+_EXIT_CLEANUP_SECONDS = 15.0
+
+
+@atexit.register
+def _close_running_sessions() -> None:
+    sessions = [session for session in list(_STARTED) if not session._done.is_set()]
+    for session in sessions:
+        session.cancel()
+    for session in sessions:
+        session.wait(_EXIT_CLEANUP_SECONDS)
 
 
 @dataclass(frozen=True)
@@ -345,6 +363,7 @@ class Session:
                 raise RuntimeError("session is single-use")
             self._thread = threading.Thread(target=self._run, name="DrainTracerSession", daemon=True)
             self._thread.start()
+            _STARTED.add(self)
 
     def cancel(self) -> None:
         self._cancel.set()

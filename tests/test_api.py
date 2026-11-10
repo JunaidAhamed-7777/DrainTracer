@@ -334,3 +334,40 @@ assert not any(name in sys.modules for name in ('src.dashboard', 'src.main', 'sr
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ForgottenCloseTests(unittest.TestCase):
+    def test_interpreter_exit_cleans_up_a_session_that_was_never_closed(self) -> None:
+        repository = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            marker = root / "target.pid"
+            target = root / "sleeper.py"
+            target.write_text("import os, time\n"
+                              f"open({str(marker)!r}, 'w').write(str(os.getpid()))\n"
+                              "time.sleep(60)\n", encoding="utf-8")
+            script = root / "forgetful.py"
+            script.write_text(
+                "import sys, time\n"
+                f"sys.path.insert(0, {str(repository)!r})\n"
+                "from pathlib import Path\n"
+                "from src.api import Session, SessionOptions\n"
+                f"session = Session.launch({str(target)!r}, options=SessionOptions(\n"
+                f"    sample_interval_ms=200, windows_seconds=(5,), report_dir={str(root / 'reports')!r}))\n"
+                "session.start()\n"
+                f"marker = Path({str(marker)!r})\n"
+                "deadline = time.monotonic() + 20\n"
+                "while not (marker.exists() and marker.read_text()) and time.monotonic() < deadline:\n"
+                "    time.sleep(0.05)\n", encoding="utf-8")
+            completed = subprocess.run([sys.executable, "-B", str(script)], capture_output=True, timeout=60)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            pid = int(marker.read_text())
+            try:
+                deadline = time.monotonic() + 10
+                while psutil.pid_exists(pid) and time.monotonic() < deadline:
+                    time.sleep(0.05)
+                self.assertFalse(psutil.pid_exists(pid), "the launched target outlived the script")
+                self.assertTrue(list((root / "reports").rglob("leak_report_*.json")))
+            finally:
+                if psutil.pid_exists(pid):
+                    psutil.Process(pid).kill()

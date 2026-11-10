@@ -26,7 +26,11 @@ ownership cleanup. `close(timeout=10)` requests cancellation and waits up to the
 given deadline. A timeout is explicit: cleanup may still be running and must not
 be reported as complete. Context exit calls `close()` and raises `TimeoutError`
 if it cannot confirm completion. Attached targets are detached; launched trees
-are terminated under the same ownership rules as the CLI.
+are terminated under the same ownership rules as the CLI. If the interpreter
+exits normally while a started session is still running (for example a script
+that returns without `close()`), an exit handler cancels it and waits up to 15
+seconds per session for the same cleanup and any configured export. Prefer an
+explicit `close()` or `with` block; a killed interpreter runs no exit handlers.
 
 Options use seconds, milliseconds, bytes, and counts explicitly. They are
 validated before starting. No configuration discovery or global signal handler
