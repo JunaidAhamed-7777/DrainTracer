@@ -5,10 +5,11 @@ from __future__ import annotations
 import logging
 import math
 import os
+import statistics
 import threading
 import time
 from collections import deque
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from types import MappingProxyType
 
@@ -46,6 +47,7 @@ from .process_history import ProcessHistory
 from .process_runner import ProcessManager
 from .process_table import ProcessEntry, ProcessTable
 from .stats import least_squares_slope
+from .units import safe_label
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +62,12 @@ MIN_WINDOW_COVERAGE = 0.85
 # steps not falling, and at most this share of samples below the running peak.
 MIN_MONOTONIC_RATIO = 0.65
 MAX_DROP_RATIO = 0.15
+# Trend checks compare medians of this many equal time slices of the window,
+# so one noisy, spiking or GC-trimmed sample cannot decide a verdict.
+WINDOW_BUCKETS = 10
+# Growth must appear both before and after two-thirds of the window. A single
+# step, a one-off allocation or a finished startup ramp puts it all in one part.
+MIN_PART_SHARE = 0.15
 # Minimum heuristic score per severity tier, strongest first.
 SEVERITY_SCORES: tuple[tuple[LeakSeverity, float], ...] = (
     (LeakSeverity.CRITICAL, 4.5),
@@ -73,12 +81,21 @@ DETECTION_CRITERIA = DetectionCriteria(
     min_monotonic_ratio=MIN_MONOTONIC_RATIO,
     max_drop_ratio=MAX_DROP_RATIO,
     severity_scores=SEVERITY_SCORES,
+    buckets=WINDOW_BUCKETS,
+    min_part_share=MIN_PART_SHARE,
 )
 _ALL_METRICS = tuple(METRIC_KEYS)
 # Back off handle classification so it stays near 5% of one core.
 _CLASSIFY_COST_FACTOR = 20.0
 # Collected samples the reported cadence averages over.
 CADENCE_SAMPLES = 20
+# A sampling gap restarts the windows only past this multiple of the
+# observed cadence (and never below the interval-based limit).
+GAP_CADENCE_FACTOR = 3.0
+# Collected sample intervals needed before the observed cadence counts.
+MIN_CADENCE_INTERVALS = 3
+# Creation times this close on one PID belong to the same process.
+_SAME_START = 1e-3
 
 
 @dataclass(frozen=True)
@@ -117,33 +134,54 @@ class _SamplePoint:
     value: float
 
 
+# Whether one live process's counter was read, keyed by PID with its
+# creation time (``None`` when unknown) to tell a reused PID apart.
+_Readability = dict[int, tuple[float | None, bool]]
+
+
+def _same_process(first: float | None, second: float | None) -> bool:
+    """Whether two creation times on one PID can belong to the same process."""
+    return first is None or second is None or abs(first - second) <= _SAME_START
+
+
 @dataclass
 class _ResourceSeries:
     """Valid observations of one resource total since its measured set last changed.
 
-    ``segment`` identifies the processes left out of the total (alive but
-    unreadable). When it changes, the total starts or stops counting a
-    process for a reason that has nothing to do with growth, so earlier
-    points no longer compare and the series starts over.
+    ``readable`` records, for each live process of the previous
+    observation, whether this resource was read from it. When a process
+    seen in both observations flips between measured and unmeasured, the
+    total starts or stops counting it for a reason that has nothing to do
+    with growth, so earlier points no longer compare and the series starts
+    over. A process that starts or exits unreadable never entered the
+    total, so its arrival or departure leaves the series intact.
     """
 
     name: str
     resource: LeakResource
     points: deque[_SamplePoint]
-    segment: frozenset[int] | None = None
+    readable: _Readability | None = None
 
-    def continue_segment(self, segment: frozenset[int]) -> bool:
-        """Keep the points if ``segment`` matches; else clear them. Return whether kept."""
-        if segment == self.segment:
+    def continue_segment(self, readable: _Readability) -> bool:
+        """Keep the points unless a continuing process flipped readability.
+
+        Return whether the points were kept.
+        """
+        previous, self.readable = self.readable, dict(readable)
+        if previous is None:
             return True
-        self.points.clear()
-        self.segment = segment
-        return False
+        for pid, (created, measured) in readable.items():
+            before = previous.get(pid)
+            if (before is not None and before[1] != measured
+                    and _same_process(before[0], created)):
+                self.points.clear()
+                return False
+        return True
 
     def interrupt(self) -> None:
         """Forget the points after an observation that could not be measured."""
         self.points.clear()
-        self.segment = None
+        self.readable = None
 
     def add(self, timestamp: float, value: float, max_age_seconds: float) -> None:
         if self.points and timestamp <= self.points[-1].timestamp:
@@ -229,6 +267,7 @@ class LeakDetector:
         # Each resource's window evaluations from the latest judged sample.
         self._last_windows: dict[LeakResource, tuple[WindowEvaluation, ...]] = {}
         self._next_classification = 0.0
+        self._classify_failing = False
         self._handle_type_history: deque[tuple[float, HandleCounts]] = deque()
         # Per-process histories reach back as far as the series do, so
         # growth can be attributed over any alert window.
@@ -467,7 +506,7 @@ class LeakDetector:
         if not warming_up:
             # Series start empty after the warm-up, so initialization growth
             # never reaches a window.
-            self._extend_series(now, totals, coverage, max_age)
+            self._extend_series(now, totals, coverage, max_age, processes)
             if not self._detection_started:
                 self._detection_started = self._window_ready(now)
             alerts = self._evaluate_leaks(now, totals)
@@ -521,8 +560,7 @@ class LeakDetector:
         adjusted = wall_gap <= 0 or sample_gap < 0 or abs(wall_gap - sample_gap) > 1.0
         # Missing more than the shortest window's uncovered allowance cannot
         # help fill it. Keep cadence diagnostics so the delay stays visible.
-        gap_limit = self.sample_interval_ms / 1000 + self.window_seconds[0] * (1 - MIN_WINDOW_COVERAGE)
-        gap = sample_gap > gap_limit
+        gap = sample_gap > self._gap_limit()
         if not adjusted and not gap:
             return {}
         self._clock_adjustments += int(adjusted)
@@ -531,6 +569,23 @@ class LeakDetector:
         return {"timing_reset": "clock_adjustment" if adjusted else "sampling_gap",
                 "sample_gap_seconds": max(0.0, sample_gap),
                 "clock_adjustment_seconds": wall_gap - sample_gap}
+
+    def _gap_limit(self) -> float:
+        """The longest pause between samples that still continues the windows.
+
+        The base limit is one configured interval plus the shortest window's
+        uncovered allowance. A host that steadily samples slower than that
+        (a large tree, a loaded machine) is judged against its own observed
+        cadence instead: only a gap well beyond the recent median interval
+        is a genuine interruption. The gap being judged is not yet part of
+        the cadence, so one long stall cannot excuse itself.
+        """
+        base = self.sample_interval_ms / 1000 + self.window_seconds[0] * (1 - MIN_WINDOW_COVERAGE)
+        starts = self._collect_starts
+        if len(starts) <= MIN_CADENCE_INTERVALS:
+            return base
+        intervals = [later - earlier for earlier, later in zip(starts, list(starts)[1:])]
+        return max(base, GAP_CADENCE_FACTOR * statistics.median(intervals))
 
     def _diagnostics(self, collection_ms: float | None) -> MonitorDiagnostics:
         """The monitor's own cadence, cost and footprint for this snapshot.
@@ -632,24 +687,30 @@ class LeakDetector:
         totals: Mapping[str, float],
         coverage: Mapping[str, MetricCoverage],
         max_age: float,
+        processes: Sequence[ProcessMetrics],
     ) -> None:
         """Add each valid resource total to its series.
 
         An observation with no measured process is invalid: it breaks the
-        series rather than adding a false zero. A change in which live
-        processes are unreadable (access lost or regained, an unreadable
-        process starting or exiting) starts a new segment, so a window
-        never spans samples whose totals cover different processes and the
-        change cannot pass for growth or a drop. Readable processes that
-        start or exit stay in one segment: their effect on the total is real.
+        series rather than adding a false zero. A live process that stays
+        in the tree but flips between readable and unreadable (access lost
+        or regained) starts a new segment, so a window never spans samples
+        whose totals count that process differently and the change cannot
+        pass for growth or a drop. Processes that start or exit stay in one
+        segment: a readable one's effect on the total is real, and an
+        unreadable one never entered the total, so a short-lived unreadable
+        helper leaves the series (and its partial coverage) intact.
         """
+        live = [process for process in processes if process.status != psutil.STATUS_DEAD]
         for resource, series in self._series().items():
             metric = RESOURCE_METRICS[resource]
             measured = coverage[metric]
             if measured.unavailable:
                 series.interrupt()
                 continue
-            series.continue_segment(frozenset(measured.unmeasured_pids))
+            series.continue_segment(
+                {process.pid: (process.create_time, process.measured(metric)) for process in live}
+            )
             series.add(now, totals[metric], max_age)
 
     def _window_ready(self, now: float) -> bool:
@@ -767,7 +828,20 @@ class LeakDetector:
         }
         if not measured:
             return processes, None
-        per_pid = self.classifier.classify(measured)
+        try:
+            per_pid = self.classifier.classify(measured)
+        except Exception:
+            # An unexpected classifier fault must not fail the whole sample.
+            # Type counts are unavailable for this sample; log the first
+            # failure of a run of them and back off like a slow pass.
+            if not self._classify_failing:
+                logger.exception("Handle classification failed; handle types unavailable")
+            else:
+                logger.debug("Handle classification failed again", exc_info=True)
+            self._classify_failing = True
+            per_pid = None
+        else:
+            self._classify_failing = False
         cost = time.monotonic() - clock
         self._classify_cost_ms = cost * 1000.0
         self._next_classification = clock + max(
@@ -842,7 +916,9 @@ class LeakDetector:
 
         try:
             with proc.oneshot():
-                name = proc.name()
+                # Any process can name itself; keep the name one inert line
+                # for every console, CI log and dashboard that shows it.
+                name = safe_label(proc.name())
                 if entry is not None:
                     status = psutil.STATUS_STOPPED if entry.suspended else psutil.STATUS_RUNNING
                 else:
@@ -1078,18 +1154,17 @@ class LeakDetector:
                 evaluations.append(self._unjudged_window(series, timestamp, window))
                 continue
 
-            values = [point.value for point in points]
-            times = [point.timestamp for point in points]
+            times, values = _bucket_medians(points, timestamp - window, window)
             slope = self._least_squares_slope(times, values)
             monotonic_ratio = self._monotonic_increase_ratio(values)
             drop_ratio = self._drop_ratio(values)
             baseline = values[0]
-            delta = current_value - baseline
+            delta = values[-1] - baseline
             judged = WindowEvaluation(
                 window_seconds=window,
                 verdict=WindowVerdict.QUALIFIED,
                 points=len(points),
-                span_seconds=times[-1] - times[0],
+                span_seconds=points[-1].timestamp - points[0].timestamp,
                 baseline_value=baseline,
                 current_value=current_value,
                 slope_per_second=slope,
@@ -1105,6 +1180,9 @@ class LeakDetector:
                 continue
             if drop_ratio > MAX_DROP_RATIO:
                 evaluations.append(replace(judged, verdict=WindowVerdict.TOO_MANY_DROPS))
+                continue
+            if _concentrated(values):
+                evaluations.append(replace(judged, verdict=WindowVerdict.CONCENTRATED))
                 continue
 
             score = self._severity_score(
@@ -1142,7 +1220,7 @@ class LeakDetector:
 
             if best_alert is None or _SEVERITY_RANK[candidate.severity] > _SEVERITY_RANK[best_alert.severity]:
                 best_alert = candidate
-                best_since = times[0]
+                best_since = points[0].timestamp
 
         if best_alert is not None:
             best_alert = self._attribute(best_alert, best_since, timestamp)
@@ -1274,6 +1352,41 @@ class LeakDetector:
         if not alerts:
             return LeakSeverity.NONE
         return max(alerts, key=lambda alert: _SEVERITY_RANK[alert.severity]).severity
+
+
+def _bucket_medians(
+    points: list[_SamplePoint], start: float, window: float
+) -> tuple[list[float], list[float]]:
+    """Midpoint times and low medians of equal time slices of one window.
+
+    Windows with few samples keep one slice per sample, so the rule degrades
+    to the raw points rather than refusing to judge.
+    """
+    count = max(1, min(WINDOW_BUCKETS, len(points)))
+    width = window / count
+    grouped: dict[int, list[_SamplePoint]] = {}
+    for point in points:
+        index = min(count - 1, max(0, int((point.timestamp - start) / width)))
+        grouped.setdefault(index, []).append(point)
+    if len(grouped) < MIN_WINDOW_POINTS:
+        return [point.timestamp for point in points], [point.value for point in points]
+    # Each slice is represented by its low-median sample, at that sample's own
+    # time, so a steady ramp keeps its exact slope.
+    chosen = []
+    for index in sorted(grouped):
+        members = sorted(grouped[index], key=lambda point: (point.value, point.timestamp))
+        chosen.append(members[(len(members) - 1) // 2])
+    return [point.timestamp for point in chosen], [point.value for point in chosen]
+
+
+def _concentrated(values: list[float]) -> bool:
+    """Whether a window's growth sits in only its early or only its late part."""
+    total = values[-1] - values[0]
+    if total <= 0:
+        return False
+    split = values[(2 * len(values)) // 3]
+    early, late = (split - values[0]) / total, (values[-1] - split) / total
+    return early < MIN_PART_SHARE or late < MIN_PART_SHARE
 
 
 def _format_quantity(resource: LeakResource, value: float, precise: bool = False) -> str:

@@ -233,5 +233,72 @@ class DiffCommandTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, 2)
 
 
+class HostileReportTextTests(unittest.TestCase):
+    """Report fields are untrusted: none may reach the terminal as control sequences."""
+
+    TARGET = "C:\\t\\evil\x1b]0;PWNED\x07\x1b[2J.exe"
+    HOSTILE = ("\x1b", "\x07", "\x9b", "\u202e", "\nINJECTED")
+
+    def setUp(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+
+    def _report(self, name: str, rss_step: float, workload: str, **extra) -> str:
+        experiment = _experiment(workload_id="w", build="1.0")
+        experiment["workload_id"] = workload
+        experiment["build"] = "b\x1b[31mRED\u202e"
+        report = _run(rss_step, target_path=self.TARGET, experiment=experiment, **extra)
+        for index, snapshot in enumerate(report["snapshots"]):
+            snapshot["handle_types"] = {"File": 10 + index, "cat\x1b]0;T\x07\nINJECTED": index}
+        report["version"] = "v1\x1b[2J"
+        report["report_id"] = f"run-{name}"
+        path = self.root / name
+        path.write_text(json.dumps(report), encoding="utf-8")
+        return str(path)
+
+    def _pair(self) -> tuple[str, str]:
+        return (self._report("a.json", 4.0, "w1\x1b[8mHIDDEN", severity=LeakSeverity.HIGH),
+                self._report("b.json", 0.0, "w2\x1b[8mHIDDEN"))
+
+    def _assert_inert(self, output: str) -> None:
+        for marker in self.HOSTILE:
+            self.assertNotIn(marker, output)
+        self.assertNotIn("\nINJECTED", output)
+
+    def test_panel_plain_and_quiet_output_escape_report_strings(self) -> None:
+        before, after = self._pair()
+        for flags, width in (((), 140), ((), 80), (("--plain",), 100), (("--quiet",), 100),
+                             (("--strict",), 140)):
+            with self.subTest(flags=flags, width=width):
+                console = make_console(width=width)
+                run_diff([before, after, *flags], console)
+                output = console.file.getvalue()
+                self._assert_inert(output)
+                if not {"--plain", "--quiet"} & set(flags):  # only the panel names the target
+                    self.assertIn("evil\\x1b]0;PWNED\\x07\\x1b[2J.exe", output.replace("\n", ""))
+                self.assertIn("\\x1b[8mHIDDEN", output.replace("\n", ""))
+
+    def test_repeated_mode_escapes_report_strings(self) -> None:
+        runs = [self._report(f"r{index}.json", 0.0, f"w{index}\x1b[8mHIDDEN") for index in range(4)]
+        for flags in ((), ("--plain",), ("--quiet",)):
+            with self.subTest(flags=flags):
+                console = make_console(width=140)
+                run_diff([runs[0], runs[2], "--before-run", runs[1], "--after-run", runs[3],
+                          *flags], console)
+                output = console.file.getvalue()
+                self.assertIn("COMPARABILITY", output)
+                self.assertIn("\\x1b[8mHIDDEN", output.replace("\n", ""))
+                self._assert_inert(output)
+
+    def test_json_output_keeps_the_original_strings_escaped_by_json(self) -> None:
+        before, after = self._pair()
+        console = make_console()
+        run_diff([before, after, "--json"], console)
+        output = console.file.getvalue()
+        self.assertNotIn("\x1b", output)
+        self.assertIn("evil\x1b]0;PWNED\x07\x1b[2J.exe", json.loads(output)["after"]["target"])
+
+
 if __name__ == "__main__":
     unittest.main()

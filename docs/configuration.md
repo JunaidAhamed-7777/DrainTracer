@@ -96,9 +96,13 @@ are rejected before a process is launched or attached.
   is omitted. No profile is selected by default.
 - `thresholds`: resource tables described below.
 
-File settings can appear at the top level or inside `[draintracer]`. In a
-shared file, profiles and thresholds must also be nested below that table,
-for example `[draintracer.profiles.ci]`.
+File settings can appear at the top level or inside `[draintracer]`, but
+not both: a `.drainrc`, `.drainrc.toml`, `draintracer.toml`, or `--config`
+file that has a `[draintracer]` table and other top-level keys is rejected
+with an error naming those keys, instead of silently ignoring them. In a
+shared `config.toml`, only the `[draintracer]` table is read and other
+top-level content belongs to other tools; profiles and thresholds must also be
+nested below that table, for example `[draintracer.profiles.ci]`.
 
 ## Thresholds and units
 

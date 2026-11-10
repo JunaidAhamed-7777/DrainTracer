@@ -237,6 +237,17 @@ def load_config_file(path: Path) -> Mapping[str, Any]:
         return document
     if not isinstance(section, dict):
         raise ConfigError("[draintracer] must be a table")
+    # A shared config.toml belongs to other tools too, so only its
+    # [draintracer] table is ours. In a dedicated DrainTracer file, settings
+    # beside that table would be silently ignored, so refuse the mix.
+    if path.name not in SHARED_CONFIG_FILENAMES:
+        stray = sorted(key for key in document if key != "draintracer")
+        if stray:
+            raise ConfigError(
+                "settings appear both at the top level ("
+                + ", ".join(stray)
+                + ") and in a [draintracer] table; put them all in one place"
+            )
     return section
 
 

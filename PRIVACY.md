@@ -1,12 +1,13 @@
 # Privacy policy
 
-Effective and last updated: **30 October 2026**.
+Effective **30 October 2026**; last updated **10 November 2026**.
 
 This policy describes the official DrainTracer project maintained by
 [Junaid Ahamed](https://github.com/JunaidAhamed-7777) (the "maintainer", "we", or
-"us"). It covers the local Windows CLI/TUI, its generated reports, and
-information you choose to provide through project support and contribution
-channels. Read it with the [terms](TERMS.md) and
+"us"). It covers the local Windows and Linux CLI/TUI, its optional companion
+commands (such as the local Windows agent and operator-run sharing), its
+generated reports, and information you choose to provide through project
+support and contribution channels. Read it with the [terms](TERMS.md) and
 [practical privacy guide](docs/privacy.md).
 
 ## 1. The essentials
@@ -69,9 +70,15 @@ of every process's report.
 
 Resource sampling reads operating-system counters. It does not capture
 keystrokes, screen contents, packet payloads, document contents, or process
-memory contents as a monitoring feature. It does not capture the launched
-target's console output: stdin, stdout, and stderr are redirected to the
-null device. A target may independently read, write, or transmit data.
+memory contents as a monitoring feature. By default it does not capture the
+launched target's console output: stdin, stdout, and stderr are redirected
+to the null device. The exception is an opt-in workload recipe with
+`capture_logs`, which writes bounded, pattern-redacted target and exercise
+stdout/stderr to separate local files under a `workload-logs-*` directory
+beside reports. Those files are never embedded in JSON or HTML, are not
+guaranteed secret-free, and have no automatic expiry; see the
+[workload guide](docs/workloads.md#optional-output-files). A target may
+independently read, write, or transmit data.
 
 ### Settings and experiment records
 
@@ -137,8 +144,14 @@ by terminal transcripts, shell history, screen recordings, or CI logs.
 Experiment labels are shortened and certain secret-looking assignments,
 secret flags, URL credentials, and Basic/Bearer credentials are replaced.
 This is pattern matching on those labels, not comprehensive sanitization of
-paths, events, profiles, logs, screenshots, or the whole report. There is no
-implemented previewable privacy-profile export. Review both JSON and HTML,
+paths, events, profiles, logs, screenshots, or the whole report.
+
+Separately, the explicit `share` and `minimal` privacy profiles
+(`draintracer-report redact --profile`, `draintracer-share preview`) can
+preview and write transformed copies locally. They apply a typed allowlist,
+remove paths and free text, pseudonymize process identities, and shift dates,
+but retained resource values and timing patterns can still identify a
+workload. Ordinary exports remain detailed. Review both JSON and HTML,
 including embedded data, before sharing. See [the sharing procedure](docs/privacy.md#before-sharing-evidence).
 
 ## 4. Network requests and third-party services
@@ -159,7 +172,8 @@ ends at that moment. The check displays availability information and does
 not install an update or upload evidence.
 
 Headless runs, help, version-only commands, report comparisons, and startup
-with redirected output do not perform this update check. There is currently
+with redirected output do not perform this update check, even when
+`FORCE_COLOR` or `TTY_COMPATIBLE` asks for terminal styling. There is currently
 no dedicated interactive update-check opt-out flag. Monitoring can work
 offline after its prerequisites are installed; an unavailable check does
 not prevent monitoring. Use a mode that skips the check or your network
@@ -169,6 +183,15 @@ PyPI is operated by the Python Software Foundation. Its
 [PyPI privacy notice](https://policies.python.org/pypi.org/Privacy-Notice/)
 and the linked PSF notice explain the provider's own handling and retention.
 We do not control those records.
+
+### Optional operator-run sharing
+
+`draintracer-share` is a separate, explicitly run command. Its foreground TLS
+listener runs on a host your organization controls and defaults to loopback;
+the client sends only privacy-transformed report JSON and comparison receipts,
+and only when you run `flush` or another network subcommand. Preview, enqueue,
+and queue inspection are offline. The maintainer does not operate or receive
+data from these servers. See [team sharing](docs/team-sharing.md).
 
 ### Installation, repair, links, and CI
 

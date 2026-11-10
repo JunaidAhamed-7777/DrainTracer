@@ -317,7 +317,7 @@ class TimelineViewMixin:
         }
 
     def _timeline_body(self, width: int, height: int | None) -> RenderableType:
-        palette, glyphs = self.palette, self.glyphs
+        palette = self.palette
         points, marks, alerts = self._timeline_data()
         metric = self.timeline_metric
         if len(points) < 2:

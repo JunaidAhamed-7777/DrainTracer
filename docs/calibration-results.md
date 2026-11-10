@@ -1,5 +1,14 @@
 # Repeated calibration results
 
+> **Detection changed after these measurements.** Window checks now use
+> time-slice medians and reject growth concentrated in one part of a
+> window (see [working principles](../working-principle.md#6-how-active-leak-signals-are-detected)).
+> In synthetic replays of those fixture shapes and in the bounded torture
+> suite, the benign cache and startup warnings recorded below no longer occur,
+> and noisy or sawtooth growth that was missed now qualifies. The results below
+> remain the record for their pinned source; they have not been re-collected
+> for the new rule.
+
 The default detector detected all three fast-growth controls on both tested
 platforms, but it also warned about bounded cache/startup growth. The slower
 0.5 MiB/s memory fixture produced LOW warnings and never HIGH during 75 seconds.

@@ -10,10 +10,14 @@ import ctypes
 import os
 import subprocess
 from ctypes import wintypes
+from collections.abc import Mapping
 from functools import lru_cache
 from pathlib import Path
 
-from .process_runner import ProcessManager, ProcessManagerError
+from .process_runner import ProcessManager, ProcessManagerError, python_launch
+
+# The one variable an agent launch may add to its inherited environment.
+VENV_LAUNCHER = "__PYVENV_LAUNCHER__"
 
 
 class _StartupInfo(ctypes.Structure):
@@ -89,6 +93,8 @@ def _job_api():
         "WaitForSingleObject": ([wintypes.HANDLE, wintypes.DWORD], wintypes.DWORD),
         "GetExitCodeProcess": ([wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)], wintypes.BOOL),
         "CloseHandle": ([wintypes.HANDLE], wintypes.BOOL),
+        "GetEnvironmentStringsW": ([], ctypes.c_void_p),
+        "FreeEnvironmentStringsW": ([ctypes.c_void_p], wintypes.BOOL),
     }
     for name, (arguments, result) in signatures.items():
         function = getattr(api, name)
@@ -102,6 +108,44 @@ def _check(value):
     return value
 
 
+def _environment_name(entry: str) -> str:
+    # Hidden per-drive entries such as "=C:=C:\work" start with "=".
+    end = entry.find("=", 1)
+    return entry if end < 0 else entry[:end]
+
+
+def _environment_block(overrides: Mapping[str, str]):
+    """This process's native environment block with ``overrides`` applied.
+
+    The block is read with GetEnvironmentStringsW rather than rebuilt from
+    ``os.environ``, which upper-cases names and omits the hidden per-drive
+    working directories, so every other entry reaches the child unchanged.
+    """
+    for name, value in overrides.items():
+        if not name or "=" in name or "\0" in name or "\0" in value:
+            raise ValueError("invalid environment override")
+    api = _job_api()
+    pointer = api.GetEnvironmentStringsW()
+    if not pointer:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        units = ctypes.cast(pointer, ctypes.POINTER(ctypes.c_uint16))
+        length = 0
+        while units[length] or units[length + 1]:
+            length += 1
+        raw = ctypes.string_at(pointer, length * 2)
+    finally:
+        api.FreeEnvironmentStringsW(pointer)
+    replaced = {name.upper() for name in overrides}
+    entries = [entry for entry in raw.decode("utf-16-le", "surrogatepass").split("\0")
+               if entry and _environment_name(entry).upper() not in replaced]
+    entries.extend(f"{name}={value}" for name, value in overrides.items())
+    # Windows keeps the block sorted by case-insensitive name; the sort is
+    # stable, so inherited entries keep their relative order.
+    entries.sort(key=lambda entry: _environment_name(entry).upper())
+    return ctypes.create_string_buffer(("\0".join(entries) + "\0\0").encode("utf-16-le", "surrogatepass"))
+
+
 class JobProcess:
     """The small pid/poll/kill interface consumed by ProcessManager.
 
@@ -110,7 +154,8 @@ class JobProcess:
     stops remaining normal descendants after an agent crash.
     """
 
-    def __init__(self, command: list[str], *, cwd: str | None = None) -> None:
+    def __init__(self, command: list[str], *, cwd: str | None = None,
+                 environment_overrides: Mapping[str, str] | None = None) -> None:
         self.pid = 0
         self._process = self._job = None
         self._exit_code = None
@@ -121,6 +166,8 @@ class JobProcess:
         if len(line) >= 32767:
             raise ValueError("agent launch command exceeds the Windows command-line limit")
         api = _job_api()
+        # None inherits this process's environment block as is.
+        environment = _environment_block(environment_overrides) if environment_overrides else None
         info = _ProcessInfo()
         null_handle = None
         initialized = False
@@ -148,9 +195,11 @@ class JobProcess:
             startup.startup.flags = 0x100  # STARTF_USESTDHANDLES
             startup.startup.stdin = startup.startup.stdout = startup.startup.stderr = null_handle
             startup.attributes = ctypes.cast(attributes, wintypes.LPVOID)
-            # CREATE_SUSPENDED | CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT.
+            # CREATE_SUSPENDED | CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT,
+            # plus CREATE_UNICODE_ENVIRONMENT for an explicit block.
+            flags = 0x08080004 | (0x400 if environment is not None else 0)
             _check(api.CreateProcessW(command[0], ctypes.create_unicode_buffer(line), None, None,
-                                      True, 0x08080004, None, cwd, ctypes.byref(startup), ctypes.byref(info)))
+                                      True, flags, environment, cwd, ctypes.byref(startup), ctypes.byref(info)))
             self._process, self.pid = info.process, info.pid
             _check(api.AssignProcessToJobObject(self._job, self._process))
             if api.ResumeThread(info.thread) != 1:
@@ -209,8 +258,20 @@ class JobProcess:
 class AgentProcessManager(ProcessManager):
     """Agent launch adapter; attach still uses the ordinary identity checks."""
 
-    # Job launches inherit the server environment unchanged.
-    REDIRECT_VENV_LAUNCHER = False
+    def _python_launch(self):
+        """Start a virtual environment's base interpreter directly.
+
+        The venv redirector would otherwise be the job's root, and every
+        ``sys.executable`` child would add another redirector level. Only
+        ``__PYVENV_LAUNCHER__`` is named here; JobProcess adds it to the
+        inherited server environment, which is otherwise unchanged.
+        """
+        if self.env is not None:
+            raise ProcessManagerError("agent launches inherit their server environment")
+        executable, environment = python_launch(None)
+        if environment is None:
+            return executable, None
+        return executable, {VENV_LAUNCHER: environment[VENV_LAUNCHER]}
 
     def __init__(self, target_path, args=None, **kwargs):
         super().__init__(target_path, args=args, **kwargs)
@@ -219,9 +280,10 @@ class AgentProcessManager(ProcessManager):
     def _spawn_process(self, command, popen_kwargs):
         if isinstance(command, str):
             raise ProcessManagerError("agent launches support .exe and .py targets; wrap batch commands explicitly")
-        if popen_kwargs.get("env") is not None:
+        overrides = popen_kwargs.get("env")
+        if self.env is not None or (overrides is not None and set(overrides) != {VENV_LAUNCHER}):
             raise ProcessManagerError("agent launches inherit their server environment")
-        process = JobProcess(command, cwd=popen_kwargs.get("cwd"))
+        process = JobProcess(command, cwd=popen_kwargs.get("cwd"), environment_overrides=overrides)
         self._owned_job = process
         return process
 

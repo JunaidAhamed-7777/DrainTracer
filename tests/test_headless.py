@@ -263,6 +263,57 @@ class OutputTests(unittest.TestCase):
         self.assertTrue(annotations[0].startswith("::error title=DrainTracer leak check::"))
         self.assertIn("100%25,x.exe", annotations[0])
 
+    HOSTILE_NAME = "worker\n::error title=Leak check passed::forged\x1b]0;TITLE\x07\x1b[2J"
+
+    def _assert_no_injection(self, output: str) -> None:
+        for line in output.splitlines():
+            if line.startswith("::"):
+                self.assertTrue(line.startswith("::error title=DrainTracer leak check::")
+                                or line.startswith("::warning title=DrainTracer leak check::"), line)
+        self.assertNotIn("\x1b", output)
+        self.assertNotIn("\x07", output)
+        self.assertNotIn("Leak check passed::forged\n", output)
+
+    def test_hostile_process_names_cannot_forge_ci_lines_or_terminal_controls(self) -> None:
+        from helpers import make_process, sample_trees
+
+        runner = HeadlessRunner("C:/targets/worker.exe", console=make_console())
+        runner._github_actions = True
+        # The sampler's own reading of a process that named itself hostilely.
+        proc = mock.MagicMock(pid=200)
+        proc.name.return_value = self.HOSTILE_NAME
+        proc.status.return_value = "running"
+        proc.memory_info.return_value = mock.Mock(rss=10, vms=20, private=8)
+        proc.num_handles.return_value = 5
+        proc.num_threads.return_value = 3
+        proc.cpu_times.side_effect = OSError("no")
+        proc.io_counters.side_effect = OSError("no")
+        sampled = runner.detector._sample_process(proc)
+        self.assertNotIn("\n", sampled.name)
+        self.assertIn("\\x0a::error", sampled.name)
+        root = make_process(100)
+        # A name that bypasses the sampler still cannot break the output.
+        raw = make_process(300, ppid=100, name="raw\n::stop-commands::tok\x1b[2J")
+        sample_trees(runner, [[root], [root, sampled, raw], [root]])
+        runner._accept_snapshot(make_snapshot(alerts=(make_alert(severity=LeakSeverity.HIGH),)))
+        runner._print_summary()
+        output = _output(runner)
+        self.assertIn("Process started", output)
+        self.assertIn("Process exited", output)
+        self.assertIn("::error title=DrainTracer leak check::", output)
+        self._assert_no_injection(output)
+        for _stamp, message, _level in runner._events:
+            self.assertTrue(message.isprintable(), message)
+
+    def test_print_line_escapes_controls_in_direct_messages(self) -> None:
+        from rich.text import Text
+
+        runner = HeadlessRunner("C:/targets/worker.exe", console=make_console())
+        runner._print_line("warn", "Could not open x\n::error::x\x1b[2J")
+        runner._print_line("warn", Text("styled\n::warning::y\x1b]0;T\x07"))
+        self._assert_no_injection(_output(runner))
+        self.assertEqual(len(_output(runner).splitlines()), 2)
+
     def test_no_annotation_outside_github_actions(self) -> None:
         runner = HeadlessRunner("C:/targets/worker.exe", console=make_console())
         runner._github_actions = False
@@ -306,6 +357,37 @@ class StepSummaryTests(unittest.TestCase):
                 runner._print_summary()
             markdown = summary_file.read_text(encoding="utf-8")
         self.assertIn("**bad?name.exe**", markdown)
+
+    def test_report_paths_with_backticks_render_literally(self) -> None:
+        """Issue #137: backticks from a target name must not end the code span early."""
+        import os
+
+        with tempfile.TemporaryDirectory() as temp:
+            summary_file = Path(temp) / "summary.md"
+            runner = HeadlessRunner("C:/targets/a`b``c.exe", console=make_console())
+            runner._github_actions = True
+            runner._accept_snapshot(make_snapshot())
+            report = Path(temp) / "a`b``c_run" / "leak_report_x.json"
+            runner._last_report = report
+            with mock.patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": str(summary_file)}):
+                runner._print_summary()
+            markdown = summary_file.read_text(encoding="utf-8")
+        line = next(line for line in markdown.splitlines() if line.startswith("Report: "))
+        self.assertEqual(line, f"Report: ```{report}``` (HTML alongside)")
+
+    def test_code_spans_fence_any_backtick_run(self) -> None:
+        from src.headless import _code_span
+
+        cases = {
+            "plain": "`plain`",
+            "a`b": "``a`b``",
+            "a``b```c": "````a``b```c````",
+            "`edge`": "`` `edge` ``",
+            " lead": "`  lead `",
+        }
+        for value, expected in cases.items():
+            with self.subTest(value=value):
+                self.assertEqual(_code_span(value), expected)
 
     def test_no_step_summary_outside_github_actions(self) -> None:
         import os

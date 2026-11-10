@@ -64,8 +64,9 @@ class CheckpointTests(unittest.TestCase):
 
     def test_second_writer_and_unrelated_existing_files_are_refused(self) -> None:
         store = self._write()
-        with self.assertRaises((CheckpointError, OSError)):
+        with self.assertRaisesRegex(CheckpointError, "in use by another session") as caught:
             CheckpointStore(self.path, "v5.4.0")
+        self.assertIsNone(caught.exception.__cause__)
         store.close()
         with self.assertRaisesRegex(CheckpointError, "already exists"):
             CheckpointStore(self.path, "v5.4.0")
@@ -114,7 +115,7 @@ class CheckpointTests(unittest.TestCase):
             while not ready.exists() and child.poll() is None and time.monotonic() < deadline:
                 time.sleep(0.02)
             self.assertTrue(ready.exists(), "checkpoint writer did not become ready")
-            with self.assertRaises((CheckpointError, OSError)):
+            with self.assertRaisesRegex(CheckpointError, "in use by another session"):
                 CheckpointStore(self.path, "v5.4.0")
             child.kill()
             child.wait(timeout=10)
@@ -125,7 +126,7 @@ class CheckpointTests(unittest.TestCase):
                 try:
                     store = CheckpointStore(self.path, "v5.4.0")
                     break
-                except (CheckpointError, OSError):
+                except CheckpointError:
                     if time.monotonic() >= deadline:
                         raise
                     time.sleep(0.05)
@@ -234,6 +235,19 @@ class CheckpointSessionTests(unittest.TestCase):
             session.start()
         launch.assert_not_called()
         self.assertEqual(self.path.read_text(encoding="utf-8"), "unrelated user data")
+
+    def test_a_checkpoint_in_use_is_refused_without_an_administrator_hint(self) -> None:
+        holder = CheckpointStore(self.path, "v5.4.0")
+        self.addCleanup(holder.close)
+        session = self._session()
+        with (mock.patch.object(session.manager, "start") as launch,
+              self.assertRaisesRegex(CheckpointError, "in use by another session") as caught):
+            session.start()
+        launch.assert_not_called()
+        self.assertNotIsInstance(caught.exception, OSError)
+        for platform in ("win32", "linux"):
+            with self.subTest(platform=platform), mock.patch("src.session.sys.platform", platform):
+                self.assertIsNone(session.startup_hint(caught.exception))
 
     def test_long_run_chart_retention_is_bounded_but_prefix_facts_remain_exact(self) -> None:
         session = self._session(enabled=False)

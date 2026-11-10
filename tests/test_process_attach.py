@@ -424,6 +424,77 @@ class UnverifiedControlTests(unittest.TestCase):
         self.assertEqual(manager.pending_resume_pids, frozenset({4242}))
 
 
+class UnavailableMemberTests(unittest.TestCase):
+    """One member's raw open error must not fail the tree's refresh or sample."""
+
+    def _manager(self, failure: BaseException):
+        manager = ProcessManager(None)
+        manager._root_pid = os.getpid()
+        manager._remember_identity(os.getpid())
+        manager._root_created = manager.created_at(os.getpid())
+        manager._tracked_pids = {os.getpid(), 4343}
+        manager._identities[4343] = 10.0
+        manager._suspended_pids = {4343}
+        real = psutil.Process
+
+        # A subclass, not a function: psutil compares processes with
+        # isinstance(other, Process) and reopens through the patched name.
+        class Opener(real):
+            def __init__(self, pid=None):
+                if pid == 4343:
+                    raise failure
+                super().__init__(pid)
+
+        return manager, mock.patch.object(process_runner.psutil, "Process", Opener)
+
+    def test_a_member_that_cannot_be_opened_stays_tracked_but_unavailable(self) -> None:
+        from src.leak_detector import LeakDetector
+
+        for failure in (OSError(22, "injected raw failure"), psutil.AccessDenied(4343)):
+            with self.subTest(failure=type(failure).__name__):
+                manager, opening = self._manager(failure)
+                detector = LeakDetector(manager, window_seconds=(10.0,),
+                                        classifier=mock.Mock(available=False))
+                with opening, mock.patch.object(manager, "refresh_process_tree"):
+                    processes = manager.iter_psutil_processes()
+                    self.assertEqual(sorted(p.pid for p in processes), sorted([os.getpid(), 4343]))
+                    self.assertTrue(manager._pid_is_alive(4343))
+                    snapshot = detector.sample_once()
+                    # Controls keep refusing the unverifiable PID.
+                    self.assertFalse(manager._suspend_pid(4343))
+                    self.assertFalse(manager._resume_pid(4343))
+                    manager._terminate_pid(4343, graceful=False)
+                self.assertIn("control refused", manager.last_error)
+                self.assertEqual(manager.pending_resume_pids, frozenset({4343}))
+                member = next(p for p in snapshot.processes if p.pid == 4343)
+                self.assertFalse(member.measured("private_bytes"))
+                self.assertEqual(member.access_denied, isinstance(failure, psutil.AccessDenied))
+                self.assertEqual(member.create_time, 10.0)
+                coverage = snapshot.coverage["private_bytes"]
+                self.assertEqual((coverage.measured, coverage.total), (1, 2))
+                self.assertIn(os.getpid(), manager.tracked_pids)
+                self.assertIn(4343, manager.tracked_pids)
+
+    def test_a_raw_identity_read_error_is_unavailable_not_fatal(self) -> None:
+        manager = ProcessManager(None)
+        manager._root_pid = 4242
+        manager._root_created = 10.0
+        manager._tracked_pids = {4242}
+        manager._identities = {4242: 10.0}
+        process = mock.Mock(pid=4242)
+        process.is_running.return_value = True
+        process.status.return_value = psutil.STATUS_RUNNING
+        process.create_time.side_effect = OSError(5, "injected")
+        with (mock.patch.object(process_runner.psutil, "Process", return_value=process),
+              mock.patch.object(process_runner, "_created", side_effect=OSError(5, "injected"))):
+            opened = manager._open_tracked(4242)
+            self.assertIsInstance(opened, process_runner.UnavailableProcess)
+            with self.assertRaises(OSError):
+                opened.memory_info()
+            self.assertFalse(manager._suspend_pid(4242))
+        process.suspend.assert_not_called()
+
+
 class PollLoopTests(unittest.TestCase):
     def test_a_failed_refresh_does_not_stop_tracking(self) -> None:
         from unittest import mock
