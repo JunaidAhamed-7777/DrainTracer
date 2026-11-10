@@ -102,8 +102,8 @@ For a focused run:
 The [torture guide](torture/README.md) documents the fixtures and their
 resource limits. Use workloads you are prepared to have paused or terminated.
 For UI changes, check the dashboard in both a wide and a narrow terminal and
-inspect its ASCII fallback. Run editor diagnostics on edited files
-(`ReadLints` where available), and report unavailable checks honestly.
+inspect its ASCII fallback. Run editor diagnostics where available on edited
+files, and report unavailable checks honestly.
 
 ## Version and documentation
 
