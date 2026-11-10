@@ -122,7 +122,11 @@ unknown rather than zero. A counter that fails on its own (for example the
 handle count) is marked the same way. Totals add up only the measured
 processes, and each snapshot's `coverage` records, per metric, how many live
 processes were measured and which PIDs were not. Exited processes count as
-neither.
+neither. A tracked PID that cannot even be opened for one sample (an access
+or operating-system error that does not say the process exited) stays
+tracked and is reported unavailable for that sample, rather than failing
+the sample of the whole tree; process controls keep refusing it until its
+identity can be verified.
 
 ## 3. System handles and Linux descriptors
 
@@ -184,7 +188,10 @@ system handles. When a pass is slower, the next one is scheduled at least
 Processes whose metrics could not be read are left out so the categories
 add up to the handle total. After three consecutive failures (for example,
 a sandbox that blocks the Windows call), Windows classification turns itself
-off and the dashboard falls back to totals.
+off and the dashboard falls back to totals. Any other unexpected classifier
+error is logged once per run of failures, leaves handle types unavailable
+for that sample, and schedules the next pass like a slow one; the sample
+itself, and the leak series, are unaffected.
 
 On Linux, classification reads `/proc/PID/fd` symlinks without opening the
 resources they name. Path-backed descriptors are `file`, sockets are
@@ -360,13 +367,25 @@ the target is leak-free.
 Each resource series only holds valid observations. A sample where no live
 process could be measured for that resource is invalid and clears the
 series instead of adding a false zero. The series also starts a new segment
-whenever the set of live but unreadable processes changes (access lost or
-regained, or an unreadable process starting or exiting), so a window only
-spans samples whose totals cover the same processes; access changes cannot
-look like growth or a drop. Readable processes that start or exit stay in
-the same segment, since their effect on the totals is real. A window
+whenever a live process seen in two consecutive samples (identified by PID
+and creation time) flips between measured and unmeasured for that resource:
+access lost or regained. A window therefore never spans samples whose
+totals count a continuing process differently, so access changes cannot
+look like growth or a drop. Processes that start or exit stay in the same
+segment: a readable one's effect on the totals is real, and an unreadable
+one was never part of them, so a short-lived unreadable helper leaves the
+series intact while coverage marks those samples partial. A window
 becomes eligible again once the new segment holds four samples covering
 85% of it.
+
+Timing problems restart every window too. A wall clock that steps against
+the monotonic clock by more than a second is a clock adjustment. A pause
+between samples longer than the gap limit is a sampling gap: the limit is
+one configured interval plus 15% of the shortest window, or three times
+the median of the recent sample intervals when the monitor steadily
+samples slower than that (a large tree or a loaded host). The gap being
+judged is not part of that median, so only a genuine interruption of the
+observed cadence restarts the windows.
 
 Every snapshot carries one `evidence` entry per resource, computed by the
 detector: `warming_up`, `collecting` (with the segment's valid sample count

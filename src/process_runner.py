@@ -10,6 +10,8 @@ import sys
 import threading
 import time
 from collections import deque
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -106,6 +108,40 @@ class _Departed:
     created: float | None
     gone_at: float
     depth: int
+
+
+class UnavailableProcess:
+    """A tracked process that could not be opened for one observation.
+
+    Opening a tracked PID can fail with an access or operating-system error
+    that says nothing about whether the process left. The PID stays tracked
+    and observation gets this stand-in, whose every read raises the
+    original kind of error, so the sampler reports the process as
+    unreadable for that sample instead of failing the whole tree. It is
+    never handed to process control, which keeps refusing the PID.
+    """
+
+    def __init__(self, pid: int, error: BaseException) -> None:
+        self.pid = pid
+        self.error = str(error) or type(error).__name__
+        self._denied = isinstance(error, psutil.AccessDenied)
+
+    @contextmanager
+    def oneshot(self) -> Iterator[UnavailableProcess]:
+        yield self
+
+    def _fail(self, *_args, **_kwargs):
+        if self._denied:
+            raise psutil.AccessDenied(self.pid, msg=self.error)
+        raise OSError(f"PID {self.pid} is unavailable: {self.error}")
+
+    def __getattr__(self, name: str):
+        if name.startswith("__"):
+            raise AttributeError(name)
+        return self._fail
+
+    def __repr__(self) -> str:
+        return f"UnavailableProcess(pid={self.pid}, error={self.error!r})"
 
 
 _LINUX_BOOT_TIME: float | None = None
@@ -696,9 +732,14 @@ class ProcessManager:
             self._refresh_tracked_pids()
             return set(self._tracked_pids)
 
-    def iter_psutil_processes(self) -> list[psutil.Process]:
-        """Return psutil.Process objects for all tracked PIDs that are accessible."""
-        processes: list[psutil.Process] = []
+    def iter_psutil_processes(self) -> list[psutil.Process | UnavailableProcess]:
+        """Return a process object for every live tracked PID.
+
+        A tracked PID that cannot be opened right now is returned as an
+        ``UnavailableProcess``, so it is sampled as unreadable rather than
+        failing the sample or dropping out of the tree.
+        """
+        processes: list[psutil.Process | UnavailableProcess] = []
         for pid in self.tracked_pids:
             proc = self._open_tracked(pid)
             if proc is not None:
@@ -949,14 +990,14 @@ class ProcessManager:
 
     def _open_tracked(
         self, pid: int, *, discovering: bool = False, for_control: bool = False
-    ) -> psutil.Process | None:
+    ) -> psutil.Process | UnavailableProcess | None:
         """Observe tracked PIDs; controls additionally require a verified identity."""
         with self._lock:
             return self._open_tracked_unlocked(pid, discovering=discovering, for_control=for_control)
 
     def _open_tracked_unlocked(
         self, pid: int, *, discovering: bool = False, for_control: bool = False
-    ) -> psutil.Process | None:
+    ) -> psutil.Process | UnavailableProcess | None:
         # Refresh can retire a PID while a caller still holds an earlier PID
         # set. Only validated discovery may open an untracked descendant.
         if not discovering and pid not in self._tracked_pids and pid != self._root_pid:
@@ -966,11 +1007,8 @@ class ProcessManager:
         except (psutil.NoSuchProcess, psutil.ZombieProcess):
             self._suspended_pids.discard(pid)
             return None
-        except (psutil.AccessDenied, OSError):
-            if for_control:
-                self._last_error = f"Cannot verify current identity for PID {pid}; process control refused"
-                return None
-            raise
+        except (psutil.Error, OSError) as exc:
+            return self._unavailable(pid, exc, for_control)
 
         # POSIX zombies still have a PID. Windows liveness is checked below
         # using a process handle, avoiding a system-wide status enumeration.
@@ -984,6 +1022,8 @@ class ProcessManager:
             except (psutil.NoSuchProcess, psutil.ZombieProcess):
                 self._suspended_pids.discard(pid)
                 return None
+            except (psutil.Error, OSError) as exc:
+                return self._unavailable(pid, exc, for_control)
 
         expected = self._identities.get(pid)
         if expected is None and pid == self._root_pid:
@@ -995,14 +1035,11 @@ class ProcessManager:
                 self._last_error = f"Cannot verify current identity for PID {pid}; process control refused"
                 return None
             return proc
-        except OSError:
-            if for_control:
-                self._last_error = f"Cannot verify current identity for PID {pid}; process control refused"
-                return None
-            raise
         except (psutil.NoSuchProcess, psutil.ZombieProcess):
             self._suspended_pids.discard(pid)
             return None
+        except (psutil.Error, OSError) as exc:
+            return self._unavailable(pid, exc, for_control)
 
         if expected is not None and abs(created - expected) > _SAME_START:
             # Retain the old identity until refresh removes it from the
@@ -1030,6 +1067,20 @@ class ProcessManager:
             # validated tree discovery may establish a new child identity.
             self._identities[pid] = created
         return proc
+
+    def _unavailable(
+        self, pid: int, error: BaseException, for_control: bool
+    ) -> UnavailableProcess | None:
+        """Refuse control of a PID that cannot be opened; observe it as unavailable.
+
+        One member's access or operating-system error must not fail the
+        refresh or the sample of the whole tree, nor silently drop a PID
+        that may still be running.
+        """
+        if for_control:
+            self._last_error = f"Cannot verify current identity for PID {pid}; process control refused"
+            return None
+        return UnavailableProcess(pid, error)
 
     def _any_tracked_alive(self) -> bool:
         return any(self._pid_is_alive(pid) for pid in self._tracked_pids)

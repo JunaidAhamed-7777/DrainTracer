@@ -247,6 +247,40 @@ class HandleTypeSamplingTests(unittest.TestCase):
             detector._classify_handles([make_process(1)])
         self.assertEqual(detector._next_classification, 60.0)  # 0.5 s pass x 20
 
+    def test_an_unexpected_classifier_fault_skips_types_but_keeps_sampling(self) -> None:
+        from unittest import mock
+
+        from helpers import make_process
+
+        classifier = mock.Mock(available=True)
+        classifier.classify.side_effect = RuntimeError("unexpected classifier bug")
+        detector = _detector(window_seconds=(10.0,), handle_types_interval=2.0,
+                             classifier=classifier)
+        trees = [[make_process(1, rss=100 * MB + index * 4 * MB)] for index in range(30)]
+        with self.assertLogs("src.leak_detector", "DEBUG") as logs:
+            snapshots = _collect_trees(detector, trees)
+        self.assertEqual(len(snapshots), 30)
+        self.assertTrue(all(snapshot.handle_types is None for snapshot in snapshots))
+        errors = [record for record in logs.records if record.levelname == "ERROR"]
+        self.assertEqual(len(errors), 1)  # logged once, not once per pass
+        # Backed off to the classification interval, not retried every sample.
+        self.assertEqual(classifier.classify.call_count, 8)
+        self.assertEqual(snapshots[-1].evidence_for(LeakResource.MEMORY).valid_samples, 30)
+        self.assertTrue(any(snapshot.alerts for snapshot in snapshots))
+
+    def test_a_slow_classifier_fault_backs_off_like_a_slow_pass(self) -> None:
+        from unittest import mock
+
+        from helpers import make_process
+
+        detector, classifier = self._detector_with()
+        classifier.classify.side_effect = RuntimeError("slow failure")
+        with mock.patch("src.leak_detector.time.monotonic", side_effect=[50.0, 50.5]),                 self.assertLogs("src.leak_detector", "ERROR"):
+            processes, totals = detector._classify_handles([make_process(1)])
+        self.assertIsNone(totals)
+        self.assertEqual([p.pid for p in processes], [1])
+        self.assertEqual(detector._next_classification, 60.0)
+
     def test_handle_alert_names_the_type_that_grew(self) -> None:
         detector = _detector(window_seconds=(10.0,))
         values = [200 + index * 10 for index in range(21)]  # 20 handles/s for 10 s
@@ -536,6 +570,53 @@ class MeasurementValidityTests(unittest.TestCase):
         self.assertEqual(measured[21].evidence_for(LeakResource.MEMORY).state, EvidenceState.NO_GROWTH)
         self.assertEqual(measured[31].evidence_for(LeakResource.MEMORY).state, EvidenceState.NO_GROWTH)
         self.assertFalse(any(s.alerts for s in measured))
+
+    def test_a_short_lived_unreadable_helper_does_not_hide_a_leak(self) -> None:
+        from src.events import EvidenceState
+
+        from helpers import make_process
+
+        # The root leaks 8 MB/s (4 MB per 0.5 s sample); an unreadable helper
+        # lives for 1 s of every 5 s. It never entered the total, so its
+        # arrival and departure must not restart the series.
+        trees = []
+        for index in range(60):
+            root = make_process(1, rss=100 * MB + index * 4 * MB)
+            trees.append([root, _denied(2)] if index % 10 in (3, 4) else [root])
+        snapshots = _collect_trees(self._detector(), trees)
+        memory = [snapshot.evidence_for(LeakResource.MEMORY) for snapshot in snapshots]
+        self.assertTrue(any(snapshot.alerts for snapshot in snapshots))
+        self.assertEqual(memory[-1].state, EvidenceState.GROWTH)
+        # The series never restarts; it only ages out past 1.5x the window.
+        self.assertEqual([m.valid_samples for m in memory], [min(i + 1, 31) for i in range(60)])
+        self.assertTrue(memory[13].partial)  # coverage stays qualified while it lives
+        self.assertFalse(memory[15].partial)
+
+    def test_a_continuing_process_that_becomes_readable_restarts_the_segment(self) -> None:
+        from src.events import EvidenceState
+
+        from helpers import make_process
+
+        steady = make_process(1, rss=100 * MB)
+        trees = [[steady, _denied(2)]] * 21 + [[steady, make_process(2, rss=50 * MB)]] * 5
+        snapshots = _collect_trees(self._detector(), trees)
+        self.assertFalse(any(snapshot.alerts for snapshot in snapshots))
+        memory = snapshots[21].evidence_for(LeakResource.MEMORY)
+        self.assertEqual(memory.state, EvidenceState.COLLECTING)
+        self.assertEqual(memory.valid_samples, 1)
+
+    def test_a_reused_pid_is_a_different_process(self) -> None:
+        from dataclasses import replace
+
+        from helpers import make_process
+
+        steady = make_process(1, rss=100 * MB)
+        old = replace(make_process(2, rss=10 * MB), create_time=500.0)
+        new = replace(_denied(2), create_time=900.0)
+        snapshots = _collect_trees(self._detector(), [[steady, old]] * 10 + [[steady, new]] * 5)
+        # The readable worker exited (a real drop) and an unreadable process
+        # took its PID: no access change, so the series continues.
+        self.assertEqual(snapshots[-1].evidence_for(LeakResource.MEMORY).valid_samples, 15)
 
     def test_an_unmeasurable_tree_is_unavailable(self) -> None:
         from src.events import EvidenceState
