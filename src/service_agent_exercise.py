@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import subprocess
-import sys
 import time
 from pathlib import Path
 from uuid import uuid4
@@ -42,17 +41,22 @@ def exercise_agent(root: Path, evidence: ExerciseEvidence, sampler: ResourceSamp
                       "        time.sleep(.02)\n"
                       "time.sleep(float(sys.argv[1]))\n", encoding="ascii")
     profile = "ops-" + uuid4().hex[:20]
-    # Windows venv python.exe may be a redirector. Use the base interpreter
-    # with this installed package's parent on sys.path so the Popen handle is
-    # the actual agent, even in a clean wheel venv. All imports stay local.
+    # Windows venv python.exe may be a redirector. Use the base interpreter,
+    # still inside the environment, with this installed package's parent on
+    # sys.path so the Popen handle is the actual agent, even in a clean wheel
+    # venv. All imports stay local.
+    from .process_runner import python_launch
+
+    interpreter, environment = python_launch(None)
     package = __package__
     bootstrap = ("import sys;sys.path.insert(0,sys.argv.pop(1));"
                  f"from {package}.agent_command import main;raise SystemExit(main())")
-    process = subprocess.Popen([getattr(sys, "_base_executable", None) or sys.executable, "-c", bootstrap,
+    process = subprocess.Popen([interpreter, "-c", bootstrap,
                                 str(Path(__file__).resolve().parent.parent), "--state-dir", str(state),
                                 "--profile", profile, "serve", "--allow-launch", "--launch-root", str(root),
                                 "--max-timeout", "60"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW)
+                               stderr=subprocess.DEVNULL, env=environment,
+                               creationflags=subprocess.CREATE_NO_WINDOW)
     client = None
     crashed = False
     accepted, completed, durable = 0, 0, 0

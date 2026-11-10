@@ -9,7 +9,6 @@ import os
 import queue
 import socket
 import subprocess
-import sys
 import tempfile
 import threading
 import unittest
@@ -336,12 +335,14 @@ class ShareCommandTests(unittest.TestCase):
             reservation.bind(("127.0.0.1", 0))
             port = reservation.getsockname()[1]
         bootstrap = "import sys;sys.path.insert(0,sys.argv.pop(1));from src.share_command import main;raise SystemExit(main())"
-        interpreter = (getattr(sys, "_base_executable", None) or sys.executable) if os.name == "nt" else sys.executable
+        from src.process_runner import python_launch
+
+        interpreter, environment = python_launch(None)
         process = subprocess.Popen([interpreter, "-c", bootstrap,
                 str(Path(__file__).parent.parent), "serve", "--store", str(self.store.directory),
                 "--certificate", str(self.root / "cert.pem"), "--key", str(self.root / "key.pem"),
                 "--operating-evidence", str(path), "--port", str(port)],
-                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=environment,
                 text=True, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
         lines = queue.Queue(maxsize=1)
         reader = threading.Thread(target=lambda: lines.put(process.stdout.readline()), daemon=True)

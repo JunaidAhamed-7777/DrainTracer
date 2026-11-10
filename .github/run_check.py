@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -29,7 +30,10 @@ def main(argv: list[str] | None = None) -> int:
     tail = bytearray()
     discarded = 0
     try:
-        with subprocess.Popen(args.command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT) as child:
+        # Windows searches the parent interpreter's own folder before PATH, so a
+        # bare "python" from a virtual environment would escape it.
+        command = [shutil.which(args.command[0]) or args.command[0], *args.command[1:]]
+        with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT) as child:
             try:
                 while chunk := child.stdout.read(8192):
                     sys.stdout.buffer.write(chunk)
