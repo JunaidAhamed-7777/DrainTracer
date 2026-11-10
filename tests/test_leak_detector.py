@@ -381,13 +381,18 @@ class WarmupTests(unittest.TestCase):
         self._collect(detector, [100 * MB], start=27)  # 8.5 s: the 10 s window is ready
         self.assertTrue(detector.detection_started)
 
-    def test_startup_growth_is_only_a_leak_without_warmup(self) -> None:
+    def test_a_finished_startup_ramp_is_not_a_leak_even_without_warmup(self) -> None:
         spike = [100 * MB + min(index, 10) * 8 * MB for index in range(31)]  # 5 s ramp, then flat
         quiet = self._collect(self._detector(warmup=5.0), spike)
         self.assertFalse(any(snapshot.alerts for snapshot in quiet))
-        noisy = self._collect(self._detector(warmup=0.0), spike)
-        self.assertTrue(any(snapshot.alerts for snapshot in noisy))
-        self.assertFalse(any(snapshot.warming_up for snapshot in noisy))
+        # Once judged, the ramp sits in the early part of every window, so it
+        # is concentrated growth rather than sustained growth.
+        unguarded = self._collect(self._detector(warmup=0.0), spike)
+        self.assertFalse(any(snapshot.alerts for snapshot in unguarded))
+        self.assertFalse(any(snapshot.warming_up for snapshot in unguarded))
+        # A ramp that keeps going is still reported without a warm-up.
+        sustained = [100 * MB + index * 8 * MB for index in range(31)]
+        self.assertTrue(any(snapshot.alerts for snapshot in self._collect(self._detector(warmup=0.0), sustained)))
 
     def test_paused_time_does_not_count_toward_the_warmup(self) -> None:
         detector = self._detector(warmup=5.0)
@@ -522,10 +527,15 @@ class MeasurementValidityTests(unittest.TestCase):
         self.assertEqual(states[31], EvidenceState.COLLECTING)  # and again on recovery
         self.assertEqual(states[-1], EvidenceState.NO_GROWTH)
 
-        # Control: the same totals measured for real are a genuine change.
+        # Control: the same totals measured for real keep one continuous series,
+        # so the windows stay judged instead of restarting. (A single real drop
+        # and recovery is concentrated growth, not a leak.)
         emptied = replace(worker, rss_bytes=0, vms_bytes=0, private_bytes=0)
         control = [[steady, worker]] * 21 + [[steady, emptied]] * 10 + [[steady, worker]] * 25
-        self.assertTrue(any(s.alerts for s in _collect_trees(self._detector(), control)))
+        measured = _collect_trees(self._detector(), control)
+        self.assertEqual(measured[21].evidence_for(LeakResource.MEMORY).state, EvidenceState.NO_GROWTH)
+        self.assertEqual(measured[31].evidence_for(LeakResource.MEMORY).state, EvidenceState.NO_GROWTH)
+        self.assertFalse(any(s.alerts for s in measured))
 
     def test_an_unmeasurable_tree_is_unavailable(self) -> None:
         from src.events import EvidenceState
@@ -815,16 +825,25 @@ class WindowEvaluationTests(unittest.TestCase):
         self.assertEqual(window.monotonic_ratio, 1.0)
         self.assertEqual(window.drop_ratio, 0.0)
         self.assertEqual(window.severity, alert.severity)
-        # 80/50 + min(8/5, 3) + 1.0 = 4.2: HIGH, below the CRITICAL score of 4.5.
-        self.assertAlmostEqual(window.score, 4.2)
+        # Growth is measured between the first and last slice medians (100 MB at
+        # 0 s and 176 MB at 9.5 s): 76/50 + min(8/5, 3) + 1.0 = 4.12, HIGH.
+        self.assertAlmostEqual(window.score, 4.12)
 
     def test_each_failed_check_names_itself(self) -> None:
         from src.events import WindowVerdict
 
         cases = {
             WindowVerdict.NO_UPWARD_TREND: [100 * MB] * 21,
-            WindowVerdict.TOO_MANY_DROPS: [100 * MB + (i % 4) * 20 * MB for i in range(21)],
-            WindowVerdict.NOT_MONOTONIC: [100 * MB + i * MB + (i % 2) * 3 * MB for i in range(21)],
+            # Slice medians 0..40, a 90 MB peak, then 41..44 MB: rising steps, but
+            # most later slices sit below the peak.
+            WindowVerdict.TOO_MANY_DROPS: [100 * MB + level * MB for level in
+                                           (0, 0, 10, 10, 20, 20, 30, 30, 40, 40, 90, 90,
+                                            41, 41, 42, 42, 43, 43, 44, 44, 44)],
+            # Slice medians alternate high and low around a slight rise.
+            WindowVerdict.NOT_MONOTONIC: [100 * MB + i * MB // 2 + ((i // 2) % 2) * 10 * MB
+                                          for i in range(21)],
+            # One step and then a plateau: all growth in the early part.
+            WindowVerdict.CONCENTRATED: [100 * MB] * 4 + [160 * MB] * 17,
             WindowVerdict.BELOW_THRESHOLDS: [100 * MB + i * 1024 for i in range(21)],
         }
         for verdict, values in cases.items():
@@ -884,3 +903,42 @@ class WindowEvaluationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GrowthShapeTests(unittest.TestCase):
+    """Sustained growth alerts whatever its noise; one-off changes never do."""
+
+    def _alerts(self, megabytes: list[float]) -> list:
+        from helpers import make_process
+
+        trees = [[make_process(1, rss=int(value * MB))] for value in megabytes]
+        return [snapshot for snapshot in _collect_trees(_detector(), trees) if snapshot.alerts]
+
+    @staticmethod
+    def _series(seconds: float, shape) -> list[float]:
+        return [shape(index * 0.5) for index in range(int(seconds / 0.5))]
+
+    def test_one_time_allocations_and_spikes_do_not_alert(self) -> None:
+        cases = {
+            "step of 60 MB": self._series(180, lambda t: 100 + (60 if t >= 70 else 0)),
+            "step of 200 MB": self._series(180, lambda t: 100 + (200 if t >= 70 else 0)),
+            "single-sample spike": self._series(180, lambda t: 100 + (100 if t == 70 else 0)),
+            "cache fill then plateau": self._series(120, lambda t: 10 + min(24.0, 4.0 * t)),
+        }
+        for name, values in cases.items():
+            with self.subTest(case=name):
+                self.assertEqual(self._alerts(values), [])
+
+    def test_noisy_sawtooth_and_staircase_growth_alert(self) -> None:
+        import random
+
+        rng = random.Random(7)
+        cases = {
+            "sawtooth (+3 MB per sample, -12 MB every 5 s)":
+                self._series(120, lambda t: 100 + int(t / 0.5) * 3 - int(t / 5) * 12),
+            "2 MB/s with +-4 MB noise": self._series(120, lambda t: 100 + 2 * t + rng.uniform(-4, 4)),
+            "staircase of +20 MB every 15 s": self._series(180, lambda t: 100 + 20 * int(t / 15)),
+        }
+        for name, values in cases.items():
+            with self.subTest(case=name):
+                self.assertNotEqual(self._alerts(values), [])

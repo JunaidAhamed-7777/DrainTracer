@@ -296,7 +296,18 @@ true:
 2. Its growth slope is positive.
 3. Its monotonic increase ratio is at least `65%`.
 4. Its drop ratio is at most `15%`.
-5. Its severity score is not `NONE`.
+5. At least `15%` of its growth falls both before and after two-thirds of
+   the window (otherwise the verdict is `concentrated`).
+6. Its severity score is not `NONE`.
+
+Checks 2 to 5 and the score's `delta` use the window divided into ten equal
+time slices, each represented by its low-median sample (one slice per sample
+when the window holds fewer than ten). A single spiking sample, a garbage-
+collection drop or allocation noise therefore cannot decide a verdict, while
+growth that continues under such noise still qualifies. Check 5 rejects
+growth that happened only once: a one-time allocation, a single step, or a
+startup ramp or cache fill that has already stopped. Repeated steps, such as
+a staircase of growth, still qualify.
 
 The score is calculated as:
 
@@ -369,7 +380,7 @@ Each evidence entry also holds one evaluation per configured window: its
 point count and covered span, baseline and current value, slope,
 monotonic and drop ratios, score, severity, and a verdict: `qualified`, or
 the first check it failed (`too_few_samples`, `short_span`,
-`no_upward_trend`, `not_monotonic`, `too_many_drops`, or
+`no_upward_trend`, `not_monotonic`, `too_many_drops`, `concentrated`, or
 `below_thresholds`). The dashboard's evidence view (key `3`) shows these values as the
 detector computed them, next to the thresholds in force. They stay in
 memory and are not exported to reports.

@@ -276,6 +276,9 @@ class EvidenceViewMixin:
             return f"too many falling steps (needs {criteria.min_monotonic_ratio:.0%} not falling)"
         if verdict == WindowVerdict.TOO_MANY_DROPS:
             return f"too many drops below peak (max {criteria.max_drop_ratio:.0%})"
+        if verdict == WindowVerdict.CONCENTRATED:
+            return (f"growth only in one part (needs {criteria.min_part_share:.0%} "
+                    "before and after two-thirds)")
         if verdict == WindowVerdict.BELOW_THRESHOLDS:
             low = criteria.severity_scores[-1][1]
             return f"grew, but score below {low:g} for LOW"
@@ -363,9 +366,12 @@ class EvidenceViewMixin:
         )
         return Text(
             f"Rules: a window needs {criteria.min_points}+ points over "
-            f"{criteria.min_span_ratio:.0%} of its length, an upward slope, "
-            f"{criteria.min_monotonic_ratio:.0%}+ of steps not falling and at most "
-            f"{criteria.max_drop_ratio:.0%} of samples below the running peak. Score = "
+            f"{criteria.min_span_ratio:.0%} of its length. Checks use the medians of "
+            f"{criteria.buckets} equal time slices: an upward slope, "
+            f"{criteria.min_monotonic_ratio:.0%}+ of steps not falling, at most "
+            f"{criteria.max_drop_ratio:.0%} of slices below the running peak, and at least "
+            f"{criteria.min_part_share:.0%} of the growth both before and after two-thirds "
+            "of the window. Score = "
             f"growth / {_quantity(resource, limits.critical_delta)} (max 3) + rate / "
             f"{_quantity(resource, limits.critical_slope)}/s (max 3) + the monotonic ratio, "
             f"+0.25 for 30s+ and +0.5 for 60s+ windows. Tiers: {tiers}.",

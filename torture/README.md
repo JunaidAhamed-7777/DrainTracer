@@ -56,9 +56,10 @@ time on resource-constrained systems.
 - `burst_recovery.py` repeatedly opens and releases handles and threads. Its
   recoveries should prevent a sustained leak alert.
 - `startup_spike.py` allocates 96 MiB during a 2.5-second "startup" and then
-  holds steady. Without a warm-up the ramp raises a memory signal
-  (`startup-spike`); with `--warmup 3s` it stays clean while detection still
-  starts afterwards (`startup-spike-warmup`).
+  holds steady. Once judged, the finished ramp sits in one part of every
+  detection window, so it is concentrated growth and raises no signal even
+  without a warm-up (`startup-spike`). With `--warmup 3s` it also stays clean
+  while detection still starts afterwards (`startup-spike-warmup`).
 - `process_tree.py` creates a stable recursive Python tree. The default depth
   and fan-out produce seven Python processes.
 - `parent_exits.py` exits its root after DrainTracer has had time to discover

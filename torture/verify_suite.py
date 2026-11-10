@@ -107,7 +107,8 @@ CASES = (
         name="startup-spike",
         target=TORTURE_ROOT / "startup_spike.py",
         args=("--duration", "30", "--startup-seconds", "2.5", "--startup-mb", "96"),
-        expected_alert="memory",
+        # A finished ramp sits in one part of every window: concentrated, not sustained.
+        expect_no_alerts=True,
     ),
     TortureCase(
         name="startup-spike-warmup",
