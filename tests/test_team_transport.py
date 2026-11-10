@@ -44,6 +44,10 @@ class DecoderTests(unittest.TestCase):
         with self.assertRaises(SharingError):
             Endpoint.parse("tls://localhost:8443", "unresolved.example.org")
 
+    def test_an_explicit_ca_replaces_the_system_trust_store(self):
+        context = client_context(FIXTURES / "cert.pem")
+        self.assertEqual(context.cert_store_stats()["x509_ca"], 1)
+
     def test_client_context_always_checks_chain_and_hostname(self):
         context = client_context(FIXTURES / "cert.pem")
         self.assertTrue(context.check_hostname)
