@@ -108,10 +108,39 @@ class _Departed:
     depth: int
 
 
+_LINUX_BOOT_TIME: float | None = None
+_CLOCK_TICKS = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") and sys.platform.startswith("linux") else 100
+
+
+def _created(process: psutil.Process) -> float:
+    """A creation time that later wall-clock steps cannot change.
+
+    On Linux psutil adds the *current* boot time, which the kernel derives
+    from the wall clock, to the process's start tick. After an NTP step,
+    ``date -s`` or a VM resync every recomputed creation time shifts, and an
+    identity check would take each tracked process for a reused PID: the tree
+    would be dropped, left paused, or left running at shutdown. Pin the boot
+    time at first use and keep psutil's arithmetic, so values still match
+    creation times read the ordinary way before any step.
+    """
+    if not sys.platform.startswith("linux"):
+        return process.create_time()
+    global _LINUX_BOOT_TIME
+    try:
+        with open(f"/proc/{process.pid}/stat", "rb") as handle:
+            fields = handle.read().rsplit(b")", 1)[1].split()
+        ticks = int(fields[19])
+    except (OSError, IndexError, ValueError):
+        return process.create_time()  # raises psutil's usual errors for a gone process
+    if _LINUX_BOOT_TIME is None:
+        _LINUX_BOOT_TIME = psutil.boot_time()
+    return float(ticks) / _CLOCK_TICKS + _LINUX_BOOT_TIME
+
+
 def _reused_since(pid: int, original: float | None) -> float | None:
     """Creation time of another process now using ``pid``, or ``None``."""
     try:
-        created = psutil.Process(pid).create_time()
+        created = _created(psutil.Process(pid))
     except (psutil.Error, OSError):
         return None
     if original is not None and abs(created - original) <= _SAME_START:
@@ -147,7 +176,7 @@ def _monitor_chain() -> dict[int, float | None]:
         return {os.getpid(): None}
     for member in members:
         try:
-            chain[member.pid] = member.create_time()
+            chain[member.pid] = _created(member)
         except (psutil.Error, OSError):
             chain[member.pid] = None
     return chain
@@ -441,7 +470,7 @@ class ProcessManager:
             created = None
             if proc is not None:
                 try:
-                    created = proc.create_time()
+                    created = _created(proc)
                 except (psutil.NoSuchProcess, psutil.ZombieProcess) as exc:
                     raise ProcessNotFoundError(f"No running process with PID {pid}") from exc
                 except (psutil.AccessDenied, OSError):
@@ -568,6 +597,17 @@ class ProcessManager:
                 for pid in self._termination_order(remaining):
                     self._terminate_pid(pid, graceful=False)
                 remaining = self._wait_for_pids(remaining, self.KILL_WAIT_SECONDS, kill_new=True)
+
+            if self._process is not None and self._process.poll() is None:
+                # The launched root is DrainTracer's own unreaped child, so its
+                # PID cannot have been reused. End it even when its recorded
+                # identity no longer matches rather than report a clean stop.
+                self._process.kill()
+                deadline = time.monotonic() + self.KILL_WAIT_SECONDS
+                while self._process.poll() is None and time.monotonic() < deadline:
+                    time.sleep(0.02)
+                if self._process.poll() is None:
+                    remaining = {*remaining, self._process.pid}
 
             self._poll_launched()
             self._process = None
@@ -777,7 +817,7 @@ class ProcessManager:
                 except (psutil.Error, OSError):
                     continue
                 try:
-                    created: float | None = child.create_time()
+                    created: float | None = _created(child)
                 except (psutil.NoSuchProcess, psutil.ZombieProcess):
                     continue
                 except (psutil.AccessDenied, OSError):
@@ -873,7 +913,7 @@ class ProcessManager:
 
     def _remember_process(self, proc: psutil.Process) -> None:
         try:
-            self._identities[proc.pid] = proc.create_time()
+            self._identities[proc.pid] = _created(proc)
         except (psutil.Error, OSError):
             return
 
@@ -919,7 +959,7 @@ class ProcessManager:
         if expected is None and pid == self._root_pid:
             expected = self._root_created
         try:
-            created = proc.create_time()
+            created = _created(proc)
         except psutil.AccessDenied:
             if for_control:
                 self._last_error = f"Cannot verify current identity for PID {pid}; process control refused"
