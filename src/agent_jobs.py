@@ -209,6 +209,9 @@ class JobProcess:
 class AgentProcessManager(ProcessManager):
     """Agent launch adapter; attach still uses the ordinary identity checks."""
 
+    # Job launches inherit the server environment unchanged.
+    REDIRECT_VENV_LAUNCHER = False
+
     def __init__(self, target_path, args=None, **kwargs):
         super().__init__(target_path, args=args, **kwargs)
         self._owned_job: JobProcess | None = None

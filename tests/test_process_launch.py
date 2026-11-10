@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import helpers  # noqa: F401  (adds the repository root to sys.path)
 import psutil
 
-from src.process_runner import ProcessManager, ProcessManagerError, _quote_for_cmd
+from src.process_runner import ProcessManager, ProcessManagerError, _quote_for_cmd, python_launch
 
 
 class QuoteTests(unittest.TestCase):
@@ -144,6 +146,68 @@ class BatchLaunchTests(unittest.TestCase):
         self.assertEqual(manager._build_command()[1:], [str(Path("C:/apps/tool.py").resolve()), "a b"])
         exe = ProcessManager("C:/apps/tool.exe", args=["x&y"])
         self.assertEqual(exe._build_command(), [str(Path("C:/apps/tool.exe").resolve()), "x&y"])
+
+
+class VirtualEnvironmentLaunchTests(unittest.TestCase):
+    """A Windows venv redirector must not become the monitored root."""
+
+    def _patched(self, platform: str, executable: str, base: str):
+        return (mock.patch.object(sys, "platform", platform),
+                mock.patch.object(sys, "executable", executable),
+                mock.patch.object(sys, "_base_executable", base, create=True),
+                mock.patch("src.process_runner.os.path.isfile", return_value=True))
+
+    def test_windows_venv_starts_the_base_interpreter_with_the_launcher_variable(self) -> None:
+        patches = self._patched("win32", r"C:\proj\.venv\Scripts\python.exe", r"C:\Python\python.exe")
+        with patches[0], patches[1], patches[2], patches[3]:
+            interpreter, environment = python_launch({"KEEP": "1"})
+            command = ProcessManager("C:/apps/tool.py", args=["a"])._build_command()
+        self.assertEqual(interpreter, r"C:\Python\python.exe")
+        self.assertEqual(environment, {"KEEP": "1", "__PYVENV_LAUNCHER__": r"C:\proj\.venv\Scripts\python.exe"})
+        self.assertEqual(command[0], r"C:\Python\python.exe")
+
+    def test_inherited_environment_is_copied_not_mutated(self) -> None:
+        patches = self._patched("win32", r"C:\proj\.venv\Scripts\python.exe", r"C:\Python\python.exe")
+        with patches[0], patches[1], patches[2], patches[3]:
+            _interpreter, environment = python_launch(None)
+        self.assertIn("__PYVENV_LAUNCHER__", environment)
+        self.assertNotIn("__PYVENV_LAUNCHER__", os.environ)
+
+    def test_other_platforms_and_plain_interpreters_are_unchanged(self) -> None:
+        for platform, executable, base in (("linux", "/v/bin/python", "/usr/bin/python3"),
+                                           ("win32", r"C:\Python\python.exe", r"C:\Python\python.exe")):
+            patches = self._patched(platform, executable, base)
+            with self.subTest(platform=platform), patches[0], patches[1], patches[2], patches[3]:
+                self.assertEqual(python_launch(None), (executable, None))
+
+    def test_agent_launches_keep_their_inherited_environment(self) -> None:
+        from src.agent_jobs import AgentProcessManager
+
+        patches = self._patched("win32", r"C:\proj\.venv\Scripts\python.exe", r"C:\Python\python.exe")
+        with patches[0], patches[1], patches[2], patches[3]:
+            manager = AgentProcessManager("C:/apps/tool.py")
+            self.assertEqual(manager._python_launch(), (r"C:\proj\.venv\Scripts\python.exe", None))
+
+    @unittest.skipUnless(sys.platform == "win32" and sys.prefix != sys.base_prefix,
+                         "needs a Windows virtual environment")
+    def test_real_venv_script_is_one_process_inside_the_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / "prefix.txt"
+            script = Path(folder) / "probe.py"
+            script.write_text(
+                "import os, sys, time\n"
+                f"open({str(output)!r}, 'w').write(sys.prefix + '|' + str('__PYVENV_LAUNCHER__' in os.environ))\n"
+                "time.sleep(30)\n", encoding="utf-8")
+            manager = ProcessManager(str(script))
+            self.addCleanup(manager.kill)
+            pid = manager.start()
+            deadline = time.monotonic() + 15
+            while not output.exists() and time.monotonic() < deadline:
+                time.sleep(0.05)
+            prefix, inherited = output.read_text(encoding="utf-8").split("|")
+            self.assertEqual(os.path.normcase(prefix), os.path.normcase(sys.prefix))
+            self.assertEqual(inherited, "False")
+            self.assertEqual(psutil.Process(pid).children(), [])
 
 
 # The base interpreter, not a virtual environment's redirector, so each
