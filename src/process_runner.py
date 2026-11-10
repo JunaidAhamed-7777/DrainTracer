@@ -755,12 +755,7 @@ class ProcessManager:
                 processes.append(proc)
         return processes
 
-    # Subclasses whose launcher must inherit its own environment opt out.
-    REDIRECT_VENV_LAUNCHER = True
-
     def _python_launch(self) -> tuple[str, dict[str, str] | None]:
-        if not self.REDIRECT_VENV_LAUNCHER:
-            return sys.executable, self.env
         return python_launch(self.env)
 
     def _build_command(self) -> list[str] | str:
