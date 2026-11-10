@@ -370,7 +370,17 @@ The exit code describes DrainTracer's result, not the target's exit code:
   `--budget-threads N`, or the matching settings): a whole-run peak,
   warm-up included, exceeded it. The event log notes the first breach of
   each budget, and the summary has a `budgets` row.
-- `130`: Ctrl+C when no signal had reached the failure threshold.
+- `130`: Ctrl+C when no signal had reached the failure threshold. SIGTERM
+  (for example a cancelled CI job or `timeout`), SIGHUP (a closed terminal)
+  and Windows Ctrl+Break are handled the same way: DrainTracer stops a
+  launched target, exports its reports, prints the summary and exits `130`.
+  A signal that is already ignored, such as SIGHUP under `nohup`, stays
+  ignored. SIGKILL cannot be handled.
+
+If the reader of headless output goes away, as in
+`draintracer --headless ... | head`, DrainTracer stops writing to the
+console, records one "Console output closed" event, and still cleans up,
+exports, and exits with the normal verdict code.
 
 Startup failure always exits `2` and attempts to export available evidence.
 After startup succeeds, a failing signal takes precedence over an interruption or runtime/report
