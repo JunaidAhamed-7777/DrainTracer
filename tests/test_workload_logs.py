@@ -33,3 +33,20 @@ class LogTests(unittest.TestCase):
                 self.assertNotIn(b"private", output.getvalue())
                 self.assertTrue(log.truncated)
                 self.assertLessEqual(len(log._pending), MAX_LINE_BYTES)
+
+    def test_an_overlong_line_is_omitted_without_ending_capture(self) -> None:
+        log = BoundedLog(io.BytesIO(), Path("unused"), 1024 * 1024, ())
+        log._file = output = io.BytesIO()
+        for chunk in (b"before\n", b"x" * (MAX_LINE_BYTES + 100) + b"\n", b"after-1\n", b"after-2\n"):
+            log._consume(chunk)
+        self.assertEqual(output.getvalue(), b"before\nafter-1\nafter-2\n")
+        self.assertEqual(log.omitted_lines, 1)
+        self.assertTrue(log.truncated)
+
+    def test_the_byte_bound_still_stops_later_lines(self) -> None:
+        log = BoundedLog(io.BytesIO(), Path("unused"), 10, ())
+        log._file = output = io.BytesIO()
+        for chunk in (b"one\n", b"too long for the rest\n", b"two\n"):
+            log._consume(chunk)
+        self.assertEqual(output.getvalue(), b"one\n")
+        self.assertTrue(log.truncated)
