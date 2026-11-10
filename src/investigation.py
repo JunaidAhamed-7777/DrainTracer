@@ -119,7 +119,7 @@ def investigation_summary(report: dict[str, Any], *, profile: str = "share",
         if slope is not None:
             unit = "bytes" if metric.endswith("bytes") else "counts"
             lines.append(f"Recorded slope: {slope:,.6g} {unit} per second.")
-        contributors = [item for item in alert.get("contributors", ()) if isinstance(item, dict)]
+        contributors = [item for item in alert.get("contributors") or () if isinstance(item, dict)]
         contributors.sort(key=lambda item: _number(item.get("delta")) or 0, reverse=True)
         if contributors:
             top = contributors[0]

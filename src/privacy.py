@@ -253,6 +253,9 @@ def redact_report(report: dict[str, Any], profile: str = "share") -> dict[str, A
                                         "wall-clock dates replaced", "unknown fields and captured logs removed"],
                     "review_required": True},
     })
+    if "markers" in redacted:
+        # A report may hold null or malformed marker entries; drop them.
+        redacted["markers"] = [marker for marker in redacted["markers"] or () if isinstance(marker, dict)]
     for index, marker in enumerate(redacted.get("markers") or (), start=1):
         marker["index"] = index
     if profile == "minimal":
@@ -273,12 +276,15 @@ def redact_report(report: dict[str, Any], profile: str = "share") -> dict[str, A
 def export_private_report(report: dict[str, Any], directory: str | Path,
                           profile: str = "share") -> tuple[Path, Path]:
     """Write the same privacy-transformed dictionary to JSON and embedded HTML."""
-    from .html_report import write_html_report
-    from .report import write_json_report
+    from .html_report import render_html_report
+    from .report import report_filename, write_json_report, write_text_atomic
 
     redacted = redact_report(report, profile)
+    # Render first so a report the HTML cannot represent leaves no lone JSON copy.
+    html = render_html_report(redacted)
     json_path = write_json_report(redacted, directory)
-    html_path = write_html_report(redacted, directory)
+    html_path = write_text_atomic(Path(directory) / report_filename(str(redacted["report_id"]), ".html"),
+                                  html, newline="\n", errors="replace")
     return json_path, html_path
 
 

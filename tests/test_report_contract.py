@@ -227,6 +227,57 @@ class MachineCommandTests(unittest.TestCase):
         self.assertEqual(output.getvalue(), "")
         self.assertEqual(json.loads(errors.getvalue())["error"]["code"], "invalid_report")
 
+    def _run(self, argv):
+        import contextlib
+        import io
+
+        output, errors = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            status = main(argv)
+        return status, output.getvalue(), errors.getvalue()
+
+    def test_valid_but_unusual_reports_never_crash_the_cli(self) -> None:
+        source = read_report(FIXTURES / "v3.json")
+        mutations = {
+            "null marker": lambda data: data.update(markers=[None]),
+            "null contributors": lambda data: [alert.update(contributors=None)
+                                               for sample in data.get("snapshots", ())
+                                               for alert in sample.get("alerts", ())],
+        }
+        with tempfile.TemporaryDirectory() as folder:
+            for name, mutate in mutations.items():
+                data = json.loads(json.dumps(source))
+                mutate(data)
+                path = Path(folder) / f"{name.replace(' ', '-')}.json"
+                path.write_text(json.dumps(data), encoding="utf-8")
+                self.assertEqual(self._run(["validate", str(path)])[0], 0)
+                for action in ("redact", "investigate", "summary"):
+                    with self.subTest(mutation=name, action=action):
+                        status, output, errors = self._run([action, str(path)])
+                        self.assertIn(status, (0, 2), errors)
+                        if status == 2:
+                            self.assertEqual(json.loads(errors)["error_schema"], 1)
+
+    def test_unrenderable_reports_leave_neither_shared_file(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            data = read_report(FIXTURES / "v3.json")
+            path = Path(folder) / "report.json"
+            path.write_text(json.dumps(data), encoding="utf-8")
+            output = Path(folder) / "shared"
+            with mock.patch("src.html_report.render_html_report", side_effect=OverflowError("time")):
+                status, _stdout, errors = self._run(["redact", str(path), "--output-dir", str(output)])
+            self.assertEqual(status, 2)
+            self.assertEqual(json.loads(errors)["error_schema"], 1)
+            self.assertEqual(list(output.glob("*")) if output.exists() else [], [])
+
+    def test_text_format_is_refused_before_writing_anything(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / "shared"
+            status, _stdout, _errors = self._run(["redact", str(FIXTURES / "v3.json"),
+                                                  "--output-dir", str(output), "--format", "text"])
+            self.assertEqual(status, 2)
+            self.assertFalse(output.exists() and any(output.iterdir()))
+
 
 if __name__ == "__main__":
     unittest.main()

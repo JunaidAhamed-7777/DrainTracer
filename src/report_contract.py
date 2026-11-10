@@ -337,6 +337,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="text is available for the investigate action")
     args = parser.parse_args(argv)
     try:
+        if args.format == "text" and args.action != "investigate":
+            raise ReportContractError("--format text requires the investigate action")
         if args.action == "schema":
             result = report_schema() if args.kind == "report" else summary_schema()
         else:
@@ -360,11 +362,11 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 result = (session_summary(report) if args.action == "summary" else
                           {"validation_schema": 1, "valid": True, "report_schema": report.get("report_schema", 1)})
-        if args.format == "text" and args.action != "investigate":
-            raise ReportContractError("--format text requires the investigate action")
         print(result["text"] if args.format == "text" else json.dumps(result, allow_nan=False))
         return 0
-    except (ReportContractError, ValueError, OSError) as exc:
+    except (ReportContractError, ValueError, OSError, TypeError, ArithmeticError, LookupError) as exc:
+        # Contract-valid reports can still hold values a transformation cannot
+        # use; report them as an error document, never a traceback (exit 1).
         code = "export_failed" if isinstance(exc, OSError) else "invalid_report"
         print(json.dumps({"error_schema": 1, "error": {"code": code, "message": str(exc)}}),
               file=sys.stderr)
