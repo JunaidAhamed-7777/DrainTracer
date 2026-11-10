@@ -22,7 +22,7 @@ from .report import DEFAULT_REPORT_DIR
 from .report_diff import format_amount, format_drift
 from .session import MonitorSession, session_exit_code
 from .theme import PALETTE
-from .units import format_duration
+from .units import format_duration, safe_label
 
 logger = logging.getLogger(__name__)
 
@@ -362,6 +362,13 @@ class HeadlessRunner(MonitorSession):
         tag, color = _LEVEL_TAGS.get(level, _LEVEL_TAGS["info"])
         if self.quiet and tag in {"OK", "INFO", "STAT"}:
             return
+        # Defence in depth: a newline or ESC here could forge a workflow
+        # command (``::error``) on its own CI log line or drive the terminal.
+        if isinstance(message, Text):
+            if not message.plain.isprintable():
+                message = Text(safe_label(message.plain, limit=None), style=message.style)
+        else:
+            message = safe_label(message, limit=None)
         line = Text.assemble(
             (self._format_duration(self._uptime()), PALETTE.muted),
             "  ",
@@ -384,11 +391,11 @@ class HeadlessRunner(MonitorSession):
         sep = self.glyphs.sep
         if self.attached:
             action = f"attaching to PID {self.attach_pid}"
-            name = Path(self.target_path).name
+            name = safe_label(Path(self.target_path).name)
             if name != f"PID {self.attach_pid}":
                 action += f" ({name})"
         else:
-            action = f"launching {Path(self.target_path).name}"
+            action = f"launching {safe_label(Path(self.target_path).name)}"
         limit = (
             f"time limit {format_duration(self.timeout)}"
             if self.timeout
@@ -575,14 +582,16 @@ class HeadlessRunner(MonitorSession):
         self.console.print()
         for label, value in rows:
             self.console.print(
-                Text.assemble((f"  {label:<10}", f"bold {PALETTE.muted}"), value),
+                Text.assemble(
+                    (f"  {label:<10}", f"bold {PALETTE.muted}"), safe_label(value, limit=None)
+                ),
                 soft_wrap=True,
             )
         self.console.print(
             Text.assemble(
                 ("RESULT ", "bold"),
                 (f" {verdict} ", f"bold {PALETTE.ink} on {color}"),
-                f"  {reason} {sep} {self._policy_text()}",
+                safe_label(f"  {reason} {sep} {self._policy_text()}", limit=None),
             ),
             soft_wrap=True,
         )
@@ -651,6 +660,7 @@ class HeadlessRunner(MonitorSession):
         message = f"{Path(self.target_path).name}: {reason} ({self._policy_text()})"
         if self._last_report is not None:
             message += f". Report: {self._last_report}"
+        message = safe_label(message, limit=None)
         title = _escape_property("DrainTracer leak check")
         self.console.print(
             f"::{command} title={title}::{_escape_data(message)}",

@@ -46,6 +46,7 @@ from .process_history import ProcessHistory
 from .process_runner import ProcessManager
 from .process_table import ProcessEntry, ProcessTable
 from .stats import least_squares_slope
+from .units import safe_label
 
 logger = logging.getLogger(__name__)
 
@@ -842,7 +843,9 @@ class LeakDetector:
 
         try:
             with proc.oneshot():
-                name = proc.name()
+                # Any process can name itself; keep the name one inert line
+                # for every console, CI log and dashboard that shows it.
+                name = safe_label(proc.name())
                 if entry is not None:
                     status = psutil.STATUS_STOPPED if entry.suspended else psutil.STATUS_RUNNING
                 else:

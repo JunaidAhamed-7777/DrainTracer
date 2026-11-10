@@ -56,7 +56,7 @@ from .report import (
 )
 from .session_facts import SessionFacts
 from .theme import select_glyphs
-from .units import format_bytes, format_clock, format_duration
+from .units import format_bytes, format_clock, format_duration, safe_label
 
 HISTORY_KEYS = ("cpu_percent", "rss_bytes", "private_bytes", "handles", "threads")
 SIGNAL_METRICS = tuple(RESOURCE_METRICS.values())
@@ -775,7 +775,8 @@ class MonitorSession:
                 continue
             names: dict[str, int] = {}
             for event in events:
-                names[event.name] = names.get(event.name, 0) + 1
+                label = safe_label(event.name)
+                names[label] = names.get(label, 0) + 1
             shown = ", ".join(
                 f"{name} x{count}" if count > 1 else name
                 for name, count in sorted(names.items(), key=lambda item: -item[1])[:3]
@@ -784,7 +785,7 @@ class MonitorSession:
             self._append_event(f"{len(events)} processes {kind.value} ({shown}{more})", level)
 
     def _lifecycle_line(self, event: LifecycleEvent) -> str:
-        who = f"{event.name} PID {event.pid}"
+        who = f"{safe_label(event.name)} PID {event.pid}"
         if event.kind == LifecycleKind.RESTARTED:
             return f"Process restarted: {who} replaces PID {event.replaces_pid}"
         return f"Process {event.kind.value}: {who}"
@@ -804,7 +805,9 @@ class MonitorSession:
             self._mark(stamp, mark, f"{len(events)} processes {kind.value}")
             return
         for event in events:
-            self._mark(stamp, mark, f"{event.name} PID {event.pid} {kind.value}", pid=event.pid)
+            self._mark(
+                stamp, mark, f"{safe_label(event.name)} PID {event.pid} {kind.value}", pid=event.pid
+            )
 
     def _mark(self, stamp: float, kind: TimelineKind, label: str, **details: Any) -> TimelineMark:
         mark = TimelineMark(timestamp=stamp, kind=kind, label=label, **details)
