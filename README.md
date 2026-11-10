@@ -306,6 +306,13 @@ environment's Python and pass the script after `--`:
 draintracer --target "C:\work\app\.venv\Scripts\python.exe" -- "C:\work\app\worker.py"
 ```
 
+On Windows, a virtual environment's `python.exe` is a small redirector that
+starts the real interpreter as its child. When DrainTracer itself runs from a
+virtual environment, it starts `.py` targets with the base interpreter and the
+same environment, so the tree is a single Python process. An explicitly
+selected venv `python.exe` target, as above, is still observed as the
+redirector plus its interpreter child.
+
 **Process ownership matters:** quitting or timing out stops a launched target
 and its tracked tree. An attached target keeps running when you quit.
 `Space` pauses the target as well as sampling; `K` terminates it and requires
