@@ -125,6 +125,12 @@ omitted entirely, and a line that exceeds the remaining bound is not partially
 written. Metadata reports truncation, omitted lines, and output errors.
 
 Selected environment values and recognized credential patterns are removed.
+Recognized patterns include `key=value` and JSON `"key": "value"` pairs whose
+key names a password, passphrase, secret, token, API, access or private key,
+cookie or credential (for example `PGPASSWORD`, `clientSecret`,
+`accessToken`, `secret_key`); everything after an `Authorization` header
+name, keeping a known scheme such as `Bearer`; `--token VALUE` style flags;
+and user information in URLs (`https://user:pass@` or `https://token@`).
 This does **not** guarantee secret-free logs: inherited variables, transformed
 secrets, unusual formats, paths, and arbitrary application output can remain.
 Disable capture for sensitive targets. Logs are separate artifacts and never

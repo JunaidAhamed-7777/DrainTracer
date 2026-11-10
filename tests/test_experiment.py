@@ -93,6 +93,33 @@ class RedactionTests(unittest.TestCase):
         self.assertEqual(arguments_record(None), {"count": 0, "fingerprint": None, "redacted": True})
 
 
+class CredentialShapeTests(unittest.TestCase):
+    SECRET = "S3CR3Tabcdefghijklmnop0123456789"
+
+    def test_common_log_and_config_shapes_are_redacted(self) -> None:
+        value = self.SECRET
+        for line in (f'{{"password": "{value}"}}', f"{{'token': '{value}'}}", f'"api_key":"{value}"',
+                     f"PGPASSWORD={value}", f"clientSecret={value}", f"accessToken={value}",
+                     f"secret_key={value}", f"passphrase={value}", f"private_key={value}",
+                     f"Authorization: token {value}", f"https://{value}@github.com/o/r.git"):
+            with self.subTest(line=line):
+                self.assertNotIn(value, redact_text(line))
+
+    def test_ordinary_text_is_left_alone(self) -> None:
+        for line in ("author=Junaid", "tokenizer=bert", "listening on 127.0.0.1:8080 mode=benchmark",
+                     "see https://example.com/path", "user@example.com", "password reset flow"):
+            with self.subTest(line=line):
+                self.assertEqual(redact_text(line), line)
+
+    def test_long_lines_take_linear_time(self) -> None:
+        import time
+
+        for sample in ("a." * 32768, "00-" * 21845, "x_" * 32768):
+            start = time.perf_counter()
+            redact_text(sample)
+            self.assertLess(time.perf_counter() - start, 0.5, sample[:6])
+
+
 class RecordTests(unittest.TestCase):
     def test_record_holds_labels_sampling_and_environment_without_secrets(self) -> None:
         record = _record()
