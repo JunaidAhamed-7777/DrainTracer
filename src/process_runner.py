@@ -11,6 +11,7 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass
+from enum import Enum
 from functools import lru_cache
 from pathlib import Path
 from typing import BinaryIO
@@ -97,6 +98,23 @@ def describe_pid(pid: int) -> str:
 # and clock ticks, but repeated reads still identify the same start tick;
 # a one-second tolerance could mistake a quickly reused PID for its owner.
 _SAME_START = 0.0 if sys.platform == "win32" else 0.001
+
+
+class SuspendOutcome(Enum):
+    """Result of suspending one tracked process.
+
+    A member can exit between discovery and suspension; that is not a
+    refusal, because there is nothing left to suspend. Only ``SUSPENDED``
+    is truthy, so callers that test truthiness still treat both other
+    outcomes as "not suspended".
+    """
+
+    SUSPENDED = "suspended"
+    GONE = "gone"
+    REFUSED = "refused"
+
+    def __bool__(self) -> bool:
+        return self is SuspendOutcome.SUSPENDED
 
 
 @dataclass(frozen=True)
@@ -250,6 +268,11 @@ class ProcessManager:
 
     # How long an exited member's PID is still searched for orphans.
     DEPARTED_SECONDS = 10.0
+    # Suspension passes per pause. A child whose creation was already in
+    # flight when its parent was suspended joins the tree after the first
+    # pass; once every parent is stopped no new member can appear, so the
+    # tree settles within a few passes.
+    PAUSE_ROUNDS = 3
     # TerminateProcess is asynchronous; allow the tree to finish kernel cleanup.
     KILL_WAIT_SECONDS = 3.0
 
@@ -562,25 +585,52 @@ class ProcessManager:
                     "could freeze DrainTracer's own terminal"
                 )
                 return False
-            self._refresh_tracked_pids()
-            # Stop parents first, reducing the chance of new children being
-            # created while their tree is being suspended.
-            for pid in reversed(self._termination_order(self._tracked_pids)):
-                if pid in self._suspended_pids:
-                    continue
-                # An interruption after the OS suspends the process must
-                # still leave a resume path during session cleanup.
-                self._suspended_pids.add(pid)
-                if self._suspend_pid(pid):
-                    continue
-                self._suspended_pids.discard(pid)
-                self.resume()
-                self._last_error = "One or more processes could not be suspended"
-                if self._suspended_pids:
-                    self._last_error += "; some remain suspended, so retry resume or detach"
+            # Members handled by this call, including ones that exited or
+            # were already stopped by someone else, so each is tried once.
+            handled: set[int] = set()
+            for attempt in range(self.PAUSE_ROUNDS + 1):
+                # Refresh before every pass: a parent suspended in the
+                # previous pass may have finished creating a child first.
+                self._refresh_tracked_pids()
+                pending = [
+                    pid
+                    # Stop parents first, so fewer children are created
+                    # while their tree is being suspended.
+                    for pid in reversed(self._termination_order(self._tracked_pids))
+                    if pid not in handled and pid not in self._suspended_pids
+                ]
+                if not pending:
+                    break
+                if attempt == self.PAUSE_ROUNDS:
+                    return self._abandon_pause("The process tree kept changing while it was suspended")
+                for pid in pending:
+                    handled.add(pid)
+                    # An interruption after the OS suspends the process must
+                    # still leave a resume path during session cleanup.
+                    self._suspended_pids.add(pid)
+                    outcome = self._suspend_pid(pid)
+                    if outcome is SuspendOutcome.GONE:
+                        # Exited since discovery: nothing to suspend or resume.
+                        self._suspended_pids.discard(pid)
+                        continue
+                    if outcome:
+                        continue
+                    self._suspended_pids.discard(pid)
+                    return self._abandon_pause("One or more processes could not be suspended")
+            if not self._tracked_pids:
+                # The whole tree exited while it was being suspended.
+                self._paused = False
                 return False
             self._paused = True
             return True
+
+    def _abandon_pause(self, reason: str) -> bool:
+        """Undo a partial pause, keeping resume debt for anything left stopped."""
+        self.resume()
+        self._last_error = reason
+        if self._suspended_pids:
+            self._last_error += "; some remain suspended, so retry resume or detach"
+        return False
 
     def resume(self) -> bool:
         """Resume a previously paused process tree."""
@@ -957,19 +1007,28 @@ class ProcessManager:
     def _open_tracked_unlocked(
         self, pid: int, *, discovering: bool = False, for_control: bool = False
     ) -> psutil.Process | None:
+        return self._inspect_tracked_unlocked(pid, discovering=discovering, for_control=for_control)[0]
+
+    def _inspect_tracked_unlocked(
+        self, pid: int, *, discovering: bool = False, for_control: bool = False
+    ) -> tuple[psutil.Process | None, bool]:
+        """Open a tracked PID and say why not: ``(None, True)`` means the
+        original process is gone (exited, retired, or its PID reused), while
+        ``(None, False)`` means it may still run but cannot be verified.
+        """
         # Refresh can retire a PID while a caller still holds an earlier PID
         # set. Only validated discovery may open an untracked descendant.
         if not discovering and pid not in self._tracked_pids and pid != self._root_pid:
-            return None
+            return None, True
         try:
             proc = psutil.Process(pid)
         except (psutil.NoSuchProcess, psutil.ZombieProcess):
             self._suspended_pids.discard(pid)
-            return None
+            return None, True
         except (psutil.AccessDenied, OSError):
             if for_control:
                 self._last_error = f"Cannot verify current identity for PID {pid}; process control refused"
-                return None
+                return None, False
             raise
 
         # POSIX zombies still have a PID. Windows liveness is checked below
@@ -978,12 +1037,12 @@ class ProcessManager:
             try:
                 if not proc.is_running() or proc.status() == psutil.STATUS_ZOMBIE:
                     self._suspended_pids.discard(pid)
-                    return None
+                    return None, True
             except psutil.AccessDenied:
                 pass
             except (psutil.NoSuchProcess, psutil.ZombieProcess):
                 self._suspended_pids.discard(pid)
-                return None
+                return None, True
 
         expected = self._identities.get(pid)
         if expected is None and pid == self._root_pid:
@@ -993,43 +1052,43 @@ class ProcessManager:
         except psutil.AccessDenied:
             if for_control:
                 self._last_error = f"Cannot verify current identity for PID {pid}; process control refused"
-                return None
-            return proc
+                return None, False
+            return proc, False
         except OSError:
             if for_control:
                 self._last_error = f"Cannot verify current identity for PID {pid}; process control refused"
-                return None
+                return None, False
             raise
         except (psutil.NoSuchProcess, psutil.ZombieProcess):
             self._suspended_pids.discard(pid)
-            return None
+            return None, True
 
         if expected is not None and abs(created - expected) > _SAME_START:
             # Retain the old identity until refresh removes it from the
             # tree. A second open must never adopt this replacement PID.
             self._suspended_pids.discard(pid)
             self._last_error = f"PID {pid} was reused; the new process was left untouched"
-            return None
+            return None, True
         if sys.platform == "win32":
             try:
                 if _windows_process_exited(pid):
                     self._suspended_pids.discard(pid)
-                    return None
+                    return None, True
             except OSError:
                 # An unreadable exit state must not silently drop a live PID.
                 pass
         if for_control and expected is None:
             self._last_error = f"Original identity for PID {pid} is unknown; process control refused"
-            return None
+            return None, False
         if for_control and self._root_pid is not None and self._root_created is None:
             self._last_error = "Original root identity is unknown; process-tree control refused"
-            return None
+            return None, False
         if expected is None and discovering:
             # A later readable observation cannot prove an initially unknown
             # tracked process is still the same incarnation. Only fresh,
             # validated tree discovery may establish a new child identity.
             self._identities[pid] = created
-        return proc
+        return proc, False
 
     def _any_tracked_alive(self) -> bool:
         return any(self._pid_is_alive(pid) for pid in self._tracked_pids)
@@ -1058,10 +1117,11 @@ class ProcessManager:
                 return {pid for pid in remaining if self._pid_is_alive(pid)}
             time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
 
-    def _suspend_pid(self, pid: int) -> bool:
-        proc = self._open_tracked(pid, for_control=True)
+    def _suspend_pid(self, pid: int) -> SuspendOutcome:
+        with self._lock:
+            proc, gone = self._inspect_tracked_unlocked(pid, for_control=True)
         if proc is None:
-            return False
+            return SuspendOutcome.GONE if gone else SuspendOutcome.REFUSED
         try:
             if sys.platform.startswith("linux") and proc.status() in {
                 psutil.STATUS_STOPPED, psutil.STATUS_TRACING_STOP
@@ -1069,12 +1129,15 @@ class ProcessManager:
                 # SIGSTOP has no suspension count. Leave an existing stop
                 # owned by the user/debugger out of our later SIGCONT pass.
                 self._suspended_pids.discard(pid)
-                return True
+                return SuspendOutcome.SUSPENDED
             proc.suspend()
-            return True
-        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess) as exc:
+            return SuspendOutcome.SUSPENDED
+        except (psutil.NoSuchProcess, psutil.ZombieProcess) as exc:
+            logger.debug("Process %s exited before it could be suspended: %s", pid, exc)
+            return SuspendOutcome.GONE
+        except psutil.AccessDenied as exc:
             logger.debug("Could not suspend pid %s: %s", pid, exc)
-            return False
+            return SuspendOutcome.REFUSED
 
     def _resume_pid(self, pid: int) -> bool:
         proc = self._open_tracked(pid, for_control=True)
