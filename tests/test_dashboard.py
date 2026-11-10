@@ -233,6 +233,23 @@ class LayoutTests(unittest.TestCase):
             app.console.print(app._render())
         self.assertIn("out[bold]", capture.get())
 
+    def test_hostile_process_and_target_names_render_without_control_sequences(self) -> None:
+        hostile = "evil\x1b]0;PWNED\x07\x1b[2J\nnext"
+        app = DashboardApp("/tmp/t\x1b]0;T\x07.sh", console=make_console(160, 40))
+        for index in range(3):
+            app._accept_snapshot(make_snapshot(
+                processes=(make_process(100, ppid=1, name=hostile),
+                           make_process(200 + index, ppid=100, name=hostile)),
+                timestamp=1000.0 + index,
+            ))
+        with app.console.capture() as capture:
+            app.console.print(app._render())
+        frame = capture.get()
+        self.assertNotIn("\x1b]", frame)
+        self.assertNotIn("\x1b[2J", frame)
+        self.assertNotIn("\x07", frame)
+        self.assertIn("evil\\x1b]0;PWNED", frame)
+
     def test_clean_summary_is_inconclusive_until_a_window_was_judged(self) -> None:
         app = _app()
         app._accept_snapshot(make_snapshot())

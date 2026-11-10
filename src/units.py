@@ -193,7 +193,53 @@ def format_bytes(value: float) -> str:
     return f"{amount:,.1f} TB"
 
 
+LABEL_LIMIT = 256
+_TRUNCATED = "..."
+
+
+def _escape_character(character: str) -> str:
+    code = ord(character)
+    if code < 0x100:
+        return f"\\x{code:02x}"
+    if code < 0x10000:
+        return f"\\u{code:04x}"
+    return f"\\U{code:08x}"
+
+
+def safe_label(value: object, limit: int | None = LABEL_LIMIT) -> str:
+    """Return ``value`` as one inert line for terminals, CI logs and summaries.
+
+    Process names, report fields and paths are outside DrainTracer's control.
+    Every non-printable character (newlines, ESC and other C0/C1 controls,
+    bidi overrides, unpaired surrogates) becomes a visible ASCII escape such
+    as ``\\x1b``, so the text cannot start a new log line (a forged
+    ``::error`` workflow command), move the cursor, retitle the window or
+    clear the screen. ``limit`` caps the escaped length, ending with ``...``;
+    ``None`` keeps the full text. Printable text, backslashes included, is
+    unchanged, and the result is idempotent while it fits the limit.
+    """
+    text = value if isinstance(value, str) else str(value)
+    if text.isprintable() and (limit is None or len(text) <= limit):
+        return text
+    pieces: list[str] = []
+    size = 0
+    for character in text:
+        piece = character if character.isprintable() else _escape_character(character)
+        pieces.append(piece)
+        size += len(piece)
+        if limit is not None and size > limit:
+            break
+    else:
+        return "".join(pieces)
+    # Too long: drop whole pieces, never half an escape, to make room for "...".
+    budget = max(0, limit - len(_TRUNCATED))
+    while pieces and size > budget:
+        size -= len(pieces.pop())
+    return "".join(pieces) + _TRUNCATED
+
+
 __all__ = [
+    "LABEL_LIMIT",
     "format_bytes",
     "format_clock",
     "format_duration",
@@ -201,4 +247,5 @@ __all__ = [
     "parse_duration",
     "parse_rate",
     "parse_size",
+    "safe_label",
 ]

@@ -14,6 +14,7 @@ from src.units import (
     parse_duration,
     parse_rate,
     parse_size,
+    safe_label,
 )
 
 KB, MB, GB = 1024, 1024**2, 1024**3
@@ -146,6 +147,24 @@ class FormatClockAndBytesTests(unittest.TestCase):
         self.assertEqual(format_bytes(3 * 1024**5), "3,072.0 TB")
         self.assertEqual(format_bytes(-10), "0.0 B")
         self.assertEqual(format_bytes(float("inf")), "0.0 B")
+
+
+class SafeLabelTests(unittest.TestCase):
+    def test_printable_text_is_unchanged(self) -> None:
+        for value in ("worker.exe", "C:\\a b\\c[red].exe", "caf\u00e9 \u4e2d.exe", ""):
+            self.assertEqual(safe_label(value), value)
+
+    def test_controls_become_visible_ascii_escapes(self) -> None:
+        self.assertEqual(safe_label("a\nb\x1b]0;T\x07"), "a\\x0ab\\x1b]0;T\\x07")
+        self.assertEqual(safe_label("x\u202ey\udc80\U000e0001"), "x\\u202ey\\udc80\\U000e0001")
+        self.assertEqual(safe_label(42), "42")
+
+    def test_length_cap_never_splits_an_escape_and_is_idempotent(self) -> None:
+        self.assertEqual(safe_label("a" * 10 + "\x1b" * 10, limit=16), "a" * 10 + "...")
+        self.assertEqual(safe_label("\x1b" * 10, limit=16), "\\x1b\\x1b\\x1b...")
+        self.assertLessEqual(len(safe_label("z" * 1000)), 256)
+        self.assertEqual(safe_label(safe_label("q\n" * 500)), safe_label("q\n" * 500))
+        self.assertEqual(len(safe_label("\n" * 1000, limit=None)), 4000)
 
 
 if __name__ == "__main__":

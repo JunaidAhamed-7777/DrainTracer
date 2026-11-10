@@ -50,7 +50,7 @@ from .keys import (
 from .report import DEFAULT_REPORT_DIR
 from .session import MonitorSession
 from .theme import PALETTE
-from .units import format_duration
+from .units import format_duration, safe_label
 from .view_comparison import ComparisonViewMixin
 from .view_evidence import EvidenceViewMixin
 from .view_monitor import MonitorViewMixin
@@ -753,8 +753,8 @@ class DashboardApp(
             churn = f"+{counts.started}/-{counts.exited}"
             processes += f" ({churn} started/exited)" if roomy else f" {churn}"
         interval = snapshot.sample_interval_ms if snapshot else self.detector.sample_interval_ms
-        target = Path(self.target_path).name
-        root_name = self._process_name(snapshot)
+        target = safe_label(Path(self.target_path).name)
+        root_name = safe_label(self._process_name(snapshot))
         if roomy and root_name.lower() != target.lower():
             target = f"{target} via {root_name}"
         pairs = [
@@ -768,7 +768,10 @@ class DashboardApp(
             pairs.append(("ENDS IN", self._format_duration(remaining)))
         pairs.append(("SAMPLES", f"{self._sample_count:,} @ {interval} ms"))
         info = self._label_values(*pairs)
-        path = Text.assemble((" PATH ", f"bold {palette.muted}"), (self.target_path, palette.muted))
+        path = Text.assemble(
+            (" PATH ", f"bold {palette.muted}"),
+            (safe_label(self.target_path, limit=None), palette.muted),
+        )
         path.no_wrap = True
         path.overflow = "ellipsis"
         return Group(bar, info, path)
@@ -1126,7 +1129,7 @@ class DashboardApp(
             name = Text.assemble(
                 (connector, palette.border),
                 (f"{marker} ", palette.accent if is_root else palette.muted),
-                (proc.name, "bold" if is_root else ""),
+                (safe_label(proc.name), "bold" if is_root else ""),
             )
             if proc.access_denied:
                 cells: list[RenderableType] = [
@@ -1552,7 +1555,8 @@ class DashboardApp(
         grid.add_row(
             "Target",
             Text(
-                f"{Path(self.target_path).name} {glyphs.sep} PID {self.root_pid or '-'} "
+                f"{safe_label(Path(self.target_path).name)} {glyphs.sep} "
+                f"PID {self.root_pid or '-'} "
                 f"{glyphs.sep} {self.outcome_text()}"
             ),
         )
