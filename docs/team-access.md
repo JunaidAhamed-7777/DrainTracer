@@ -66,8 +66,14 @@ Default ceilings are 8 MiB per upload, 64 MiB per project's stored reports and
 backups, 256 MiB global logical data, 32 projects, 32 active credentials per
 project, 100 reports and three managed backups per project. Report retention is
 seven days by default. Admission, expiry and quota accounting are transactional.
-Audit content is bounded by row/byte retention with explicit dropped counts;
-records contain IDs/actions/results rather than secrets or report text. SQLite
+Audit content is bounded by row/byte retention with explicit dropped counts.
+When the row/byte bound is reached, events are evicted by class, oldest first
+within a class: successful report/record reads first, then denied attempts,
+then report ingest and record creation, and administrative/security events
+(bootstrap, recovery, credential issue/revoke/expiry, policy updates,
+deletions, purges, backups and restores) only when nothing else remains. A
+viewer flood therefore cannot push the security trail out of the log. The
+age-based audit retention period applies to every class. Records contain IDs/actions/results rather than secrets or report text. SQLite
 uses a finite two-second busy timeout, EXTRA synchronous commits and DELETE
 journaling. The database is capped at 512 MiB; rollback overhead is bounded by
 that database cap, WAL is disabled and temporary tables stay in memory. Logical

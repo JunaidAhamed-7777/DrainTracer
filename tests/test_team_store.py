@@ -105,6 +105,42 @@ class AuthorityTests(unittest.TestCase):
         self.assertEqual((audit["observed"], audit["dropped"], len(audit["events"])), (5, 3, 2))
         self.assertNotIn(initial["token"], json.dumps(audit))
 
+    def test_viewer_reads_and_denials_cannot_evict_security_audit_events(self):
+        from test_team_evidence import report_bytes
+
+        limited = TeamStore.create(Path(self.temp.name) / "flood-audit", limits=StoreLimits(max_audit_events=20),
+                                   _clock=lambda: self.clock[0])
+        self.addCleanup(limited.close)
+        initial = limited.bootstrap_project("audited")
+        admin = limited.authenticate(initial["token"], initial["project_id"])
+        report_id = limited.ingest(admin, report_bytes())["report_id"]
+        revoked = limited.issue_credential(admin, "operator")
+        limited.revoke_credential(admin, revoked["credential"]["id"])
+        limited.update_policy(admin, {"retention_seconds": 86400})
+        viewer = limited.authenticate(limited.issue_credential(admin, "viewer")["token"], initial["project_id"])
+        protected = {"project_bootstrap", "report_ingest", "credential_issue", "credential_revoke", "policy_update"}
+        for _ in range(100):
+            limited.read_report(viewer, report_id)
+            with self.assertRaises(TeamError):
+                limited.delete_report(viewer, report_id)
+        audit = limited.audit(admin)
+        actions = [event["action"] for event in audit["events"]]
+        self.assertTrue(protected <= set(actions), actions)
+        self.assertEqual(actions.count("credential_issue"), 2)
+        self.assertEqual(len(audit["events"]), 20)
+        self.assertEqual(audit["observed"], 6 + 200)
+        self.assertEqual(audit["dropped"] + len(audit["events"]), audit["observed"])
+        sequences = [event["sequence"] for event in audit["events"]]
+        self.assertEqual(sequences, sorted(sequences))
+        # Remaining capacity keeps the newest denied attempts ahead of routine reads.
+        self.assertEqual({event["result"] for event in audit["events"] if event["action"] not in protected}, {"denied"})
+        self.assertEqual(audit["events"][-1]["sequence"], audit["observed"])
+        from src.team_store import _audit_tier
+
+        self.assertLess(_audit_tier("record_create", "ok", '{"kind":"comparison_receipt"}'),
+                        _audit_tier("record_create", "ok", '{"kind":"baseline_approval"}'))
+        self.assertEqual(_audit_tier("backup_restore", "ok", "{}"), _audit_tier("unknown_future_action", "ok", "{}"))
+
 
 if __name__ == "__main__":
     unittest.main()
