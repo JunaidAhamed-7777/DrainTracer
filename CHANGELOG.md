@@ -10,12 +10,46 @@ current release and [AGENTS.md](AGENTS.md) for the release policy.
 
 A version entry does not by itself mean that version was published. v5.4.0
 and v5.3.3 were development candidates that were not published to PyPI;
-their changes shipped in v5.5.0. Check the matching release tag and PyPI
+their changes shipped in v5.5.0. v5.7.0 was likewise unpublished; its changes
+shipped in v5.8.0. Check the matching release tag and PyPI
 distribution for publication status.
+
+## v5.8.0 — 2026-11-11
+
+Includes the unpublished v5.7.0 candidate. See [RELEASES.md](RELEASES.md) for
+the full notes.
+
+### Changed
+
+- Leak windows are judged on time-slice medians, and growth concentrated in
+  one part of a window (a one-time allocation, spike, step or finished startup
+  ramp) gets the new `concentrated` verdict instead of a signal. Noisy and
+  sawtooth leaks and repeated steps now qualify.
+- Dashboard startup failures exit `2` and Ctrl+C exits `130`; unattended
+  dashboards end when the monitored tree exits.
+- Target arguments must follow `--`; an empty `--target` is a usage error.
+- Settings files mixing top-level keys with a `[draintracer]` table are errors.
+- Sharing `--ca` trusts only the named CA.
+
+### Added
+
+- `draintracer-agent --request-id` for idempotent retries.
+- Clean shutdown on SIGTERM, SIGHUP and Ctrl+Break; Python API sessions are
+  cleaned up at interpreter exit.
+
+### Fixed
+
+- Linux identities across wall-clock steps; single-process launches from
+  Windows virtual environments; pause races; sampling through unreadable
+  helpers, slow cadences and per-process errors.
+- Export after a closed output pipe; report CLI tracebacks; log capture after
+  an overlong line; linear-time, broader redaction; control-character escaping
+  in terminal, CI and diff output (#137); agent handshake crash; audit-event
+  retention; atomic agent credentials; `may_have_run` after a sent request.
 
 ## v5.7.0 — 2026-11-01
 
-Prepared for release; not yet tagged or published to PyPI.
+Development candidate; not tagged or published to PyPI. Included in v5.8.0.
 
 ### Added
 

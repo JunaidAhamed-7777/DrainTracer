@@ -1,4 +1,4 @@
-# Current version: v5.7.0
+# Current version: v5.8.0
 
 Release records and development milestones are listed newest first. The
 current runtime version here matches `DashboardApp.VERSION` in
@@ -8,13 +8,73 @@ entry alone does not establish publication: check its matching release tag
 and PyPI distribution.
 
 The v5.4.0 and v5.3.3 entries below record development candidates that were
-not separately published to PyPI. Their changes are included in v5.5.0.
+not separately published to PyPI. Their changes are included in v5.5.0. The
+v5.7.0 candidate was likewise never tagged or published; its changes are
+included in v5.8.0.
 Historical entries and source-pinned measurements retain the versions under
 which they were prepared or collected.
 
+## v5.8.0 — 2026-11-11
+
+Includes the unpublished v5.7.0 candidate below. Prepared for release; publish
+by pushing the matching `v5.8.0` tag.
+
+**Detection**
+- Window checks now use the medians of ten equal time slices, and a new
+  `concentrated` verdict rejects growth that happens only once in a window. A
+  one-time allocation, a single spike or step, or a finished startup ramp no
+  longer raises a signal, while leaks with allocation noise or a GC-like
+  sawtooth, and repeated steps, now qualify. Thresholds and scoring are
+  unchanged; the calibration results predate this rule.
+- Sampling keeps going through short-lived unreadable helpers, steady cadences
+  slower than the gap limit, handle-classifier exceptions and per-process
+  operating-system errors instead of resetting or failing every sample.
+
+**Process control and cleanup**
+- SIGTERM, SIGHUP and Windows Ctrl+Break stop a launched target, export the
+  reports and exit `130`; a closed output pipe no longer skips the export.
+- Linux process identities survive wall-clock steps, so a stepped clock can no
+  longer drop, leave paused or leave running the monitored tree.
+- From a Windows virtual environment, `.py` targets and agent launches run as
+  one process instead of a redirector plus interpreter.
+- `pause()` tolerates members that exit or start during the pause.
+- Python API sessions still running when the interpreter exits are cancelled
+  and cleaned up.
+
+**Command line and dashboard**
+- An empty `--target`, and stray arguments before `--`, are usage errors.
+- Unattended dashboards end when the monitored tree exits; dashboard startup
+  failures exit `2` and Ctrl+C exits `130`, matching headless runs.
+- Redirected output never triggers the PyPI update check, even with
+  `FORCE_COLOR`; checkpoint lock conflicts name the other session.
+- Settings files that mix top-level keys with a `[draintracer]` table are
+  rejected instead of silently dropping the top-level keys.
+- Control characters in process names and report text are escaped in the
+  terminal, CI logs and `draintracer diff`; GitHub step-summary paths render
+  literally (#137).
+
+**Reports, workloads and sharing**
+- Redaction is linear-time and covers JSON keys, prefixed or camel-case secret
+  names, `Authorization` headers and token-only URLs.
+- An overlong log line no longer stops workload log capture.
+- `draintracer-report` returns error documents instead of tracebacks for
+  unusual valid reports and writes both shared files or neither.
+- `--ca` on sharing clients trusts only the named CA.
+- Security-relevant team audit events outlast routine reads; agent credentials
+  are written atomically and an empty one no longer blocks removal.
+- `draintracer-agent` reports `may_have_run` correctly after a sent request,
+  accepts `--request-id` for idempotent retries, and applies
+  `--request-timeout` to the whole exchange.
+- A handshake frame with a malformed proof no longer stops the agent.
+
+**Project**
+- Corrected the privacy policy, security notes, agent instructions and
+  changelog, and added a release-consistency test. CI now runs one Windows
+  leg from a virtual environment.
+
 ## v5.7.0 — 2026-11-01
 
-Prepared for release; not yet tagged or published to PyPI.
+Development candidate; not tagged or published to PyPI. Included in v5.8.0.
 
 - Added `draintracer-agent --request-timeout SECONDS` to configure the client
   timeout independently of the monitored session's `start --timeout`.
