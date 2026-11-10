@@ -857,6 +857,10 @@ def _main(console: Console, argv: list[str] | None) -> int:
     forwarded_args = list(args.target_args or [])
     if forwarded_args[:1] == ["--"]:
         forwarded_args = forwarded_args[1:]
+    elif forwarded_args:
+        # Without "--", argparse would silently hand this word and every
+        # DrainTracer flag after it (--fail-on, --headless ...) to the target.
+        parser.error(f"unexpected argument {forwarded_args[0]!r}; put target arguments after '--'")
     if args.pid is not None and forwarded_args:
         parser.error("arguments after '--' only apply to launched targets, not --pid")
     if args.fail_on is not None and not args.headless:
@@ -871,6 +875,10 @@ def _main(console: Console, argv: list[str] | None) -> int:
     for option in BUDGET_OPTIONS.values():
         if getattr(args, option) is not None and not args.headless:
             parser.error(f"--{option.replace('_', '-')} only applies with --headless")
+    if args.target is not None and not args.target.strip():
+        # An unset CI variable ("--target $APP") must be a usage error, not
+        # exit 1, which headless runs reserve for a leak signal.
+        parser.error("--target needs a file path; the value is empty")
     if args.headless and args.target is None and args.pid is None:
         parser.error("--headless needs --target or --pid; startup selection is interactive")
     if args.profile is not None and args.no_config:
@@ -1019,21 +1027,23 @@ def _run_headless(
     console: Console,
     settings: MonitorSettings,
 ) -> int:
-    runner = HeadlessRunner(
-        args.target,
-        args=forwarded_args or None,
-        console=console,
-        report_dir=settings.report_dir,
-        attach_pid=args.pid,
-        timeout=settings.timeout,
-        fail_on=settings.fail_on,
-        settings=settings,
-        fail_on_inconclusive=settings.fail_on_inconclusive,
-        fail_on_target_error=settings.fail_on_target_error,
-        require_full_coverage=settings.require_full_coverage,
-        quiet=args.quiet,
-    )
     try:
+        # Construction validates the target; a failure is an error (2), never
+        # the leak-signal exit code 1 an uncaught exception would produce.
+        runner = HeadlessRunner(
+            args.target,
+            args=forwarded_args or None,
+            console=console,
+            report_dir=settings.report_dir,
+            attach_pid=args.pid,
+            timeout=settings.timeout,
+            fail_on=settings.fail_on,
+            settings=settings,
+            fail_on_inconclusive=settings.fail_on_inconclusive,
+            fail_on_target_error=settings.fail_on_target_error,
+            require_full_coverage=settings.require_full_coverage,
+            quiet=args.quiet,
+        )
         return runner.run()
     except Exception:
         return _report_crash(console, EXIT_ERROR)

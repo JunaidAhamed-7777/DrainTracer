@@ -58,6 +58,11 @@ class ParserTests(unittest.TestCase):
             ("--warmup", "30h"): "at most 24h",
             tuple(arg for seconds in range(10, 19) for arg in ("--window", f"{seconds}s")):
                 "at most 8 different --window values",
+            ("--headless", "--target", ""): "the value is empty",
+            ("--target", "   "): "the value is empty",
+            ("--headless", "--target", "app.exe", "extra", "--fail-on", "low"):
+                "put target arguments after '--'",
+            ("app.exe", "--headless", "--timeout", "5s"): "unexpected argument 'app.exe'",
         }
         for argv, message in cases.items():
             with self.subTest(argv=argv):
@@ -65,6 +70,13 @@ class ParserTests(unittest.TestCase):
 
 
 class DispatchTests(unittest.TestCase):
+    def test_headless_construction_failure_is_an_error_not_a_leak_verdict(self) -> None:
+        with (mock.patch.object(cli, "HeadlessRunner", side_effect=ValueError("bad target")),
+              mock.patch.object(cli, "_report_crash", return_value=2) as crash):
+            code = cli._main(make_console(), ["--headless", "--target", "app.exe", "--no-config"])
+        self.assertEqual(code, 2)
+        crash.assert_called_once()
+
     def test_checkpoint_flags_reach_the_session_settings(self) -> None:
         with mock.patch.object(cli, "HeadlessRunner") as runner:
             runner.return_value.run.return_value = 0
