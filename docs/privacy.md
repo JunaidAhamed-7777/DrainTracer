@@ -123,9 +123,14 @@ names, paths, tokens in unexpected formats, configuration profile names,
 events, and logs are not comprehensively sanitized. Values omitted as
 dedicated fields can still appear inside paths or text.
 
-There is no whole-report privacy profile, automatic identifier replacement,
-or share preview in the current software. That work remains tracked in
-[issue #41](https://github.com/JunaidAhamed-7777/DrainTracer/issues/41).
+Ordinary exports are not transformed. Use the explicit `share` or `minimal`
+profile described in [previewable privacy exports](#previewable-privacy-exports)
+for whole-report identifier replacement and a local preview; the result is
+still not a promise of anonymity.
+
+Opt-in workload `capture_logs` files are separate from reports and receive
+only line-based pattern redaction. Review them independently; see the
+[workload guide](workloads.md#optional-output-files).
 
 ## Before sharing evidence
 

@@ -8,6 +8,22 @@ follow Semantic Versioning once per published release, with major bumps
 reserved for the repository owner. See [RELEASES.md](RELEASES.md) for the
 current release and [AGENTS.md](AGENTS.md) for the release policy.
 
+A version entry does not by itself mean that version was published. v5.4.0
+and v5.3.3 were development candidates that were not published to PyPI;
+their changes shipped in v5.5.0. Check the matching release tag and PyPI
+distribution for publication status.
+
+## v5.7.0 — 2026-11-01
+
+Prepared for release; not yet tagged or published to PyPI.
+
+### Added
+
+- `draintracer-agent --request-timeout SECONDS` configures the client request
+  timeout independently of a session's `start --timeout`. Explicit values must
+  be finite, greater than zero and at most 60 seconds; the 15-second normal and
+  one-second `diagnose`/`support` defaults are unchanged.
+
 ## v5.6.0 — 2026-11-01
 
 ### Added
@@ -145,12 +161,51 @@ See [RELEASES.md](RELEASES.md) for scope and evidence.
 See [RELEASES.md](RELEASES.md) for release details and
 [future-plan.md](future-plan.md) for the unchanged broader acceptance gates.
 
+## v5.4.0 — 2026-10-29
+
+Development candidate; not published to PyPI. Its changes shipped in v5.5.0.
+
+- Added Linux and WSL support: executable, Python and shebang targets,
+  attachment, dashboard/picker controls, pause/resume, headless checks and
+  JSON/HTML reports, with typed-path selection when no graphical picker exists.
+- Measured Linux private memory as USS and handles as open file descriptors;
+  reports identify counter definitions and strict comparisons reject
+  incompatible ones. Windows counters keep their meanings.
+- Hardened Linux session tracking, pre-existing stops, PID reuse, partial
+  pause cleanup and shutdown, and added Linux CI on Python 3.10 and 3.14.
+
+## v5.3.3 — 2026-10-28
+
+Development candidate; not published to PyPI. Its changes shipped in v5.5.0.
+
+- Rejected fractional handle and thread budgets in the main CLI, report-diff
+  flags and TOML settings, combining the complementary fixes from PRs #67 and
+  #68. Fractional byte sizes and growth rates remain valid.
+
 ## v5.3.2 — 2026-10-26
 
 - Fixed short HTTP Basic credentials being retained in experiment labels
   in exported JSON and HTML. Added regression tests for padded values,
   punctuation, ordinary text, and persisted exports. See
   [RELEASES.md](RELEASES.md) for the release record.
+
+## v5.3.1 — 2026-10-23
+
+- Allowed up to three seconds for asynchronous Windows forced termination and
+  checked process-handle exit state, so terminated processes with retained
+  handles no longer remain tracked. Failed or access-denied stops keep live
+  processes for cleanup.
+- Made pause/detach and dashboard redraw tests deterministic on Windows.
+
+## v5.3.0 — 2026-10-23
+
+Not published to PyPI; v5.3.1 is the first published v5.3 release.
+
+- Added a bounded PyPI update check below the startup version. Headless runs,
+  help, version-only commands and redirected output do not contact PyPI.
+- Replaced numbered startup selection in interactive Windows terminals with
+  arrow-key highlighting and Spacebar/Enter selection; redirected input keeps
+  the numbered prompt.
 
 ## v5.2.1 — 2026-10-23
 

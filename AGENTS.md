@@ -7,14 +7,28 @@ launches a target executable or script, tracks its recursive process tree, sampl
 resources with `psutil`, and reports potential memory, handle, and thread
 leaks through a Rich terminal dashboard.
 
-Core modules are under `src/`:
+Modules live flat under `src/` (packaged as `draintracer`). This map groups
+them by area; it is not an exhaustive file list:
 
-- `main.py` — CLI entry point, startup title, and file-picker workflow
-- `dashboard.py` — Rich UI, controls, event log, and JSON export
-- `file_picker.py` — native Windows picker with fallback handling
-- `process_runner.py` — process lifecycle and recursive PID tracking
-- `leak_detector.py` — background sampling and leak heuristics
-- `events.py` — immutable snapshot models and `MetricsStream`
+- **Monitoring engine** — `process_runner.py` (process lifecycle and
+  recursive PID tracking), `leak_detector.py` (background sampling and leak
+  heuristics), `events.py` (immutable snapshots and `MetricsStream`), plus
+  resource, handle, per-process history, budget, and statistics helpers.
+- **Session and front ends** — `main.py` and `startup.py` (CLI entry point,
+  startup title, and target selection), `session.py`, `dashboard.py` with the
+  `view_*.py`/`widgets.py` Rich UI, `headless.py`, pickers, configuration,
+  preflight, checkpoints, experiment labels, and workload recipes with opt-in
+  log capture.
+- **Reports** — JSON/HTML export and analysis, the report contract and
+  `draintracer-report` CLI, report diffs and repeated-run comparisons,
+  controlled baselines, privacy profiles, and investigation summaries.
+- **Local agent** — `agent_*.py`: the opt-in per-user Windows agent
+  (`draintracer-agent`) and its authenticated named-pipe transport.
+- **Team storage and sharing** — `team_*.py`, `share_command.py`, and
+  `service_*.py`: local project storage (`draintracer-team`), opt-in TLS
+  sharing and upload queue (`draintracer-share`), and operating exercises
+  (`draintracer-ops`).
+- **Python API** — `api.py`: the supported presentation-free session API.
 
 ## Mandatory versioning rule
 
@@ -84,7 +98,8 @@ Before finishing a change:
 2. Compare the committed snapshot with the current required runtime
    structure before and after the change; run the installation tests.
 3. Run `python -m compileall -q src`.
-4. Run relevant smoke tests and `ReadLints` on edited files.
+4. Run relevant smoke tests and editor diagnostics where available on
+   edited files.
 5. Run `git diff --check` and confirm the working tree state.
 6. Commit focused changes frequently with descriptive messages.
 

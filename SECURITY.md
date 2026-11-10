@@ -44,14 +44,49 @@ people as untrusted files and review their origin before opening HTML.
 An access-denied metric or a heuristic false positive belongs in the normal
 bug tracker unless it demonstrates a security impact.
 
+## Optional local Windows agent
+
+`draintracer-agent` is opt-in and runs in the foreground as the current user.
+It installs no service and opens no network port. Its named pipe has a
+protected DACL that admits only that user and SYSTEM and rejects remote
+clients; its state directory and credential are private to the user. Each
+connection performs mutual HMAC-SHA256 authentication, and the credential is
+never sent over the pipe. Attaching only observes: launch, pause/resume, and
+explicit kill require the server flags `--allow-launch` (limited to declared
+`--launch-root` directories),
+`--allow-pause`, and `--allow-kill`. A same-user process or an administrator
+can still read the credential or change the agent, so this is not an
+isolation boundary. Do not run the agent elevated; run it under the ordinary
+account that owns the workloads. See [the agent contract](docs/local-agent.md).
+
+## Optional sharing and upload queue
+
+`draintracer-share serve` is an opt-in, foreground TLS listener on an
+operator-controlled host. It binds to `127.0.0.1` by default; another address
+requires `--host ADDRESS --allow-network`, and firewalling and supervision
+remain the operator's job. Certificate, hostname, and protocol verification
+are mandatory, with no cleartext fallback. Clients read bearer credentials
+from private files, never command-line arguments; protect, rotate, and revoke
+them like passwords. Project roles, revocation, retention, and deletion are
+enforced by the server's live team database.
+
+The upload queue is a private local directory that receives entries only
+from explicit `enqueue-*` commands. It stores privacy-transformed payloads, never
+credentials, and only `flush` sends entries. Monitoring and local export never
+depend on it. See [team sharing](docs/team-sharing.md) and
+[team access](docs/team-access.md).
+
 ## Reports, network access, and disclosure
 
 The application has no automatic report or crash upload. Interactive startup
 does make a PyPI release-metadata request; [PRIVACY.md](PRIVACY.md) describes
-its fields and the modes that skip it. Reports have no application-level
-encryption, expiry, or access-control service. Filesystem and CI permissions
-remain the operator's responsibility. A target's own network and file access
-are separate from DrainTracer's behavior.
+its fields and the modes that skip it. There is no dedicated opt-out flag for
+that check; use a mode that skips it or your own network controls. Local
+reports have no application-level encryption or expiry, and outside the
+optional sharing server above there is no access-control service for them.
+Filesystem and CI permissions remain the operator's responsibility. A
+target's own network and file access are separate from DrainTracer's
+behavior.
 
 Limited label cleaning and argument fingerprints do not make a report
 anonymous. The [safe sharing guide](docs/privacy.md) explains how identifiers
