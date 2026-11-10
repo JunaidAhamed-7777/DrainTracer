@@ -44,6 +44,8 @@ from .keys import (
     UP,
     KeyReader,
     normalize_key,
+    stdin_is_interactive,
+    stream_is_tty,
 )
 from .report import DEFAULT_REPORT_DIR
 from .session import MonitorSession
@@ -141,8 +143,15 @@ class DashboardApp(
     # ------------------------------------------------------------------
 
     def run(self) -> int:
-        """Start monitoring and run the interactive dashboard until quit."""
+        """Start monitoring and run the dashboard until quit.
+
+        Returns 0 after a normal quit, 2 when monitoring cannot start, and
+        130 after Ctrl+C or a termination signal. Without an interactive
+        terminal nobody can press Q, so the dashboard also ends once the
+        monitored process tree has exited.
+        """
         palette = self.palette
+        unattended = not self.interactive()
         try:
             with self.console.status(
                 f"[bold {palette.accent}]Attaching monitor[/] "
@@ -168,8 +177,9 @@ class DashboardApp(
                     padding=(1, 2),
                 )
             )
-            return 1
+            return 2
 
+        interrupted = False
         try:
             with self._keys, Live(
                 self._frame(),
@@ -189,6 +199,12 @@ class DashboardApp(
                     key = self._read_key()
                     if key in ("\x04", "\x1a") or self._keys.eof:
                         self._quit_requested = True
+                    if unattended and not self._quit_requested and self.tree_finished:
+                        self._quit_requested = True
+                        self._append_event(
+                            "Process tree finished; ending because no one can press Q here",
+                            "info",
+                        )
                     if key:
                         self._guarded(f"Key {key!r}", self._handle_key, key)
                         changed = True
@@ -205,6 +221,7 @@ class DashboardApp(
                         last_render, last_size = now, size
                     time.sleep(self.FRAME_SECONDS)
         except KeyboardInterrupt:
+            interrupted = True
             self._append_event("Dashboard interrupted by user", "warn")
         finally:
             self.shutdown()
@@ -217,7 +234,15 @@ class DashboardApp(
             self.console.print(Text(f"Session summary unavailable: {exc}"))
             if self._last_report is not None:
                 self.console.print(Text(f"Report: {self._last_report}"))
-        return 0
+        return 130 if interrupted else 0
+
+    def interactive(self) -> bool:
+        """Whether someone can see the dashboard and press its keys.
+
+        Checks the real streams: ``FORCE_COLOR`` can make redirected output
+        look like a terminal to Rich.
+        """
+        return stream_is_tty(self.console.file) and stdin_is_interactive()
 
     def _refresh(self, live: Live) -> None:
         live.update(self._frame(), refresh=True)

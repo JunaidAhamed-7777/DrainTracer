@@ -902,5 +902,94 @@ class MonitorFreshnessDisplayTests(unittest.TestCase):
         self.assertIn("peaks, signals and counts stay exact", summary)
 
 
+class DashboardLoopEndTests(unittest.TestCase):
+    """How the live loop ends, without a real terminal, target, or sleep."""
+
+    # A loop that never ends fails here instead of hanging the suite.
+    FRAME_LIMIT = 200
+
+    def _run(self, app: DashboardApp, *, finished_after: int | None = None,
+             keys=(), poll_error: BaseException | None = None) -> tuple[int, int]:
+        from contextlib import nullcontext
+        from unittest import mock
+
+        frames = [0]
+        pending = list(keys)
+
+        def read_key():
+            frames[0] += 1
+            if frames[0] > self.FRAME_LIMIT:
+                raise AssertionError("the dashboard loop did not end")
+            return pending.pop(0) if pending and frames[0] > 3 else None
+
+        def poll():
+            if poll_error is not None and frames[0] >= 2:
+                raise poll_error
+            return False
+
+        finished = mock.PropertyMock(
+            side_effect=lambda: finished_after is not None and frames[0] >= finished_after
+        )
+        with (
+            mock.patch.object(app, "start"),
+            mock.patch.object(app, "shutdown") as shutdown,
+            mock.patch.object(app, "poll", side_effect=poll),
+            mock.patch.object(app, "_read_key", side_effect=read_key),
+            mock.patch.object(app, "_render", return_value="frame"),
+            mock.patch.object(app, "render_summary", return_value="summary"),
+            mock.patch.object(app.console, "status", return_value=nullcontext()),
+            mock.patch.object(type(app), "tree_finished", finished),
+            mock.patch("src.dashboard.Live"),
+            mock.patch("src.dashboard.time.sleep"),
+        ):
+            code = app.run()
+        shutdown.assert_called_once_with()
+        return code, frames[0]
+
+    def test_without_interactive_input_the_loop_ends_when_the_tree_finishes(self) -> None:
+        # make_console() writes to a buffer, as with redirected output or CI.
+        app = _app()
+        self.assertFalse(app.interactive())
+        code, frames = self._run(app, finished_after=5)
+        self.assertEqual(code, 0)
+        self.assertEqual(frames, 5)
+        self.assertTrue(any("Process tree finished" in message for _s, message, _l in app._events))
+
+    def test_redirected_stdin_also_ends_with_the_tree(self) -> None:
+        from unittest import mock
+
+        app = _app()
+        with (mock.patch("src.dashboard.stream_is_tty", return_value=True),
+              mock.patch("src.dashboard.stdin_is_interactive", return_value=False)):
+            self.assertFalse(app.interactive())
+            code, frames = self._run(app, finished_after=4)
+        self.assertEqual((code, frames), (0, 4))
+
+    def test_an_interactive_dashboard_stays_open_after_the_tree_finishes(self) -> None:
+        from unittest import mock
+
+        app = _app()
+        with mock.patch.object(app, "interactive", return_value=True):
+            code, frames = self._run(app, finished_after=1, keys=[None] * 20 + ["q"])
+        self.assertEqual(code, 0)
+        self.assertGreater(frames, 20)
+        self.assertFalse(any("Process tree finished" in message for _s, message, _l in app._events))
+
+    def test_ctrl_c_in_the_loop_exits_130_after_the_summary(self) -> None:
+        app = _app()
+        code, _frames = self._run(app, poll_error=KeyboardInterrupt())
+        self.assertEqual(code, 130)
+        self.assertIn("summary", app.console.file.getvalue())
+        self.assertTrue(any("interrupted" in message for _s, message, _l in app._events))
+
+    def test_a_startup_failure_exits_2(self) -> None:
+        from unittest import mock
+
+        app = _app()
+        with mock.patch.object(app, "start", side_effect=RuntimeError("no such target")):
+            self.assertEqual(app.run(), 2)
+        self.assertIn("STARTUP ERROR", app.console.file.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

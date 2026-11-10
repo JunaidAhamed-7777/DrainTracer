@@ -350,7 +350,7 @@ class StartupHintTests(unittest.TestCase):
 
         console = make_console()
         app = DashboardApp("C:/definitely/missing/worker.exe", console=console)
-        self.assertEqual(app.run(), 1)
+        self.assertEqual(app.run(), 2)
         output = console.file.getvalue()
         self.assertIn("STARTUP ERROR", output)
         self.assertIn("Check the path", output)

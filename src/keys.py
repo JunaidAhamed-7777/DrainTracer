@@ -262,6 +262,45 @@ class KeyReader:
         return decoded
 
 
+def stream_is_tty(stream: object) -> bool:
+    """Whether ``stream`` really is a terminal.
+
+    Rich's ``Console.is_terminal`` also honours ``FORCE_COLOR`` and
+    ``TTY_COMPATIBLE``, which make redirected output look like a terminal.
+    Decisions about who is watching (update checks, whether anyone can press
+    Q) need the stream itself.
+    """
+    isatty = getattr(stream, "isatty", None)
+    if isatty is None:
+        return False
+    try:
+        return bool(isatty())
+    except (OSError, ValueError):
+        return False
+
+
+def stdin_is_interactive() -> bool:
+    """Whether a person can type into standard input.
+
+    Windows reports the ``NUL`` device as a TTY, so a console handle is
+    required there as well.
+    """
+    stream = sys.stdin
+    if not stream_is_tty(stream):
+        return False
+    if os.name != "nt":
+        return True
+    try:
+        import ctypes
+        import msvcrt
+
+        handle = msvcrt.get_osfhandle(stream.fileno())
+        mode = ctypes.c_ulong()
+        return bool(ctypes.windll.kernel32.GetConsoleMode(ctypes.c_void_p(handle), ctypes.byref(mode)))
+    except (AttributeError, OSError, TypeError, ValueError):
+        return False
+
+
 def normalize_key(key: str) -> str:
     """Name raw control characters so handlers compare names only."""
     if len(key) == 1:
@@ -291,4 +330,6 @@ __all__ = [
     "decode_plain",
     "decode_windows",
     "normalize_key",
+    "stdin_is_interactive",
+    "stream_is_tty",
 ]

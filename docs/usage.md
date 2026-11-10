@@ -304,6 +304,28 @@ The dashboard adapts to narrow and short terminals and uses ASCII fallbacks
 for legacy encodings. A real interactive terminal is needed for controls;
 use headless mode when redirecting output or running in CI.
 
+### Run the dashboard unattended
+
+When standard output is not a terminal (even with `FORCE_COLOR` or `TTY_COMPATIBLE` set) or
+standard input is not interactive (a pipe, `< /dev/null`, `NUL`, cron, or CI),
+nobody can press **Q**, so the dashboard ends by itself once the monitored
+process tree has exited, or at `--timeout`, and prints its summary as usual.
+Startup warns about this and suggests `--headless`.
+
+### Dashboard exit codes
+
+Dashboard exit codes are simpler than headless ones, because the dashboard
+has no failure policy:
+
+| Exit | Dashboard meaning |
+| --- | --- |
+| `0` | The session ended normally: **Q**, end of input, `--timeout`, the tree finished without interactive input, or startup selection was canceled. Leak signals do not change it; read the summary or report. |
+| `2` | Invalid usage, settings error, or monitoring could not start (missing target, refused attachment, checkpoint in use, file picker failure), or DrainTracer crashed. |
+| `130` | Ctrl+C, SIGTERM, SIGHUP, or Windows Ctrl+Break. The target is cleaned up and the summary still prints. |
+
+Exit `1` is reserved for a headless leak signal and is never returned by the
+dashboard.
+
 ## Preserve interrupted-run evidence
 
 To preserve evidence during a long run, add `--checkpoint PATH` and optionally

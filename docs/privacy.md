@@ -14,7 +14,7 @@ time, and headers. Target data is not included. The startup wait is bounded,
 but a background request can outlast that wait.
 
 Headless monitoring, `--help`, `--version`, report comparisons, and redirected
-startup output skip the check. There is no dedicated interactive opt-out
+startup output skip the check, even with `FORCE_COLOR` or `TTY_COMPATIBLE` set. There is no dedicated interactive opt-out
 flag. For a no-network workflow, install dependencies in advance and use a
 mode that skips the check, or enforce your own network restrictions. Offline
 interactive monitoring continues if the request cannot complete. A target

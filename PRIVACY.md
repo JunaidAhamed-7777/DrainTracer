@@ -172,7 +172,8 @@ ends at that moment. The check displays availability information and does
 not install an update or upload evidence.
 
 Headless runs, help, version-only commands, report comparisons, and startup
-with redirected output do not perform this update check. There is currently
+with redirected output do not perform this update check, even when
+`FORCE_COLOR` or `TTY_COMPATIBLE` asks for terminal styling. There is currently
 no dedicated interactive update-check opt-out flag. Monitoring can work
 offline after its prerequisites are installed; an unavailable check does
 not prevent monitoring. Use a mode that skips the check or your network

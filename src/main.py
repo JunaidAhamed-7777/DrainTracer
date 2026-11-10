@@ -311,6 +311,7 @@ try:
     from .file_picker import select_target_file
     from .headless import EXIT_ERROR, HeadlessRunner
     from .html_report import write_html_report
+    from .keys import stdin_is_interactive, stream_is_tty
     from .process_picker import select_running_process
     from .process_runner import ProcessManagerError
     from .report import DEFAULT_REPORT_DIR, report_directory, write_json_report
@@ -364,7 +365,10 @@ def _display_title(console: Console) -> None:
         f"[{PALETTE.muted}]Resource leak monitor for Windows and Linux process trees[/] "
         f"[bold {PALETTE.accent}]{DashboardApp.VERSION}[/]"
     )
-    status = check_for_update(DashboardApp.VERSION) if console.is_terminal else None
+    # FORCE_COLOR/TTY_COMPATIBLE make Rich treat redirected output as a
+    # terminal; the privacy promise is about the real stream.
+    interactive_output = console.is_terminal and stream_is_tty(console.file)
+    status = check_for_update(DashboardApp.VERSION) if interactive_output else None
     console.print(_update_notice(status))
     console.print()
 
@@ -706,13 +710,32 @@ def _resolve_settings(args: argparse.Namespace) -> MonitorSettings:
 
 
 def _run_dashboard(app: DashboardApp, console: Console) -> int:
+    """Run the dashboard: 0 normal end, 2 startup failure or crash, 130 interrupted.
+
+    Exit 1 means a leak signal and belongs to headless mode only.
+    """
     try:
         return app.run()
     except ProcessManagerError as exc:
         console.print(Text.assemble(("Process error: ", "bold red"), str(exc)))
-        return 1
+        return 2
     except Exception:
-        return _report_crash(console, 1)
+        return _report_crash(console, 2)
+
+
+def _unattended_notice(console: Console) -> Text | None:
+    """Explain how the dashboard behaves when nobody can watch or press Q."""
+    if not stream_is_tty(console.file):
+        reason = "Output is not a terminal, so the live dashboard will only show its final frame"
+    elif not stdin_is_interactive():
+        reason = "Input is not interactive, so the dashboard keys will not work"
+    else:
+        return None
+    return Text(
+        f"{reason}. It ends when the monitored processes exit or at --timeout. "
+        "Use --headless for logs and CI.",
+        style=PALETTE.warn,
+    )
 
 
 def _prompt_target_path(console: Console) -> str | None:
@@ -897,14 +920,9 @@ def _main(console: Console, argv: list[str] | None) -> int:
 
     console.clear()
     _display_title(console)
-    if not console.is_terminal:
-        console.print(
-            Text(
-                "Output is not a terminal, so the live dashboard will only show its final "
-                "frame. Use --headless for logs and CI.",
-                style=PALETTE.warn,
-            )
-        )
+    notice = _unattended_notice(console)
+    if notice is not None:
+        console.print(notice)
     if settings.source is not None:
         console.print(Text(f"Using {settings.describe()}", style=PALETTE.muted))
     for warning in settings.warnings():
@@ -966,7 +984,7 @@ def _main(console: Console, argv: list[str] | None) -> int:
             reason = f"{exc}: {exc.__cause__}" if exc.__cause__ else str(exc)
             console.print(Text.assemble(("File picker failed: ", "bold red"), reason, hint))
             if not sys.platform.startswith("linux"):
-                return 1
+                return 2
             target_path = _prompt_target_path(console)
 
     if not target_path:

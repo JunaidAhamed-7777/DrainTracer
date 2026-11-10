@@ -13,7 +13,7 @@ from typing import Any
 
 from rich.console import Console
 
-from .checkpoints import CHECKPOINT_SAMPLES, CheckpointStore
+from .checkpoints import CHECKPOINT_SAMPLES, CheckpointError, CheckpointStore
 from .config import MonitorSettings
 from .events import (
     RESOURCE_METRICS,
@@ -454,6 +454,9 @@ class MonitorSession:
     def startup_hint(self, error: BaseException) -> str | None:
         """A suggestion for a startup failure, or ``None`` when there is none."""
         cause = error.__cause__
+        if isinstance(error, CheckpointError):
+            # The message already says what is wrong; elevation never helps.
+            return None
         if isinstance(error, ProcessNotFoundError):
             if self.attached:
                 if sys.platform == "win32":

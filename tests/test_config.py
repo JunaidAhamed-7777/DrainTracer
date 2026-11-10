@@ -162,6 +162,21 @@ class LayeringTests(ConfigTestCase):
         path = self.write("custom.toml", '[draintracer]\n[draintracer.profiles.x]\ntimeout = "1m"\n')
         self.assertEqual(self.resolve(config_path=path, profile="x").timeout, 60.0)
 
+    def test_top_level_settings_beside_a_draintracer_table_are_an_error(self) -> None:
+        body = 'timeout = "5s"\nwarmup = "1s"\n[draintracer]\nsample_interval = "1s"\n'
+        for name in (".drainrc", "draintracer.toml", "custom.toml"):
+            with self.subTest(name=name):
+                path = self.write(name, body)
+                with self.assertRaises(ConfigError) as caught:
+                    self.resolve(config_path=path)
+                message = str(caught.exception)
+                self.assertIn("both at the top level (timeout, warmup)", message)
+                self.assertIn("[draintracer]", message)
+                path.unlink()
+        # A shared config.toml still ignores other tools' top-level content.
+        self.write("config.toml", 'timeout = 3\n[draintracer]\ntimeout = "90s"\n')
+        self.assertEqual(self.resolve().timeout, 90.0)
+
     def test_report_dir_is_relative_to_the_settings_file(self) -> None:
         absolute = self.root / "absolute-reports"
         self.write(".drainrc", 'report_dir = "reports"\n[profiles.abs]\n'

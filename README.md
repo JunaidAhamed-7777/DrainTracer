@@ -219,7 +219,7 @@ second. Below the version subtitle it shows **New Version Available!** in red
 with `pip install --upgrade draintracer` in green, or **No new updates.** with a
 blue contribution link. Offline or failed checks show **Update check
 unavailable.** instead. Headless runs, help, version-only commands, and
-redirected output do not contact PyPI.
+redirected output (even with `FORCE_COLOR` set) do not contact PyPI.
 
 The check sends the DrainTracer version in its user-agent, and PyPI sees the
 connecting IP address. Process reports are not uploaded. Read the
@@ -457,6 +457,12 @@ result, rather than forwarding the target's exit code:
   `--budget-handles 2000`, or `--budget-threads 64`: a peak exceeded it,
   even with no leak signal, because stable usage can still be excessive.
 - `130` — interrupted with Ctrl+C before a failing signal.
+
+The interactive dashboard never exits `1`: it returns `0` after a normal end,
+`2` when monitoring cannot start or DrainTracer crashes, and `130` after
+Ctrl+C. Without an interactive terminal (redirected output, `< /dev/null`,
+cron, or CI) it ends by itself when the monitored tree exits; prefer
+`--headless` there. See [usage](docs/usage.md#run-the-dashboard-unattended).
 
 Handle and thread budgets must be positive whole numbers, both in flags
 and settings files. Fractional private-byte sizes such as `1.5MB` and
