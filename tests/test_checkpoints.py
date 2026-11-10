@@ -118,7 +118,18 @@ class CheckpointTests(unittest.TestCase):
                 CheckpointStore(self.path, "v5.4.0")
             child.kill()
             child.wait(timeout=10)
-            with CheckpointStore(self.path, "v5.4.0"):
+            # A Windows venv python.exe is a redirector: killing it ends the real
+            # interpreter, and so releases its lock, a moment later.
+            deadline = time.monotonic() + 10
+            while True:
+                try:
+                    store = CheckpointStore(self.path, "v5.4.0")
+                    break
+                except (CheckpointError, OSError):
+                    if time.monotonic() >= deadline:
+                        raise
+                    time.sleep(0.05)
+            with store:
                 self.assertFalse(self.path.exists())
         finally:
             if child.poll() is None:
