@@ -365,3 +365,80 @@ class LinuxProcessTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StartTimeIdentityTests(unittest.TestCase):
+    """Linux identities must not move when the wall clock is stepped."""
+
+    def test_start_tick_is_parsed_after_the_last_parenthesis(self) -> None:
+        fields = ["S"] + [str(index) for index in range(4, 22)] + ["4200"] + ["0"] * 30
+        stat = b"77 (odd) (name) " + " ".join(fields).encode()
+        process = mock.Mock(pid=77)
+        with (mock.patch.object(process_runner.sys, "platform", "linux"),
+              mock.patch.object(process_runner, "_LINUX_BOOT_TIME", 1000.0),
+              mock.patch.object(process_runner, "_CLOCK_TICKS", 100),
+              mock.patch("builtins.open", mock.mock_open(read_data=stat))):
+            self.assertEqual(process_runner._created(process), 1042.0)
+        process.create_time.assert_not_called()
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux /proc start ticks")
+    def test_matches_psutil_until_the_clock_moves(self) -> None:
+        process = psutil.Process()
+        self.assertEqual(process_runner._created(process), process.create_time())
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux boot-time recomputation")
+    def test_clock_step_keeps_the_tree_controllable_and_cleanable(self) -> None:
+        import psutil._pslinux as linux
+
+        with tempfile.TemporaryDirectory() as folder:
+            child_file = Path(folder) / "child.pid"
+            script = Path(folder) / "tree.py"
+            script.write_text(
+                "import pathlib, subprocess, sys, time\n"
+                "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])\n"
+                f"pathlib.Path({str(child_file)!r}).write_text(str(child.pid))\n"
+                "time.sleep(30)\n", encoding="utf-8")
+            manager = ProcessManager(str(script))
+            self.addCleanup(manager.kill)
+            root = manager.start()
+            deadline = time.monotonic() + 15
+            while not (child_file.exists() and child_file.read_text()) and time.monotonic() < deadline:
+                time.sleep(0.05)
+            child = int(child_file.read_text())
+            while child not in manager.refresh_process_tree() and time.monotonic() < deadline:
+                time.sleep(0.05)
+            before = manager.refresh_process_tree()
+            self.assertEqual(before, {root, child})
+            stepped = linux.boot_time() + 5.0
+            with mock.patch.object(linux, "boot_time", return_value=stepped):
+                self.assertEqual(manager.refresh_process_tree(), before)
+                self.assertTrue(manager.pause())
+                self.assertEqual(psutil.Process(child).status(), psutil.STATUS_STOPPED)
+                self.assertTrue(manager.resume())
+                manager.terminate(timeout=3)
+            for pid in (root, child):
+                try:
+                    status = psutil.Process(pid).status()
+                except psutil.NoSuchProcess:
+                    continue
+                self.assertEqual(status, psutil.STATUS_ZOMBIE, f"PID {pid} survived terminate()")
+            self.assertFalse(manager.has_tracked_processes)
+
+
+class LaunchedRootBackstopTests(unittest.TestCase):
+    def test_launched_root_is_ended_even_when_its_identity_no_longer_matches(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            script = Path(folder) / "sleeper.py"
+            script.write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
+            manager = ProcessManager(str(script))
+            self.addCleanup(manager.kill)
+            root = manager.start()
+            launched = manager._process
+            with manager._lock:
+                manager._identities[root] = 1.0
+                manager._root_created = 1.0
+            manager.terminate(timeout=1)
+            deadline = time.monotonic() + 10
+            while launched.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.05)
+            self.assertIsNotNone(launched.poll(), "the launched root kept running")
