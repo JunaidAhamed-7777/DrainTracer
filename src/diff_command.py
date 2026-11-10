@@ -41,7 +41,7 @@ from .report_diff import (
     load_report,
 )
 from .theme import ASCII_GLYPHS, PALETTE, Glyphs, plain_console, select_glyphs
-from .units import format_duration
+from .units import format_duration, safe_label
 from .widgets import LegacySafe
 
 EXIT_OK = 0
@@ -60,6 +60,10 @@ _VERDICT_STYLE = {
     NOT_COMPARABLE: ("NOT COMPARABLE", PALETTE.danger),
     INSUFFICIENT_COVERAGE: ("INSUFFICIENT COVERAGE", PALETTE.warn),
 }
+# Report fields (target names, workload and build labels, process and handle
+# names) are untrusted text: every one printed here passes through
+# ``safe_label`` so a report cannot emit terminal escapes or extra lines.
+_MESSAGE_LIMIT = 2048
 _SIGNAL_STYLE = {
     "resolved": PALETTE.ok,
     "eased": PALETTE.ok,
@@ -158,7 +162,7 @@ def run_diff(argv: list[str], console: Console) -> int:
         before = load_report(args.before)
         after = load_report(args.after)
     except DiffError as exc:
-        console.print(Text.assemble(("Diff error: ", "bold red"), str(exc)))
+        console.print(Text.assemble(("Diff error: ", "bold red"), safe_label(exc, _MESSAGE_LIMIT)))
         return EXIT_ERROR
     try:
         budgets = {**(report_budget_defaults([before]) if args.report_budgets else {}), **{
@@ -168,7 +172,9 @@ def run_diff(argv: list[str], console: Console) -> int:
         }}
         comparison = compare_reports(before, after, strict=args.strict, budgets=budgets)
     except Exception as exc:  # a report that parses but defeats the analysis
-        console.print(Text.assemble(("Diff error: ", "bold red"), f"could not compare: {exc}"))
+        console.print(Text.assemble(
+            ("Diff error: ", "bold red"), safe_label(f"could not compare: {exc}", _MESSAGE_LIMIT)
+        ))
         return EXIT_ERROR
     if args.json:
         console.print(
@@ -218,10 +224,12 @@ def _plain_comparison(comparison: ReportComparison, *, quiet: bool = False) -> T
             if item.normalized:
                 lines.append(f"{item.resource} growth per operation: {_per_operation_text(item, ASCII_GLYPHS)}")
         for kind, (before, after) in comparison.handle_type_growth.items():
-            lines.append(f"Handle type {kind}: {amount('handles', before)} to {amount('handles', after)}")
+            lines.append(
+                f"Handle type {safe_label(kind)}: {amount('handles', before)} to {amount('handles', after)}"
+            )
         lines.extend(_process_attribution_lines(comparison))
     lines.extend(f"Budget: {check.describe()}" for check in comparison.budgets)
-    return Text("\n".join(lines))
+    return Text("\n".join(safe_label(line, _MESSAGE_LIMIT) for line in lines))
 
 def _run_repeated_diff(args, console: Console) -> int:
     try:
@@ -247,7 +255,7 @@ def _run_repeated_diff(args, console: Console) -> int:
                       if getattr(args, option) is not None}}
         comparison = compare_repeated_reports(before, after, budgets=budgets)
     except (DiffError, OSError, ValueError, TypeError) as exc:
-        console.print(Text(f"Diff error: {exc}", style="bold red"))
+        console.print(Text(safe_label(f"Diff error: {exc}", _MESSAGE_LIMIT), style="bold red"))
         return EXIT_ERROR
     if args.json:
         console.print(json.dumps(comparison.to_dict(), indent=2, allow_nan=False), markup=False,
@@ -268,7 +276,8 @@ def render_repeated_comparison(comparison: RepeatedComparison, *, plain: bool = 
         Text(f"A: {len(comparison.before)} runs; B: {len(comparison.after)} runs"),
     ]
     parts.append(Text(f"COMPARABILITY: {comparison.comparability.upper()}", style="bold"))
-    parts += [Text(f"{item['before']} / {item['after']}: {item['message']}", style=PALETTE.warn)
+    parts += [Text(safe_label(f"{item['before']} / {item['after']}: {item['message']}", _MESSAGE_LIMIT),
+                   style=PALETTE.warn)
               for item in comparison.caveats]
     if not quiet:
         parts.append(Text(RULE, style=PALETTE.muted))
@@ -280,7 +289,8 @@ def render_repeated_comparison(comparison: RepeatedComparison, *, plain: bool = 
         parts += [Text(f"{item.resource.upper()}: {item.verdict}", style="bold"),
                   Text(f"drift A {spread(item.resource, item.drift_before, True)}; B {spread(item.resource, item.drift_after, True)}"),
                   Text(f"peaks A {spread(item.resource, item.peaks_before)}; B {spread(item.resource, item.peaks_after)}")]
-    parts += [Text(check.describe(), style=PALETTE.warn if check.exceeded else PALETTE.muted)
+    parts += [Text(safe_label(check.describe(), _MESSAGE_LIMIT),
+                   style=PALETTE.warn if check.exceeded else PALETTE.muted)
               for check in comparison.budgets]
     parts.append(Text(f"VERDICT: {comparison.verdict_label.upper()}", style="bold"))
     return Group(*parts) if plain or quiet else Panel(Group(*parts), border_style=PALETTE.border)
@@ -294,7 +304,7 @@ def _process_attribution_lines(comparison: ReportComparison) -> list[str]:
     lines = ["Top retained process evidence: A and B are ranked independently; identities are not paired."]
 
     def process_label(resource, row):
-        name = row["name"][:24]
+        name = safe_label(row["name"], 24)
         return f"PID {row['pid']} {name} +{format_amount(resource, row['delta'])}"
 
     for label, report in (("A", comparison.before), ("B", comparison.after)):
@@ -333,7 +343,7 @@ def _process_attribution_lines(comparison: ReportComparison) -> list[str]:
             lines.append(f"{label} process attribution: unavailable (not recorded or no usable retained detail).")
     lines.append("Lifetime and alert intervals differ. Retained rankings may be incomplete and do not identify allocation causes.")
     lines.append("--json includes up to five positive contributors per run, resource and scope, with scan limits and omissions.")
-    return lines
+    return [safe_label(line, _MESSAGE_LIMIT) for line in lines]
 
 
 def render_comparison(
@@ -361,7 +371,7 @@ def render_comparison(
         parts.extend(_resource_blocks(comparison, glyphs))
     if comparison.handle_type_growth:
         entries = [
-            f"{category} {_signed_count(before)} {glyphs.arrow} {_signed_count(after)}"
+            f"{safe_label(category)} {_signed_count(before)} {glyphs.arrow} {_signed_count(after)}"
             for category, (before, after) in comparison.handle_type_growth.items()
         ]
         parts.append(Text(""))
@@ -382,18 +392,24 @@ def render_comparison(
             mark, style = glyphs.warn, PALETTE.warn
         parts.append(Text.assemble(
             ("budget ", f"bold {PALETTE.muted}"), (f"{mark} ", f"bold {style}"),
-            (f"B {check.describe()}", style),
+            (safe_label(f"B {check.describe()}", _MESSAGE_LIMIT), style),
         ))
     if comparison.caveats:
         for caveat in comparison.caveats:
             style = PALETTE.danger if comparison.strict and caveat.blocks else PALETTE.warn
             parts.append(
-                Text.assemble((f"{glyphs.warn} ", f"bold {style}"), (caveat.message, style))
+                Text.assemble(
+                    (f"{glyphs.warn} ", f"bold {style}"),
+                    (safe_label(caveat.message, _MESSAGE_LIMIT), style),
+                )
             )
     else:
         for warning in comparison.warnings:
             parts.append(
-                Text.assemble((f"{glyphs.warn} ", f"bold {PALETTE.warn}"), (warning, PALETTE.warn))
+                Text.assemble(
+                    (f"{glyphs.warn} ", f"bold {PALETTE.warn}"),
+                    (safe_label(warning, _MESSAGE_LIMIT), PALETTE.warn),
+                )
             )
 
     label, color = _verdict_style(comparison)
@@ -402,7 +418,7 @@ def render_comparison(
         Text.assemble(
             ("VERDICT ", f"bold {PALETTE.muted}"),
             (f" {label} ", f"bold {PALETTE.ink} on {color}"),
-            f"  {comparison.headline()}",
+            f"  {safe_label(comparison.headline(), _MESSAGE_LIMIT)}",
         )
     )
     if comparison.qualified and comparison.comparability != COMPARABLE:
@@ -530,7 +546,7 @@ def _source_text(report: LoadedReport, sep: str) -> Text:
         text.append("\n")
         text.append(labels, style=PALETTE.accent)
     text.append("\n")
-    text.append(report.path.name, style=PALETTE.muted)
+    text.append(safe_label(report.path.name), style=PALETTE.muted)
     return text
 
 
@@ -540,23 +556,23 @@ def _experiment_labels(report: LoadedReport, sep: str) -> str:
         return ""
     parts = []
     if experiment.workload_id:
-        parts.append(f"workload {experiment.workload_id}")
+        parts.append(f"workload {safe_label(experiment.workload_id)}")
     if experiment.build:
-        parts.append(f"build {experiment.build}")
+        parts.append(f"build {safe_label(experiment.build)}")
     if experiment.operations is not None:
         parts.append(f"{experiment.operations:,g} ops")
     return f" {sep} ".join(parts)
 
 
 def _describe(report: LoadedReport, sep: str) -> str:
-    parts = [report.name]
+    parts = [safe_label(report.name)]
     version = report.data.get("version")
     if version:
-        parts.append(str(version))
+        parts.append(safe_label(version, 64))
     parts.append(format_duration(report.summary.duration))
     created = report.data.get("created_at")
     if isinstance(created, str) and created:
-        parts.append(created[:19].replace("T", " "))
+        parts.append(safe_label(created[:19].replace("T", " ")))
     return f" {sep} ".join(parts)
 
 
