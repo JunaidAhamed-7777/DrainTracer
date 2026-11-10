@@ -76,6 +76,27 @@ class TimingSafetyTests(unittest.TestCase):
         self.assertLess(monitor["interval_ms"]["max"], 2000)
         self.assertLess(facts.to_dict()["evaluation"]["after_warmup_seconds"], 5)
 
+    def test_a_steady_cadence_slower_than_the_gap_limit_is_not_a_gap(self) -> None:
+        # A large tree or loaded host samples every 2.1 s instead of 0.5 s:
+        # above the 2.0 s interval-based limit, yet no observation is missed.
+        self.detector = LeakDetector(ProcessManager(None), classifier=mock.Mock(available=False))
+        samples = [self.tick(2.1, value=(100 + int(8 * 2.1 * index)) * 1024**2)
+                   for index in range(1, 31)]
+        resets = [s for s in samples if s.metadata.get("timing_reset")]
+        self.assertLessEqual(len(resets), 4)  # only until the cadence is known
+        self.assertTrue(any(s.alerts for s in samples))
+        self.assertGreater(len(self.detector._memory_series.points), 20)
+
+        # A genuine interruption of that cadence still restarts the windows.
+        sample = self.tick(30)
+        self.assertEqual(sample.metadata.get("timing_reset"), "sampling_gap")
+        self.assertEqual(len(self.detector._memory_series.points), 1)
+
+    def test_one_long_stall_cannot_raise_its_own_gap_limit(self) -> None:
+        for _ in range(10):
+            self.tick()
+        self.assertEqual(self.tick(5).metadata.get("timing_reset"), "sampling_gap")
+
     def test_existing_process_growth_is_not_new_capacity_after_a_clock_reset(self) -> None:
         for _ in range(22):
             self.tick()
