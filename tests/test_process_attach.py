@@ -437,12 +437,15 @@ class UnavailableMemberTests(unittest.TestCase):
         manager._suspended_pids = {4343}
         real = psutil.Process
 
-        def opener(pid=None):
-            if pid == 4343:
-                raise failure
-            return real(pid)
+        # A subclass, not a function: psutil compares processes with
+        # isinstance(other, Process) and reopens through the patched name.
+        class Opener(real):
+            def __init__(self, pid=None):
+                if pid == 4343:
+                    raise failure
+                super().__init__(pid)
 
-        return manager, mock.patch.object(process_runner.psutil, "Process", side_effect=opener)
+        return manager, mock.patch.object(process_runner.psutil, "Process", Opener)
 
     def test_a_member_that_cannot_be_opened_stays_tracked_but_unavailable(self) -> None:
         from src.leak_detector import LeakDetector
