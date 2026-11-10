@@ -18,6 +18,13 @@ from src.events import LeakSeverity
 from src.running_processes import RunningProcess
 
 
+class _TerminalBuffer(io.StringIO):
+    """Captured output that reports itself as a real terminal."""
+
+    def isatty(self) -> bool:
+        return True
+
+
 def _parse_error(argv: list[str]) -> str:
     stderr = io.StringIO()
     with contextlib.redirect_stderr(stderr), _expect_usage_error():
@@ -236,7 +243,7 @@ class DispatchTests(unittest.TestCase):
         console = make_console()
         app = mock.Mock()
         app.run.side_effect = ProcessManagerError("cannot run C:\\x\\app[red].exe")
-        self.assertEqual(cli._run_dashboard(app, console), 1)
+        self.assertEqual(cli._run_dashboard(app, console), 2)
         self.assertIn("cannot run C:\\x\\app[red].exe", console.file.getvalue())
 
     def test_output_survives_unencodable_names(self) -> None:
@@ -252,7 +259,7 @@ class DispatchTests(unittest.TestCase):
         console = make_console()
         app = mock.Mock()
         app.run.side_effect = RuntimeError("render bug")
-        self.assertEqual(cli._run_dashboard(app, console), 1)
+        self.assertEqual(cli._run_dashboard(app, console), 2)
         output = console.file.getvalue()
         self.assertIn("render bug", output)
         self.assertIn("stopped after an unexpected error", output)
@@ -269,6 +276,36 @@ class DispatchTests(unittest.TestCase):
         run.assert_called_once()
         self.assertIn("Use --headless for logs and CI", console.file.getvalue())
 
+    def test_dashboard_warning_uses_the_real_streams(self) -> None:
+        from rich.console import Console
+
+        # FORCE_COLOR-style forcing must not hide redirected output.
+        forced = Console(file=io.StringIO(), width=140, force_terminal=True, color_system=None)
+        self.assertTrue(forced.is_terminal)
+        with (mock.patch.object(cli, "_run_dashboard", return_value=0),
+              mock.patch.object(cli, "check_for_update") as check):
+            self.assertEqual(cli._main(forced, ["--target", "a.exe", "--no-config"]), 0)
+        check.assert_not_called()
+        self.assertIn("Output is not a terminal", forced.file.getvalue())
+        self.assertIn("Use --headless for logs and CI", forced.file.getvalue())
+
+        # A real terminal whose input is redirected cannot press Q either.
+        terminal = Console(file=_TerminalBuffer(), width=140, force_terminal=True, color_system=None)
+        with (mock.patch.object(cli, "_run_dashboard", return_value=0),
+              mock.patch.object(cli, "check_for_update", return_value=False),
+              mock.patch.object(cli, "stdin_is_interactive", return_value=False)):
+            self.assertEqual(cli._main(terminal, ["--target", "a.exe", "--no-config"]), 0)
+        output = terminal.file.getvalue()
+        self.assertIn("Input is not interactive", output)
+        self.assertIn("ends when the monitored processes exit", output)
+
+        terminal = Console(file=_TerminalBuffer(), width=140, force_terminal=True, color_system=None)
+        with (mock.patch.object(cli, "_run_dashboard", return_value=0),
+              mock.patch.object(cli, "check_for_update", return_value=False),
+              mock.patch.object(cli, "stdin_is_interactive", return_value=True)):
+            self.assertEqual(cli._main(terminal, ["--target", "a.exe", "--no-config"]), 0)
+        self.assertNotIn("--headless", terminal.file.getvalue())
+
     @mock.patch("src.main.sys.platform", "win32")
     def test_picker_failures_suggest_target_and_cancel_exits_cleanly(self) -> None:
         failure = OSError("All Windows file picker implementations failed")
@@ -278,7 +315,7 @@ class DispatchTests(unittest.TestCase):
             mock.patch.object(cli, "choose_startup_action", return_value="open"),
             mock.patch.object(cli, "select_target_file", side_effect=failure),
         ):
-            self.assertEqual(cli._main(console, ["--no-config"]), 1)
+            self.assertEqual(cli._main(console, ["--no-config"]), 2)
         output = console.file.getvalue()
         self.assertIn("implementations failed: no display", output)
         self.assertIn("--target PATH", output)
@@ -350,7 +387,7 @@ class StartupDispatchTests(unittest.TestCase):
             (None, "Update check unavailable. Contribute at github.com/JunaidAhamed-7777/DrainTracer"),
         ):
             with self.subTest(status=status):
-                output = io.StringIO()
+                output = _TerminalBuffer()
                 console = Console(file=output, width=140, force_terminal=True, color_system=None)
                 with mock.patch.object(cli, "check_for_update", return_value=status) as check:
                     cli._display_title(console)
@@ -361,6 +398,26 @@ class StartupDispatchTests(unittest.TestCase):
                 self.assertEqual(lines[subtitle + 1], expected)
                 if status is not True:
                     self.assertNotIn("New Version Available!", output.getvalue())
+
+    def test_forced_terminal_styling_over_redirected_output_skips_the_update_check(self) -> None:
+        import os
+
+        from rich.console import Console
+
+        for variable in ("FORCE_COLOR", "TTY_COMPATIBLE"):
+            with self.subTest(variable=variable), mock.patch.dict(os.environ, {variable: "1"}):
+                console = Console(file=io.StringIO(), width=140, color_system=None)
+                if not console.is_terminal:
+                    # Older Rich releases ignore this variable entirely.
+                    continue
+                with mock.patch.object(cli, "check_for_update") as check:
+                    cli._display_title(console)
+                check.assert_not_called()
+                self.assertIn("Update check unavailable", console.file.getvalue())
+        console = Console(file=io.StringIO(), width=140, force_terminal=True, color_system=None)
+        with mock.patch.object(cli, "check_for_update") as check:
+            cli._display_title(console)
+        check.assert_not_called()
 
     def test_update_notice_colors_match_the_requested_labels(self) -> None:
         notice = cli._update_notice(True)
