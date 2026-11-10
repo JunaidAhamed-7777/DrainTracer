@@ -122,6 +122,28 @@ class NativeTransportTests(unittest.TestCase):
         with self.assertRaisesRegex(AgentTransportError, "another principal"):
             load_secret(self.directory)
 
+    def test_credential_creation_is_atomic_and_never_replaces_an_existing_secret(self) -> None:
+        from src import agent_transport
+
+        fresh = private_directory(self.directory.parent / "fresh")
+        kernel = _api()[0]
+        failing = mock.Mock(wraps=kernel)
+        failing.WriteFile.side_effect = OSError("simulated crash before the secret is written")
+        with (mock.patch.object(agent_transport, "_api", return_value=(failing, _api()[1])),
+              self.assertRaisesRegex(OSError, "simulated crash")):
+            load_secret(fresh, create=True)
+        # An interrupted write leaves no credential (not an empty one) and no temporary.
+        self.assertFalse((fresh / "credential").exists())
+        self.assertEqual(list(fresh.iterdir()), [])
+        created = load_secret(fresh, create=True)
+        self.assertEqual(len(created), 32)
+        verify_private_path(fresh / "credential")
+        self.assertEqual(list(fresh.glob(".credential-*.tmp")), [])
+        # A concurrent creator that already installed a credential is kept.
+        agent_transport._create_secret(kernel, fresh / "credential")
+        self.assertEqual(load_secret(fresh, create=True), created)
+        self.assertEqual(sorted(path.name for path in fresh.iterdir()), ["credential"])
+
     def test_inherited_data_files_accept_only_verified_owner_and_privileged_principals(self) -> None:
         inherited = self.directory / "database.sqlite3"
         inherited.write_bytes(b"private database placeholder")

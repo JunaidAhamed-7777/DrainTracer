@@ -28,8 +28,8 @@ from .agent_state import (
     _version as semantic_version,
 )
 from .agent_transport import (
+    CREDENTIAL_TEMPORARY_GLOB,
     current_user_sid,
-    load_secret,
     verify_private_data_path,
     verify_private_path,
     verify_trusted_path,
@@ -271,13 +271,18 @@ def remove_control_files(directory, *, apply=False):
                     or hashlib.sha256(journal.read_bytes()).hexdigest() != intent["journal_sha256"]):
                 raise AgentStateError("removal authority changed; journal preserved")
             if (directory / "credential").exists():
-                load_secret(directory)
+                # Ownership/ACL is still required, but an empty or malformed
+                # credential (e.g. from an interrupted older install) must not
+                # block its own removal.
+                verify_private_path(directory / "credential")
             with _stopped_lock(directory, create=apply):
                 _confirm_no_owned_survivors(directory, saved["sessions"])
                 if apply:
                     if intent is None:
                         intent = _write_removal_intent(directory, saved)
                     (directory / "credential").unlink(missing_ok=True)
+                    for temporary in directory.glob(CREDENTIAL_TEMPORARY_GLOB):
+                        temporary.unlink(missing_ok=True)
         elif intent is None:
             raise AgentStateError("current removal authority is missing; remaining files preserved")
         if apply:

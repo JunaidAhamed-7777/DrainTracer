@@ -207,6 +207,23 @@ class NativeOperationsTests(unittest.TestCase):
         self.assertTrue(all(path.exists() for path in evidence))
         self.assertIsNone(attached.poll())
 
+    def test_removal_proceeds_with_an_empty_or_malformed_credential(self):
+        initial, client = self.start_agent()
+        client.request("shutdown")
+        initial.communicate(timeout=20)
+        credential = self.state / "credential"
+        # Simulate a pre-fix crash between credential creation and write.
+        with credential.open("r+b") as handle:
+            handle.truncate(0)
+        stale = self.state / ".credential-0123456789abcdef.tmp"
+        stale.write_bytes(b"partial")
+        removed = remove_control_files(self.state, apply=True)
+        self.assertTrue(removed["applied"])
+        self.assertFalse(credential.exists())
+        self.assertFalse(stale.exists())
+        self.assertFalse((self.state / "agent-state.json").exists())
+        self.assertFalse((self.state / "agent-removal.json").exists())
+
     def test_startup_is_fenced_across_removal_unlock_and_crash_retry(self):
         for crash in (False, True):
             with self.subTest(removal_crash=crash):

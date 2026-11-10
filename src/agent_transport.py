@@ -68,6 +68,8 @@ def _api():
                       ctypes.POINTER(wintypes.DWORD), wintypes.LPVOID], wintypes.BOOL),
         "WriteFile": ([wintypes.HANDLE, wintypes.LPCVOID, wintypes.DWORD,
                        ctypes.POINTER(wintypes.DWORD), wintypes.LPVOID], wintypes.BOOL),
+        "FlushFileBuffers": ([wintypes.HANDLE], wintypes.BOOL),
+        "MoveFileExW": ([wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD], wintypes.BOOL),
     }
     for name, (arguments, result) in signatures.items():
         function = getattr(kernel, name)
@@ -307,26 +309,49 @@ def private_directory(path: str | Path) -> Path:
     return path
 
 
+CREDENTIAL_TEMPORARY_GLOB = ".credential-*.tmp"
+
+
+def _create_secret(kernel, path: Path) -> None:
+    """Install a complete, durable credential or leave none; never replace one.
+
+    The secret is written to a private temporary file in the same directory
+    (CREATE_NEW with the protected owner/SYSTEM descriptor), flushed to disk,
+    then renamed without MOVEFILE_REPLACE_EXISTING. A crash at any point
+    leaves either no credential or a complete one, never an empty file. A
+    concurrent creator that wins the rename is kept and this attempt discarded.
+    """
+    temporary = path.with_name(f".credential-{secrets.token_hex(8)}.tmp")
+    with _attributes() as attributes:
+        handle = kernel.CreateFileW(str(temporary), 0x40000000, 0, ctypes.byref(attributes), 1, 0x80, None)
+    if handle == _INVALID_HANDLE:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        try:
+            raw = secrets.token_hex(32).encode("ascii")
+            written = wintypes.DWORD()
+            _check(kernel.WriteFile(handle, raw, len(raw), ctypes.byref(written), None))
+            if written.value != len(raw):
+                raise AgentTransportError("could not save the complete agent credential")
+            _check(kernel.FlushFileBuffers(handle))
+        finally:
+            kernel.CloseHandle(handle)
+        verify_private_path(temporary)
+        # MOVEFILE_WRITE_THROUGH only; an existing credential is never replaced.
+        if not kernel.MoveFileExW(str(temporary), str(path), 0x8):
+            if ctypes.get_last_error() not in (80, 183):  # FILE_EXISTS / ALREADY_EXISTS
+                raise ctypes.WinError(ctypes.get_last_error())
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def load_secret(directory: Path, *, create: bool = False) -> bytes:
     """A 256-bit local credential, protected by owner/SYSTEM ACLs and never logged."""
     kernel, _security = _api()
     verify_private_path(directory)
     path = directory / "credential"
     if create and not path.exists():
-        with _attributes() as attributes:
-            handle = kernel.CreateFileW(str(path), 0x40000000, 0, ctypes.byref(attributes), 1, 0x80, None)
-        if handle == _INVALID_HANDLE:
-            if ctypes.get_last_error() != 80:
-                raise ctypes.WinError(ctypes.get_last_error())
-        else:
-            try:
-                raw = secrets.token_hex(32).encode("ascii")
-                written = wintypes.DWORD()
-                _check(kernel.WriteFile(handle, raw, len(raw), ctypes.byref(written), None))
-                if written.value != len(raw):
-                    raise AgentTransportError("could not save the complete agent credential")
-            finally:
-                kernel.CloseHandle(handle)
+        _create_secret(kernel, path)
     verify_private_path(path)
     with path.open("rb") as handle:
         raw = handle.read(65)
