@@ -767,6 +767,48 @@ def _configure_logging() -> logging.Handler | None:
     return handler
 
 
+class TerminationRequested(KeyboardInterrupt):
+    """A termination signal, handled like Ctrl+C so cleanup and export still run."""
+
+
+def _install_termination_handlers() -> list[tuple[int, Any]]:
+    """Turn SIGTERM, SIGHUP and Windows Ctrl+Break into an orderly interrupt.
+
+    Targets run in their own process group or session, so without this a CI
+    cancellation or a closed terminal would end DrainTracer and leave the
+    launched target running with no report. Ignored signals (``nohup``) stay
+    ignored. Returns the previous handlers for restoration.
+    """
+    import signal
+
+    def handle(signum: int, _frame: Any) -> None:
+        raise TerminationRequested(signum)
+
+    previous = []
+    for name in ("SIGTERM", "SIGHUP", "SIGBREAK"):
+        number = getattr(signal, name, None)
+        if number is None:
+            continue
+        try:
+            current = signal.getsignal(number)
+            if current in (signal.SIG_DFL, None):
+                signal.signal(number, handle)
+                previous.append((number, current))
+        except (OSError, ValueError, RuntimeError):
+            continue  # not the main thread, or not settable here
+    return previous
+
+
+def _restore_handlers(previous: list[tuple[int, Any]]) -> None:
+    import signal
+
+    for number, handler in previous:
+        try:
+            signal.signal(number, signal.SIG_DFL if handler is None else handler)
+        except (OSError, ValueError, RuntimeError):
+            pass
+
+
 def main(argv: list[str] | None = None) -> int:
     _make_output_safe()
     if __name__ != "__main__":
@@ -777,12 +819,15 @@ def main(argv: list[str] | None = None) -> int:
             return startup_result
     _configure_logging()
     console = Console()
+    previous = _install_termination_handlers()
     try:
         return _main(console, argv)
     except KeyboardInterrupt:
         # Startup cleans up after itself before re-raising; just exit quietly.
         console.print("[yellow]Interrupted.[/yellow]")
         return 130
+    finally:
+        _restore_handlers(previous)
 
 
 def _main(console: Console, argv: list[str] | None) -> int:
