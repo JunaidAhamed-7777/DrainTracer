@@ -430,10 +430,11 @@ class EvidenceViewTests(ViewRenderingMixin, unittest.TestCase):
         self.assertIn("signal (heuristic) from the 10s window", output)
         self.assertIn("qualified: HIGH (reported)", output)
         self.assertIn("filling: 12s/25.5s", output)  # the 30s window is still filling
-        # PID 1 exits inside the window, so the total dips once: 95% and 10%.
-        self.assertIn("Why: the 10s window qualified with slope +7.3 MB/s", output)
-        self.assertIn("95% of steps not falling (needs 65%)", output)
-        self.assertIn("10% below the running peak", output)
+        # PID 1 exits inside the window and the total dips once, but the slice
+        # medians absorb a single dip: 100% not falling and 0% below the peak.
+        self.assertIn("Why: the 10s window qualified with slope +7.4 MB/s", output)
+        self.assertIn("100% of steps not falling (needs 65%)", output)
+        self.assertIn("0% below the running peak", output)
         self.assertIn("Contributors (share of positive growth): worker.exe PID 2 +80.0 MB", output)
         self.assertIn("not a probability", output)
         self.assertNotIn("probability of", output)

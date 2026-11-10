@@ -44,7 +44,13 @@ data throughout. Do not copy them into bug reports.
 `--apply` requires a stopped agent and no unresolved known launched process.
 The validated journal is removed last so a partial file-removal failure can
 be retried without guessing about ownership. Missing/corrupt authority blocks
-removal when control files remain. It never sends process-control signals and never recursively deletes a state
+removal when control files remain. The credential is not removal authority: a
+credential with the protected private ACL is removed even when its content is
+empty or malformed, together with any leftover `.credential-*.tmp` file from an
+interrupted creation. A new credential is written to a private temporary file,
+flushed, and renamed into place with write-through and without replacing an
+existing credential, so a crash leaves either no credential or a complete one.
+It never sends process-control signals and never recursively deletes a state
 directory. Reports, checkpoints and unrelated files are preserved. Remove
 those later under an explicit local retention decision. Uninstall the package
 from its virtual environment with that environment's `python -m pip uninstall

@@ -103,9 +103,11 @@ snapshots and explicitly client-computed comparison receipts.
 
 The optional Windows agent accepts `--request-timeout SECONDS` before its
 subcommand (`0 < value <= 60`). Normal client commands default to 15 seconds;
-`diagnose` and `support` default to 1 second. This is the client wait for an
-agent response. `start --timeout SECONDS` instead sets the monitored session's
-duration. See the [local agent guide](docs/local-agent.md) for details.
+`diagnose` and `support` default to 1 second. This is one deadline for the
+whole client exchange. `start --timeout SECONDS` instead sets the monitored
+session's duration. Errors after a request was sent report `may_have_run` and
+its `request_id`; retry with `--request-id UUID` to replay instead of repeating
+the operation. See the [local agent guide](docs/local-agent.md) for details.
 The optional [sharing commands](docs/team-sharing.md) add an explicit foreground
 TLS listener, privacy preview, a bounded durable upload queue and role-scoped
 receipt retrieval. Starting ordinary monitoring never starts a listener or an
@@ -217,7 +219,7 @@ second. Below the version subtitle it shows **New Version Available!** in red
 with `pip install --upgrade draintracer` in green, or **No new updates.** with a
 blue contribution link. Offline or failed checks show **Update check
 unavailable.** instead. Headless runs, help, version-only commands, and
-redirected output do not contact PyPI.
+redirected output (even with `FORCE_COLOR` set) do not contact PyPI.
 
 The check sends the DrainTracer version in its user-agent, and PyPI sees the
 connecting IP address. Process reports are not uploaded. Read the
@@ -455,6 +457,12 @@ result, rather than forwarding the target's exit code:
   `--budget-handles 2000`, or `--budget-threads 64`: a peak exceeded it,
   even with no leak signal, because stable usage can still be excessive.
 - `130` — interrupted with Ctrl+C before a failing signal.
+
+The interactive dashboard never exits `1`: it returns `0` after a normal end,
+`2` when monitoring cannot start or DrainTracer crashes, and `130` after
+Ctrl+C. Without an interactive terminal (redirected output, `< /dev/null`,
+cron, or CI) it ends by itself when the monitored tree exits; prefer
+`--headless` there. See [usage](docs/usage.md#run-the-dashboard-unattended).
 
 Handle and thread budgets must be positive whole numbers, both in flags
 and settings files. Fractional private-byte sizes such as `1.5MB` and

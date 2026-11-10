@@ -180,13 +180,30 @@ class VirtualEnvironmentLaunchTests(unittest.TestCase):
             with self.subTest(platform=platform), patches[0], patches[1], patches[2], patches[3]:
                 self.assertEqual(python_launch(None), (executable, None))
 
-    def test_agent_launches_keep_their_inherited_environment(self) -> None:
+    def test_agent_launches_name_only_the_launcher_variable(self) -> None:
         from src.agent_jobs import AgentProcessManager
 
         patches = self._patched("win32", r"C:\proj\.venv\Scripts\python.exe", r"C:\Python\python.exe")
         with patches[0], patches[1], patches[2], patches[3]:
             manager = AgentProcessManager("C:/apps/tool.py")
-            self.assertEqual(manager._python_launch(), (r"C:\proj\.venv\Scripts\python.exe", None))
+            self.assertEqual(manager._python_launch(),
+                             (r"C:\Python\python.exe", {"__PYVENV_LAUNCHER__": r"C:\proj\.venv\Scripts\python.exe"}))
+        for platform, executable, base in (("linux", "/v/bin/python", "/usr/bin/python3"),
+                                           ("win32", r"C:\Python\python.exe", r"C:\Python\python.exe")):
+            patches = self._patched(platform, executable, base)
+            with self.subTest(platform=platform), patches[0], patches[1], patches[2], patches[3]:
+                self.assertEqual(AgentProcessManager("C:/apps/tool.py")._python_launch(), (executable, None))
+
+    def test_agent_launches_refuse_any_other_environment(self) -> None:
+        from src.agent_jobs import AgentProcessManager
+
+        with self.assertRaisesRegex(ProcessManagerError, "inherit their server environment"):
+            AgentProcessManager("C:/apps/tool.py", env={"KEEP": "1"})._python_launch()
+        manager = AgentProcessManager("C:/apps/tool.exe")
+        for environment in ({"KEEP": "1"}, {"__PYVENV_LAUNCHER__": "x", "KEEP": "1"}):
+            with self.subTest(environment=environment), \
+                    self.assertRaisesRegex(ProcessManagerError, "inherit their server environment"):
+                manager._spawn_process(["C:/apps/tool.exe"], {"env": environment})
 
     @unittest.skipUnless(sys.platform == "win32" and sys.prefix != sys.base_prefix,
                          "needs a Windows virtual environment")

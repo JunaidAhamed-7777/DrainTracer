@@ -103,6 +103,110 @@ class ProcessCleanupTests(unittest.TestCase):
             manager.detach()
         resume.assert_called_once_with(101)
 
+    def _pausing(self, manager: ProcessManager, refresh=None, suspend=None):
+        return (
+            mock.patch.object(ProcessManager, "is_running", new_callable=mock.PropertyMock,
+                              return_value=True),
+            mock.patch.object(manager, "_refresh_tracked_pids", side_effect=refresh),
+            mock.patch.object(manager, "_suspend_pid", side_effect=suspend),
+        )
+
+    def test_a_member_exiting_mid_pause_does_not_abort_the_pause(self) -> None:
+        manager = self._manager()
+        outcomes = [process_runner.SuspendOutcome.SUSPENDED, process_runner.SuspendOutcome.GONE]
+        running, refresh, suspend = self._pausing(manager, suspend=outcomes)
+        with running, refresh, suspend as suspended, \
+                mock.patch.object(manager, "_resume_pid") as resume:
+            self.assertTrue(manager.pause())
+        self.assertEqual([call.args for call in suspended.call_args_list], [(101,), (102,)])
+        resume.assert_not_called()
+        self.assertTrue(manager.is_paused)
+        # Nothing is owed to the process that exited.
+        self.assertEqual(manager.pending_resume_pids, frozenset({101}))
+
+    def test_a_child_created_during_the_pause_is_suspended_too(self) -> None:
+        manager = self._manager()
+        refreshes = 0
+
+        def refresh():
+            nonlocal refreshes
+            refreshes += 1
+            if refreshes == 2:
+                # 102 finished creating 103 before its suspension took hold.
+                manager._tracked_pids.add(103)
+                manager._depths[103] = 2
+
+        running, refresh_patch, suspend = self._pausing(
+            manager, refresh=refresh, suspend=lambda pid: process_runner.SuspendOutcome.SUSPENDED)
+        with running, refresh_patch, suspend as suspended:
+            self.assertTrue(manager.pause())
+        self.assertEqual([call.args for call in suspended.call_args_list], [(101,), (102,), (103,)])
+        self.assertEqual(manager.pending_resume_pids, frozenset({101, 102, 103}))
+        self.assertEqual(refreshes, 3)
+
+    def test_a_tree_that_never_settles_is_resumed_and_reported(self) -> None:
+        manager = self._manager()
+        new_pids = iter(range(200, 300))
+
+        def refresh():
+            pid = next(new_pids)
+            manager._tracked_pids.add(pid)
+            manager._depths[pid] = 1
+
+        running, refresh_patch, suspend = self._pausing(
+            manager, refresh=refresh, suspend=lambda pid: process_runner.SuspendOutcome.SUSPENDED)
+        with running, refresh_patch, suspend, \
+                mock.patch.object(manager, "_resume_pid", return_value=True) as resume:
+            self.assertFalse(manager.pause())
+        self.assertEqual(len(resume.call_args_list), 2 + ProcessManager.PAUSE_ROUNDS)
+        self.assertFalse(manager.is_paused)
+        self.assertEqual(manager.pending_resume_pids, frozenset())
+        self.assertIn("kept changing", manager.last_error)
+
+    def test_a_tree_that_exits_entirely_mid_pause_is_not_paused(self) -> None:
+        manager = self._manager()
+        refreshes = 0
+
+        def refresh():
+            nonlocal refreshes
+            refreshes += 1
+            if refreshes > 1:
+                manager._tracked_pids.clear()
+
+        running, refresh_patch, suspend = self._pausing(
+            manager, refresh=refresh, suspend=lambda pid: process_runner.SuspendOutcome.GONE)
+        with running, refresh_patch, suspend:
+            self.assertFalse(manager.pause())
+        self.assertFalse(manager.is_paused)
+        self.assertEqual(manager.pending_resume_pids, frozenset())
+
+    def test_suspend_distinguishes_an_exited_process_from_a_refusal(self) -> None:
+        outcome = process_runner.SuspendOutcome
+        cases = (
+            ("exits before opening", psutil.NoSuchProcess(102), None, outcome.GONE),
+            ("unreadable process", psutil.AccessDenied(102), None, outcome.REFUSED),
+            ("exits before suspending", None, psutil.NoSuchProcess(102), outcome.GONE),
+            ("suspension denied", None, psutil.AccessDenied(102), outcome.REFUSED),
+            ("reused PID", None, None, outcome.GONE),
+            ("suspended", None, None, outcome.SUSPENDED),
+        )
+        for name, open_error, suspend_error, expected in cases:
+            with self.subTest(name):
+                manager = self._manager()
+                manager._root_created = 100.0
+                manager._identities = {101: 100.0, 102: 100.0}
+                proc = mock.Mock(pid=102)
+                proc.is_running.return_value = True
+                proc.status.return_value = psutil.STATUS_RUNNING
+                proc.create_time.return_value = 101.0 if name == "reused PID" else 100.0
+                proc.suspend.side_effect = suspend_error
+                with (
+                    mock.patch.object(process_runner.psutil, "Process",
+                                      side_effect=open_error, return_value=proc),
+                    mock.patch.object(process_runner, "_windows_process_exited", return_value=False),
+                ):
+                    self.assertIs(manager._suspend_pid(102), expected)
+
     def test_exited_process_does_not_make_resume_fail(self) -> None:
         manager = self._manager()
         manager._suspended_pids = {101}

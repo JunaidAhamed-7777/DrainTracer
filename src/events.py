@@ -198,6 +198,9 @@ class WindowVerdict(str, Enum):
     NO_UPWARD_TREND = "no_upward_trend"
     NOT_MONOTONIC = "not_monotonic"
     TOO_MANY_DROPS = "too_many_drops"
+    # Nearly all growth happened in one part of the window: a step such as a
+    # one-time allocation, or a ramp that has already stopped.
+    CONCENTRATED = "concentrated"
     BELOW_THRESHOLDS = "below_thresholds"
     QUALIFIED = "qualified"
 
@@ -257,6 +260,10 @@ class DetectionCriteria:
     min_monotonic_ratio: float
     max_drop_ratio: float
     severity_scores: tuple[tuple[LeakSeverity, float], ...]
+    # Trend checks run on this many per-window time-bucket medians.
+    buckets: int = 10
+    # Share of a window's growth required in both its first two-thirds and its last third.
+    min_part_share: float = 0.15
 
 
 @dataclass(frozen=True)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import hmac
 import json
@@ -132,6 +133,21 @@ def _validate_checkpoint(report: dict[str, Any], *, app_version: str, session_id
     return report
 
 
+# How a non-blocking lock attempt reports another live holder: EACCES or
+# EDEADLOCK from msvcrt.locking, EWOULDBLOCK/EAGAIN from flock. None of them
+# is a permission problem that elevation would fix.
+_LOCK_CONTENTION = frozenset(
+    code for code in (
+        errno.EACCES, errno.EAGAIN, errno.EWOULDBLOCK, getattr(errno, "EDEADLOCK", None),
+        getattr(errno, "EDEADLK", None),
+    ) if code is not None
+)
+
+
+class LockHeldError(OSError):
+    """Another live process holds the lock; still an ``OSError`` for older callers."""
+
+
 def _lock(path: Path) -> BinaryIO:
     if path.is_symlink():
         raise CheckpointError("checkpoint lock cannot be a symbolic link")
@@ -144,14 +160,19 @@ def _lock(path: Path) -> BinaryIO:
         if not info.st_size:
             handle.write(b"\0")
         handle.seek(0)
-        if os.name == "nt":
-            import msvcrt
+        try:
+            if os.name == "nt":
+                import msvcrt
 
-            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-        else:
-            import fcntl
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
 
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            if exc.errno in _LOCK_CONTENTION:
+                raise LockHeldError(exc.errno, "the lock is held by another process", str(path)) from exc
+            raise
         return handle
     except BaseException:
         handle.close()
@@ -169,8 +190,14 @@ class CheckpointStore:
         self.writer_identity = {"pid": os.getpid(), "create_time": psutil.Process().create_time()}
         self._handle: BinaryIO | None = None
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        lock_path = self.path.with_name(self.path.name + ".lock")
         try:
-            self._handle = _lock(self.path.with_name(self.path.name + ".lock"))
+            try:
+                self._handle = _lock(lock_path)
+            except LockHeldError:
+                # Not a permission problem: say so, without an OSError cause
+                # that would earn a "run as administrator" hint.
+                raise CheckpointError("checkpoint is in use by another session") from None
             if self.path.exists() or self.path.is_symlink():
                 raise CheckpointError("checkpoint already exists; recover it or choose a new path")
         except BaseException:

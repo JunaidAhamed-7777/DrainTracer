@@ -14,7 +14,7 @@ time, and headers. Target data is not included. The startup wait is bounded,
 but a background request can outlast that wait.
 
 Headless monitoring, `--help`, `--version`, report comparisons, and redirected
-startup output skip the check. There is no dedicated interactive opt-out
+startup output skip the check, even with `FORCE_COLOR` or `TTY_COMPATIBLE` set. There is no dedicated interactive opt-out
 flag. For a no-network workflow, install dependencies in advance and use a
 mode that skips the check, or enforce your own network restrictions. Offline
 interactive monitoring continues if the request cannot complete. A target
@@ -123,9 +123,14 @@ names, paths, tokens in unexpected formats, configuration profile names,
 events, and logs are not comprehensively sanitized. Values omitted as
 dedicated fields can still appear inside paths or text.
 
-There is no whole-report privacy profile, automatic identifier replacement,
-or share preview in the current software. That work remains tracked in
-[issue #41](https://github.com/JunaidAhamed-7777/DrainTracer/issues/41).
+Ordinary exports are not transformed. Use the explicit `share` or `minimal`
+profile described in [previewable privacy exports](#previewable-privacy-exports)
+for whole-report identifier replacement and a local preview; the result is
+still not a promise of anonymity.
+
+Opt-in workload `capture_logs` files are separate from reports and receive
+only line-based pattern redaction. Review them independently; see the
+[workload guide](workloads.md#optional-output-files).
 
 ## Before sharing evidence
 

@@ -48,6 +48,34 @@ def _json(value) -> bytes:
     return json.dumps(value, sort_keys=True, ensure_ascii=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
 
 
+# Audit eviction order under count/byte pressure.  Classes a viewer can generate
+# without limit (successful reads, then denied attempts) are evicted before
+# operator writes, and those before administrative/security events, so a
+# low-privilege flood cannot push the security trail out of the bounded log.
+# Unknown actions default to the most protected class.
+_AUDIT_READS = frozenset({"report_read", "record_read"})
+# Operator writes; an admin-only baseline approval record stays protected.
+_AUDIT_OPERATIONS = frozenset({"report_ingest", "record_create"})
+
+
+def _audit_tier(action, result, details) -> int:
+    if result == "denied":
+        return 1
+    if action in _AUDIT_READS:
+        return 0
+    if action in _AUDIT_OPERATIONS and not (action == "record_create" and _approval_details(details)):
+        return 2
+    return 3
+
+
+def _approval_details(details) -> bool:
+    try:
+        value = json.loads(details)
+    except (TypeError, ValueError):
+        return False
+    return isinstance(value, dict) and value.get("kind") == "baseline_approval"
+
+
 def _denied() -> TeamError:
     return TeamError("unauthorized", "Credential is not valid for this project")
 
@@ -186,9 +214,14 @@ class TeamStore(_Governance, _Backups, _Evidence, _Database):
                                      "stored_bytes!=length(CAST(details AS BLOB))+length(CAST(action AS BLOB))+length(CAST(result AS BLOB))+128) LIMIT 1", (project_id,)).fetchone()
         if invalid:
             raise TeamError("storage", "Audit accounting does not match retained metadata")
-        retained = connection.execute("SELECT sequence,stored_bytes FROM audit_events WHERE project_id=? ORDER BY sequence",
-                                      (project_id,)).fetchall()
-        count, total = len(retained), sum(item["stored_bytes"] for item in retained)
+        count, total = connection.execute("SELECT count(*),coalesce(sum(stored_bytes),0) FROM audit_events WHERE project_id=?",
+                                          (project_id,)).fetchone()
+        retained = []
+        if count > self.limits.max_audit_events or total > self.limits.max_audit_bytes:
+            retained = connection.execute("SELECT sequence,stored_bytes,action,result,details FROM audit_events WHERE project_id=?",
+                                          (project_id,)).fetchall()
+        # Evict the least security-relevant class first, oldest first within a class.
+        retained.sort(key=lambda event: (_audit_tier(event["action"], event["result"], event["details"]), event["sequence"]))
         for item in retained:
             if count <= self.limits.max_audit_events and total <= self.limits.max_audit_bytes:
                 break

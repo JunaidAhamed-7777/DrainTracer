@@ -44,11 +44,13 @@ from .keys import (
     UP,
     KeyReader,
     normalize_key,
+    stdin_is_interactive,
+    stream_is_tty,
 )
 from .report import DEFAULT_REPORT_DIR
 from .session import MonitorSession
 from .theme import PALETTE
-from .units import format_duration
+from .units import format_duration, safe_label
 from .view_comparison import ComparisonViewMixin
 from .view_evidence import EvidenceViewMixin
 from .view_monitor import MonitorViewMixin
@@ -141,8 +143,15 @@ class DashboardApp(
     # ------------------------------------------------------------------
 
     def run(self) -> int:
-        """Start monitoring and run the interactive dashboard until quit."""
+        """Start monitoring and run the dashboard until quit.
+
+        Returns 0 after a normal quit, 2 when monitoring cannot start, and
+        130 after Ctrl+C or a termination signal. Without an interactive
+        terminal nobody can press Q, so the dashboard also ends once the
+        monitored process tree has exited.
+        """
         palette = self.palette
+        unattended = not self.interactive()
         try:
             with self.console.status(
                 f"[bold {palette.accent}]Attaching monitor[/] "
@@ -168,8 +177,9 @@ class DashboardApp(
                     padding=(1, 2),
                 )
             )
-            return 1
+            return 2
 
+        interrupted = False
         try:
             with self._keys, Live(
                 self._frame(),
@@ -189,6 +199,12 @@ class DashboardApp(
                     key = self._read_key()
                     if key in ("\x04", "\x1a") or self._keys.eof:
                         self._quit_requested = True
+                    if unattended and not self._quit_requested and self.tree_finished:
+                        self._quit_requested = True
+                        self._append_event(
+                            "Process tree finished; ending because no one can press Q here",
+                            "info",
+                        )
                     if key:
                         self._guarded(f"Key {key!r}", self._handle_key, key)
                         changed = True
@@ -205,6 +221,7 @@ class DashboardApp(
                         last_render, last_size = now, size
                     time.sleep(self.FRAME_SECONDS)
         except KeyboardInterrupt:
+            interrupted = True
             self._append_event("Dashboard interrupted by user", "warn")
         finally:
             self.shutdown()
@@ -217,7 +234,15 @@ class DashboardApp(
             self.console.print(Text(f"Session summary unavailable: {exc}"))
             if self._last_report is not None:
                 self.console.print(Text(f"Report: {self._last_report}"))
-        return 0
+        return 130 if interrupted else 0
+
+    def interactive(self) -> bool:
+        """Whether someone can see the dashboard and press its keys.
+
+        Checks the real streams: ``FORCE_COLOR`` can make redirected output
+        look like a terminal to Rich.
+        """
+        return stream_is_tty(self.console.file) and stdin_is_interactive()
 
     def _refresh(self, live: Live) -> None:
         live.update(self._frame(), refresh=True)
@@ -728,8 +753,8 @@ class DashboardApp(
             churn = f"+{counts.started}/-{counts.exited}"
             processes += f" ({churn} started/exited)" if roomy else f" {churn}"
         interval = snapshot.sample_interval_ms if snapshot else self.detector.sample_interval_ms
-        target = Path(self.target_path).name
-        root_name = self._process_name(snapshot)
+        target = safe_label(Path(self.target_path).name)
+        root_name = safe_label(self._process_name(snapshot))
         if roomy and root_name.lower() != target.lower():
             target = f"{target} via {root_name}"
         pairs = [
@@ -743,7 +768,10 @@ class DashboardApp(
             pairs.append(("ENDS IN", self._format_duration(remaining)))
         pairs.append(("SAMPLES", f"{self._sample_count:,} @ {interval} ms"))
         info = self._label_values(*pairs)
-        path = Text.assemble((" PATH ", f"bold {palette.muted}"), (self.target_path, palette.muted))
+        path = Text.assemble(
+            (" PATH ", f"bold {palette.muted}"),
+            (safe_label(self.target_path, limit=None), palette.muted),
+        )
         path.no_wrap = True
         path.overflow = "ellipsis"
         return Group(bar, info, path)
@@ -1101,7 +1129,7 @@ class DashboardApp(
             name = Text.assemble(
                 (connector, palette.border),
                 (f"{marker} ", palette.accent if is_root else palette.muted),
-                (proc.name, "bold" if is_root else ""),
+                (safe_label(proc.name), "bold" if is_root else ""),
             )
             if proc.access_denied:
                 cells: list[RenderableType] = [
@@ -1527,7 +1555,8 @@ class DashboardApp(
         grid.add_row(
             "Target",
             Text(
-                f"{Path(self.target_path).name} {glyphs.sep} PID {self.root_pid or '-'} "
+                f"{safe_label(Path(self.target_path).name)} {glyphs.sep} "
+                f"PID {self.root_pid or '-'} "
                 f"{glyphs.sep} {self.outcome_text()}"
             ),
         )

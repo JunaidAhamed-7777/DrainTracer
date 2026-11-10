@@ -131,7 +131,7 @@ class PosixInputTests(unittest.TestCase):
             time.sleep(0.01)
         self.fail(message)
 
-    def _run_controlled_dashboard(self, app, controller) -> None:
+    def _run_controlled_dashboard(self, app, controller, expected: int = 0) -> None:
         errors = []
 
         def control() -> None:
@@ -150,7 +150,7 @@ class PosixInputTests(unittest.TestCase):
         self.assertFalse(worker.is_alive(), "terminal controller failed to finish")
         if errors:
             raise errors[0]
-        self.assertEqual(result, 0)
+        self.assertEqual(result, expected)
         self.assertFalse(app.timed_out, "dashboard needed the timeout instead of responding to input")
         self.assertFalse(app.manager.has_tracked_processes)
         self.assertFalse(app.detector.is_running)
@@ -199,7 +199,9 @@ class PosixInputTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             app = self._dashboard(directory)
-            self._run_controlled_dashboard(app, lambda: os.kill(os.getpid(), signal.SIGINT))
+            # Ctrl+C exits 130 from the dashboard too, after cleanup.
+            self._run_controlled_dashboard(app, lambda: os.kill(os.getpid(), signal.SIGINT),
+                                           expected=130)
             self.assertTrue(any("interrupted by user" in event[1] for event in app._events))
 
 
