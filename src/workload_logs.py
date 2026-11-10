@@ -57,6 +57,7 @@ class BoundedLog:
                                     key=len, reverse=True))
         self.written = 0
         self.truncated = False
+        self._full = False
         self.omitted_lines = 0
         self.error = False
         self._stop = threading.Event()
@@ -77,10 +78,13 @@ class BoundedLog:
         for secret in self.secrets:
             text = text.replace(secret, "<redacted>")
         data = redact_text(text).encode("utf-8")
-        if self.written + len(data) > self.limit:
+        if self._full or self.written + len(data) > self.limit:
+            # Only the byte bound stops capture; an omitted overlong line
+            # (also reported through ``truncated``) must not end it.
+            self._full = True
             self.truncated = True
             return
-        if not self.truncated and self._file is not None:
+        if self._file is not None:
             self._file.write(data)
             self.written += len(data)
 
