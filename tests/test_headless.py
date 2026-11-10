@@ -358,6 +358,37 @@ class StepSummaryTests(unittest.TestCase):
             markdown = summary_file.read_text(encoding="utf-8")
         self.assertIn("**bad?name.exe**", markdown)
 
+    def test_report_paths_with_backticks_render_literally(self) -> None:
+        """Issue #137: backticks from a target name must not end the code span early."""
+        import os
+
+        with tempfile.TemporaryDirectory() as temp:
+            summary_file = Path(temp) / "summary.md"
+            runner = HeadlessRunner("C:/targets/a`b``c.exe", console=make_console())
+            runner._github_actions = True
+            runner._accept_snapshot(make_snapshot())
+            report = Path(temp) / "a`b``c_run" / "leak_report_x.json"
+            runner._last_report = report
+            with mock.patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": str(summary_file)}):
+                runner._print_summary()
+            markdown = summary_file.read_text(encoding="utf-8")
+        line = next(line for line in markdown.splitlines() if line.startswith("Report: "))
+        self.assertEqual(line, f"Report: ```{report}``` (HTML alongside)")
+
+    def test_code_spans_fence_any_backtick_run(self) -> None:
+        from src.headless import _code_span
+
+        cases = {
+            "plain": "`plain`",
+            "a`b": "``a`b``",
+            "a``b```c": "````a``b```c````",
+            "`edge`": "`` `edge` ``",
+            " lead": "`  lead `",
+        }
+        for value, expected in cases.items():
+            with self.subTest(value=value):
+                self.assertEqual(_code_span(value), expected)
+
     def test_no_step_summary_outside_github_actions(self) -> None:
         import os
 

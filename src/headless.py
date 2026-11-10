@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import math
 import os
+import re
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -634,7 +635,9 @@ class HeadlessRunner(MonitorSession):
         lines.append(_markdown(reason[:1].upper() + reason[1:]) + ".")
         if self._last_report is not None:
             lines.append("")
-            lines.append(f"Report: `{self._last_report}` (HTML alongside)")
+            # A target name can put backticks in the report path (#137).
+            report = _code_span(safe_label(str(self._last_report), limit=None))
+            lines.append(f"Report: {report} (HTML alongside)")
         try:
             # Windows names may hold unpaired surrogates that UTF-8 cannot.
             with open(destination, "a", encoding="utf-8", errors="replace") as handle:
@@ -675,6 +678,19 @@ def _markdown(value: str) -> str:
     for character in "\\`*_[]<>|":
         value = value.replace(character, "\\" + character)
     return value.replace("\r", " ").replace("\n", " ")
+
+
+def _code_span(value: str) -> str:
+    """Render ``value`` as a literal CommonMark code span, backticks included.
+
+    The fence is one backtick longer than the longest backtick run inside,
+    and a padding space keeps a leading or trailing backtick (or space) from
+    merging with the fence or being stripped.
+    """
+    longest = max((len(run) for run in re.findall("`+", value)), default=0)
+    fence = "`" * (longest + 1)
+    pad = " " if value[:1] in ("`", " ") or value[-1:] in ("`", " ") else ""
+    return f"{fence}{pad}{value}{pad}{fence}"
 
 
 def _escape_data(value: str) -> str:
