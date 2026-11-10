@@ -60,6 +60,12 @@ MIN_WINDOW_COVERAGE = 0.85
 # steps not falling, and at most this share of samples below the running peak.
 MIN_MONOTONIC_RATIO = 0.65
 MAX_DROP_RATIO = 0.15
+# Trend checks compare medians of this many equal time slices of the window,
+# so one noisy, spiking or GC-trimmed sample cannot decide a verdict.
+WINDOW_BUCKETS = 10
+# Growth must appear both before and after two-thirds of the window. A single
+# step, a one-off allocation or a finished startup ramp puts it all in one part.
+MIN_PART_SHARE = 0.15
 # Minimum heuristic score per severity tier, strongest first.
 SEVERITY_SCORES: tuple[tuple[LeakSeverity, float], ...] = (
     (LeakSeverity.CRITICAL, 4.5),
@@ -73,6 +79,8 @@ DETECTION_CRITERIA = DetectionCriteria(
     min_monotonic_ratio=MIN_MONOTONIC_RATIO,
     max_drop_ratio=MAX_DROP_RATIO,
     severity_scores=SEVERITY_SCORES,
+    buckets=WINDOW_BUCKETS,
+    min_part_share=MIN_PART_SHARE,
 )
 _ALL_METRICS = tuple(METRIC_KEYS)
 # Back off handle classification so it stays near 5% of one core.
@@ -1078,18 +1086,17 @@ class LeakDetector:
                 evaluations.append(self._unjudged_window(series, timestamp, window))
                 continue
 
-            values = [point.value for point in points]
-            times = [point.timestamp for point in points]
+            times, values = _bucket_medians(points, timestamp - window, window)
             slope = self._least_squares_slope(times, values)
             monotonic_ratio = self._monotonic_increase_ratio(values)
             drop_ratio = self._drop_ratio(values)
             baseline = values[0]
-            delta = current_value - baseline
+            delta = values[-1] - baseline
             judged = WindowEvaluation(
                 window_seconds=window,
                 verdict=WindowVerdict.QUALIFIED,
                 points=len(points),
-                span_seconds=times[-1] - times[0],
+                span_seconds=points[-1].timestamp - points[0].timestamp,
                 baseline_value=baseline,
                 current_value=current_value,
                 slope_per_second=slope,
@@ -1105,6 +1112,9 @@ class LeakDetector:
                 continue
             if drop_ratio > MAX_DROP_RATIO:
                 evaluations.append(replace(judged, verdict=WindowVerdict.TOO_MANY_DROPS))
+                continue
+            if _concentrated(values):
+                evaluations.append(replace(judged, verdict=WindowVerdict.CONCENTRATED))
                 continue
 
             score = self._severity_score(
@@ -1142,7 +1152,7 @@ class LeakDetector:
 
             if best_alert is None or _SEVERITY_RANK[candidate.severity] > _SEVERITY_RANK[best_alert.severity]:
                 best_alert = candidate
-                best_since = times[0]
+                best_since = points[0].timestamp
 
         if best_alert is not None:
             best_alert = self._attribute(best_alert, best_since, timestamp)
@@ -1274,6 +1284,41 @@ class LeakDetector:
         if not alerts:
             return LeakSeverity.NONE
         return max(alerts, key=lambda alert: _SEVERITY_RANK[alert.severity]).severity
+
+
+def _bucket_medians(
+    points: list[_SamplePoint], start: float, window: float
+) -> tuple[list[float], list[float]]:
+    """Midpoint times and low medians of equal time slices of one window.
+
+    Windows with few samples keep one slice per sample, so the rule degrades
+    to the raw points rather than refusing to judge.
+    """
+    count = max(1, min(WINDOW_BUCKETS, len(points)))
+    width = window / count
+    grouped: dict[int, list[_SamplePoint]] = {}
+    for point in points:
+        index = min(count - 1, max(0, int((point.timestamp - start) / width)))
+        grouped.setdefault(index, []).append(point)
+    if len(grouped) < MIN_WINDOW_POINTS:
+        return [point.timestamp for point in points], [point.value for point in points]
+    # Each slice is represented by its low-median sample, at that sample's own
+    # time, so a steady ramp keeps its exact slope.
+    chosen = []
+    for index in sorted(grouped):
+        members = sorted(grouped[index], key=lambda point: (point.value, point.timestamp))
+        chosen.append(members[(len(members) - 1) // 2])
+    return [point.timestamp for point in chosen], [point.value for point in chosen]
+
+
+def _concentrated(values: list[float]) -> bool:
+    """Whether a window's growth sits in only its early or only its late part."""
+    total = values[-1] - values[0]
+    if total <= 0:
+        return False
+    split = values[(2 * len(values)) // 3]
+    early, late = (split - values[0]) / total, (values[-1] - split) / total
+    return early < MIN_PART_SHARE or late < MIN_PART_SHARE
 
 
 def _format_quantity(resource: LeakResource, value: float, precise: bool = False) -> str:
