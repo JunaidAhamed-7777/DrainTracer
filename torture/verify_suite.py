@@ -107,8 +107,10 @@ CASES = (
         name="startup-spike",
         target=TORTURE_ROOT / "startup_spike.py",
         args=("--duration", "30", "--startup-seconds", "2.5", "--startup-mb", "96"),
-        # A finished ramp sits in one part of every window: concentrated, not sustained.
-        expect_no_alerts=True,
+        # No expectation either way: whether the first judged window still sees
+        # part of a 2.5 s ramp depends on how slowly the host starts Python.
+        # The concentrated-growth rule is covered deterministically by
+        # tests/test_leak_detector.py; startup-spike-warmup is the guarded check.
     ),
     TortureCase(
         name="startup-spike-warmup",
