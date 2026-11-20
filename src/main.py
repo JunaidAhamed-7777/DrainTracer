@@ -317,6 +317,7 @@ try:
     from .report import DEFAULT_REPORT_DIR, report_directory, write_json_report
     from .resources import resource_path
     from .startup import choose_startup_action
+    from .system_overview import DEFAULT_PROCESS_LIMIT
     from .theme import PALETTE, blend, plain_console
     from .units import parse_count, parse_duration
     from .updates import check_for_update
@@ -493,7 +494,7 @@ def build_parser() -> argparse.ArgumentParser:
     source.add_argument(
         "--target",
         metavar="PATH",
-        help="Target executable/script. Without --target or --pid, choose how to start.",
+        help="Target executable/script. Without --target or --pid, open the system overview.",
     )
     source.add_argument(
         "--pid",
@@ -503,6 +504,13 @@ def build_parser() -> argparse.ArgumentParser:
             "Attach to an already running process instead of launching one. "
             "Quitting detaches and leaves it running."
         ),
+    )
+    target.add_argument(
+        "--top-processes",
+        type=int,
+        default=DEFAULT_PROCESS_LIMIT,
+        metavar="N",
+        help=f"Show up to N processes per system overview ranking (default: {DEFAULT_PROCESS_LIMIT}).",
     )
 
     monitoring = parser.add_argument_group("monitoring")
@@ -904,6 +912,8 @@ def _main(console: Console, argv: list[str] | None) -> int:
         parser.error("--target needs a file path; the value is empty")
     if args.headless and args.target is None and args.pid is None:
         parser.error("--headless needs --target or --pid; startup selection is interactive")
+    if args.top_processes < 1:
+        parser.error("--top-processes needs a positive whole count")
     if args.profile is not None and args.no_config:
         parser.error("--profile needs a settings file; drop --no-config")
     if args.window and len(set(args.window)) > MAX_WINDOWS:
@@ -932,7 +942,7 @@ def _main(console: Console, argv: list[str] | None) -> int:
     attach_pid = args.pid
     attach_create_time = None
     if target_path is None and attach_pid is None:
-        action = choose_startup_action(console)
+        action = choose_startup_action(console, limit=args.top_processes)
         if action is None:
             console.print("[yellow]Selection canceled. Nothing to monitor.[/yellow]")
             return 0

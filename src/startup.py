@@ -1,37 +1,50 @@
-"""Keyboard-driven startup choices for launching or attaching to a target."""
+"""Live system overview and startup choices for launching or attaching."""
 
 from __future__ import annotations
 
+import time
+from collections import deque
+from collections.abc import Callable
+from threading import Event, Thread
 from typing import Literal
 
 from rich import box
 from rich.console import Console, Group
 from rich.live import Live
 from rich.panel import Panel
+from rich.table import Table
 from rich.text import Text
 
-from .picker_input import PickerKeyboard, supports_picker_keyboard
+from .keys import KeyReader, stdin_is_interactive, stream_is_tty
+from .system_overview import (
+    DEFAULT_PROCESS_LIMIT,
+    RankedProcess,
+    SystemOverview,
+    SystemOverviewSampler,
+)
 from .theme import PALETTE
+from .units import format_bytes, safe_label
+
+StartupAction = Literal["open", "hook"]
+_CPU_WARMUP = 0.25
+_SAMPLE_INTERVAL = 1.0
+_INPUT_INTERVAL = 0.05
 
 _ACTIONS = (
-    ("open", "Open a program", "Start an executable or script."),
-    ("hook", "Hook to a running program", "Browse and search running programs."),
+    "Open a program",
+    "Hook to a running program",
 )
 
 
-def _startup_view(selected: int | None = None) -> Group:
-    """Keep the navigation hint below and outside the choices panel."""
-    choices = Text()
-    for index, (_action, label, description) in enumerate(_ACTIONS):
+def _actions(selected: int | None) -> Group:
+    choices = Text(no_wrap=True, overflow="ellipsis")
+    for index, label in enumerate(_ACTIONS):
         if index:
-            choices.append("\n\n")
+            choices.append("\n")
         marker = str(index + 1) if selected is None else ">" if index == selected else " "
-        style = f"bold {PALETTE.accent} on {PALETTE.surface}" if index == selected else "bold"
+        style = f"bold {PALETTE.ink} on {PALETTE.accent}" if index == selected else "bold"
         choices.append(f"{marker}  {label}", style=style)
-        choices.append(f"\n   {description}", style=PALETTE.muted)
-    hint = "Up/Down: move | Space/Enter: select | Q/Esc: quit"
-    if selected is None:
-        hint = "Enter 1 or 2 to select | Q to quit"
+    hint = "Enter 1 or 2 to select | Q to quit" if selected is None else "Up/Down | Enter/Space | Q/Esc"
     return Group(
         Panel(
             choices,
@@ -39,33 +52,154 @@ def _startup_view(selected: int | None = None) -> Group:
             title_align="left",
             border_style=PALETTE.border,
             box=box.ROUNDED,
-            padding=(1, 2),
-            expand=False,
+            padding=(0, 1),
         ),
-        Text(hint, style=PALETTE.muted),
+        Text(hint, style=PALETTE.muted, no_wrap=True, overflow="ellipsis"),
     )
 
 
-def choose_startup_action(console: Console) -> Literal["open", "hook"] | None:
-    """Ask how to select a target, returning ``None`` on quit or end of input."""
-    if supports_picker_keyboard(console):
-        keyboard = PickerKeyboard()
-        selected = 0
-        with keyboard, Live(_startup_view(selected), console=console, auto_refresh=False) as live:
-            while True:
-                try:
-                    key = keyboard.read()
-                except EOFError:
-                    return None
-                if key.kind == "escape" or (key.kind == "text" and key.text.lower() == "q"):
-                    return None
-                if key.kind == "enter" or (key.kind == "text" and key.text == " "):
-                    return "open" if selected == 0 else "hook"
-                if key.kind in ("up", "down"):
-                    selected = min(max(0, selected + (1 if key.kind == "down" else -1)), 1)
-                    live.update(_startup_view(selected), refresh=True)
+def _host_resources(overview: SystemOverview | None, wide: bool) -> Panel:
+    cpu = "Sampling..." if overview is None else "Unavailable"
+    memory = cpu
+    if overview is not None:
+        if overview.cpu_percent is not None:
+            cpu = f"{overview.cpu_percent:.1f}%"
+        used, total = overview.used_memory_bytes, overview.total_memory_bytes
+        if used is not None and total is not None and total > 0:
+            memory = f"{format_bytes(used)} / {format_bytes(total)} ({100 * used / total:.1f}%)"
+    values = Text.assemble(
+        ("CPU  ", f"bold {PALETTE.cyan}"), cpu,
+        "     " if wide else "\n",
+        ("RAM  ", f"bold {PALETTE.accent_alt}"), memory,
+        no_wrap=True, overflow="ellipsis",
+    )
+    return Panel(
+        values, title=f"[bold {PALETTE.accent}] SYSTEM OVERVIEW [/]", title_align="left",
+        border_style=PALETTE.border, box=box.ROUNDED, padding=(0, 1),
+    )
 
-    console.print(_startup_view())
+
+def _ranked_list(
+    console: Console,
+    title: str,
+    rows: tuple[RankedProcess, ...],
+    format_value: Callable[[int | float], str],
+    empty: str,
+) -> Group:
+    heading = Text(title, style=f"bold {PALETTE.cyan}", no_wrap=True, overflow="ellipsis")
+    if not rows:
+        return Group(heading, Text(empty, style=PALETTE.muted, no_wrap=True, overflow="ellipsis"))
+
+    table = Table.grid(expand=True, padding=(0, 1), pad_edge=False)
+    table.add_column(ratio=1, no_wrap=True)
+    table.add_column(justify="right", no_wrap=True, style=PALETTE.muted)
+    table.add_column(justify="right", no_wrap=True)
+    encoding = console.encoding or "utf-8"
+    for row in rows:
+        name = safe_label(row.process.name)
+        name = name.encode(encoding, errors="replace").decode(encoding)
+        table.add_row(Text(name, overflow="ellipsis"), f"PID {row.process.pid}", format_value(row.value))
+    return Group(heading, table)
+
+
+def _startup_view(
+    console: Console, overview: SystemOverview | None, selected: int, page: int,
+) -> tuple[Group, int]:
+    """Fit all four rankings on screen, paging their rows together."""
+    wide = console.width >= 68
+    groups = (
+        ("CPU (% of one core)", overview.top_cpu if overview else (), lambda value: f"{value:.1f}%"),
+        ("Memory (RSS)", overview.top_memory if overview else (), format_bytes),
+        (overview.handle_label if overview else "Handles / FDs",
+         overview.top_handles if overview else (), lambda value: f"{value:,}"),
+        ("Threads", overview.top_threads if overview else (), lambda value: f"{value:,}"),
+    )
+    longest = max(len(rows) for _, rows, _ in groups)
+    # Status panels, help, and ranking title use 9 rows in wide mode and
+    # 10 in narrow mode. Each band needs one row for its metric heading.
+    bands, fixed_rows = (2, 9) if wide else (4, 10)
+    per_page = max(1, (console.height - fixed_rows) // bands - 1)
+    pages = max(1, (longest + per_page - 1) // per_page)
+    page = min(max(0, page), pages - 1)
+    start = page * per_page
+    title = Text("TOP PROCESSES", style=f"bold {PALETTE.accent}", no_wrap=True, overflow="ellipsis")
+    if pages > 1:
+        title.append(f"  {page + 1}/{pages} Left/Right", style=PALETTE.muted)
+
+    lists = []
+    for metric, rows, format_value in groups:
+        empty = "Sampling..." if overview is None else "No more entries" if rows else "No readings"
+        lists.append(_ranked_list(console, metric, rows[start:start + per_page], format_value, empty))
+    if wide:
+        grid = Table.grid(expand=True, padding=(0, 2), pad_edge=False)
+        grid.add_column(ratio=1)
+        grid.add_column(ratio=1)
+        grid.add_row(lists[0], lists[1])
+        grid.add_row(lists[2], lists[3])
+        rankings = grid
+    else:
+        rankings = Group(*lists)
+    return Group(_host_resources(overview, wide), _actions(selected), title, rankings), page
+
+
+def _collect_overviews(limit: int, updates: deque[SystemOverview], stop: Event) -> None:
+    sampler = SystemOverviewSampler(limit)
+    delay = _CPU_WARMUP
+    while not stop.is_set():
+        overview = sampler.sample(should_stop=stop.is_set)
+        if stop.is_set():
+            break
+        updates.append(overview)
+        stop.wait(delay)
+        delay = _SAMPLE_INTERVAL
+
+
+def _choose_live(console: Console, limit: int) -> StartupAction | None:
+    updates: deque[SystemOverview] = deque(maxlen=1)
+    stop = Event()
+    worker = Thread(target=_collect_overviews, args=(limit, updates, stop),
+                    name="draintracer-system-overview", daemon=True)
+    worker.start()
+    try:
+        overview = None
+        selected = page = 0
+        last_frame = None
+        keyboard = KeyReader(native_windows=True)
+        with keyboard as keys, Live(console=console, auto_refresh=False, transient=True) as live:
+            while True:
+                if updates:
+                    overview = updates.pop()
+                size = console.size
+                frame = (size, overview, selected, page)
+                if frame != last_frame:
+                    view, page = _startup_view(console, overview, selected, page)
+                    live.update(view, refresh=True)
+                    last_frame = (size, overview, selected, page)
+                key = keys.read()
+                if key in ("escape", "q", "Q", "\x04", "\x1a") or keys.eof:
+                    return None
+                if key == "\x03":
+                    raise KeyboardInterrupt
+                if key in ("enter", " "):
+                    return "open" if selected == 0 else "hook"
+                if key in ("up", "down"):
+                    selected = int(key == "down")
+                elif key in ("left", "right"):
+                    page += 1 if key == "right" else -1
+                time.sleep(_INPUT_INTERVAL)
+    finally:
+        stop.set()
+        worker.join(timeout=_INPUT_INTERVAL)
+
+
+def choose_startup_action(
+    console: Console, *, limit: int = DEFAULT_PROCESS_LIMIT,
+) -> StartupAction | None:
+    """Show the system overview, then select a target action or quit."""
+    if console.is_terminal and stream_is_tty(console.file) and stdin_is_interactive():
+        return _choose_live(console, limit)
+
+    console.print(_actions(None))
     while True:
         try:
             choice = console.input(Text("Choose 1 or 2 (Q to quit): ", style="bold"))

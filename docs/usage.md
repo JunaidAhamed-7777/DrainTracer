@@ -66,15 +66,22 @@ current Python. A Git pull does not install Python dependencies.
 
 ## Choose a target
 
-Start without arguments to choose how to monitor a program:
+Run DrainTracer without arguments to see the live system overview.
 
 ```powershell
 python src/main.py
 ```
 
-Use **Up/Down** to highlight **Open a program** or **Hook to a running
-program**, then press **Spacebar** (or Enter) to select. Navigation help is
-below and outside the Get Started box. Press **Q** or **Escape** to cancel.
+The overview shows machine-wide CPU and RAM usage. Four lists rank visible
+processes by CPU (100% represents one fully used core), resident memory
+(RSS), handles on Windows or open file descriptors on Linux, and threads.
+The rankings omit readings the OS cannot provide. Each list shows up to
+five processes by default. Pass `--top-processes N` to change the limit and
+use **Left/Right** to page through rankings that do not fit on screen.
+
+In **Get Started**, use **Up/Down** to highlight **Open a program** or
+**Hook to a running program**, then press **Spacebar** (or Enter) to select.
+Press **Q** or **Escape** to cancel.
 Redirected or non-terminal input keeps the numbered `1`/`2` prompt.
 
 **Open a program** opens the native Windows file picker on Windows or a

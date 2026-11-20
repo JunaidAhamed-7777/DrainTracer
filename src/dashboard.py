@@ -459,6 +459,7 @@ class DashboardApp(
         wide = width >= self.WIDE_LAYOUT_COLUMNS
         compact = height < self.COMPACT_LAYOUT_ROWS
         process_rows = len(self.snapshot.processes) if self.snapshot else 1
+        body_height = height - 5  # Three header rows, the status line, and the footer.
 
         # Spare rows go to taller charts; short terminals get a metric strip.
         self._health_spacious = wide and not compact
@@ -467,9 +468,9 @@ class DashboardApp(
             metrics = Layout(self._render_metrics_strip(), name="metrics", size=6)
         else:
             if wide:
-                card_height = (height - 4 - (process_rows + 5)) // 2
+                card_height = (body_height - (process_rows + 5)) // 2
             else:
-                card_height = (height - 4 - health_height - 8) // 2
+                card_height = (body_height - health_height - 8) // 2
             card_height = max(6, min(card_height, 10))
             self._spark_rows = card_height - 4
             metrics = Layout(name="metrics", size=card_height * 2)
@@ -486,6 +487,7 @@ class DashboardApp(
         layout = Layout(name="root")
         layout.split_column(
             Layout(self._render_header(), name="header", size=3),
+            Layout(self._render_status_line(), name="status", size=1),
             Layout(name="body", ratio=1),
             Layout(self._render_footer(), name="footer", size=1),
         )

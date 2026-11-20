@@ -97,19 +97,24 @@ class NavigationTests(unittest.TestCase):
         self.assertFalse(app.detector.is_paused)
         self.assertEqual(app._sort_mode, "tree")
 
-    def test_overview_footer_offers_views_and_focused_views_show_tabs(self) -> None:
-        app = _app(130, 40)
+    def test_attached_overview_and_focused_views_show_tabs(self) -> None:
+        app = DashboardApp(None, console=make_console(130, 40), attach_pid=100)
         growing_session(app, 5)
-        self.assertIn("views", render_text(app))
         app._handle_key("5")
         output = render_text(app)
         self.assertIn("5 MONITOR", output)
         self.assertIn("1 Overview", output)
         self.assertIn("overview", output.splitlines()[-1])
+        app._handle_key("1")
+        lines = render_text(app).splitlines()
+        self.assertIn("1 OVERVIEW", lines[3])
+        self.assertIn("6 Compare", lines[3])
+        self.assertIn("views", lines[-1])
 
     def test_compact_views_use_one_status_line(self) -> None:
         app = _app(80, 24)
         growing_session(app, 5)
+        self.assertIn("1 OVERVIEW", render_text(app).splitlines()[3])
         app._handle_key("5")
         lines = render_text(app).splitlines()
         self.assertIn("5 MONITOR", lines[0])

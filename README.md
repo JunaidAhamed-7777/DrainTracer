@@ -226,7 +226,14 @@ connecting IP address. Process reports are not uploaded. Read the
 [privacy policy](PRIVACY.md) for the request details, modes that skip it, and
 local data handling.
 
-Once the installation check passes, `draintracer` offers two startup choices:
+In an interactive terminal, `draintracer` opens a live system overview when
+you start it without a target. It shows total CPU usage and RAM in use,
+plus four lists of processes ranked highest to lowest by CPU, resident memory
+(RSS), handles (Windows) or open file descriptors (Linux), and threads.
+Each list shows up to five processes by default. Use `--top-processes N` to
+change that limit and **Left/Right** when the rankings span multiple pages.
+
+Choose an action in **Get Started**.
 
 - **Open a program:** select an executable or script in the desktop file
   picker, or enter its path on Linux without a desktop.
@@ -352,8 +359,9 @@ A partly successful pause is rolled back. If a process cannot be resumed,
 it remains marked as suspended; detach retries it and reports a cleanup error
 when resuming is denied. Resolve the access restriction before retrying cleanup.
 
-Number keys open focused views; `Esc` returns to the overview. Views change
-only what is shown: sampling and the target continue unaffected.
+The top navigation bar shows the active view on every page, including the
+monitoring overview. Number keys switch views and `Esc` returns to page
+`1`. Sampling and the target continue while you switch views.
 
 In the process inspector, a search can hide the selected process. Its detail
 panel says so; `Esc` clears the filter and restores the retained selection.
