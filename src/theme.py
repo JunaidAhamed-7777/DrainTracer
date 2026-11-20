@@ -16,21 +16,21 @@ def plain_console(console: Console) -> Console:
 
 @dataclass(frozen=True)
 class Palette:
-    """Cool instrument colors, with warmer tones reserved for signals and actions."""
+    """Brand blue and teal, with violet for secondary data and warm signal colors."""
 
-    accent: str = "#8cc8ed"
-    accent_alt: str = "#b8bfdf"
-    cyan: str = "#82cfdb"
-    teal: str = "#9acfc2"
-    muted: str = "#aebdcb"
-    border: str = "#637589"
-    ok: str = "#9bd5b0"
-    warn: str = "#f0c574"
-    alert: str = "#ffb180"
-    danger: str = "#ff9a8b"
-    critical: str = "#ff7e89"
-    surface: str = "#243440"
-    ink: str = "#15212b"
+    accent: str = "#53b7ff"
+    accent_alt: str = "#c29aff"
+    cyan: str = "#43e0ff"
+    teal: str = "#73daca"
+    muted: str = "#adbccc"
+    border: str = "#647d95"
+    ok: str = "#82e78a"
+    warn: str = "#ffd04e"
+    alert: str = "#ffa34d"
+    danger: str = "#ff8076"
+    critical: str = "#ff6995"
+    surface: str = "#203449"
+    ink: str = "#101820"
 
 
 @dataclass(frozen=True)
