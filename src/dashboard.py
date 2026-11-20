@@ -536,18 +536,12 @@ class DashboardApp(
         """View tabs on the left; run state, signal, and sample age on the right."""
         palette, glyphs = self.palette, self.glyphs
         width = self.console.size.width
-        tabs = Text(no_wrap=True, overflow="ellipsis")
-        for key, (name, label, short) in VIEWS.items():
-            if name == self._view:
-                tabs.append(f" {key} {label} ", style=f"bold {palette.ink} on {palette.accent}")
-            else:
-                tabs.append(f" {key} {short if width < 110 else label.title()} ",
-                            style=palette.muted)
         status, status_color = self._status(self.snapshot)
         right = Text(no_wrap=True)
         if self.timeline_frozen:
             # The view is frozen, not monitoring: say so wherever the user is.
-            right.append(" TIMELINE FROZEN ", style=f"bold {palette.ink} on {palette.warn}")
+            right.append(" TIMELINE FROZEN " if width >= 64 else " FROZEN ",
+                         style=f"bold {palette.ink} on {palette.warn}")
             right.append(" ")
         right.append(f" {glyphs.dot} {status} ", style=f"bold {palette.ink} on {status_color}")
         snapshot = self.snapshot
@@ -556,10 +550,26 @@ class DashboardApp(
                 f" {glyphs.warn} {snapshot.severity.value.upper()}",
                 style=f"bold {self._severity_color(snapshot.severity)}",
             )
-        if snapshot is not None:
+        if snapshot is not None and width >= 96:
             age = max(0.0, time.time() - snapshot.timestamp)
-            right.append(f" {format_duration(age) if age >= 60 else f'{age:.1f}s'} ",
+            right.append(f" {format_duration(age) if age >= 60 else f'{age:.1f}s'} ago ",
                          style=palette.muted)
+        # Use progressively shorter labels, always keeping the current page
+        # named. Brackets mark the active tab on monochrome terminals too.
+        for detail in ("full", "short", "numbers"):
+            tabs = Text(no_wrap=True, overflow="ellipsis")
+            for key, (name, label, short) in VIEWS.items():
+                if name == self._view:
+                    active = Text(f"[{key} {label}]", style=f"bold {palette.ink} on {palette.accent}")
+                    tabs.append_text(active)
+                else:
+                    suffix = {"full": " " + label.title(), "short": " " + short, "numbers": ""}[detail]
+                    tabs.append(f" {key}{suffix} ", style=palette.muted)
+            if tabs.cell_len + right.cell_len <= width:
+                break
+        else:
+            tabs = active
+            right.truncate(max(1, width - active.cell_len), overflow="ellipsis")
         bar = Table.grid(expand=True)
         bar.add_column(ratio=1, no_wrap=True, overflow="ellipsis")
         bar.add_column(justify="right", no_wrap=True)
@@ -725,27 +735,26 @@ class DashboardApp(
 
     def _render_header(self) -> RenderableType:
         palette, glyphs = self.palette, self.glyphs
-        status, status_color = self._status(self.snapshot)
         roomy = self.console.size.width >= 90
 
+        snapshot = self.snapshot
+        target = safe_label(Path(self.target_path).name)
+        root_name = safe_label(self._process_name(snapshot))
+        if roomy and root_name.lower() != target.lower():
+            target = f"{target} via {root_name}"
         brand = Text.assemble(
-            (f" {glyphs.brand} {self.TITLE} ", f"bold {palette.ink} on {palette.accent}"),
-            (f" {self.VERSION} ", f"bold {palette.accent} on {palette.surface}"),
-            ("  resource leak monitor" if roomy else "", palette.muted),
+            (f" {self.TITLE}", f"bold {palette.accent}"),
+            (f" {self.VERSION}  {glyphs.sep}  ", palette.muted),
+            (target, "bold"),
+            no_wrap=True, overflow="ellipsis",
         )
-        right = Text.assemble(
-            (" TIMELINE FROZEN " if self.timeline_frozen else "",
-             f"bold {palette.ink} on {palette.warn}"),
-            (" " if self.timeline_frozen else "", ""),
-            (f" {glyphs.dot} {status} ", f"bold {palette.ink} on {status_color}"),
-            (f"  {time.strftime('%H:%M:%S')} ", palette.muted),
-        )
+        right = Text(" Attached session " if self.attached else " Launched session ",
+                     style=palette.muted)
         bar = Table.grid(expand=True)
         bar.add_column(ratio=1, no_wrap=True)
         bar.add_column(justify="right", no_wrap=True)
         bar.add_row(brand, right)
 
-        snapshot = self.snapshot
         pid = snapshot.root_pid if snapshot and snapshot.root_pid else "-"
         process_count = len(snapshot.processes) if snapshot else 0
         processes = str(process_count)
@@ -755,12 +764,7 @@ class DashboardApp(
             churn = f"+{counts.started}/-{counts.exited}"
             processes += f" ({churn} started/exited)" if roomy else f" {churn}"
         interval = snapshot.sample_interval_ms if snapshot else self.detector.sample_interval_ms
-        target = safe_label(Path(self.target_path).name)
-        root_name = safe_label(self._process_name(snapshot))
-        if roomy and root_name.lower() != target.lower():
-            target = f"{target} via {root_name}"
         pairs = [
-            ("TARGET", target),
             ("PID", f"{pid} (attached)" if self.attached else str(pid)),
             ("PROCESSES" if roomy else "PROCS", processes),
             ("UPTIME", self._format_duration(self._uptime())),
@@ -797,57 +801,56 @@ class DashboardApp(
             room = max(1, self.console.size.width - 38)
             return Text(f" BASELINE {self._baseline_draft[-room:]}_  ENTER load  ESC cancel",
                         style=f"bold {palette.accent}", no_wrap=True, overflow="ellipsis")
-        roomy = self.console.size.width >= 120
-        keys = Text(no_wrap=True, overflow="ellipsis")
-        quit_label = ("detach & quit" if roomy else "detach") if self.attached else "quit"
-        if self._show_help:
-            for key, label in (("UP/DOWN", "scroll"), ("ESC / ? / H", "close help"),
-                               (f"{min(VIEWS)}-{max(VIEWS)}", "views")):
-                keys.append(f" {key} ", style=f"bold {palette.ink} on {palette.muted}")
-                keys.append(f" {label}  ", style=palette.muted)
-            return keys
-        if self._view != "overview" and not self._show_help:
-            # The view's own keys first; the target controls stay in help.
-            controls = list(getattr(self, f"_{self._view}_controls")())
-            controls += [
-                ("ESC", "overview" if roomy else "back", palette.muted),
-                ("?", "help", palette.muted),
-                ("Q", quit_label, palette.accent_alt),
-            ]
-            for key, label, color in controls:
-                keys.append(f" {key} ", style=f"bold {palette.ink} on {color}")
-                keys.append(f" {label}  ", style=palette.muted)
-            return keys
-        controls = []
-        if not self.manager.contains_monitor:
-            controls += [
-                ("SPACE", "pause/resume" if roomy else "pause", palette.accent),
-                ("K", "kill tree" if roomy else "kill", palette.danger),
-            ]
-        controls.append(("E", "export report" if roomy else "export", palette.warn))
-        if self._last_html_report is not None:
-            controls.append(("O", "open report" if roomy else "open", palette.teal))
-        controls.append(("S", "sort", palette.cyan))
-        controls.append((f"{min(VIEWS)}-{max(VIEWS)}", "views", palette.cyan))
-        controls.append(("?", "help", palette.muted))
-        controls.append(("Q", quit_label, palette.accent_alt))
-        for key, label, color in controls:
-            keys.append(f" {key} ", style=f"bold {palette.ink} on {color}")
-            keys.append(f" {label}  ", style=palette.muted)
+        width = self.console.size.width
+        roomy = width >= 120
 
-        if self._last_report_id is not None:
-            note = Text.assemble(
-                ("last report ", palette.muted), (self._last_report_id, f"bold {palette.teal}")
-            )
+        def hint(key: str, label: str, color: str = palette.accent) -> Text:
+            return Text.assemble((f"[{key}]", f"bold {color}"), " ", (label, palette.muted))
+
+        if self._show_help:
+            return Text(" [Up/Down] scroll  [Esc] close help  [1-6] views", style=palette.accent)
+        if self._view == "processes" and self._proc_searching:
+            return Text(" [Enter] apply search  [Esc] clear search", style=palette.accent)
+
+        quit_label = ("detach & quit" if roomy else "detach") if self.attached else "quit"
+        navigation = [hint("?", "help"), hint("Q", quit_label)]
+        if self._view == "overview":
+            controls = []
+            can_control = not self.manager.contains_monitor
+            if can_control:
+                controls.append(("Space", "resume" if self.detector.is_paused else "pause", palette.accent))
+            controls.append(("E", "export", palette.accent))
+            if self._last_html_report is not None:
+                controls.append(("O", "open report", palette.accent))
+            controls.extend([("1-6", "views", palette.accent), ("S", "sort", palette.accent)])
+            if can_control:
+                controls.append(("K", "kill tree", palette.danger))
         else:
-            note = Text("no report exported yet ", style=palette.muted)
-        note.no_wrap = True
-        note.overflow = "ellipsis"
+            controls = getattr(self, f"_{self._view}_controls")()
+            escape_action = "overview" if roomy else "back"
+            if self._view == "processes" and self._proc_query:
+                escape_action = "clear search"
+            navigation.insert(0, hint("Esc", escape_action))
+
+        # Keep global navigation in view. A local command is shown only if
+        # its complete key and label fit; the help screen lists every action.
+        trailing = Text("  ").join(navigation)
+        available = width - trailing.cell_len - 2
+        leading = Text(" ", no_wrap=True)
+        for key, label, color in controls:
+            control = hint(key, label, palette.danger if color == palette.danger else palette.accent)
+            if leading.cell_len + control.cell_len <= available:
+                leading.append_text(control)
+                leading.append("  ")
+        if self._view == "overview" and self._last_report_id:
+            note = f"Last report {self._last_report_id}"
+            if leading.cell_len + len(note) <= available:
+                leading.append(note, style=palette.muted)
 
         footer = Table.grid(expand=True)
-        footer.add_column(no_wrap=True)
-        footer.add_column(justify="right", ratio=1, no_wrap=True)
-        footer.add_row(keys, note)
+        footer.add_column(ratio=1, no_wrap=True)
+        footer.add_column(justify="right", no_wrap=True)
+        footer.add_row(leading, trailing)
         return footer
 
     # ------------------------------------------------------------------

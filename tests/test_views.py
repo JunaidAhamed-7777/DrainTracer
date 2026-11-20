@@ -10,7 +10,7 @@ from pathlib import Path
 from helpers import make_console, make_denied, make_process, render_text, sample_trees
 
 from src.config import resolve_settings
-from src.dashboard import DashboardApp
+from src.dashboard import VIEWS, DashboardApp
 from src.keys import DOWN, ESCAPE, PAGE_DOWN
 
 MB = 1024 * 1024
@@ -120,6 +120,20 @@ class NavigationTests(unittest.TestCase):
         self.assertIn("5 MONITOR", lines[0])
         self.assertIn(app._status(app.snapshot)[0], lines[0])
         self.assertNotIn("PATH", "".join(lines))  # no full header at 80x24
+
+    def test_narrow_pages_keep_the_active_tab_and_global_actions_in_plain_text(self) -> None:
+        app = _app(50, 20, LEGACY)
+        growing_session(app)
+        for key, (_, label, _) in VIEWS.items():
+            with self.subTest(key=key):
+                app._handle_key(key)
+                lines = render_text(app).splitlines()
+                self.assertIn(f"[{key} {label}]", lines[3 if key == "1" else 0])
+                self.assertIn("[?] help", lines[-1])
+                self.assertIn("[Q] quit", lines[-1])
+        app._handle_key("2")
+        app._handle_key("/")
+        self.assertIn("[Esc] clear search", render_text(app).splitlines()[-1])
 
     def test_legacy_consoles_replace_unprintable_names_and_ellipses(self) -> None:
         app = _app(80, 24, LEGACY)
@@ -618,7 +632,7 @@ class TimelineViewTests(ViewRenderingMixin, unittest.TestCase):
         self.assertIn("TIMELINE FROZEN", output.splitlines()[3])  # the status line
         self.assertFalse(app.detector.is_paused)
         app._handle_key("1")
-        self.assertIn("TIMELINE FROZEN", render_text(app).splitlines()[0])
+        self.assertIn("TIMELINE FROZEN", render_text(app).splitlines()[3])
         app._handle_key("4")
         app._handle_key("F")
         self.assertFalse(app.timeline_frozen)
