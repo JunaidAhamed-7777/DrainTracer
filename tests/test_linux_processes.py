@@ -204,6 +204,8 @@ class ProcessCleanupTests(unittest.TestCase):
                 with (
                     mock.patch.object(process_runner.psutil, "Process",
                                       side_effect=open_error, return_value=proc),
+                    # The fixture's PID can belong to a real process in /proc.
+                    mock.patch.object(process_runner, "_created", side_effect=lambda p: p.create_time()),
                     mock.patch.object(process_runner, "_windows_process_exited", return_value=False),
                 ):
                     self.assertIs(manager._suspend_pid(102), expected)
