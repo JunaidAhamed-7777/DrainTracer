@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import unittest
 from contextlib import nullcontext
+from dataclasses import replace
 from unittest import mock
 
 from helpers import make_console
@@ -97,6 +98,28 @@ class StartupKeyboardTests(unittest.TestCase):
     def test_ctrl_c_propagates(self) -> None:
         with self.assertRaises(KeyboardInterrupt):
             self.choose("\x03")
+
+    def test_hold_keeps_the_display_still_and_resume_jumps_to_the_latest_reading(self) -> None:
+        samples = [_overview(), replace(_overview(), cpu_percent=78.0)]
+        keys = iter((None, "p", None, "p", "q"))
+        reader = mock.Mock(eof=False)
+        with (
+            mock.patch.object(startup, "Thread") as worker,
+            mock.patch.object(startup, "KeyReader", return_value=nullcontext(reader)),
+            mock.patch.object(startup, "_startup_view", wraps=startup._startup_view) as views,
+            mock.patch.object(startup.time, "sleep"),
+        ):
+            def read_key():
+                key = next(keys)
+                if key is None:
+                    worker.call_args.kwargs["args"][1].append(samples.pop(0))
+                return key
+
+            reader.read.side_effect = read_key
+            startup._choose_live(make_console(), 5)
+        frames = [(call.args[1].cpu_percent, call.kwargs["held"])
+                  for call in views.call_args_list if call.args[1] is not None]
+        self.assertEqual(frames, [(22.5, False), (22.5, True), (78.0, False)])
 
     def test_highlight_and_hint_render_in_narrow_and_legacy_terminals(self) -> None:
         for width, encoding in ((80, "utf-8"), (35, "cp1252")):
