@@ -9,7 +9,7 @@ from threading import Event, Thread
 from typing import Literal
 
 from rich import box
-from rich.console import Console, Group
+from rich.console import Console, Group, RenderableType
 from rich.live import Live
 from rich.panel import Panel
 from rich.rule import Rule
@@ -25,6 +25,7 @@ from .system_overview import (
 )
 from .theme import PALETTE, select_glyphs
 from .units import format_bytes, safe_label
+from .widgets import LegacySafe
 
 StartupAction = Literal["open", "hook"]
 _CPU_WARMUP = 0.25
@@ -97,7 +98,6 @@ def _host_resources(console: Console, overview: SystemOverview | None, held: boo
 
 
 def _ranked_list(
-    console: Console,
     title: str,
     rows: tuple[RankedProcess, ...],
     format_value: Callable[[int | float], str],
@@ -111,17 +111,15 @@ def _ranked_list(
     table.add_column(ratio=1, no_wrap=True)
     table.add_column(justify="right", no_wrap=True, style=PALETTE.muted)
     table.add_column(justify="right", no_wrap=True)
-    encoding = console.encoding or "utf-8"
     for row in rows:
         name = safe_label(row.process.name)
-        name = name.encode(encoding, errors="replace").decode(encoding)
         table.add_row(Text(name, overflow="ellipsis"), f"PID {row.process.pid}", format_value(row.value))
     return Group(heading, table)
 
 
 def _startup_view(
     console: Console, overview: SystemOverview | None, selected: int, page: int, *, held: bool = False,
-) -> tuple[Group, int]:
+) -> tuple[RenderableType, int]:
     """Fit all four rankings on screen, paging their rows together."""
     wide = console.width >= 68
     groups = (
@@ -145,7 +143,7 @@ def _startup_view(
     lists = []
     for metric, rows, format_value in groups:
         empty = "Sampling..." if overview is None else "No more entries" if rows else "No readings"
-        lists.append(_ranked_list(console, metric, rows[start:start + per_page], format_value, empty))
+        lists.append(_ranked_list(metric, rows[start:start + per_page], format_value, empty))
     if wide:
         grid = Table.grid(expand=True, padding=(0, 3), pad_edge=False)
         grid.add_column(ratio=1)
@@ -155,7 +153,9 @@ def _startup_view(
         rankings = grid
     else:
         rankings = Group(*lists)
-    return Group(_host_resources(console, overview, held), _actions(selected, held=held, wide=wide), title, rankings), page
+    view = Group(_host_resources(console, overview, held), _actions(selected, held=held, wide=wide), title, rankings)
+    encoding = console.encoding or "utf-8"
+    return (LegacySafe(view, encoding) if LegacySafe.needed(encoding) else view), page
 
 
 def _collect_overviews(limit: int, updates: deque[SystemOverview], stop: Event) -> None:

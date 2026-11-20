@@ -159,6 +159,16 @@ class StartupKeyboardTests(unittest.TestCase):
             self.assertNotIn(f"{name}-1", output)
         self.assertLessEqual(len(output.splitlines()), console.height)
 
+    def test_truncated_rankings_are_encodable_on_legacy_consoles(self) -> None:
+        row = RankedProcess(RunningProcess(123, "worker-" * 12 + "\u754c", 1.0), 400)
+        snapshot = replace(_overview(), top_threads=(row,))
+        for encoding in ("cp437", "ascii"):
+            with self.subTest(encoding=encoding):
+                console = make_console(35, 24, encoding)
+                view, _ = startup._startup_view(console, snapshot, 0, 0)
+                console.print(view)
+                self.assertIn(b"worker-", console.file.getvalue().encode(encoding))
+
 
 if __name__ == "__main__":
     unittest.main()
