@@ -16,21 +16,21 @@ def plain_console(console: Console) -> Console:
 
 @dataclass(frozen=True)
 class Palette:
-    """Night-friendly accent palette; plain text keeps the terminal default."""
+    """Cool instrument colors, with warmer tones reserved for signals and actions."""
 
-    accent: str = "#7aa2f7"
-    accent_alt: str = "#bb9af7"
-    cyan: str = "#7dcfff"
-    teal: str = "#73daca"
-    muted: str = "#737aa2"
-    border: str = "#3b4261"
-    ok: str = "#9ece6a"
-    warn: str = "#e0af68"
-    alert: str = "#ff9e64"
-    danger: str = "#f7768e"
-    critical: str = "#ff4f6d"
-    surface: str = "#24283b"
-    ink: str = "#1a1b26"
+    accent: str = "#8cc8ed"
+    accent_alt: str = "#b8bfdf"
+    cyan: str = "#82cfdb"
+    teal: str = "#9acfc2"
+    muted: str = "#aebdcb"
+    border: str = "#637589"
+    ok: str = "#9bd5b0"
+    warn: str = "#f0c574"
+    alert: str = "#ffb180"
+    danger: str = "#ff9a8b"
+    critical: str = "#ff7e89"
+    surface: str = "#243440"
+    ink: str = "#15212b"
 
 
 @dataclass(frozen=True)
@@ -69,7 +69,7 @@ UNICODE_GLYPHS = Glyphs(
     error="✖",
     info="•",
     meter_full="━",
-    meter_empty="━",
+    meter_empty="·",
     sep="·",
     ellipsis="…",
     tree_mid="├─ ",
