@@ -46,7 +46,7 @@ allocation sites. Short runs can be inconclusive.
 
 ## Start with the system overview
 
-![The live system overview ranks processes by four resources. The operator holds the readings, opens the running-program picker, then returns to the overview.](docs/assets/install-and-launch.gif)
+![Startup shows CPU, RAM, swap, disk and network activity above the target chooser. The operator holds the readings and opens the running-process list.](docs/assets/install-and-launch.gif)
 
 Check CPU, RAM, swap, disk transfers and network traffic before choosing a target.
 Press **P** to hold the readings. **1** opens a program and **2** lists running
@@ -279,11 +279,12 @@ export evidence and `O` to open the HTML report. Try
 `.\torture\steady.py` for a stable baseline. The [torture guide](torture/README.md)
 explains all fixtures and their limits.
 
-![DrainTracer follows memory_leak.py as its private memory rises, then shows the Processes, Evidence, and Timeline views.](docs/assets/live-growth.gif)
+![DrainTracer follows memory_leak.py, compares two live PIDs on page 6, and exports a report.](docs/assets/live-growth.gif)
 
 The recording shows the bounded memory-growth fixture running on Linux.
 The **Processes** view identifies the growing process. **Evidence** shows
-the detection window, and **Timeline** shows when the signal appeared.
+the detection window, and **Timeline** shows when the signal appeared. On
+**Compare**, two PIDs show how much resident memory each process uses.
 
 ### Monitor your program
 
@@ -564,7 +565,7 @@ without hovering over charts.
 Labeled range fields, native signal Zoom buttons, and focusable data tables
 support keyboard use. See the [HTML accessibility checks](docs/html-accessibility.md).
 
-![The exported report for memory_leak.py opens on its verdict and resource changes, then scrolls to the memory chart and leak signals.](docs/assets/html-report.gif)
+![The offline report opens on the verdict for memory_leak.py. The contents links jump to resource trends, leak signals, processes and back to the overview.](docs/assets/html-report.gif)
 
 The report uses the same run shown above. Open **Resource trends** to see
 when memory grew. **Leak signals** shows which interval triggered the alert.
