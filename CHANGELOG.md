@@ -14,6 +14,12 @@ their changes shipped in v5.5.0. v5.7.0 was likewise unpublished; its changes
 shipped in v5.8.0. Check the matching release tag and PyPI
 distribution for publication status.
 
+## v5.9.0 — 2026-11-20
+
+- Added a live system dashboard with ranked processes, direct launch and attach shortcuts, and a hold control for reading a sample.
+- Improved monitoring layout, keyboard navigation and monochrome status cues.
+- Redesigned offline HTML reports around the verdict and supporting evidence. Updated the application recordings in the GitHub and PyPI guides.
+
 ## v5.8.0 — 2026-11-11
 
 Includes the unpublished v5.7.0 candidate. See [RELEASES.md](RELEASES.md) for

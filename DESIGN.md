@@ -1,15 +1,15 @@
 ---
 version: alpha
-name: DrainTracer terminal UI
-description: A compact instrument panel for inspecting Windows resource growth.
+name: DrainTracer monitoring and reports
+description: A terminal workspace and offline field report for investigating resource growth on Windows and Linux.
 colors:
-  primary: "#7aa2f7"
-  accent: "#7aa2f7"
-  muted: "#737aa2"
-  border: "#3b4261"
-  surface: "#24283b"
-  danger: "#f7768e"
-  ok: "#9ece6a"
+  primary: "#8cc8ed"
+  accent: "#8cc8ed"
+  muted: "#aebdcb"
+  border: "#637589"
+  surface: "#243440"
+  danger: "#ff9a8b"
+  ok: "#9bd5b0"
 typography:
   terminal:
     fontFamily: "monospace"
@@ -24,7 +24,7 @@ omitted:
 
 ## Overview
 
-DrainTracer serves developers monitoring Windows process trees. Preserve the
+DrainTracer serves developers monitoring Windows and Linux process trees. Preserve the
 existing instrument-panel identity: startup artwork from TITLE.txt, blue
 accents, quiet metadata, and dense resource views. Product familiarity and
 readable measurements guide changes; avoid marketing layouts in the CLI.
@@ -34,9 +34,9 @@ The maintained product and workflow references are README.md and docs/usage.md.
 
 src/theme.py remains the canonical palette. Its PALETTE instance feeds
 startup.py, process_picker.py, and dashboard.py directly; this document mirrors
-the accepted values above; primary maps to PALETTE.accent. Selected rows
-combine accent text with a surface
-background and a literal `>` marker. Color always accompanies readable text.
+the accepted values above; primary maps to PALETTE.accent. The selected startup action uses a literal `>`, a number, and a filled
+background. Monitoring tabs identify the current page in brackets. Signal
+meters distinguish filled and empty cells in monochrome.
 The requested update notice uses Rich's named red, green, and blue colors for
 the availability label, pip command, and repository link respectively.
 
@@ -48,10 +48,12 @@ navigation hints in ASCII and preserve legacy Windows encoding fallbacks.
 
 ## Layout
 
-Startup actions use one rounded Rich panel, with one blank row between actions
-and padding of one vertical and two horizontal cells. Navigation help follows
-outside the panel. Narrow terminals wrap prose and use the plain product title
-when block artwork cannot fit. No browser layout or font dependency is needed.
+Startup groups machine-wide CPU and RAM together with their measurement time.
+The target choices and keyboard help sit above the four process rankings.
+Wide terminals place the rankings in two columns. Narrow terminals stack
+them and page the results. Labels and numeric readings accompany meters.
+The terminal controls font metrics and the branding falls back to plain text
+when the artwork does not fit.
 
 ## Elevation & Depth
 
@@ -64,12 +66,12 @@ Reuse rich.box.ROUNDED for startup panels and Rich's legacy-console fallback.
 
 ## Components
 
-src/picker_input.py owns native Windows keyboard input and terminal capability
-checks. Startup and running-process choices reuse that reader. Startup uses
-Up/Down and Spacebar/Enter, while the process picker keeps Enter so spaces remain
-available in searches. Both expose selection with `>` and support cancellation.
-Redirected input retains line prompts, and Ctrl+C reaches the entry point.
-src/theme.py owns palette and glyph mapping; no generated token adapter exists.
+The system overview uses the nonblocking KeyReader. Keys 1 and 2 select
+a target action directly. Up/Down and Enter or Space also work. P holds a
+frame for reading while the worker continues sampling. Returning to live
+shows the latest completed sample. The running-process picker keeps its own
+text-entry handling for names and PIDs. Canceling an interactive picker
+returns to the overview. Redirected input retains numbered line prompts.
 
 The update status belongs directly below the version subtitle. A confirmed
 newer release shows the upgrade command; a confirmed current release shows the
@@ -78,16 +80,17 @@ help, and version-only commands stay free of update checks.
 
 ## Do's and Don'ts
 
-Offline HTML reports retain their existing instrument-panel layout. The
-canonical web palette and native controls live in leak_reports/frames/report.css
-and report.js; Python owns static semantic tables and summaries. Dark muted
-text is #8e97bf for contrast on tooltip surfaces. Light badge fills use
-#347b24 (clear), #946108 (low), #b2500d (medium), #d0324f (high), and
-#a3001f (critical) with white text. These web adjustments do not alter terminal
-theme tokens. Native number fields and Apply range provide a keyboard
-alternative to drag zoom; native details/table/CSV expose values without a
-pointer. Focus outlines, semantic labels, and text verdicts accompany color.
-Tables own horizontal scrolling; they never constrain page height.
+Offline HTML reports use the official light and dark DrainTracer wordmarks
+from the [brand kit](docs/branding.md). Embed the SVG artwork in the export
+so its pipe, droplet, reticle and lettering travel with the report.
+Present the target, verdict and evidence as a technical report.
+Keep the contents navigation, resource measurements and session
+metadata visually distinct. Use the report stylesheet for light, dark,
+print, and responsive layouts. Use report.js for optional interactions.
+The static headings and evidence tables belong to the HTML renderer.
+Native range fields and Apply support keyboard zoom. Text verdicts, readable
+chart values, focus outlines and table overflow support different ways of
+reading the same evidence.
 
 - Reuse shared keyboard input, palette, and Rich components.
 - Keep visible help adjacent to the controls it describes.

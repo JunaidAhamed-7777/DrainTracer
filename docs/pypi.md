@@ -24,8 +24,13 @@ draintracer
 ```
 
 If the command is not on `PATH`, use `python -m draintracer` with the same
-Python used for installation. The startup menu lets you open a program or
-select a running process.
+Python used for installation. In an interactive terminal, the startup overview
+shows live CPU and RAM usage and ranks processes by CPU, memory, handles
+(open file descriptors on Linux), and threads. Press **P** to hold or
+resume the display, **1** to open a program, or **2** to hook to a running
+process. Cancel either picker to return to the overview.
+
+![The system overview ranks running processes by CPU, memory, open descriptors, and threads. The operator holds the sample and opens the process picker.](https://raw.githubusercontent.com/JunaidAhamed-7777/DrainTracer/v5.9.0/docs/assets/install-and-launch.gif)
 
 On Linux, install into a virtual environment:
 
@@ -71,18 +76,12 @@ Python explicitly and put the script after `--`:
 draintracer --target "C:\work\app\.venv\Scripts\python.exe" -- "C:\work\app\worker.py"
 ```
 
-![Demo commands: pip install draintracer, then draintracer --target .\torture\memory_leak.py](https://raw.githubusercontent.com/JunaidAhamed-7777/DrainTracer/main/docs/assets/install-and-launch.gif)
-
-*Install-and-launch commands from the recorded demo. The bounded `torture`
-workload requires a [source checkout](https://github.com/JunaidAhamed-7777/DrainTracer#try-an-included-workload);
-it is not included in the PyPI package.*
-
 ## Inspect and save evidence
 
-![Private memory grows in a child process while DrainTracer collects evidence, then raises a HIGH leak signal](https://raw.githubusercontent.com/JunaidAhamed-7777/DrainTracer/main/docs/assets/live-growth.gif)
+![A monitored Python process grows in private memory. The recording visits Processes, Evidence, and Timeline as samples continue arriving.](https://raw.githubusercontent.com/JunaidAhamed-7777/DrainTracer/v5.9.0/docs/assets/live-growth.gif)
 
-*A real session monitoring the bounded memory-growth workload, sped up 1.5×.
-The GIF excerpts were recorded with v5.1.1; values and process IDs vary by run.*
+This Linux recording uses `torture/memory_leak.py`, a bounded example
+included in the [source checkout](https://github.com/JunaidAhamed-7777/DrainTracer#try-an-included-workload).
 
 Track CPU, memory, handles, threads, and I/O across the discovered process
 tree. Use warm-up settings and project profiles to account for startup or
@@ -107,10 +106,10 @@ private memory. Compare runs using the same platform and workload.
 Press `E` to export JSON and an offline interactive HTML report; press `O`
 to open the latest report.
 
-![The exported HTML report shows the HIGH memory signal, resource trend charts, recorded events, and growing processes](https://raw.githubusercontent.com/JunaidAhamed-7777/DrainTracer/main/docs/assets/html-report.gif)
+![The offline report for the same run opens on the verdict, then shows the memory chart and the interval that raised the signal.](https://raw.githubusercontent.com/JunaidAhamed-7777/DrainTracer/v5.9.0/docs/assets/html-report.gif)
 
-*The offline HTML report from the same demo session: inspect the summary,
-resource trends, events, and process growth after recording.*
+Use the report contents to jump to **Resource trends** or **Leak signals**.
+The retained-sample table beneath the charts can also be read with a keyboard.
 
 Headless mode supports bounded checks, severity-based exit codes, and
 GitHub Actions annotations and summaries. Compare saved evidence with

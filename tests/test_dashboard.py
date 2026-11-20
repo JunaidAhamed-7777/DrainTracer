@@ -164,6 +164,19 @@ class LayoutTests(unittest.TestCase):
                 self.assertIn("25.0 MB", output)
                 self.assertNotIn("RSS", output)
 
+    def test_wide_overview_shows_evidence_then_all_four_resource_histories(self) -> None:
+        output = self._render(self._memory_app(140, 40))
+        chart_header = next(line for line in output.splitlines() if "MEMORY  PRIVATE" in line)
+        for resource in ("CPU", "HANDLES", "THREADS"):
+            self.assertIn(resource, chart_header)
+        self.assertLess(output.index("LEAK HEALTH"), output.index(chart_header))
+        self.assertLess(output.index(chart_header), output.index("PROCESS TREE"))
+
+    def test_first_frame_waits_for_real_measurements(self) -> None:
+        output = self._render(_app(80, 24))
+        self.assertIn("Waiting for the first resource sample", output)
+        self.assertNotIn("0.0%", output)
+
     def test_legacy_code_page_uses_ascii_only(self) -> None:
         app = _app(120, 40, encoding="cp1252")
         app._accept_snapshot(make_snapshot())

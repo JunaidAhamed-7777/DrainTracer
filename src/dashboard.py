@@ -89,7 +89,7 @@ class DashboardApp(
     produced, and switching views never changes monitoring.
     """
 
-    VERSION = "v5.8.0"
+    VERSION = "v5.9.0"
     DELTA_WINDOW_SECONDS = 10.0
     FRAME_SECONDS = 0.1
     # Redraw at least this often so the clock and countdowns keep moving.
@@ -130,7 +130,7 @@ class DashboardApp(
         self._sort_mode = SORT_MODES[0]
         self._kill_armed_until = 0.0
         self._cpu_cores = psutil.cpu_count(logical=True) or 1
-        self._keys = KeyReader()
+        self._keys = KeyReader(native_windows=stdin_is_interactive())
         self._view = "overview"
         self._init_processes_view()
         self._init_evidence_view()
@@ -197,6 +197,8 @@ class DashboardApp(
                 while not self._quit_requested:
                     changed = self._guarded("Processing samples", self.poll) or False
                     key = self._read_key()
+                    if key == "\x03":
+                        raise KeyboardInterrupt
                     if key in ("\x04", "\x1a") or self._keys.eof:
                         self._quit_requested = True
                     if unattended and not self._quit_requested and self.tree_finished:
@@ -445,59 +447,55 @@ class DashboardApp(
         return LegacySafe(layout, encoding) if LegacySafe.needed(encoding) else layout
 
     def _render_layout(self) -> Layout:
+        width, height = self.console.size
+        compact = height < self.COMPACT_LAYOUT_ROWS
+        header_rows = 2 if compact else 3
         if self._show_help:
             layout = Layout(name="root")
             layout.split_column(
-                Layout(self._render_header(), name="header", size=3),
+                Layout(self._render_header(), name="header", size=header_rows),
                 Layout(self._render_help(), name="body", ratio=1),
                 Layout(self._render_footer(), name="footer", size=1),
             )
             return layout
         if self._view != "overview":
             return self._render_focused_view()
-        width, height = self.console.size
         wide = width >= self.WIDE_LAYOUT_COLUMNS
-        compact = height < self.COMPACT_LAYOUT_ROWS
-        process_rows = len(self.snapshot.processes) if self.snapshot else 1
-
-        # Spare rows go to taller charts; short terminals get a metric strip.
         self._health_spacious = wide and not compact
-        health_height = 9 if self._health_spacious else 7
-        if compact:
+        health_height = 8 if self._health_spacious else 7
+        if self.snapshot is None:
+            metrics = Layout(Panel(Text("Waiting for the first resource sample.", style=self.palette.muted),
+                                   title=" METRICS ", title_align="left", box=box.ROUNDED,
+                                   border_style=self.palette.border), name="metrics", size=3)
+        elif compact:
             metrics = Layout(self._render_metrics_strip(), name="metrics", size=6)
         else:
-            if wide:
-                card_height = (height - 4 - (process_rows + 5)) // 2
-            else:
-                card_height = (height - 4 - health_height - 8) // 2
-            card_height = max(6, min(card_height, 10))
+            # A shared chart height makes the four recent histories easier
+            # to scan. Keep space below them for processes and recent events.
+            card_height = min(9, max(6, height // 5))
             self._spark_rows = card_height - 4
-            metrics = Layout(name="metrics", size=card_height * 2)
-            metrics.split_column(Layout(name="cards_top"), Layout(name="cards_bottom"))
-            metrics["cards_top"].split_row(
-                Layout(self._render_cpu_card()),
-                Layout(self._render_memory_card()),
+            cards = (
+                Layout(self._render_cpu_card()), Layout(self._render_memory_card()),
+                Layout(self._render_handles_card()), Layout(self._render_threads_card()),
             )
-            metrics["cards_bottom"].split_row(
-                Layout(self._render_handles_card()),
-                Layout(self._render_threads_card()),
-            )
+            metrics = Layout(name="metrics", size=card_height if wide else card_height * 2)
+            if wide:
+                metrics.split_row(*cards)
+            else:
+                metrics.split_column(Layout(name="cards_top"), Layout(name="cards_bottom"))
+                metrics["cards_top"].split_row(*cards[:2])
+                metrics["cards_bottom"].split_row(*cards[2:])
 
         layout = Layout(name="root")
         layout.split_column(
-            Layout(self._render_header(), name="header", size=3),
+            Layout(self._render_header(), name="header", size=header_rows),
+            Layout(self._render_status_line(), name="status", size=1),
             Layout(name="body", ratio=1),
             Layout(self._render_footer(), name="footer", size=1),
         )
         health = Layout(self._render_health_panel(), name="health", size=health_height)
         tree = Layout(self._render_process_panel(), name="tree", ratio=3)
         events = Layout(self._render_event_panel(), name="events", ratio=2)
-
-        if wide:
-            layout["body"].split_row(Layout(name="main", ratio=3), Layout(name="side", ratio=2))
-            layout["main"].split_column(metrics, tree)
-            layout["side"].split_column(health, events)
-            return layout
 
         bottom = Layout(name="bottom", ratio=1)
         if width >= self.SPLIT_BOTTOM_COLUMNS:
@@ -506,8 +504,8 @@ class DashboardApp(
             bottom.split_column(tree, events)
         else:
             # Too small for both; the header still shows the process count.
-            bottom.update(self._render_event_panel())
-        layout["body"].split_column(metrics, health, bottom)
+            bottom.update(events.renderable)
+        layout["body"].split_column(health, metrics, bottom)
         return layout
 
     def _render_focused_view(self) -> Layout:
@@ -534,18 +532,12 @@ class DashboardApp(
         """View tabs on the left; run state, signal, and sample age on the right."""
         palette, glyphs = self.palette, self.glyphs
         width = self.console.size.width
-        tabs = Text(no_wrap=True, overflow="ellipsis")
-        for key, (name, label, short) in VIEWS.items():
-            if name == self._view:
-                tabs.append(f" {key} {label} ", style=f"bold {palette.ink} on {palette.accent}")
-            else:
-                tabs.append(f" {key} {short if width < 110 else label.title()} ",
-                            style=palette.muted)
         status, status_color = self._status(self.snapshot)
         right = Text(no_wrap=True)
         if self.timeline_frozen:
             # The view is frozen, not monitoring: say so wherever the user is.
-            right.append(" TIMELINE FROZEN ", style=f"bold {palette.ink} on {palette.warn}")
+            right.append(" TIMELINE FROZEN " if width >= 64 else " FROZEN ",
+                         style=f"bold {palette.ink} on {palette.warn}")
             right.append(" ")
         right.append(f" {glyphs.dot} {status} ", style=f"bold {palette.ink} on {status_color}")
         snapshot = self.snapshot
@@ -554,10 +546,26 @@ class DashboardApp(
                 f" {glyphs.warn} {snapshot.severity.value.upper()}",
                 style=f"bold {self._severity_color(snapshot.severity)}",
             )
-        if snapshot is not None:
+        if snapshot is not None and width >= 96:
             age = max(0.0, time.time() - snapshot.timestamp)
-            right.append(f" {format_duration(age) if age >= 60 else f'{age:.1f}s'} ",
+            right.append(f" {format_duration(age) if age >= 60 else f'{age:.1f}s'} ago ",
                          style=palette.muted)
+        # Use progressively shorter labels, always keeping the current page
+        # named. Brackets mark the active tab on monochrome terminals too.
+        for detail in ("full", "short", "numbers"):
+            tabs = Text(no_wrap=True, overflow="ellipsis")
+            for key, (name, label, short) in VIEWS.items():
+                if name == self._view:
+                    active = Text(f"[{key} {label}]", style=f"bold {palette.ink} on {palette.accent}")
+                    tabs.append_text(active)
+                else:
+                    suffix = {"full": " " + label.title(), "short": " " + short, "numbers": ""}[detail]
+                    tabs.append(f" {key}{suffix} ", style=palette.muted)
+            if tabs.cell_len + right.cell_len <= width:
+                break
+        else:
+            tabs = active
+            right.truncate(max(1, width - active.cell_len), overflow="ellipsis")
         bar = Table.grid(expand=True)
         bar.add_column(ratio=1, no_wrap=True, overflow="ellipsis")
         bar.add_column(justify="right", no_wrap=True)
@@ -723,27 +731,26 @@ class DashboardApp(
 
     def _render_header(self) -> RenderableType:
         palette, glyphs = self.palette, self.glyphs
-        status, status_color = self._status(self.snapshot)
         roomy = self.console.size.width >= 90
 
+        snapshot = self.snapshot
+        target = safe_label(Path(self.target_path).name)
+        root_name = safe_label(self._process_name(snapshot))
+        if roomy and root_name.lower() != target.lower():
+            target = f"{target} via {root_name}"
         brand = Text.assemble(
-            (f" {glyphs.brand} {self.TITLE} ", f"bold {palette.ink} on {palette.accent}"),
-            (f" {self.VERSION} ", f"bold {palette.accent} on {palette.surface}"),
-            ("  resource leak monitor" if roomy else "", palette.muted),
+            (f" {self.TITLE}", f"bold {palette.accent}"),
+            (f" {self.VERSION}  {glyphs.sep}  ", palette.muted),
+            (target, "bold"),
+            no_wrap=True, overflow="ellipsis",
         )
-        right = Text.assemble(
-            (" TIMELINE FROZEN " if self.timeline_frozen else "",
-             f"bold {palette.ink} on {palette.warn}"),
-            (" " if self.timeline_frozen else "", ""),
-            (f" {glyphs.dot} {status} ", f"bold {palette.ink} on {status_color}"),
-            (f"  {time.strftime('%H:%M:%S')} ", palette.muted),
-        )
+        ownership = "Attached" if self.attached else "Launched"
+        right = Text(f" {ownership} session " if roomy else f" {ownership} ", style=palette.muted)
         bar = Table.grid(expand=True)
         bar.add_column(ratio=1, no_wrap=True)
         bar.add_column(justify="right", no_wrap=True)
         bar.add_row(brand, right)
 
-        snapshot = self.snapshot
         pid = snapshot.root_pid if snapshot and snapshot.root_pid else "-"
         process_count = len(snapshot.processes) if snapshot else 0
         processes = str(process_count)
@@ -753,12 +760,7 @@ class DashboardApp(
             churn = f"+{counts.started}/-{counts.exited}"
             processes += f" ({churn} started/exited)" if roomy else f" {churn}"
         interval = snapshot.sample_interval_ms if snapshot else self.detector.sample_interval_ms
-        target = safe_label(Path(self.target_path).name)
-        root_name = safe_label(self._process_name(snapshot))
-        if roomy and root_name.lower() != target.lower():
-            target = f"{target} via {root_name}"
         pairs = [
-            ("TARGET", target),
             ("PID", f"{pid} (attached)" if self.attached else str(pid)),
             ("PROCESSES" if roomy else "PROCS", processes),
             ("UPTIME", self._format_duration(self._uptime())),
@@ -774,7 +776,7 @@ class DashboardApp(
         )
         path.no_wrap = True
         path.overflow = "ellipsis"
-        return Group(bar, info, path)
+        return Group(bar, info) if self.console.height < self.COMPACT_LAYOUT_ROWS else Group(bar, info, path)
 
     def _label_values(self, *pairs: tuple[str, str]) -> Text:
         palette = self.palette
@@ -795,57 +797,56 @@ class DashboardApp(
             room = max(1, self.console.size.width - 38)
             return Text(f" BASELINE {self._baseline_draft[-room:]}_  ENTER load  ESC cancel",
                         style=f"bold {palette.accent}", no_wrap=True, overflow="ellipsis")
-        roomy = self.console.size.width >= 120
-        keys = Text(no_wrap=True, overflow="ellipsis")
-        quit_label = ("detach & quit" if roomy else "detach") if self.attached else "quit"
-        if self._show_help:
-            for key, label in (("UP/DOWN", "scroll"), ("ESC / ? / H", "close help"),
-                               (f"{min(VIEWS)}-{max(VIEWS)}", "views")):
-                keys.append(f" {key} ", style=f"bold {palette.ink} on {palette.muted}")
-                keys.append(f" {label}  ", style=palette.muted)
-            return keys
-        if self._view != "overview" and not self._show_help:
-            # The view's own keys first; the target controls stay in help.
-            controls = list(getattr(self, f"_{self._view}_controls")())
-            controls += [
-                ("ESC", "overview" if roomy else "back", palette.muted),
-                ("?", "help", palette.muted),
-                ("Q", quit_label, palette.accent_alt),
-            ]
-            for key, label, color in controls:
-                keys.append(f" {key} ", style=f"bold {palette.ink} on {color}")
-                keys.append(f" {label}  ", style=palette.muted)
-            return keys
-        controls = []
-        if not self.manager.contains_monitor:
-            controls += [
-                ("SPACE", "pause/resume" if roomy else "pause", palette.accent),
-                ("K", "kill tree" if roomy else "kill", palette.danger),
-            ]
-        controls.append(("E", "export report" if roomy else "export", palette.warn))
-        if self._last_html_report is not None:
-            controls.append(("O", "open report" if roomy else "open", palette.teal))
-        controls.append(("S", "sort", palette.cyan))
-        controls.append((f"{min(VIEWS)}-{max(VIEWS)}", "views", palette.cyan))
-        controls.append(("?", "help", palette.muted))
-        controls.append(("Q", quit_label, palette.accent_alt))
-        for key, label, color in controls:
-            keys.append(f" {key} ", style=f"bold {palette.ink} on {color}")
-            keys.append(f" {label}  ", style=palette.muted)
+        width = self.console.size.width
+        roomy = width >= 120
 
-        if self._last_report_id is not None:
-            note = Text.assemble(
-                ("last report ", palette.muted), (self._last_report_id, f"bold {palette.teal}")
-            )
+        def hint(key: str, label: str, color: str = palette.accent) -> Text:
+            return Text.assemble((f"[{key}]", f"bold {color}"), " ", (label, palette.muted))
+
+        if self._show_help:
+            return Text(" [Up/Down] scroll  [Esc] close help  [1-6] views", style=palette.accent)
+        if self._view == "processes" and self._proc_searching:
+            return Text(" [Enter] apply search  [Esc] clear search", style=palette.accent)
+
+        quit_label = ("detach & quit" if roomy else "detach") if self.attached else "quit"
+        navigation = [hint("?", "help"), hint("Q", quit_label)]
+        if self._view == "overview":
+            controls = []
+            can_control = not self.manager.contains_monitor
+            if can_control:
+                controls.append(("Space", "resume" if self.detector.is_paused else "pause", palette.accent))
+            controls.append(("E", "export", palette.accent))
+            if self._last_html_report is not None:
+                controls.append(("O", "open report", palette.accent))
+            controls.extend([("1-6", "views", palette.accent), ("S", "sort", palette.accent)])
+            if can_control:
+                controls.append(("K", "kill tree", palette.danger))
         else:
-            note = Text("no report exported yet ", style=palette.muted)
-        note.no_wrap = True
-        note.overflow = "ellipsis"
+            controls = getattr(self, f"_{self._view}_controls")()
+            escape_action = "overview" if roomy else "back"
+            if self._view == "processes" and self._proc_query:
+                escape_action = "clear search"
+            navigation.insert(0, hint("Esc", escape_action))
+
+        # Keep global navigation in view. A local command is shown only if
+        # its complete key and label fit; the help screen lists every action.
+        trailing = Text("  ").join(navigation)
+        available = width - trailing.cell_len - 2
+        leading = Text(" ", no_wrap=True)
+        for key, label, color in controls:
+            control = hint(key, label, palette.danger if color == palette.danger else palette.accent)
+            if leading.cell_len + control.cell_len <= available:
+                leading.append_text(control)
+                leading.append("  ")
+        if self._view == "overview" and self._last_report_id:
+            note = f"Last report {self._last_report_id}"
+            if leading.cell_len + len(note) <= available:
+                leading.append(note, style=palette.muted)
 
         footer = Table.grid(expand=True)
-        footer.add_column(no_wrap=True)
-        footer.add_column(justify="right", ratio=1, no_wrap=True)
-        footer.add_row(keys, note)
+        footer.add_column(ratio=1, no_wrap=True)
+        footer.add_column(justify="right", no_wrap=True)
+        footer.add_row(leading, trailing)
         return footer
 
     # ------------------------------------------------------------------
@@ -1077,6 +1078,8 @@ class DashboardApp(
             Sized(self._process_table),
             title=Text(title, style=f"bold {self.palette.accent_alt}"),
             title_align="left",
+            subtitle=Text(" [2] inspect processes ", style=self.palette.muted),
+            subtitle_align="right",
             border_style=self.palette.border,
             box=box.ROUNDED,
             padding=(0, 1),
@@ -1236,6 +1239,8 @@ class DashboardApp(
             Sized(self._health_body),
             title=Text(" LEAK HEALTH ", style=f"bold {color}"),
             title_align="left",
+            subtitle=Text(" [3] inspect evidence ", style=self.palette.muted),
+            subtitle_align="right",
             border_style=self.palette.border if severity == LeakSeverity.NONE else color,
             box=box.ROUNDED,
             padding=(0, 1),
@@ -1318,7 +1323,7 @@ class DashboardApp(
         )
         freshness = self._freshness_line()
         if self._health_spacious:
-            return Group(top, Text(""), rows, freshness or Text(""), footnote)
+            return Group(top, rows, freshness or Text(""), footnote)
         if freshness is not None:
             footnote.append(f" {glyphs.sep} ", style=palette.muted)
             footnote.append_text(freshness)

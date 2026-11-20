@@ -10,7 +10,7 @@ from pathlib import Path
 from helpers import make_console, make_denied, make_process, render_text, sample_trees
 
 from src.config import resolve_settings
-from src.dashboard import DashboardApp
+from src.dashboard import VIEWS, DashboardApp
 from src.keys import DOWN, ESCAPE, PAGE_DOWN
 
 MB = 1024 * 1024
@@ -97,24 +97,43 @@ class NavigationTests(unittest.TestCase):
         self.assertFalse(app.detector.is_paused)
         self.assertEqual(app._sort_mode, "tree")
 
-    def test_overview_footer_offers_views_and_focused_views_show_tabs(self) -> None:
-        app = _app(130, 40)
+    def test_attached_overview_and_focused_views_show_tabs(self) -> None:
+        app = DashboardApp(None, console=make_console(130, 40), attach_pid=100)
         growing_session(app, 5)
-        self.assertIn("views", render_text(app))
         app._handle_key("5")
         output = render_text(app)
         self.assertIn("5 MONITOR", output)
         self.assertIn("1 Overview", output)
         self.assertIn("overview", output.splitlines()[-1])
+        app._handle_key("1")
+        lines = render_text(app).splitlines()
+        self.assertIn("1 OVERVIEW", lines[3])
+        self.assertIn("6 Compare", lines[3])
+        self.assertIn("views", lines[-1])
 
     def test_compact_views_use_one_status_line(self) -> None:
         app = _app(80, 24)
         growing_session(app, 5)
+        self.assertIn("1 OVERVIEW", render_text(app).splitlines()[2])
         app._handle_key("5")
         lines = render_text(app).splitlines()
         self.assertIn("5 MONITOR", lines[0])
         self.assertIn(app._status(app.snapshot)[0], lines[0])
         self.assertNotIn("PATH", "".join(lines))  # no full header at 80x24
+
+    def test_narrow_pages_keep_the_active_tab_and_global_actions_in_plain_text(self) -> None:
+        app = _app(50, 20, LEGACY)
+        growing_session(app)
+        for key, (_, label, _) in VIEWS.items():
+            with self.subTest(key=key):
+                app._handle_key(key)
+                lines = render_text(app).splitlines()
+                self.assertIn(f"[{key} {label}]", lines[2 if key == "1" else 0])
+                self.assertIn("[?] help", lines[-1])
+                self.assertIn("[Q] quit", lines[-1])
+        app._handle_key("2")
+        app._handle_key("/")
+        self.assertIn("[Esc] clear search", render_text(app).splitlines()[-1])
 
     def test_legacy_consoles_replace_unprintable_names_and_ellipses(self) -> None:
         app = _app(80, 24, LEGACY)
@@ -382,6 +401,11 @@ class ProcessesViewTests(ViewRenderingMixin, unittest.TestCase):
         self.assertNotIn("PROCESSES 3 live", output)
         self.assertIn("SELECTED PROCESS", output)
         self.assert_fills(output, 80, 24)
+        self.assertIn("[Focus] SELECTED PROCESS", output)
+        app._handle_key("tab")
+        self.assertIn("[Focus] PROCESSES", render_text(app))
+        app._handle_key(DOWN)
+        self.assertEqual(self._selected(app), 2)
 
     def test_denied_and_long_names_render(self) -> None:
         app = _app(80, 24, LEGACY)
@@ -613,11 +637,16 @@ class TimelineViewTests(ViewRenderingMixin, unittest.TestCase):
         self.assertIn("TIMELINE FROZEN", output.splitlines()[3])  # the status line
         self.assertFalse(app.detector.is_paused)
         app._handle_key("1")
-        self.assertIn("TIMELINE FROZEN", render_text(app).splitlines()[0])
+        self.assertIn("TIMELINE FROZEN", render_text(app).splitlines()[3])
         app._handle_key("4")
         app._handle_key("F")
         self.assertFalse(app.timeline_frozen)
         self.assertIn("30 samples", render_text(app))
+
+    def test_compact_frozen_timeline_keeps_unfreeze_visible(self) -> None:
+        app = self._app(50, 20)
+        app._handle_key("f")
+        self.assertIn("[F] unfreeze", render_text(app).splitlines()[-1])
 
     def test_process_scope_uses_selected_identity_and_freezes_its_points(self) -> None:
         app = self._app()

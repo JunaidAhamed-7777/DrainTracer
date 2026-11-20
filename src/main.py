@@ -287,7 +287,6 @@ if __package__ in (None, ""):
     __package__ = "src"
 
 try:
-    from rich import box
     from rich.console import Console
     from rich.panel import Panel
     from rich.text import Text
@@ -317,6 +316,7 @@ try:
     from .report import DEFAULT_REPORT_DIR, report_directory, write_json_report
     from .resources import resource_path
     from .startup import choose_startup_action
+    from .system_overview import DEFAULT_PROCESS_LIMIT
     from .theme import PALETTE, blend, plain_console
     from .units import parse_count, parse_duration
     from .updates import check_for_update
@@ -493,7 +493,7 @@ def build_parser() -> argparse.ArgumentParser:
     source.add_argument(
         "--target",
         metavar="PATH",
-        help="Target executable/script. Without --target or --pid, choose how to start.",
+        help="Target executable/script. Without --target or --pid, open the system overview.",
     )
     source.add_argument(
         "--pid",
@@ -503,6 +503,13 @@ def build_parser() -> argparse.ArgumentParser:
             "Attach to an already running process instead of launching one. "
             "Quitting detaches and leaves it running."
         ),
+    )
+    target.add_argument(
+        "--top-processes",
+        type=int,
+        default=DEFAULT_PROCESS_LIMIT,
+        metavar="N",
+        help=f"Show up to N processes per system overview ranking (default: {DEFAULT_PROCESS_LIMIT}).",
     )
 
     monitoring = parser.add_argument_group("monitoring")
@@ -750,6 +757,26 @@ def _prompt_target_path(console: Console) -> str | None:
     return str(Path(value).expanduser())
 
 
+def _select_launch_path(console: Console) -> str | None:
+    supported = (
+        ".exe  .bat  .cmd  .py" if sys.platform == "win32" else
+        "Linux executables, executable #! scripts, and .py files"
+    )
+    console.print(Panel(
+        Text.assemble(("Select a target executable or script", "bold"), "\n", supported),
+        title="Open a program", title_align="left", border_style=PALETTE.border, expand=False,
+    ))
+    try:
+        return select_target_file()
+    except OSError as exc:
+        reason = f"{exc}: {exc.__cause__}" if exc.__cause__ else str(exc)
+        console.print(Text.assemble(("File picker failed: ", "bold red"), reason,
+                                    ("\nPass the program with --target PATH instead.", "dim")))
+        if not sys.platform.startswith("linux"):
+            raise
+        return _prompt_target_path(console)
+
+
 def _report_crash(console: Console, code: int) -> int:
     """Show an unexpected error; the session has already cleaned up its target."""
     console.print_exception(show_locals=False)
@@ -904,6 +931,8 @@ def _main(console: Console, argv: list[str] | None) -> int:
         parser.error("--target needs a file path; the value is empty")
     if args.headless and args.target is None and args.pid is None:
         parser.error("--headless needs --target or --pid; startup selection is interactive")
+    if args.top_processes < 1:
+        parser.error("--top-processes needs a positive whole count")
     if args.profile is not None and args.no_config:
         parser.error("--profile needs a settings file; drop --no-config")
     if args.window and len(set(args.window)) > MAX_WINDOWS:
@@ -931,11 +960,10 @@ def _main(console: Console, argv: list[str] | None) -> int:
     target_path = args.target
     attach_pid = args.pid
     attach_create_time = None
-    if target_path is None and attach_pid is None:
-        action = choose_startup_action(console)
+    while target_path is None and attach_pid is None:
+        action = choose_startup_action(console, limit=args.top_processes)
         if action is None:
-            console.print("[yellow]Selection canceled. Nothing to monitor.[/yellow]")
-            return 0
+            break
         if action == "hook":
             if forwarded_args:
                 parser.error(
@@ -943,10 +971,17 @@ def _main(console: Console, argv: list[str] | None) -> int:
                     "not Hook to a running program"
                 )
             selected = select_running_process(console)
-            if selected is None:
-                console.print("[yellow]Selection canceled. Nothing to monitor.[/yellow]")
-                return 0
-            attach_pid, attach_create_time = selected.pid, selected.create_time
+            if selected is not None:
+                attach_pid, attach_create_time = selected.pid, selected.create_time
+        else:
+            try:
+                target_path = _select_launch_path(console)
+            except OSError:
+                return 2
+        if target_path is None and attach_pid is None:
+            if notice is not None or not console.is_terminal:
+                break
+            console.clear()
 
     if attach_pid is not None:
         app = DashboardApp(
@@ -959,33 +994,6 @@ def _main(console: Console, argv: list[str] | None) -> int:
             settings=settings,
         )
         return _run_dashboard(app, console)
-
-    if target_path is None:
-        supported = (
-            ".exe  .bat  .cmd  .py" if sys.platform == "win32" else
-            "Linux executables, executable #! scripts, and .py files"
-        )
-        console.print(
-            Panel(
-                "[bold]Select a target executable or script[/bold]\n"
-                f"[{PALETTE.muted}]Supported: {supported}[/]",
-                title=f"[bold {PALETTE.accent}] CHOOSE TARGET [/]",
-                title_align="left",
-                border_style=PALETTE.border,
-                box=box.ROUNDED,
-                padding=(1, 2),
-                expand=False,
-            )
-        )
-        hint = ("\nPass the program with --target PATH instead.", "dim")
-        try:
-            target_path = select_target_file()
-        except OSError as exc:
-            reason = f"{exc}: {exc.__cause__}" if exc.__cause__ else str(exc)
-            console.print(Text.assemble(("File picker failed: ", "bold red"), reason, hint))
-            if not sys.platform.startswith("linux"):
-                return 2
-            target_path = _prompt_target_path(console)
 
     if not target_path:
         console.print("[yellow]Selection canceled. Nothing to monitor.[/yellow]")

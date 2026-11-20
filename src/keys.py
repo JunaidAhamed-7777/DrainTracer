@@ -12,6 +12,7 @@ characters, so a name is always longer than one character.
 from __future__ import annotations
 
 import codecs
+import ctypes
 import os
 import sys
 import time
@@ -52,6 +53,41 @@ WINDOWS_SCAN_CODES = {
     "\x0f": BACKTAB,
 }
 _WINDOWS_PREFIXES = ("\x00", "\xe0")
+
+# Virtual-key values carried by native Windows console input records.
+_WINDOWS_VIRTUAL_KEYS = {
+    0x21: PAGE_UP,
+    0x22: PAGE_DOWN,
+    0x23: END,
+    0x24: HOME,
+    0x25: LEFT,
+    0x26: UP,
+    0x27: RIGHT,
+    0x28: DOWN,
+    0x2E: DELETE,
+}
+_WINDOWS_KEY_EVENT = 0x0001
+_WINDOWS_SHIFT_PRESSED = 0x0010
+_CONTROL_KEYS = ("\x03", "\x04", "\x1a")
+
+
+class _WindowsKeyEvent(ctypes.Structure):
+    """Win32 KEY_EVENT_RECORD using fixed-width fields."""
+
+    _fields_ = [
+        ("pressed", ctypes.c_int32),
+        ("repeat", ctypes.c_uint16),
+        ("virtual_key", ctypes.c_uint16),
+        ("scan_code", ctypes.c_uint16),
+        ("character", ctypes.c_uint16),
+        ("control_state", ctypes.c_uint32),
+    ]
+
+
+class _WindowsInputRecord(ctypes.Structure):
+    """Win32 INPUT_RECORD. The largest member of its payload union is 16 bytes."""
+
+    _fields_ = [("kind", ctypes.c_uint16), ("key", _WindowsKeyEvent)]
 
 # Final characters of CSI (``\x1b[``) and SS3 (``\x1bO``) cursor sequences.
 _ANSI_FINALS = {
@@ -112,7 +148,7 @@ def _decode_ansi(data: str, *, final: bool) -> tuple[list[str], str]:
         character = data[index]
         if character != "\x1b":
             decoded = decode_plain(character)
-            if character in ("\x03", "\x04", "\x1a"):
+            if character in _CONTROL_KEYS:
                 keys.append(character)
             elif decoded is not None:
                 keys.append(decoded)
@@ -165,8 +201,9 @@ class KeyReader:
     keys; the extras queue up for later calls.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, native_windows: bool = False) -> None:
         self._pending: deque[str] = deque()
+        self._native_windows = native_windows
         self._decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
         self._ansi = ""
         self._ansi_since = 0.0
@@ -213,7 +250,7 @@ class KeyReader:
         if self._pending:
             return self._pending.popleft()
         if os.name == "nt":
-            return self._read_windows()
+            return self._read_windows_console() if self._native_windows else self._read_windows()
         self._pending.extend(self._read_posix())
         return self._pending.popleft() if self._pending else None
 
@@ -230,7 +267,45 @@ class KeyReader:
             # would freeze the dashboard until the next key press.
             return msvcrt.getwch() if msvcrt.kbhit() else None
 
-        return decode_windows(msvcrt.getwch(), scan_code)
+        first = msvcrt.getwch()
+        if first in _CONTROL_KEYS:
+            return first
+        return decode_windows(first, scan_code)
+
+    def _read_windows_console(self) -> str | None:
+        """Read one key directly so virtual keys and printable characters stay distinct."""
+        import msvcrt
+
+        try:
+            handle = ctypes.c_void_p(msvcrt.get_osfhandle(sys.stdin.fileno()))
+        except (AttributeError, OSError, TypeError, ValueError):
+            self.eof = True
+            return None
+        kernel = ctypes.windll.kernel32
+        count = ctypes.c_uint32()
+        if not kernel.GetNumberOfConsoleInputEvents(handle, ctypes.byref(count)):
+            self.eof = True
+            return None
+
+        record = _WindowsInputRecord()
+        for _ in range(count.value):
+            if not kernel.ReadConsoleInputW(handle, ctypes.byref(record), 1, ctypes.byref(count)):
+                self.eof = True
+                return None
+            if count.value == 0 or record.kind != _WINDOWS_KEY_EVENT or not record.key.pressed:
+                continue
+            key = record.key
+            if key.virtual_key in _WINDOWS_VIRTUAL_KEYS:
+                return _WINDOWS_VIRTUAL_KEYS[key.virtual_key]
+            character = chr(key.character)
+            if character == "\t" and key.control_state & _WINDOWS_SHIFT_PRESSED:
+                return BACKTAB
+            if character in _CONTROL_KEYS:
+                return character
+            decoded = decode_plain(character)
+            if decoded is not None:
+                return decoded
+        return None
 
     def _read_posix(self) -> list[str]:
         import select

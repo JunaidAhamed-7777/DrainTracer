@@ -12,16 +12,8 @@
 
 <h1 align="center">DrainTracer</h1>
 
-Python integrations can use the [supported session API](docs/python-api.md)
-for launch/attach, immutable snapshots, bounded subscriptions, cancellation,
-and explicit cleanup/export outcomes without initializing the dashboard.
-
-[Controlled local baselines](docs/controlled-baselines.md) add deliberate
-repeated-run approvals, reviewable audit history, report-sourced budgets and
-scoped expiring exceptions for reproducible regression checks.
-
 <p align="center">
-  <strong>Release series: v5.8.0</strong> ·
+  <strong>Release series: v5.9.0</strong> ·
   <a href="RELEASES.md">Current version and release notes</a>
 </p>
 
@@ -39,15 +31,10 @@ scoped expiring exceptions for reproducible regression checks.
   <a href="LEGAL.md">Privacy and terms</a>
 </p>
 
-<p align="center">
-  <a href="docs/assets/draintracer-demo.mp4"><strong>▶ Full 30-second demo (MP4)</strong></a><br>
-  <sub>GIF excerpts below · recorded with v5.1.1 · silent MP4 · 6.7 MB</sub>
-</p>
-
-DrainTracer is a Python CLI/TUI that watches an executable or script and its
-recursive child processes. It shows resource usage in a live terminal dashboard
-and flags sustained growth in **private memory, handles (file descriptors on
-Linux), and threads**. **Linux support includes WSL.**
+Run `draintracer` to see the busiest processes on your machine. Open a
+program or attach to a running PID to watch its process tree. DrainTracer
+flags sustained growth in **private memory, handles (file descriptors on
+Linux), and threads**. Linux support includes WSL.
 
 Use it to investigate a worker that grows over time, catch resource regressions
 in a Windows or Linux CI job, or compare the same workload before and after a fix.
@@ -57,13 +44,12 @@ The target needs no source changes or instrumentation.
 allocation.** DrainTracer measures process counters; it does not identify
 allocation sites. Short runs can be inconclusive.
 
-## See the process behind the growth
+## Start with the system overview
 
-![Private memory grows in a child process while DrainTracer collects evidence, then raises a HIGH leak signal](docs/assets/live-growth.gif)
+![The live system overview ranks processes by four resources. The operator holds the readings, opens the running-program picker, then returns to the overview.](docs/assets/install-and-launch.gif)
 
-*A real dashboard session monitoring the included bounded memory-growth
-workload, from evidence collection to a HIGH signal. Footage is sped up 1.5×;
-values and process IDs vary by run.*
+Press **P** to read one sample at your own pace. **1** opens a program and
+**2** lists running processes you can monitor.
 
 - **Follow the whole tree.** Observe a target and its discovered descendants,
   including children that outlive their root.
@@ -96,6 +82,11 @@ values and process IDs vary by run.*
 - **Check in CI.** Run headless with a time limit, configurable failure
   severity, optional policies and absolute budgets, GitHub Actions
   annotations, and a job summary.
+
+Python integrations can use the [session API](docs/python-api.md) to launch
+or attach, subscribe to snapshots, cancel monitoring, and export a run.
+[Controlled local baselines](docs/controlled-baselines.md) support repeated-run
+approvals, audit history, report-sourced budgets, and expiring exceptions.
 
 Opt-in [local team storage](docs/team-access.md) adds project-scoped roles,
 revocable credentials, server-side report privacy, retention, controlled logical
@@ -226,11 +217,20 @@ connecting IP address. Process reports are not uploaded. Read the
 [privacy policy](PRIVACY.md) for the request details, modes that skip it, and
 local data handling.
 
-Once the installation check passes, `draintracer` offers two startup choices:
+In an interactive terminal, `draintracer` opens a live system overview when
+you start it without a target. It shows total CPU usage and RAM in use,
+plus four lists of processes ranked highest to lowest by CPU, resident memory
+(RSS), handles (Windows) or open file descriptors (Linux), and threads.
+Each list shows up to five processes by default. Use `--top-processes N` to
+change that limit and **Left/Right** when the rankings span multiple pages.
+Press **P** to hold a reading while you compare rows. Press **P** again to
+return to the latest sample. The timestamp identifies the reading on screen.
 
-- **Open a program:** select an executable or script in the desktop file
-  picker, or enter its path on Linux without a desktop.
-- **Hook to a running program:** browse up to 15 names and PIDs at a
+Choose how to start monitoring.
+
+- **1 · Open a program** lets you select an executable or script in the
+  desktop file picker. On Linux without a desktop, enter the path.
+- **2 · Hook to a running program** lets you browse up to 15 names and PIDs at a
   time. Use **Up/Down** to highlight a program and **Enter** to select it,
   or type a listed PID and press Enter. The list filters as you type a
   name or PID; Backspace updates it immediately. Use `/next` and `/prev`
@@ -257,11 +257,9 @@ The [observer verification and native soak](docs/observer-verification-results.m
 record measured costs, unchanged local budget failures, and the unexpected
 Windows thread warning with their source and machine limits.
 
-Use **Up/Down** to highlight a startup choice, then **Spacebar** (or Enter)
-to select it. Navigation help appears below the Get Started box. Redirected
-or non-terminal input keeps the numbered `1`/`2` prompt.
-
-Press `Q` to cancel either startup prompt, or Escape in the keyboard menu.
+You can also use **Up/Down** and **Enter** or **Space** to choose an action.
+Cancel the picker to return to the live overview. Press **Q** or **Esc**
+on the overview to quit. Redirected input uses a numbered `1`/`2` prompt.
 Supplying `--target` or `--pid`
 skips the menu. All installed-command examples also work with
 `python -m draintracer`; checkout users can use `python src/main.py`.
@@ -279,10 +277,11 @@ export evidence and `O` to open the HTML report. Try
 `.\torture\steady.py` for a stable baseline. The [torture guide](torture/README.md)
 explains all fixtures and their limits.
 
-![Demo commands: pip install draintracer, then draintracer --target .\torture\memory_leak.py](docs/assets/install-and-launch.gif)
+![DrainTracer follows memory_leak.py as its private memory rises, then shows the Processes, Evidence, and Timeline views.](docs/assets/live-growth.gif)
 
-*Install-and-launch commands from the demo. The `torture` workload shown here
-requires a source checkout; it is not included in the PyPI package.*
+The recording shows the bounded memory-growth fixture running on Linux.
+The **Processes** view identifies the growing process. **Evidence** shows
+the detection window, and **Timeline** shows when the signal appeared.
 
 ### Monitor your program
 
@@ -352,8 +351,9 @@ A partly successful pause is rolled back. If a process cannot be resumed,
 it remains marked as suspended; detach retries it and reports a cleanup error
 when resuming is denied. Resolve the access restriction before retrying cleanup.
 
-Number keys open focused views; `Esc` returns to the overview. Views change
-only what is shown: sampling and the target continue unaffected.
+The top navigation bar shows the active view on every page, including the
+monitoring overview. Number keys switch views and `Esc` returns to page
+`1`. Sampling and the target continue while you switch views.
 
 In the process inspector, a search can hide the selected process. Its detail
 panel says so; `Esc` clears the filter and restores the retained selection.
@@ -553,10 +553,10 @@ without hovering over charts.
 Labeled range fields, native signal Zoom buttons, and focusable data tables
 support keyboard use. See the [HTML accessibility checks](docs/html-accessibility.md).
 
-![The exported HTML report shows the HIGH memory signal, resource trend charts, recorded events, and growing processes](docs/assets/html-report.gif)
+![The exported report for memory_leak.py opens on its verdict and resource changes, then scrolls to the memory chart and leak signals.](docs/assets/html-report.gif)
 
-*The offline HTML report from the same demo session: inspect the summary,
-resource trends, events, and process growth after recording.*
+The report uses the same run shown above. Open **Resource trends** to see
+when memory grew. **Leak signals** shows which interval triggered the alert.
 
 Use the JSON reports for scripts and comparisons:
 

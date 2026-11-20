@@ -104,6 +104,78 @@ class ReaderTests(unittest.TestCase):
         self.assertEqual(normalize_key(keys.UP), keys.UP)
         self.assertTrue(all(len(name) > 1 for name in keys.NAMED_KEYS))
 
+    def test_windows_reader_preserves_interrupt_and_eof_keys(self) -> None:
+        for key in ("\x03", "\x04", "\x1a"):
+            with self.subTest(key=key):
+                console = mock.Mock()
+                console.getwch.return_value = key
+                with mock.patch.dict("sys.modules", {"msvcrt": console}):
+                    self.assertEqual(KeyReader._read_windows(), key)
+
+    def test_native_windows_distinguishes_unbuffered_arrows_from_printable_text(self) -> None:
+        records = [
+            (2, False, 0, "\0"),
+            (1, False, 0x27, "\0"),
+            (1, True, 0x27, "\0"),
+            (1, True, 0, "\xe0"),
+            (1, True, 0x25, "\0"),
+            (1, True, 0x26, "\0"),
+            (1, True, 0x28, "\0"),
+            (1, True, 0x0D, "\r"),
+            (1, True, 0, "q"),
+        ]
+
+        def count_events(_handle, count) -> bool:
+            count._obj.value = len(records)
+            return True
+
+        def read_event(_handle, pointer, size, count) -> bool:
+            self.assertEqual(size, 1)
+            kind, pressed, virtual_key, char = records.pop(0)
+            record = pointer._obj
+            record.kind = kind
+            record.key.pressed = pressed
+            record.key.virtual_key = virtual_key
+            record.key.character = ord(char)
+            count._obj.value = 1
+            return True
+
+        kernel = mock.Mock(
+            GetNumberOfConsoleInputEvents=count_events,
+            ReadConsoleInputW=read_event,
+        )
+        reader = KeyReader(native_windows=True)
+        with (
+            mock.patch.object(keys.os, "name", "nt"),
+            mock.patch.object(keys.ctypes, "windll", mock.Mock(kernel32=kernel), create=True),
+            mock.patch.dict("sys.modules", {"msvcrt": mock.Mock(get_osfhandle=lambda _fd: 42)}),
+            mock.patch.object(keys.sys, "stdin", mock.Mock(fileno=lambda: 0)),
+        ):
+            self.assertEqual(reader.read(), keys.RIGHT)
+            self.assertEqual(len(records), 6)
+            self.assertEqual(reader.read(), "\xe0")
+            self.assertEqual(reader.read(), keys.LEFT)
+            self.assertEqual(reader.read(), keys.UP)
+            self.assertEqual(reader.read(), keys.DOWN)
+            self.assertEqual(reader.read(), keys.ENTER)
+            self.assertEqual(records[-1][-1], "q")  # Available to the next picker.
+            self.assertEqual(reader.read(), "q")
+            self.assertIsNone(reader.read())
+            self.assertFalse(reader.eof)
+
+    def test_native_windows_handles_disconnected_console(self) -> None:
+        kernel = mock.Mock(GetNumberOfConsoleInputEvents=mock.Mock(return_value=0))
+        reader = KeyReader(native_windows=True)
+        with (
+            mock.patch.object(keys.os, "name", "nt"),
+            mock.patch.object(keys.ctypes, "windll", mock.Mock(kernel32=kernel), create=True),
+            mock.patch.dict("sys.modules", {"msvcrt": mock.Mock(get_osfhandle=lambda _fd: 42)}),
+            mock.patch.object(keys.sys, "stdin", mock.Mock(fileno=lambda: 0)),
+        ):
+            self.assertIsNone(reader.read())
+            self.assertTrue(reader.eof)
+            kernel.ReadConsoleInputW.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

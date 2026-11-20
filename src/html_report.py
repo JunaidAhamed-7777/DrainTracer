@@ -51,6 +51,18 @@ def _partial_evidence(report: Mapping[str, Any]) -> bool:
             or isinstance(report.get("checkpoint"), Mapping))
 
 
+@lru_cache(maxsize=1)
+def _report_wordmark() -> str:
+    """Embed the official SVGs so a saved report can travel on its own."""
+    def image(theme: str) -> str:
+        source = resource_path(f"docs/assets/brand/wordmark-{theme}.svg").read_bytes()
+        encoded = base64.b64encode(source).decode("ascii")
+        return (f'<img class="brand-{theme}" src="data:image/svg+xml;base64,{encoded}" '
+                'width="1000" height="256" alt="DrainTracer. See what keeps growing.">')
+
+    return f'<span class="brand">{image("dark")}{image("light")}</span>'
+
+
 def render_html_report(report: Mapping[str, Any]) -> str:
     """Return the complete HTML document for an exported report."""
     style = _load_frame("report.css")
@@ -64,23 +76,41 @@ def render_html_report(report: Mapping[str, Any]) -> str:
     name = target_filename(target) or target
     version = str(report.get("version") or "")
     title = f"DrainTracer · {name} · {_verdict_label(report, summary)}"
+    created = _local_time(report.get("created_at"), "")
 
     body = "\n".join(
         (
-            _masthead(report, summary, name, target, version),
-            '<main>',
+            '<a class="skip" href="#overview">Skip to report</a>',
+            '<header class="report-bar"><div class="bar-inner">'
+            f'{_report_wordmark()}'
+            f'<span class="kind">Leak report</span><span class="version">{_e(version)}</span></div></header>',
+            '<div class="report-layout"><nav class="contents" aria-label="Report contents">'
+            '<strong>Contents</strong><ul>'
+            '<li><a href="#overview">Overview</a></li>'
+            '<li><a href="#trends">Resource trends</a></li>'
+            '<li><a href="#signals">Leak signals</a></li>'
+            '<li><a href="#processes">Processes</a></li>'
+            '<li><a href="#events">Event log</a></li>'
+            '<li><a href="#session">Session details</a></li>'
+            '</ul></nav>',
+            '<main id="overview" tabindex="-1">',
+            '<header class="masthead">'
+            f'<div><h1>{_e(name)}</h1><p class="path">{_e(target)}</p></div>'
+            + (f'<p class="created">Exported<br><b>{_e(created)}</b></p>' if created else "")
+            + '</header>',
             _verdict(report, summary),
             _cards(report, summary, _sample_count(report, summary)),
             _charts_panel(),
             _user_markers_panel(payload),
             _sample_table_panel(payload, summary.chart_stride),
             _episodes_panel(summary, start),
-            _events_panel(report, start),
             _processes_panel(report),
             _growth_panel(report, start),
+            _events_panel(report, start),
+            _session_details(report, summary),
             _monitor_panel(summary),
-            '</main>',
             _footer(report, version),
+            '</main></div>',
         )
     )
     csp = (
@@ -97,7 +127,7 @@ def render_html_report(report: Mapping[str, Any]) -> str:
         '<meta name="color-scheme" content="dark light">\n'
         f"<title>{_e(title)}</title>\n"
         f"<style>{style}</style>\n</head>\n"
-        f'<body>\n<div class="wrap">\n{body}\n</div>\n'
+        f'<body>\n{body}\n'
         f'<script type="application/json" id="drain-data">{_script_json(payload)}</script>\n'
         f"<script>{script}</script>\n</body>\n</html>\n"
     )
@@ -118,9 +148,7 @@ def write_html_report(report: Mapping[str, Any], directory: str | Path) -> Path:
 # ----------------------------------------------------------------------
 
 
-def _masthead(
-    report: Mapping[str, Any], summary: ReportSummary, name: str, target: str, version: str
-) -> str:
+def _session_details(report: Mapping[str, Any], summary: ReportSummary) -> str:
     mode = "Attached to a running process" if report.get("mode") == "attach" else "Launched by DrainTracer"
     interval = _first_interval(report)
     stride = summary.chart_stride
@@ -166,13 +194,9 @@ def _masthead(
     facts.extend(_experiment_facts(report, summary))
     items = "".join(f"<div><dt>{_e(label)}</dt><dd>{_e(value)}</dd></div>" for label, value in facts)
     return (
-        '<header class="masthead">'
-        f'<div class="brand"><span aria-hidden="true">&#9670;</span> DRAINTRACER'
-        f'<span class="version">{_e(version)}</span><span class="kind">Leak report</span></div>'
-        f"<h1>{_e(name)}</h1>"
-        f'<p class="path">{_e(target)}</p>'
-        f'<dl class="facts">{items}</dl>'
-        "</header>"
+        '<section class="panel" id="session" aria-labelledby="session-title">'
+        '<h2 id="session-title">Session details</h2>'
+        f'<dl class="facts">{items}</dl></section>'
     )
 
 
@@ -413,26 +437,25 @@ def _cards(report: Mapping[str, Any], summary: ReportSummary, sample_count: int)
         f" · RSS (working set) {format_bytes(peaks.get('rss_bytes', 0.0))}"
     )
     cpu = f"peak CPU {peaks.get('cpu_percent', 0.0):.1f}%{when('cpu_percent')}"
-    cards.append(
-        '<article class="card"><h3>Session</h3>'
-        f'<div class="big">{_e(format_clock(summary.duration))}</div>'
-        f'<div class="sub">{_e(f"{sample_count:,} samples · up to {summary.max_processes} processes")}</div>'
-        f'<div class="sub">{_e(memory)}</div>'
-        f'<div class="sub">{_e(cpu)}</div>'
-        "</article>"
+    return (
+        '<section class="resource-summary" aria-labelledby="summary-title">'
+        '<h2 id="summary-title">Resource changes</h2>'
+        f'<div class="cards">{"".join(cards)}</div>'
+        '<div class="run-summary">'
+        f'<strong>{_e(format_clock(summary.duration))} monitored</strong>'
+        f'<span>{sample_count:,} sample{"s" if sample_count != 1 else ""} · '
+        f'up to {summary.max_processes} process{"es" if summary.max_processes != 1 else ""}</span>'
+        f'<span>{_e(memory)}</span><span>{_e(cpu)}</span></div></section>'
     )
-    return f'<section class="cards">{"".join(cards)}</section>'
 
 
 def _charts_panel() -> str:
     return (
-        '<section class="panel" id="trends" aria-label="Trends">'
-        '<div class="panel-head"><h2>Trends</h2>'
-        '<p class="hint">Read the sample table for values, or use the range fields to zoom. '
-        'Pointer users can hover or drag. '
-        "Double-click or Esc to reset · red dots mark where a leak signal was raised "
-        "or escalated</p>"
+        '<section class="panel" id="trends" tabindex="-1" aria-label="Trends">'
+        '<div class="panel-head"><h2>Resource trends</h2>'
         '<button type="button" class="reset" id="reset-zoom" hidden>Reset zoom</button></div>'
+        '<p class="hint trend-help">Drag or enter a time range to zoom. Press Esc to reset. '
+        'Dots mark new or escalating leak signals. <a href="#sample-values">Read sample values</a>.</p>'
         '<form id="range-controls" class="chart-range" novalidate hidden>'
         '<label for="zoom-start">From (seconds)</label>'
         '<input id="zoom-start" type="number" step="any" aria-describedby="range-status">'
@@ -472,7 +495,7 @@ def _sample_table_panel(payload: Mapping[str, Any], stride: int) -> str:
     return (
         '<details class="panel sample-data" id="sample-data">'
         f'<summary>Retained chart sample values ({len(times):,} rows)</summary>'
-        '<p class="hint">Elapsed time starts at the first retained sample. These are the plotted '
+        '<p class="hint" id="sample-values">Elapsed time starts at the first retained sample. These are the plotted '
         f'retained samples, not a complete whole-run sample log.{_e(thinning)} '
         'n/a means a counter was not measured, including paused, failed, or unreadable samples.</p>'
         f'<p><a class="download" download="retained-chart-samples.csv" href="{download}">'
@@ -551,7 +574,7 @@ def _episodes_panel(summary: ReportSummary, start: float | None) -> str:
             ("Resource", "Strongest", ("Started", "num"), ("Lasted", "num"), "Detail"), rows
         )
     return (
-        '<section class="panel" aria-label="Leak signals">'
+        '<section class="panel" id="signals" aria-label="Leak signals">'
         '<div class="panel-head"><h2>Leak signals</h2>'
         f'<p class="hint">{_e(hint)}</p></div>'
         f"{body}</section>"
@@ -727,7 +750,7 @@ def _events_panel(report: Mapping[str, Any], start: float | None) -> str:
             f"{counts['dropped']:,} discarded from this event log. "
         )
     return (
-        '<section class="panel" aria-label="Event log">'
+        '<section class="panel" id="events" aria-label="Event log">'
         '<div class="panel-head"><h2>Event log</h2>'
         f'<p class="hint">{retention}Elapsed time locates each event on the charts; '
         'use the range fields to inspect it.</p></div>'
@@ -796,7 +819,7 @@ def _processes_panel(report: Mapping[str, Any]) -> str:
             else ""
         )
     return (
-        '<section class="panel" aria-label="Processes">'
+        '<section class="panel" id="processes" aria-label="Processes">'
         f'<div class="panel-head"><h2>Processes</h2><p class="hint">{_e(caption)}</p></div>'
         f"{body}</section>"
     )

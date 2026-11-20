@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import re
 import unittest
 from html.parser import HTMLParser
@@ -34,6 +35,31 @@ class _Semantics(HTMLParser):
 
 
 class ReportAccessibilityTests(unittest.TestCase):
+    def test_report_embeds_the_brand_kit_for_dark_light_and_print(self) -> None:
+        parser = _Semantics()
+        parser.feed(render_html_report(_report()))
+        images = {attrs["class"]: attrs for tag, attrs in parser.elements if tag == "img"}
+        for theme in ("dark", "light"):
+            image = images[f"brand-{theme}"]
+            self.assertEqual(image["alt"], "DrainTracer. See what keeps growing.")
+            kind, encoded = image["src"].split(",", 1)
+            self.assertEqual(kind, "data:image/svg+xml;base64")
+            self.assertEqual(base64.b64decode(encoded),
+                             resource_path(f"docs/assets/brand/wordmark-{theme}.svg").read_bytes())
+
+    def test_report_jump_links_resolve_with_or_without_samples(self) -> None:
+        for report in (_report(), _report(snapshots=[], event_log=[])):
+            parser = _Semantics()
+            parser.feed(render_html_report(report))
+            ids = [attrs["id"] for _, attrs in parser.elements if "id" in attrs]
+            targets = [attrs["href"][1:] for tag, attrs in parser.elements
+                       if tag == "a" and attrs.get("href", "").startswith("#")]
+            self.assertEqual(ids.count("overview"), 1)
+            self.assertTrue({"overview", "trends", "signals", "processes", "events", "session",
+                             "sample-values"}.issubset(targets))
+            for target in targets:
+                self.assertEqual(ids.count(target), 1, target)
+
     def test_text_badges_and_tooltips_meet_aa_contrast_in_both_themes(self) -> None:
         css = resource_path("leak_reports/frames/report.css").read_text(encoding="utf-8")
         dark, light = css.split("@media (prefers-color-scheme:light)", 1)

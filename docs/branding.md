@@ -27,6 +27,9 @@ description and contains no external images, scripts, or font requests.
 - **Light avatar:** [SVG](assets/brand/mark-light.svg) · [PNG](assets/brand/mark-light.png).
 - **Dark wordmark:** [SVG](assets/brand/wordmark-dark.svg) · [PNG](assets/brand/wordmark-dark.png).
 - **Light wordmark:** [SVG](assets/brand/wordmark-light.svg) · [PNG](assets/brand/wordmark-light.png).
+
+  Exported HTML reports embed the two SVG wordmarks for offline reading.
+  Print uses the light wordmark.
 - **Social preview, 1280 × 640:** [SVG](assets/brand/social-preview.svg) ·
   [PNG](assets/brand/social-preview.png). The PNG is ready for a repository's
   social-preview image setting.

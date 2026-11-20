@@ -51,6 +51,7 @@ class ParserTests(unittest.TestCase):
     def test_invalid_combinations_are_usage_errors(self) -> None:
         cases = {
             ("--headless",): "--headless needs --target or --pid",
+            ("--top-processes", "0"): "--top-processes needs a positive whole count",
             ("--fail-on", "low", "--target", "x.exe"): "--fail-on only applies with --headless",
             ("--timeout", "0", "--target", "x.exe"): "greater than zero",
             ("--timeout", "soon", "--target", "x.exe"): "expected a duration",
@@ -299,7 +300,7 @@ class DispatchTests(unittest.TestCase):
             self.assertEqual(cli._main(forced, ["--target", "a.exe", "--no-config"]), 0)
         check.assert_not_called()
         self.assertIn("Output is not a terminal", forced.file.getvalue())
-        self.assertIn("Use --headless for logs and CI", forced.file.getvalue())
+        self.assertIn("Use --headless for logs and CI", " ".join(forced.file.getvalue().split()))
 
         # A real terminal whose input is redirected cannot press Q either.
         terminal = Console(file=_TerminalBuffer(), width=140, force_terminal=True, color_system=None)
@@ -309,7 +310,7 @@ class DispatchTests(unittest.TestCase):
             self.assertEqual(cli._main(terminal, ["--target", "a.exe", "--no-config"]), 0)
         output = terminal.file.getvalue()
         self.assertIn("Input is not interactive", output)
-        self.assertIn("ends when the monitored processes exit", output)
+        self.assertIn("ends when the monitored processes exit", " ".join(output.split()))
 
         terminal = Console(file=_TerminalBuffer(), width=140, force_terminal=True, color_system=None)
         with (mock.patch.object(cli, "_run_dashboard", return_value=0),
@@ -376,6 +377,29 @@ class DispatchTests(unittest.TestCase):
 
 
 class StartupDispatchTests(unittest.TestCase):
+    def test_canceling_either_picker_returns_to_the_live_overview(self) -> None:
+        from rich.console import Console
+
+        console = Console(file=_TerminalBuffer(), force_terminal=True)
+        with (
+            mock.patch.object(cli, "_display_title"),
+            mock.patch.object(cli, "_unattended_notice", return_value=None),
+            mock.patch.object(cli, "choose_startup_action", side_effect=["hook", "open", "open"]) as choose,
+            mock.patch.object(cli, "select_running_process", return_value=None),
+            mock.patch.object(cli, "select_target_file", side_effect=[None, "worker.py"]),
+            mock.patch.object(cli, "DashboardApp") as dashboard,
+        ):
+            dashboard.return_value.run.return_value = 0
+            self.assertEqual(cli._main(console, ["--no-config"]), 0)
+        self.assertEqual(choose.call_count, 3)
+        self.assertEqual(dashboard.call_args.args, ("worker.py",))
+
+    def test_configured_ranking_limit_reaches_the_overview(self) -> None:
+        with mock.patch.object(cli, "choose_startup_action", return_value=None) as choose:
+            console = make_console()
+            self.assertEqual(cli._main(console, ["--top-processes", "12", "--no-config"]), 0)
+        choose.assert_called_once_with(console, limit=12)
+
     def test_title_falls_back_when_the_artwork_is_not_utf8(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             title = Path(folder) / "TITLE.txt"

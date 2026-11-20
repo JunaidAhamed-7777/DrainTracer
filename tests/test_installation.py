@@ -186,7 +186,8 @@ class InstallationSnapshotTests(unittest.TestCase):
         document = json.loads((root / MANIFEST).read_text(encoding="utf-8"))
         source_files = {path.relative_to(root).as_posix() for path in (root / "src").glob("*.py")}
         self.assertEqual(document["schema"], 1)
-        self.assertEqual(set(document["required_files"]), CORE_FILES | source_files)
+        report_artwork = {"docs/assets/brand/wordmark-dark.svg", "docs/assets/brand/wordmark-light.svg"}
+        self.assertEqual(set(document["required_files"]), CORE_FILES | source_files | report_artwork)
         self.assertEqual(len(document["required_files"]), len(set(document["required_files"])))
         self.assertEqual(cli._installation_status(root), ((), None))
 

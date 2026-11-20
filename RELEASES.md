@@ -1,4 +1,4 @@
-# Current version: v5.8.0
+# Current version: v5.9.0
 
 Release records and development milestones are listed newest first. The
 current runtime version here matches `DashboardApp.VERSION` in
@@ -13,6 +13,13 @@ v5.7.0 candidate was likewise never tagged or published; its changes are
 included in v5.8.0.
 Historical entries and source-pinned measurements retain the versions under
 which they were prepared or collected.
+
+## v5.9.0 — 2026-11-20
+
+- Start DrainTracer without a target to see live CPU and RAM usage and four ranked process lists. Press `1` to launch a program, `2` to attach, or `P` to hold a reading. Cancel a picker to return to the overview. Use `--top-processes N` to set the ranking depth.
+- The monitoring overview puts leak evidence first and aligns resource histories on wide terminals. The active page and essential controls stay visible in smaller terminals and in monochrome.
+- Offline HTML reports open with the target, verdict and resource measurements. They embed the official light and dark DrainTracer wordmarks. Contents links lead to trends, signals, processes, events and session details. Keyboard controls, narrow-screen tables, print styles and static access to sample values support multiple ways to read the report.
+- The GitHub and PyPI guides show the updated startup dashboard, monitoring session and HTML export.
 
 ## v5.8.0 — 2026-11-11
 

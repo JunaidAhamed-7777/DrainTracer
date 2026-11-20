@@ -318,7 +318,7 @@ class RenderTests(unittest.TestCase):
         self.assertIn("2 (redacted, fingerprint", document)
         self.assertIn("Windows 11 · 8 CPUs · 16.0 GB RAM", document)
         self.assertIn("private bytes peak 10.0 MB over the 5.0 MB budget", document)
-        for secret in ("hunter2", "s3cr3t", "<img"):
+        for secret in ("hunter2", "s3cr3t", "<img src=x"):
             self.assertNotIn(secret, document)
         self.assertNotIn("<dt>Workload</dt>", render_html_report(_report()))
 
@@ -333,7 +333,7 @@ class RenderTests(unittest.TestCase):
                 snapshots=[snapshot],
             )
         )
-        self.assertNotIn("<img", document)
+        self.assertEqual(document.count("<img "), 2)  # Only the light and dark DrainTracer wordmarks.
         self.assertNotIn('onerror="', document)
         self.assertEqual(document.count("</script>"), 2)  # only the two real closing tags
         self.assertIn("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;&amp;", document)

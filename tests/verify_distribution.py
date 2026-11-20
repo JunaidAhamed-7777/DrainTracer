@@ -8,6 +8,7 @@ outside unittest discovery so normal tests need no build tools or network.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import subprocess
@@ -196,6 +197,10 @@ assert 'draintracer.dashboard' not in sys.modules
         page = html_reports[0].read_text(encoding="utf-8")
         _require(f"<style>{probe['css']}</style>" in page, "The HTML export does not embed its bundled CSS.")
         _require(f"<script>{probe['js']}</script>" in page, "The HTML export does not embed its bundled JavaScript.")
+        for theme in ("light", "dark"):
+            artwork = package / "_data" / "docs" / "assets" / "brand" / f"wordmark-{theme}.svg"
+            encoded = base64.b64encode(artwork.read_bytes()).decode("ascii")
+            _require(f"data:image/svg+xml;base64,{encoded}" in page, f"The exported {theme} wordmark is missing.")
         _require(not list(package.rglob("leak_report_*.json")), "Reports were written inside the installed package.")
         _require(not list(package.rglob("leak_report_*.html")), "HTML reports were written inside the installed package.")
 
