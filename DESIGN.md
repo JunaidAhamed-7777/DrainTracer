@@ -49,10 +49,16 @@ navigation hints in ASCII and preserve legacy Windows encoding fallbacks.
 
 ## Layout
 
-Startup groups machine-wide CPU and RAM together with their measurement time.
-The target choices and keyboard help sit above the four process rankings.
-Wide terminals place the rankings in two columns. Narrow terminals stack
-them and page the results. Labels and numeric readings accompany meters.
+Startup shows whole-machine CPU, RAM, swap, disk reads and writes, and network
+receive and send rates. The timestamp belongs to the displayed sample. Transfer
+rates need two readings. An idle counter shows zero, and an unreadable one
+shows “Unavailable.”
+
+The target chooser stacks the numbered actions in Up/Down order. Wide terminals
+include a description of each picker. Keyboard help sits below the choices.
+The four process rankings use two columns on wide screens and stack on narrow
+ones. On short screens, Left/Right pages through host readings and rankings
+while the chooser stays visible. Labels and numeric readings accompany meters.
 The terminal controls font metrics and the branding falls back to plain text
 when the artwork does not fit.
 

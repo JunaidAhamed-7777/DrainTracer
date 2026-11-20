@@ -38,55 +38,113 @@ _ACTIONS = (
 )
 
 
-def _actions(selected: int | None, *, held: bool = False, wide: bool = False) -> Group:
-    choices = Text(no_wrap=True, overflow="ellipsis")
-    for index, label in enumerate(_ACTIONS):
-        if index:
-            choices.append("    " if wide else "\n")
-        marker = ">" if index == selected else " "
-        style = f"bold {PALETTE.ink} on {PALETTE.accent}" if index == selected else "bold"
-        choices.append(f"{marker} [{index + 1}] {label}", style=style)
+def _actions(console: Console, selected: int | None, *, held: bool = False) -> RenderableType:
+    choices = []
+    labels = _ACTIONS if console.width >= 35 else ("Open a program", "Hook a process")
+    for index, label in enumerate(labels):
+        focused = index == selected
+        key = f"{'>' if focused else ' '} [{index + 1}] "
+        choice = Text.assemble((key, f"bold {PALETTE.accent}"), (label, "bold"))
+        if focused:
+            choice.stylize(f"bold {PALETTE.ink} on {PALETTE.accent}")
+        choices.append(choice)
     if selected is None:
-        return Group(choices, Text("Enter 1 or 2 to select | Q to quit", style=PALETTE.muted))
-    hold_action = "resume" if held else "hold"
-    hint = f"Up/Down move   Enter select   P {hold_action}   Q quit" if wide else f"Up/Down Enter | P {hold_action} | Q quit"
-    return Group(
-        choices,
-        Text(hint, style=PALETTE.muted, no_wrap=True, overflow="ellipsis"),
+        return Group(*choices, Text("Enter 1 or 2 to select | Q to quit", style=PALETTE.muted))
+
+    key_style = f"bold {PALETTE.teal}"
+    move = Text.assemble(("Up/Down", key_style), " move   " if console.width >= 33 else "   ",
+                         ("Enter", key_style), " select")
+    session = Text.assemble(("P", key_style), " resume   " if held else " hold   ", ("Q/Esc", key_style), " quit")
+    if console.width >= 68:
+        menu = Table.grid(padding=(0, 3), pad_edge=False)
+        menu.add_column(no_wrap=True)
+        menu.add_column(style=PALETTE.muted)
+        menu.add_row(choices[0], "Pick an executable or script")
+        menu.add_row(choices[1], "Search by process name or PID")
+        layout = Group(menu, Text.assemble(move, "     ", session))
+    else:
+        layout = Group(*choices, move, session)
+    if console.height < 18:
+        return layout
+    return Panel(
+        layout, title=Text(" CHOOSE A TARGET ", style=f"bold {PALETTE.accent}"), title_align="left",
+        border_style=PALETTE.border, box=box.ROUNDED, padding=(0, 1),
     )
 
 
-def _host_resources(console: Console, overview: SystemOverview | None, held: bool) -> Panel:
-    cpu = "Sampling..." if overview is None else "Unavailable"
-    memory = cpu
-    ram_percent = None
-    if overview is not None:
-        if overview.cpu_percent is not None:
-            cpu = f"{overview.cpu_percent:.1f}%"
-        used, total = overview.used_memory_bytes, overview.total_memory_bytes
-        if used is not None and total is not None and total > 0:
-            ram_percent = 100 * used / total
-            memory = f"{format_bytes(used)} / {format_bytes(total)} ({ram_percent:.1f}%)"
-    values = Table.grid(padding=(0, 1), pad_edge=False)
-    values.add_column(style="bold")
-    has_meter = console.width >= 64
-    if has_meter:
-        values.add_column()
-    values.add_column(no_wrap=True)
-    for label, reading, percent in (
-        ("CPU", cpu, overview.cpu_percent if overview else None), ("RAM", memory, ram_percent),
-    ):
-        cells = [Text(label)]
-        if has_meter:
-            glyphs = select_glyphs(console)
-            width = min(32, console.width // 4)
-            filled = round(width * min(100, max(0, percent or 0)) / 100)
-            # Distinct shapes keep the scale visible on a monochrome terminal.
+def _capacity(used: int | None, total: int | None, empty: str, *, compact: bool) -> tuple[str, float | None]:
+    if used is None or total is None:
+        return empty, None
+    if total == 0:
+        return "Off", None
+    percent = 100 * used / total
+    reading = f"{format_bytes(used)} / {format_bytes(total)}"
+    if not compact:
+        reading += f" ({percent:.1f}%)"
+    return reading, percent
+
+
+def _host_resources(console: Console, overview: SystemOverview | None, held: bool, rows: range) -> Panel:
+    empty = "Sampling..." if overview is None else "Unavailable"
+    cpu_percent = overview.cpu_percent if overview else None
+    cpu = "Sampling..." if overview and overview.cpu_warming_up else empty
+    if cpu_percent is not None:
+        cpu = f"{cpu_percent:.1f}%"
+    compact = console.width < 39 or 68 <= console.width < 76
+    memory, ram_percent = _capacity(
+        overview.used_memory_bytes if overview else None, overview.total_memory_bytes if overview else None,
+        empty, compact=compact,
+    )
+    swap, swap_percent = _capacity(
+        overview.used_swap_bytes if overview else None, overview.total_swap_bytes if overview else None,
+        empty, compact=compact,
+    )
+    capacity = Table.grid(padding=(0, 1), pad_edge=False)
+    capacity.add_column(no_wrap=True)
+    meter_width = min(16, (console.width - 64) // 3) if console.width >= 76 else 0
+    if meter_width:
+        capacity.add_column()
+    capacity.add_column(no_wrap=True)
+    metrics = (
+        ("CPU", cpu, cpu_percent, PALETTE.cyan), ("RAM", memory, ram_percent, PALETTE.accent_alt),
+        ("Swap", swap, swap_percent, PALETTE.teal),
+    )
+    glyphs = select_glyphs(console)
+    for index, (label, reading, percent, color) in enumerate(metrics):
+        if index not in rows:
+            continue
+        cells = [Text(label, style=f"bold {color}")]
+        if meter_width:
+            filled = round(meter_width * min(100, max(0, percent or 0)) / 100)
             cells.append(Text.assemble(
-                (glyphs.spark[-1] * filled, PALETTE.cyan), ("." * (width - filled), PALETTE.muted),
+                (glyphs.spark[-1] * filled, color), ("." * (meter_width - filled), PALETTE.border),
             ))
         cells.append(Text(reading))
-        values.add_row(*cells)
+        capacity.add_row(*cells)
+
+    activity = Table.grid(expand=True, padding=(0, 1), pad_edge=False)
+    activity.add_column(ratio=1, no_wrap=True)
+    activity.add_column(justify="right", no_wrap=True)
+    index = 0 if console.width >= 68 else 3
+    for labels, rates, color in (
+        (("Disk read", "Disk write"), overview.disk if overview else None, PALETTE.accent),
+        (("Net receive", "Net send"), overview.network if overview else None, PALETTE.teal),
+    ):
+        for label, rate in zip(labels, (rates.incoming, rates.outgoing) if rates else (None, None)):
+            if index in rows:
+                reading = "Sampling..." if rates is not None else empty
+                if rate is not None:
+                    reading = f"{format_bytes(rate)}/s"
+                activity.add_row(Text(label, style=f"bold {color}"), Text(reading))
+            index += 1
+
+    if console.width >= 68:
+        values = Table.grid(expand=True, padding=(0, 3), pad_edge=False)
+        values.add_column(ratio=3)
+        values.add_column(ratio=2)
+        values.add_row(capacity, activity)
+    else:
+        values = Group(capacity, activity)
     state = "On hold" if held else "Live"
     if overview and overview.sampled_at is not None:
         state += " " + time.strftime("%H:%M:%S", time.localtime(overview.sampled_at))
@@ -120,7 +178,7 @@ def _ranked_list(
 def _startup_view(
     console: Console, overview: SystemOverview | None, selected: int, page: int, *, held: bool = False,
 ) -> tuple[RenderableType, int]:
-    """Fit all four rankings on screen, paging their rows together."""
+    """Keep the chooser visible and page host readings and rankings to fit."""
     wide = console.width >= 68
     groups = (
         ("CPU (% of one core)", overview.top_cpu if overview else (), lambda value: f"{value:.1f}%"),
@@ -129,31 +187,59 @@ def _startup_view(
          overview.top_handles if overview else (), lambda value: f"{value:,}"),
         ("Threads", overview.top_threads if overview else (), lambda value: f"{value:,}"),
     )
-    longest = max(len(rows) for _, rows, _ in groups)
-    # Host panel, actions, keyboard help and ranking title precede the lists.
-    bands, fixed_rows = (2, 7) if wide else (4, 8)
-    per_page = max(1, (console.height - fixed_rows) // bands - 1)
-    pages = max(1, (longest + per_page - 1) // per_page)
+    columns = 2 if wide else 1
+    bands = len(groups) // columns
+    host_rows = 4 if wide else 7
+    action_rows = 5 if wide else 6
+    if console.height < 18:
+        action_rows -= 2
+    # Each band needs a heading and one process. Short terminals give host
+    # readings their own page so the last ranking remains reachable.
+    space = console.height - action_rows - 1
+    separate = space < host_rows + 2 + 2 * bands
+    rows_per_host_page = max(1, space - 2) if separate else host_rows
+    host_pages = (host_rows + rows_per_host_page - 1) // rows_per_host_page if separate else 0
+    rank_space = space if separate else space - host_rows - 2
+    bands_shown = max(1, min(bands, rank_space // 2))
+    per_page = max(1, rank_space // bands_shown - 1)
+    group_size = columns * bands_shown
+    rank_pages = []
+    for index in range(0, len(groups), group_size):
+        visible = groups[index:index + group_size]
+        longest = max(1, *(len(rows) for _, rows, _ in visible))
+        rank_pages.extend((visible, start) for start in range(0, longest, per_page))
+    pages = host_pages + len(rank_pages)
     page = min(max(0, page), pages - 1)
-    start = page * per_page
-    title = Text("TOP PROCESSES", style=f"bold {PALETTE.accent}", no_wrap=True, overflow="ellipsis")
+    host_page = page < host_pages
+    label = "TOP PROCESSES" if console.width >= 32 else "Ranks"
+    title = Text("Overview" if host_page else label, style=f"bold {PALETTE.accent}", no_wrap=True)
     if pages > 1:
         title.append(f"  {page + 1}/{pages} Left/Right", style=PALETTE.muted)
 
-    lists = []
-    for metric, rows, format_value in groups:
-        empty = "Sampling..." if overview is None else "No more entries" if rows else "No readings"
-        lists.append(_ranked_list(metric, rows[start:start + per_page], format_value, empty))
-    if wide:
-        grid = Table.grid(expand=True, padding=(0, 3), pad_edge=False)
-        grid.add_column(ratio=1)
-        grid.add_column(ratio=1)
-        grid.add_row(lists[0], lists[1])
-        grid.add_row(lists[2], lists[3])
-        rankings = grid
-    else:
-        rankings = Group(*lists)
-    view = Group(_host_resources(console, overview, held), _actions(selected, held=held, wide=wide), title, rankings)
+    items: list[RenderableType] = [_actions(console, selected, held=held), title]
+    if host_page or not separate:
+        first = page * rows_per_host_page if host_page else 0
+        host = _host_resources(console, overview, held, range(first, first + rows_per_host_page))
+        if host_page:
+            items.append(host)
+        else:
+            items.insert(0, host)
+    if not host_page:
+        visible, start = rank_pages[page - host_pages]
+        lists = []
+        for metric, rows, format_value in visible:
+            empty = "Sampling..." if overview is None else "No more entries" if rows else "No readings"
+            lists.append(_ranked_list(metric, rows[start:start + per_page], format_value, empty))
+        if wide:
+            grid = Table.grid(expand=True, padding=(0, 3), pad_edge=False)
+            grid.add_column(ratio=1)
+            grid.add_column(ratio=1)
+            for index in range(0, len(lists), 2):
+                grid.add_row(*lists[index:index + 2])
+            items.append(grid)
+        else:
+            items.extend(lists)
+    view = Group(*items)
     encoding = console.encoding or "utf-8"
     return (LegacySafe(view, encoding) if LegacySafe.needed(encoding) else view), page
 
@@ -220,7 +306,7 @@ def choose_startup_action(
     if console.is_terminal and stream_is_tty(console.file) and stdin_is_interactive():
         return _choose_live(console, limit)
 
-    console.print(_actions(None))
+    console.print(_actions(console, None))
     while True:
         try:
             choice = console.input(Text("Choose 1 or 2 (Q to quit): ", style="bold"))

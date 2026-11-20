@@ -12,7 +12,7 @@ from helpers import make_console
 from src import startup
 from src.running_processes import RunningProcess
 from src.startup import choose_startup_action
-from src.system_overview import RankedProcess, SystemOverview
+from src.system_overview import RankedProcess, SystemOverview, TransferRates
 
 
 def _overview() -> SystemOverview:
@@ -25,7 +25,8 @@ def _overview() -> SystemOverview:
     return SystemOverview(
         22.5, 4 * 1024**3, 16 * 1024**3,
         rows("cpu", 160), rows("ram", 2 * 1024**3), rows("fd", 850), rows("thread", 50),
-        "Open FDs",
+        "Open FDs", used_swap_bytes=1024**3, total_swap_bytes=8 * 1024**3,
+        disk=TransferRates(1024**2, 256), network=TransferRates(0, 1024),
     )
 
 
@@ -130,6 +131,9 @@ class StartupKeyboardTests(unittest.TestCase):
                 output = console.file.getvalue()
                 self.assertIn("> [2] Hook", output)
                 self.assertIn("Up/Down", output)
+                self.assertIn("CHOOSE A TARGET", output)
+                self.assertIn("Q/Esc quit", output)
+                self.assertNotIn("[2]", next(line for line in output.splitlines() if "[1]" in line))
                 self.assertNotIn("Choose 1 or 2", output)
                 self.assertIn("P hold", output)
 
@@ -140,6 +144,10 @@ class StartupKeyboardTests(unittest.TestCase):
         output = console.file.getvalue()
         self.assertIn("22.5%", output)
         self.assertIn("4.0 GB / 16.0 GB (25.0%)", output)
+        self.assertIn("1.0 GB / 8.0 GB (12.5%)", output)
+        for label, rate in (("Disk read", "1.0 MB/s"), ("Disk write", "256.0 B/s"),
+                            ("Net receive", "0.0 B/s"), ("Net send", "1.0 KB/s")):
+            self.assertIn(rate, next(line for line in output.splitlines() if label in line))
         for metric in ("CPU (% of one core)", "Memory (RSS)", "Open FDs", "Threads"):
             self.assertIn(metric, output)
         for name in ("cpu", "ram", "fd", "thread"):
@@ -151,13 +159,44 @@ class StartupKeyboardTests(unittest.TestCase):
         view, page = startup._startup_view(console, _overview(), 1, 99)
         console.print(view)
         output = console.file.getvalue()
-        self.assertEqual(page, 1)
-        self.assertIn("2/2 Left/Right", output)
+        self.assertEqual(page, 4)
+        self.assertIn("5/5 Left/Right", output)
         self.assertIn("> [2] Hook", output)
         for name in ("cpu", "ram", "fd", "thread"):
             self.assertIn(f"{name}-5", output)
             self.assertNotIn(f"{name}-1", output)
         self.assertLessEqual(len(output.splitlines()), console.height)
+
+    def test_short_terminal_pages_reach_every_metric_and_keep_the_chooser_visible(self) -> None:
+        for width, height in ((69, 16), (35, 10), (26, 12)):
+            with self.subTest(width=width, height=height):
+                screens = []
+                for index in range(50):
+                    console = make_console(width, height, "ascii")
+                    frame, page = startup._startup_view(console, _overview(), 1, index)
+                    if page != index:
+                        break
+                    console.print(frame)
+                    output = console.file.getvalue()
+                    self.assertLessEqual(len(output.splitlines()), height)
+                    self.assertIn("> [2] Hook", output)
+                    self.assertIn("Left/Right", output)
+                    screens.append(output)
+                self.assertLess(len(screens), 50)
+                for label in ("Swap", "Disk read", "Disk write", "Net receive", "Net send",
+                              "cpu-5", "ram-5", "fd-5", "thread-5"):
+                    self.assertIn(label, "\n".join(screens))
+
+    def test_warming_rates_unavailable_counters_and_disabled_swap_have_distinct_readings(self) -> None:
+        snapshot = replace(_overview(), cpu_percent=None, cpu_warming_up=True, used_swap_bytes=0,
+                           total_swap_bytes=0, disk=TransferRates(), network=None)
+        console = make_console(100, 24)
+        console.print(startup._startup_view(console, snapshot, 0, 0)[0])
+        lines = console.file.getvalue().splitlines()
+        self.assertRegex(next(line for line in lines if "CPU" in line), r"CPU.*Sampling")
+        self.assertRegex(next(line for line in lines if "Swap" in line), r"Swap.*Off")
+        self.assertRegex(next(line for line in lines if "Disk read" in line), r"Disk read.*Sampling")
+        self.assertRegex(next(line for line in lines if "Net send" in line), r"Net send.*Unavailable")
 
     def test_truncated_rankings_are_encodable_on_legacy_consoles(self) -> None:
         row = RankedProcess(RunningProcess(123, "worker-" * 12 + "\u754c", 1.0), 400)
