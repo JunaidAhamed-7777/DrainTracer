@@ -10,3 +10,5 @@ recursive-include tests/fixtures/team-tls *.pem *.txt
 recursive-include schemas *.json
 include examples/drainrc.toml
 include docs/pypi.md
+include docs/assets/brand/wordmark-dark.svg
+include docs/assets/brand/wordmark-light.svg

@@ -18,7 +18,10 @@ from src import main as cli
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 MANIFEST = "runtime-manifest.json"
-ASSETS = ("TITLE.txt", "leak_reports/frames/report.css", "leak_reports/frames/report.js")
+ASSETS = (
+    "TITLE.txt", "leak_reports/frames/report.css", "leak_reports/frames/report.js",
+    "docs/assets/brand/wordmark-dark.svg", "docs/assets/brand/wordmark-light.svg",
+)
 
 
 def _copy_package(root: Path, omitted: tuple[str, ...] = ()) -> None:

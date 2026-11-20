@@ -2,6 +2,8 @@
   "schema": 1,
   "required_files": [
     "TITLE.txt",
+    "docs/assets/brand/wordmark-dark.svg",
+    "docs/assets/brand/wordmark-light.svg",
     "leak_reports/frames/report.css",
     "leak_reports/frames/report.js",
     "requirements.txt",
