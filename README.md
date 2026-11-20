@@ -12,14 +12,6 @@
 
 <h1 align="center">DrainTracer</h1>
 
-Python integrations can use the [supported session API](docs/python-api.md)
-for launch/attach, immutable snapshots, bounded subscriptions, cancellation,
-and explicit cleanup/export outcomes without initializing the dashboard.
-
-[Controlled local baselines](docs/controlled-baselines.md) add deliberate
-repeated-run approvals, reviewable audit history, report-sourced budgets and
-scoped expiring exceptions for reproducible regression checks.
-
 <p align="center">
   <strong>Release series: v5.8.0</strong> ·
   <a href="RELEASES.md">Current version and release notes</a>
@@ -39,15 +31,10 @@ scoped expiring exceptions for reproducible regression checks.
   <a href="LEGAL.md">Privacy and terms</a>
 </p>
 
-<p align="center">
-  <a href="docs/assets/draintracer-demo.mp4"><strong>▶ Full 30-second demo (MP4)</strong></a><br>
-  <sub>GIF excerpts below · recorded with v5.1.1 · silent MP4 · 6.7 MB</sub>
-</p>
-
-DrainTracer is a Python CLI/TUI that watches an executable or script and its
-recursive child processes. It shows resource usage in a live terminal dashboard
-and flags sustained growth in **private memory, handles (file descriptors on
-Linux), and threads**. **Linux support includes WSL.**
+Run `draintracer` to see the busiest processes on your machine. Open a
+program or attach to a running PID to watch its process tree. DrainTracer
+flags sustained growth in **private memory, handles (file descriptors on
+Linux), and threads**. Linux support includes WSL.
 
 Use it to investigate a worker that grows over time, catch resource regressions
 in a Windows or Linux CI job, or compare the same workload before and after a fix.
@@ -96,6 +83,11 @@ values and process IDs vary by run.*
 - **Check in CI.** Run headless with a time limit, configurable failure
   severity, optional policies and absolute budgets, GitHub Actions
   annotations, and a job summary.
+
+Python integrations can use the [session API](docs/python-api.md) to launch
+or attach, subscribe to snapshots, cancel monitoring, and export a run.
+[Controlled local baselines](docs/controlled-baselines.md) support repeated-run
+approvals, audit history, report-sourced budgets, and expiring exceptions.
 
 Opt-in [local team storage](docs/team-access.md) adds project-scoped roles,
 revocable credentials, server-side report privacy, retention, controlled logical
