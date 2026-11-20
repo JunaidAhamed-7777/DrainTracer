@@ -80,8 +80,11 @@ help, and version-only commands stay free of update checks.
 
 ## Do's and Don'ts
 
-Offline HTML reports present the target, verdict and evidence as a technical
-report. Keep the contents navigation, resource measurements and session
+Offline HTML reports use the official light and dark DrainTracer wordmarks
+from the [brand kit](docs/branding.md). Embed the SVG artwork in the export
+so its pipe, droplet, reticle and lettering travel with the report.
+Present the target, verdict and evidence as a technical report.
+Keep the contents navigation, resource measurements and session
 metadata visually distinct. Use the report stylesheet for light, dark,
 print, and responsive layouts. Use report.js for optional interactions.
 The static headings and evidence tables belong to the HTML renderer.
