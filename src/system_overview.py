@@ -34,6 +34,7 @@ class SystemOverview:
     top_handles: tuple[RankedProcess, ...]
     top_threads: tuple[RankedProcess, ...]
     handle_label: str
+    sampled_at: float | None = None
 
 
 def _read_metric(read: Callable[[], _Metric]) -> _Metric | None:
@@ -129,7 +130,7 @@ class SystemOverviewSampler:
             cpu_percent, used, total,
             self._rank(cpu_rows), self._rank(memory_rows),
             self._rank(handle_rows), self._rank(thread_rows),
-            "Handles" if windows else "Open FDs",
+            "Handles" if windows else "Open FDs", time.time(),
         )
 
     def _rank(self, processes: list[RankedProcess]) -> tuple[RankedProcess, ...]:

@@ -12,6 +12,7 @@ from rich import box
 from rich.console import Console, Group
 from rich.live import Live
 from rich.panel import Panel
+from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
 
@@ -22,7 +23,7 @@ from .system_overview import (
     SystemOverview,
     SystemOverviewSampler,
 )
-from .theme import PALETTE
+from .theme import PALETTE, select_glyphs
 from .units import format_bytes, safe_label
 
 StartupAction = Literal["open", "hook"]
@@ -36,45 +37,61 @@ _ACTIONS = (
 )
 
 
-def _actions(selected: int | None) -> Group:
+def _actions(selected: int | None, *, held: bool = False, wide: bool = False) -> Group:
     choices = Text(no_wrap=True, overflow="ellipsis")
     for index, label in enumerate(_ACTIONS):
         if index:
-            choices.append("\n")
-        marker = str(index + 1) if selected is None else ">" if index == selected else " "
+            choices.append("    " if wide else "\n")
+        marker = ">" if index == selected else " "
         style = f"bold {PALETTE.ink} on {PALETTE.accent}" if index == selected else "bold"
-        choices.append(f"{marker}  {label}", style=style)
-    hint = "Enter 1 or 2 to select | Q to quit" if selected is None else "Up/Down | Enter/Space | Q/Esc"
+        choices.append(f"{marker} [{index + 1}] {label}", style=style)
+    if selected is None:
+        return Group(choices, Text("Enter 1 or 2 to select | Q to quit", style=PALETTE.muted))
+    hold_action = "resume" if held else "hold"
+    hint = f"Up/Down move   Enter select   P {hold_action}   Q quit" if wide else f"Up/Down Enter | P {hold_action} | Q quit"
     return Group(
-        Panel(
-            choices,
-            title=f"[bold {PALETTE.accent}] GET STARTED [/]",
-            title_align="left",
-            border_style=PALETTE.border,
-            box=box.ROUNDED,
-            padding=(0, 1),
-        ),
+        choices,
         Text(hint, style=PALETTE.muted, no_wrap=True, overflow="ellipsis"),
     )
 
 
-def _host_resources(overview: SystemOverview | None, wide: bool) -> Panel:
+def _host_resources(console: Console, overview: SystemOverview | None, held: bool) -> Panel:
     cpu = "Sampling..." if overview is None else "Unavailable"
     memory = cpu
+    ram_percent = None
     if overview is not None:
         if overview.cpu_percent is not None:
             cpu = f"{overview.cpu_percent:.1f}%"
         used, total = overview.used_memory_bytes, overview.total_memory_bytes
         if used is not None and total is not None and total > 0:
-            memory = f"{format_bytes(used)} / {format_bytes(total)} ({100 * used / total:.1f}%)"
-    values = Text.assemble(
-        ("CPU  ", f"bold {PALETTE.cyan}"), cpu,
-        "     " if wide else "\n",
-        ("RAM  ", f"bold {PALETTE.accent_alt}"), memory,
-        no_wrap=True, overflow="ellipsis",
-    )
+            ram_percent = 100 * used / total
+            memory = f"{format_bytes(used)} / {format_bytes(total)} ({ram_percent:.1f}%)"
+    values = Table.grid(padding=(0, 1), pad_edge=False)
+    values.add_column(style="bold")
+    has_meter = console.width >= 64
+    if has_meter:
+        values.add_column()
+    values.add_column(no_wrap=True)
+    for label, reading, percent in (
+        ("CPU", cpu, overview.cpu_percent if overview else None), ("RAM", memory, ram_percent),
+    ):
+        cells = [Text(label)]
+        if has_meter:
+            glyphs = select_glyphs(console)
+            width = min(32, console.width // 4)
+            filled = round(width * min(100, max(0, percent or 0)) / 100)
+            # Distinct shapes keep the scale visible on a monochrome terminal.
+            cells.append(Text.assemble(
+                (glyphs.spark[-1] * filled, PALETTE.cyan), ("." * (width - filled), PALETTE.muted),
+            ))
+        cells.append(Text(reading))
+        values.add_row(*cells)
+    state = "On hold" if held else "Live"
+    if overview and overview.sampled_at is not None:
+        state += " " + time.strftime("%H:%M:%S", time.localtime(overview.sampled_at))
     return Panel(
         values, title=f"[bold {PALETTE.accent}] SYSTEM OVERVIEW [/]", title_align="left",
+        subtitle=state, subtitle_align="right",
         border_style=PALETTE.border, box=box.ROUNDED, padding=(0, 1),
     )
 
@@ -86,7 +103,7 @@ def _ranked_list(
     format_value: Callable[[int | float], str],
     empty: str,
 ) -> Group:
-    heading = Text(title, style=f"bold {PALETTE.cyan}", no_wrap=True, overflow="ellipsis")
+    heading = Rule(Text(title, style=f"bold {PALETTE.cyan}"), align="left", style=PALETTE.border)
     if not rows:
         return Group(heading, Text(empty, style=PALETTE.muted, no_wrap=True, overflow="ellipsis"))
 
@@ -103,7 +120,7 @@ def _ranked_list(
 
 
 def _startup_view(
-    console: Console, overview: SystemOverview | None, selected: int, page: int,
+    console: Console, overview: SystemOverview | None, selected: int, page: int, *, held: bool = False,
 ) -> tuple[Group, int]:
     """Fit all four rankings on screen, paging their rows together."""
     wide = console.width >= 68
@@ -115,9 +132,8 @@ def _startup_view(
         ("Threads", overview.top_threads if overview else (), lambda value: f"{value:,}"),
     )
     longest = max(len(rows) for _, rows, _ in groups)
-    # Status panels, help, and ranking title use 9 rows in wide mode and
-    # 10 in narrow mode. Each band needs one row for its metric heading.
-    bands, fixed_rows = (2, 9) if wide else (4, 10)
+    # Host panel, actions, keyboard help and ranking title precede the lists.
+    bands, fixed_rows = (2, 7) if wide else (4, 8)
     per_page = max(1, (console.height - fixed_rows) // bands - 1)
     pages = max(1, (longest + per_page - 1) // per_page)
     page = min(max(0, page), pages - 1)
@@ -131,7 +147,7 @@ def _startup_view(
         empty = "Sampling..." if overview is None else "No more entries" if rows else "No readings"
         lists.append(_ranked_list(console, metric, rows[start:start + per_page], format_value, empty))
     if wide:
-        grid = Table.grid(expand=True, padding=(0, 2), pad_edge=False)
+        grid = Table.grid(expand=True, padding=(0, 3), pad_edge=False)
         grid.add_column(ratio=1)
         grid.add_column(ratio=1)
         grid.add_row(lists[0], lists[1])
@@ -139,7 +155,7 @@ def _startup_view(
         rankings = grid
     else:
         rankings = Group(*lists)
-    return Group(_host_resources(overview, wide), _actions(selected), title, rankings), page
+    return Group(_host_resources(console, overview, held), _actions(selected, held=held, wide=wide), title, rankings), page
 
 
 def _collect_overviews(limit: int, updates: deque[SystemOverview], stop: Event) -> None:
@@ -162,30 +178,35 @@ def _choose_live(console: Console, limit: int) -> StartupAction | None:
     worker.start()
     try:
         overview = None
+        held = False
         selected = page = 0
         last_frame = None
         keyboard = KeyReader(native_windows=True)
         with keyboard as keys, Live(console=console, auto_refresh=False, transient=True) as live:
             while True:
-                if updates:
+                if updates and not held:
                     overview = updates.pop()
                 size = console.size
-                frame = (size, overview, selected, page)
+                frame = (size, overview, selected, page, held)
                 if frame != last_frame:
-                    view, page = _startup_view(console, overview, selected, page)
+                    view, page = _startup_view(console, overview, selected, page, held=held)
                     live.update(view, refresh=True)
-                    last_frame = (size, overview, selected, page)
+                    last_frame = (size, overview, selected, page, held)
                 key = keys.read()
                 if key in ("escape", "q", "Q", "\x04", "\x1a") or keys.eof:
                     return None
                 if key == "\x03":
                     raise KeyboardInterrupt
+                if key in ("1", "2"):
+                    return "open" if key == "1" else "hook"
                 if key in ("enter", " "):
                     return "open" if selected == 0 else "hook"
                 if key in ("up", "down"):
                     selected = int(key == "down")
                 elif key in ("left", "right"):
                     page += 1 if key == "right" else -1
+                elif key in ("p", "P") and overview is not None:
+                    held = not held
                 time.sleep(_INPUT_INTERVAL)
     finally:
         stop.set()

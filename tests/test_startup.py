@@ -83,8 +83,10 @@ class StartupKeyboardTests(unittest.TestCase):
         self.assertEqual(self.choose("up", " "), "open")
         self.assertEqual(self.choose("down", "down", " "), "hook")
 
-    def test_enter_also_selects_and_other_keys_do_not(self) -> None:
-        self.assertEqual(self.choose("1", "2", "x", "backspace", "right", "down", "enter"), "hook")
+    def test_shortcuts_and_enter_select_an_action(self) -> None:
+        self.assertEqual(self.choose("1"), "open")
+        self.assertEqual(self.choose("2"), "hook")
+        self.assertEqual(self.choose("x", "backspace", "right", "down", "enter"), "hook")
 
     def test_quit_escape_and_eof_cancel_without_selecting(self) -> None:
         self.assertIsNone(self.choose())
@@ -103,10 +105,10 @@ class StartupKeyboardTests(unittest.TestCase):
                 view, _ = startup._startup_view(console, None, 1, 0)
                 console.print(view)
                 output = console.file.getvalue()
-                self.assertIn(">  Hook", output)
+                self.assertIn("> [2] Hook", output)
                 self.assertIn("Up/Down", output)
                 self.assertNotIn("Choose 1 or 2", output)
-                self.assertLess(output.rfind("\u2570"), output.index("Up/Down"))
+                self.assertIn("P hold", output)
 
     def test_overview_displays_host_values_and_all_four_rankings(self) -> None:
         console = make_console(width=80, height=24)
@@ -126,9 +128,9 @@ class StartupKeyboardTests(unittest.TestCase):
         view, page = startup._startup_view(console, _overview(), 1, 99)
         console.print(view)
         output = console.file.getvalue()
-        self.assertEqual(page, 2)
-        self.assertIn("3/3 Left/Right", output)
-        self.assertIn(">  Hook", output)
+        self.assertEqual(page, 1)
+        self.assertIn("2/2 Left/Right", output)
+        self.assertIn("> [2] Hook", output)
         for name in ("cpu", "ram", "fd", "thread"):
             self.assertIn(f"{name}-5", output)
             self.assertNotIn(f"{name}-1", output)
