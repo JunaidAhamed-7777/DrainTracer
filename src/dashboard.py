@@ -298,6 +298,7 @@ class DashboardApp(
         if self._marker_draft is not None:
             if key == ESCAPE:
                 self._marker_draft = None
+                self._set_view("overview")
             elif key == "enter":
                 label, self._marker_draft = self._marker_draft.strip(), None
                 if label:
@@ -310,6 +311,7 @@ class DashboardApp(
 
         if self._show_help and key == ESCAPE:
             self._show_help = False
+            self._set_view("overview")
             return
         if self._show_help and key in HELP_SCROLL:
             self._help_offset = max(0, self._help_offset + HELP_SCROLL[key])
@@ -323,7 +325,10 @@ class DashboardApp(
             handler = getattr(self, f"_{self._view}_key", None)
             if handler is not None and handler(key):
                 return
-        if key == ESCAPE:
+        if normalized == "q" or (key == ESCAPE and self._view == "overview"):
+            self._quit_requested = True
+            self._append_event("Quit requested", "info")
+        elif key == ESCAPE:
             self._set_view("overview")
         elif key == "?" or normalized == "h":
             self._show_help = not self._show_help
@@ -406,9 +411,6 @@ class DashboardApp(
             self.add_marker()
         elif normalized == "n":
             self._marker_draft = ""
-        elif normalized == "q":
-            self._quit_requested = True
-            self._append_event("Quit requested", "info")
 
     def _set_view(self, view: str) -> None:
         """Switch the focused view; monitoring and the target are unaffected."""
@@ -618,8 +620,8 @@ class DashboardApp(
             views.add_row(key, f"{label.title()}: {self.VIEW_HELP[name]}")
         views.add_row(
             "Esc",
-            "Back to the overview (closes this help first). Views change only what is "
-            "shown; sampling and the target are unaffected",
+            "Return to page 1 from any other page. On page 1, quit. "
+            "When help or a text editor is open, close it and return to page 1.",
         )
         view_keys = getattr(self, f"_{self._view}_help_keys", lambda: [])()
         in_view = grid()
@@ -805,12 +807,14 @@ class DashboardApp(
             return Text.assemble((f"[{key}]", f"bold {color}"), " ", (label, palette.muted))
 
         if self._show_help:
-            return Text(" [Up/Down] scroll  [Esc] close help  [1-6] views", style=palette.accent)
+            action = "close help" if self._view == "overview" else "overview"
+            return Text(f" [Up/Down] scroll  [Esc] {action}  [1-6] views", style=palette.accent)
         if self._view == "processes" and self._proc_searching:
-            return Text(" [Enter] apply search  [Esc] clear search", style=palette.accent)
+            return Text(" [Enter] apply search  [Esc] overview", style=palette.accent)
 
         quit_label = ("detach & quit" if roomy else "detach") if self.attached else "quit"
-        navigation = [hint("?", "help"), hint("Q", quit_label)]
+        quit_keys = "Q/Esc" if self._view == "overview" else "Q"
+        navigation = [hint("?", "help"), hint(quit_keys, quit_label)]
         if self._view == "overview" and self._last_report is not None:
             folder = self._last_report.absolute().parent
             navigation.insert(0, Text(" Last Report ", style=Style(
@@ -830,8 +834,6 @@ class DashboardApp(
         else:
             controls = getattr(self, f"_{self._view}_controls")()
             escape_action = "overview" if roomy else "back"
-            if self._view == "processes" and self._proc_query:
-                escape_action = "clear search"
             navigation.insert(0, hint("Esc", escape_action))
 
         # Keep global navigation in view. A local command is shown only if

@@ -80,15 +80,25 @@ class NavigationTests(unittest.TestCase):
         app._handle_key("9")  # not a view
         self.assertEqual(app.view, "overview")
 
-    def test_escape_closes_help_before_leaving_the_view(self) -> None:
+    def test_escape_closes_help_and_returns_to_page_one(self) -> None:
         app = _app()
         app._handle_key("5")
         app._handle_key("?")
         app._handle_key("\x1b")
         self.assertFalse(app._show_help)
-        self.assertEqual(app.view, "monitor")
-        app._handle_key("\x1b")
         self.assertEqual(app.view, "overview")
+        self.assertFalse(app._quit_requested)
+
+    def test_quit_keys_from_page_one_and_escape_from_every_other_page(self) -> None:
+        for key in ("Q", "q", "\x1b"):
+            app = _app()
+            for page in "23456":
+                app._handle_key(page)
+                app._handle_key("\x1b")
+                self.assertEqual(app.view, "overview")
+                self.assertFalse(app._quit_requested)
+            app._handle_key(key)
+            self.assertTrue(app._quit_requested)
 
     def test_switching_views_leaves_monitoring_alone(self) -> None:
         app = _app()
@@ -130,10 +140,10 @@ class NavigationTests(unittest.TestCase):
                 lines = render_text(app).splitlines()
                 self.assertIn(f"[{key} {label}]", lines[2 if key == "1" else 0])
                 self.assertIn("[?] help", lines[-1])
-                self.assertIn("[Q] quit", lines[-1])
+                self.assertIn("[Q/Esc] quit" if key == "1" else "[Q] quit", lines[-1])
         app._handle_key("2")
         app._handle_key("/")
-        self.assertIn("[Esc] clear search", render_text(app).splitlines()[-1])
+        self.assertIn("[Esc] overview", render_text(app).splitlines()[-1])
 
     def test_legacy_consoles_replace_unprintable_names_and_ellipses(self) -> None:
         app = _app(80, 24, LEGACY)
@@ -336,11 +346,9 @@ class ProcessesViewTests(ViewRenderingMixin, unittest.TestCase):
         self.assertEqual(self._pids(app), [2, 1])
         app._handle_key("7")  # back to normal keys: 7 is not a view
         self.assertEqual(app.view, "processes")
-        app._handle_key(ESCAPE)  # clears the filter first
-        self.assertEqual(app.view, "processes")
-        self.assertEqual(len(self._pids(app)), 4)
         app._handle_key(ESCAPE)
         self.assertEqual(app.view, "overview")
+        self.assertEqual(len(self._pids(app)), 4)
 
     def test_pid_prefix_search(self) -> None:
         app = self._app()
