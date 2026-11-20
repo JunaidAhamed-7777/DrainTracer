@@ -377,6 +377,23 @@ class DispatchTests(unittest.TestCase):
 
 
 class StartupDispatchTests(unittest.TestCase):
+    def test_canceling_either_picker_returns_to_the_live_overview(self) -> None:
+        from rich.console import Console
+
+        console = Console(file=_TerminalBuffer(), force_terminal=True)
+        with (
+            mock.patch.object(cli, "_display_title"),
+            mock.patch.object(cli, "_unattended_notice", return_value=None),
+            mock.patch.object(cli, "choose_startup_action", side_effect=["hook", "open", "open"]) as choose,
+            mock.patch.object(cli, "select_running_process", return_value=None),
+            mock.patch.object(cli, "select_target_file", side_effect=[None, "worker.py"]),
+            mock.patch.object(cli, "DashboardApp") as dashboard,
+        ):
+            dashboard.return_value.run.return_value = 0
+            self.assertEqual(cli._main(console, ["--no-config"]), 0)
+        self.assertEqual(choose.call_count, 3)
+        self.assertEqual(dashboard.call_args.args, ("worker.py",))
+
     def test_configured_ranking_limit_reaches_the_overview(self) -> None:
         with mock.patch.object(cli, "choose_startup_action", return_value=None) as choose:
             console = make_console()
