@@ -611,6 +611,7 @@ class ProcessManager:
             if not self.is_running:
                 self._refresh_tracked_pids()
                 if not self._tracked_pids:
+                    self._last_error = "The target process tree has already exited"
                     return False
             if self._paused and self._tracked_pids <= self._suspended_pids:
                 return True
@@ -656,6 +657,7 @@ class ProcessManager:
             if not self._tracked_pids:
                 # The whole tree exited while it was being suspended.
                 self._paused = False
+                self._last_error = "The target process tree exited while pausing"
                 return False
             self._paused = True
             return True

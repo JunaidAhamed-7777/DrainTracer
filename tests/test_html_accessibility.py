@@ -59,6 +59,10 @@ class ReportAccessibilityTests(unittest.TestCase):
                              "sample-values"}.issubset(targets))
             for target in targets:
                 self.assertEqual(ids.count(target), 1, target)
+            # Following a contents link moves keyboard focus to its section.
+            for _, attrs in parser.elements:
+                if attrs.get("id") in {"overview", "trends", "signals", "processes", "events", "session"}:
+                    self.assertEqual(attrs.get("tabindex"), "-1", attrs["id"])
 
     def test_text_badges_and_tooltips_meet_aa_contrast_in_both_themes(self) -> None:
         css = resource_path("leak_reports/frames/report.css").read_text(encoding="utf-8")

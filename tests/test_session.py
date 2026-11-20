@@ -534,7 +534,7 @@ class SessionLifecycleTests(unittest.TestCase):
         self.assertIn("SESSION SUMMARY", output)
         self.assertFalse(app.manager.has_tracked_processes)
 
-    def test_a_summary_bug_still_ends_cleanly_with_the_report_path(self) -> None:
+    def test_a_summary_bug_still_ends_cleanly_with_the_report_folder(self) -> None:
         import threading
         from unittest import mock
 
@@ -552,7 +552,8 @@ class SessionLifecycleTests(unittest.TestCase):
             self.assertEqual(app.run(), 0)
         output = app.console.file.getvalue()
         self.assertIn("Session summary unavailable: summary bug", output)
-        self.assertIn("leak_report_x.json", output)
+        self.assertIn(str(app._last_report.parent), output)
+        self.assertNotIn("leak_report_x.json", output)
         self.assertFalse(app.manager.has_tracked_processes)
 
     def test_failed_start_leaves_nothing_running(self) -> None:

@@ -25,6 +25,34 @@ class RankedProcess:
 
 
 @dataclass(frozen=True)
+class TransferRates:
+    """Bytes per second in each direction. Empty rates are still warming up."""
+
+    incoming: float | None = None
+    outgoing: float | None = None
+
+
+class _TransferMeter:
+    def __init__(self) -> None:
+        self.previous: tuple[float, int, int] | None = None
+
+    def update(self, stamp: float, counts: tuple[int, int] | None) -> TransferRates | None:
+        previous = self.previous
+        if counts is None:
+            self.previous = None
+            return None
+        incoming, outgoing = counts
+        self.previous = (stamp, incoming, outgoing)
+        if previous is None:
+            return TransferRates()
+        previous_stamp, previous_in, previous_out = previous
+        elapsed = stamp - previous_stamp
+        if elapsed <= 0 or incoming < previous_in or outgoing < previous_out:
+            return TransferRates()
+        return TransferRates((incoming - previous_in) / elapsed, (outgoing - previous_out) / elapsed)
+
+
+@dataclass(frozen=True)
 class SystemOverview:
     cpu_percent: float | None
     used_memory_bytes: int | None
@@ -35,6 +63,11 @@ class SystemOverview:
     top_threads: tuple[RankedProcess, ...]
     handle_label: str
     sampled_at: float | None = None
+    used_swap_bytes: int | None = None
+    total_swap_bytes: int | None = None
+    disk: TransferRates | None = None
+    network: TransferRates | None = None
+    cpu_warming_up: bool = False
 
 
 def _read_metric(read: Callable[[], _Metric]) -> _Metric | None:
@@ -55,6 +88,8 @@ class SystemOverviewSampler:
     def __init__(self, limit: int = DEFAULT_PROCESS_LIMIT) -> None:
         self._limit = limit
         self._host_cpu_primed = False
+        self._disk = _TransferMeter()
+        self._network = _TransferMeter()
         self._cpu_baselines: dict[tuple[int, float], tuple[float, float]] = {}
         self._process_table = ProcessTable()
 
@@ -62,10 +97,17 @@ class SystemOverviewSampler:
         """Read one snapshot, checking for cancellation between processes."""
         host_cpu = _read_metric(lambda: psutil.cpu_percent(interval=None))
         cpu_percent = host_cpu if self._host_cpu_primed else None
+        cpu_warming_up = host_cpu is not None and not self._host_cpu_primed
         self._host_cpu_primed = host_cpu is not None
         memory = _read_metric(psutil.virtual_memory)
         used = memory.total - memory.available if memory is not None else None
         total = memory.total if memory is not None else None
+        swap = _read_metric(psutil.swap_memory)
+        stamp = time.monotonic()
+        disk = _read_metric(psutil.disk_io_counters)
+        network = _read_metric(psutil.net_io_counters)
+        disk_rates = self._disk.update(stamp, (disk.read_bytes, disk.write_bytes) if disk else None)
+        network_rates = self._network.update(stamp, (network.bytes_recv, network.bytes_sent) if network else None)
 
         cpu_rows: list[RankedProcess] = []
         memory_rows: list[RankedProcess] = []
@@ -131,6 +173,9 @@ class SystemOverviewSampler:
             self._rank(cpu_rows), self._rank(memory_rows),
             self._rank(handle_rows), self._rank(thread_rows),
             "Handles" if windows else "Open FDs", time.time(),
+            used_swap_bytes=swap.used if swap is not None else None,
+            total_swap_bytes=swap.total if swap is not None else None,
+            disk=disk_rates, network=network_rates, cpu_warming_up=cpu_warming_up,
         )
 
     def _rank(self, processes: list[RankedProcess]) -> tuple[RankedProcess, ...]:

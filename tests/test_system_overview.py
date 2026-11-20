@@ -53,7 +53,7 @@ class SystemOverviewTests(unittest.TestCase):
                 Process=mock.Mock(side_effect=processes.__getitem__),
             ),
             mock.patch.object(overview.os, "getpid", return_value=99),
-            mock.patch.object(overview.time, "monotonic", side_effect=[1.0] * 3 + [2.0] * 3),
+            mock.patch.object(overview.time, "monotonic", side_effect=[1.0] * 4 + [2.0] * 4),
         ):
             initial = sampler.sample()
             for process, value in zip(processes.values(), (1.25, 6.5, 1.5)):
@@ -61,9 +61,11 @@ class SystemOverviewTests(unittest.TestCase):
             next_sample = sampler.sample()
 
         self.assertIsNone(initial.cpu_percent)
+        self.assertTrue(initial.cpu_warming_up)
         self.assertEqual(initial.top_cpu, ())
         self.assertEqual((initial.used_memory_bytes, initial.total_memory_bytes), (600, 1000))
         self.assertEqual(next_sample.cpu_percent, 31.5)
+        self.assertFalse(next_sample.cpu_warming_up)
         self.assertEqual(next_sample.handle_label, "Handles")
         self.assertEqual(_ranked(next_sample.top_cpu), [(20, 250.0), (30, 50.0)])
         self.assertEqual(_ranked(next_sample.top_memory), [(20, 200), (30, 200)])
@@ -124,7 +126,7 @@ class SystemOverviewTests(unittest.TestCase):
             mock.patch.multiple(
                 overview.psutil, pids=mock.Mock(return_value=[10]), Process=mock.Mock(return_value=process),
             ),
-            mock.patch.object(overview.time, "monotonic", side_effect=[1.0, 2.0, 3.0]),
+            mock.patch.object(overview.time, "monotonic", side_effect=[1.0, 1.0, 2.0, 2.0, 3.0, 3.0]),
         ):
             sampler.sample()
             self.assertEqual(sampler.sample().top_cpu, ())
@@ -140,6 +142,41 @@ class SystemOverviewTests(unittest.TestCase):
 
         process.assert_called_once_with(10)
         self.assertEqual(_ranked(sample.top_memory), [(10, 100)])
+
+    def test_host_rates_measure_elapsed_time_and_recover_from_reset_and_missing_counters(self) -> None:
+        def disk(read: int, written: int) -> SimpleNamespace:
+            return SimpleNamespace(read_bytes=read, write_bytes=written)
+
+        def network(received: int, sent: int) -> SimpleNamespace:
+            return SimpleNamespace(bytes_recv=received, bytes_sent=sent)
+
+        with (
+            mock.patch.multiple(
+                overview.psutil, pids=mock.Mock(return_value=[]),
+                disk_io_counters=mock.Mock(side_effect=[
+                    disk(40, 30), disk(60, 30), OSError(), disk(5, 7), disk(11, 15),
+                ]),
+                net_io_counters=mock.Mock(side_effect=[
+                    network(20, 90), network(22, 102), network(18, 1), network(20, 7), None,
+                ]),
+                swap_memory=mock.Mock(return_value=SimpleNamespace(total=500, used=125)),
+            ),
+            mock.patch.object(overview.time, "monotonic", side_effect=[0, 2, 3, 4, 6]),
+        ):
+            sampler = overview.SystemOverviewSampler()
+            first, second, third, fourth, fifth = [sampler.sample() for _ in range(5)]
+
+        self.assertEqual((first.used_swap_bytes, first.total_swap_bytes), (125, 500))
+        self.assertEqual(first.disk, overview.TransferRates())
+        self.assertEqual(first.network, overview.TransferRates())
+        self.assertEqual(second.disk, overview.TransferRates(10, 0))
+        self.assertEqual(second.network, overview.TransferRates(1, 6))
+        self.assertIsNone(third.disk)
+        self.assertEqual(third.network, overview.TransferRates())
+        self.assertEqual(fourth.disk, overview.TransferRates())
+        self.assertEqual(fourth.network, overview.TransferRates(2, 6))
+        self.assertEqual(fifth.disk, overview.TransferRates(3, 4))
+        self.assertIsNone(fifth.network)
 
 
 if __name__ == "__main__":

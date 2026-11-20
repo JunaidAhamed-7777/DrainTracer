@@ -1,8 +1,9 @@
-"""Saved baseline loading, CLI parity, modal input, and failure isolation."""
+"""Live process selection, saved baseline loading, and comparison failure isolation."""
 
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import threading
 import unittest
@@ -10,12 +11,15 @@ from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
+import psutil
+
 from helpers import make_console, make_snapshot, render_text
 
 from src.config import MonitorSettings
 from src.dashboard import DashboardApp
 from src.diff_command import run_diff
 from src.report_diff import load_report
+from src.running_processes import ProcessReading, RunningProcess, sample_process
 
 
 class ComparisonViewTests(unittest.TestCase):
@@ -36,6 +40,81 @@ class ComparisonViewTests(unittest.TestCase):
         self.app._comparison_worker.join(timeout=5)
         self.assertFalse(self.app._comparison_worker.is_alive())
         self.app._drain_comparison_result()
+
+    def enter_pair(self, pids: str) -> None:
+        self.app._handle_key("p")
+        for char in pids:
+            self.app._handle_key(char)
+        self.app._handle_key("enter")
+
+    def finish_pair(self) -> None:
+        self.app._live_job[1].result(timeout=3)
+        self.app._poll_live_pair()
+
+    def test_compares_two_independent_pids_then_switches_to_report(self) -> None:
+        self.assertIn("Two live processes", render_text(self.app))
+        self.assertIn("Current session and saved JSON", render_text(self.app))
+        samples = [
+            ProcessReading(RunningProcess(454, "first", 20), threads=10, resident_bytes=1024**2),
+            ProcessReading(RunningProcess(773, "other", 35), threads=13, resident_bytes=2 * 1024**2),
+        ]
+        with mock.patch("src.view_comparison.sample_process", side_effect=samples) as read:
+            self.enter_pair("454 773")
+            self.finish_pair()
+            self.assertEqual(read.call_args_list, [mock.call(454, None), mock.call(773, None)])
+        output = render_text(self.app)
+        self.assertIn("PID 454  first", output)
+        self.assertIn("PID 773  other", output)
+        self.assertIn("+1.0 MB", output)
+        self.assertIn("+3", output)
+        self.app._handle_key("b")
+        for char in str(self.baseline):
+            self.app._handle_key(char)
+        self.app._handle_key("enter")
+        self.complete()
+        self.assertIn("COMPARABILITY: COMPARABLE", render_text(self.app))
+
+    def test_live_editor_validates_pids_and_owns_keys(self) -> None:
+        with mock.patch.object(self.app.manager, "kill") as kill, \
+                mock.patch.object(self.app.manager, "pause") as pause, \
+                mock.patch("src.view_comparison.sample_process") as sample:
+            self.enter_pair("qk0 0")
+            self.assertIn("Enter two positive PIDs", render_text(self.app))
+            self.assertFalse(self.app._quit_requested)
+            kill.assert_not_called()
+            pause.assert_not_called()
+            for char in ("backspace", "backspace", "backspace", "1", ",", "1", "enter"):
+                self.app._handle_key(char)
+            self.assertIn("Choose two different PIDs", render_text(self.app))
+            sample.assert_not_called()
+            self.app._handle_key("escape")
+            self.assertIsNone(self.app._pid_draft)
+            self.assertEqual(self.app.view, "overview")
+
+    def test_blocked_worker_does_not_freeze_ui_or_overwrite_new_pair(self) -> None:
+        entered, release = threading.Event(), threading.Event()
+
+        def read(pid, previous):
+            if pid == 123:
+                entered.set()
+                if not release.wait(3):
+                    raise TimeoutError("test worker was not released")
+            return ProcessReading(RunningProcess(pid, str(pid), float(pid)), threads=2)
+
+        with mock.patch("src.view_comparison.sample_process", side_effect=read) as lookup:
+            try:
+                self.enter_pair("123,456")
+                self.assertTrue(entered.wait(1))
+                for _ in range(3):
+                    self.assertIn("Reading processes", render_text(self.app))
+                self.enter_pair("456 789")
+                self.assertIsNone(self.app._live_pair)
+                lookup.assert_called_once()
+            finally:
+                release.set()
+                self.finish_pair()
+            self.finish_pair()
+        self.assertEqual([sample.process.pid for sample in self.app._live_pair], [456, 789])
 
     def test_saved_baseline_uses_the_same_result_as_strict_cli(self) -> None:
         self.app._request_comparison(self.baseline)
@@ -200,7 +279,7 @@ class ComparisonViewTests(unittest.TestCase):
         self.assertIn("ENTER load", render_text(self.app).splitlines()[-1])
         self.app._handle_key("escape")
         self.assertIsNone(self.app._baseline_draft)
-        self.assertEqual(self.app.view, "comparison")
+        self.assertEqual(self.app.view, "overview")
         self.assertFalse(self.app._quit_requested)
 
     def test_path_editor_loads_spaces_and_brackets_literally(self) -> None:
@@ -236,6 +315,59 @@ class ComparisonViewTests(unittest.TestCase):
             self.app._handle_key("end")
             if width <= 80:
                 self.assertIn("end of comparison", render_text(self.app))
+
+
+class ProcessSamplingTests(unittest.TestCase):
+    def test_reads_current_process_and_warms_up_cpu(self) -> None:
+        # Consecutive reads can share a monotonic clock tick on Windows.
+        with mock.patch("src.running_processes.time") as clock:
+            clock.monotonic.side_effect = (10.0, 10.0, 11.0)
+            first = sample_process(os.getpid())
+            same_tick = sample_process(os.getpid(), first)
+            second = sample_process(os.getpid(), same_tick)
+        self.assertIsNone(first.error)
+        self.assertIsNone(first.cpu_percent)
+        self.assertIsNone(same_tick.cpu_percent)
+        self.assertEqual(second.process, first.process)
+        self.assertIsNotNone(second.cpu_percent)
+        self.assertGreater(second.resident_bytes, 0)
+        self.assertGreater(second.threads, 0)
+
+    def test_partial_metric_access_and_reused_pid_do_not_supply_false_values(self) -> None:
+        process = mock.Mock()
+        process.create_time.side_effect = (3.0, 3.0, 8.0)
+        process.as_dict.return_value = {
+            "name": "first", "cpu_times": None, "num_threads": 4, "memory_info": None,
+            "num_handles": None, "num_fds": None,
+        }
+        with mock.patch("src.running_processes.psutil.Process", return_value=process):
+            first = sample_process(41)
+            self.assertIsNone(first.error)
+            self.assertIsNone(first.handles)
+            self.assertIsNone(first.resident_bytes)
+            self.assertEqual(first.threads, 4)
+            reused = sample_process(41, first)
+            self.assertIn("PID reused", reused.error)
+            self.assertEqual(reused.process, first.process)
+            self.assertIsNone(reused.threads)
+            self.assertIs(sample_process(41, reused), reused)
+            process.as_dict.assert_called_once()
+
+    def test_process_exit_or_reuse_during_sample_discards_metrics(self) -> None:
+        for failure in (psutil.NoSuchProcess(41), psutil.AccessDenied(41)):
+            with self.subTest(failure=failure), \
+                    mock.patch("src.running_processes.psutil.Process", side_effect=failure):
+                reading = sample_process(41)
+                self.assertTrue(reading.error)
+                self.assertIsNone(reading.threads)
+        with mock.patch("src.running_processes.psutil.Process") as constructor:
+            process = constructor.return_value
+            process.create_time.side_effect = (3.0, 8.0)
+            process.as_dict.return_value = {"name": "replacement"}
+            reading = sample_process(41)
+            self.assertTrue(reading.error)
+            self.assertNotEqual(reading.process.name, "replacement")
+            self.assertIsNone(reading.resident_bytes)
 
 
 if __name__ == "__main__":

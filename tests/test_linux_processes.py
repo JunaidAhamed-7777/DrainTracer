@@ -177,6 +177,7 @@ class ProcessCleanupTests(unittest.TestCase):
             manager, refresh=refresh, suspend=lambda pid: process_runner.SuspendOutcome.GONE)
         with running, refresh_patch, suspend:
             self.assertFalse(manager.pause())
+        self.assertIn("exited while pausing", manager.last_error)
         self.assertFalse(manager.is_paused)
         self.assertEqual(manager.pending_resume_pids, frozenset())
 
@@ -203,6 +204,8 @@ class ProcessCleanupTests(unittest.TestCase):
                 with (
                     mock.patch.object(process_runner.psutil, "Process",
                                       side_effect=open_error, return_value=proc),
+                    # The fixture's PID can belong to a real process in /proc.
+                    mock.patch.object(process_runner, "_created", side_effect=lambda p: p.create_time()),
                     mock.patch.object(process_runner, "_windows_process_exited", return_value=False),
                 ):
                     self.assertIs(manager._suspend_pid(102), expected)

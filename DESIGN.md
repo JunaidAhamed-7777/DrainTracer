@@ -3,13 +3,13 @@ version: alpha
 name: DrainTracer monitoring and reports
 description: A terminal workspace and offline field report for investigating resource growth on Windows and Linux.
 colors:
-  primary: "#8cc8ed"
-  accent: "#8cc8ed"
-  muted: "#aebdcb"
-  border: "#637589"
-  surface: "#243440"
-  danger: "#ff9a8b"
-  ok: "#9bd5b0"
+  primary: "#53b7ff"
+  accent: "#53b7ff"
+  muted: "#adbccc"
+  border: "#647d95"
+  surface: "#203449"
+  danger: "#ff8076"
+  ok: "#82e78a"
 typography:
   terminal:
     fontFamily: "monospace"
@@ -32,10 +32,11 @@ The maintained product and workflow references are README.md and docs/usage.md.
 
 ## Colors
 
-src/theme.py remains the canonical palette. Its PALETTE instance feeds
-startup.py, process_picker.py, and dashboard.py directly; this document mirrors
-the accepted values above; primary maps to PALETTE.accent. The selected startup action uses a literal `>`, a number, and a filled
-background. Monitoring tabs identify the current page in brackets. Signal
+The terminal palette in src/theme.py supplies startup.py, process_picker.py
+and dashboard.py. Primary maps to PALETTE.accent, the water blue from the brand
+kit. Trace teal and violet distinguish secondary readings. Signals progress from
+green through yellow and coral to pink. The selected startup action uses a
+literal `>`, a number and a filled background. Monitoring tabs identify the current page in brackets. Signal
 meters distinguish filled and empty cells in monochrome.
 The requested update notice uses Rich's named red, green, and blue colors for
 the availability label, pip command, and repository link respectively.
@@ -48,10 +49,16 @@ navigation hints in ASCII and preserve legacy Windows encoding fallbacks.
 
 ## Layout
 
-Startup groups machine-wide CPU and RAM together with their measurement time.
-The target choices and keyboard help sit above the four process rankings.
-Wide terminals place the rankings in two columns. Narrow terminals stack
-them and page the results. Labels and numeric readings accompany meters.
+Startup shows whole-machine CPU, RAM, swap, disk reads and writes, and network
+receive and send rates. The timestamp belongs to the displayed sample. Transfer
+rates need two readings. An idle counter shows zero, and an unreadable one
+shows “Unavailable.”
+
+The target chooser stacks the numbered actions in Up/Down order. Wide terminals
+include a description of each picker. Keyboard help sits below the choices.
+The four process rankings use two columns on wide screens and stack on narrow
+ones. On short screens, Left/Right pages through host readings and rankings
+while the chooser stays visible. Labels and numeric readings accompany meters.
 The terminal controls font metrics and the branding falls back to plain text
 when the artwork does not fit.
 

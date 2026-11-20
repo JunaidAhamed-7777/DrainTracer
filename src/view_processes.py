@@ -114,9 +114,9 @@ class ProcessesViewMixin:
         if key == "/":
             self._proc_searching = True
             return True
-        if key == ESCAPE and self._proc_query:
-            self._proc_query = ""  # a second Esc returns to the overview
-            return True
+        if key == ESCAPE:
+            self._proc_query = ""
+            return False  # Dashboard navigation returns to page 1.
         if key.lower() == "s":
             position = INSPECTOR_ORDERS.index(self._proc_order)
             self._proc_order = INSPECTOR_ORDERS[(position + 1) % len(INSPECTOR_ORDERS)]
@@ -147,6 +147,7 @@ class ProcessesViewMixin:
         """While typing a filter every key edits it, so letters never run commands."""
         if key == ESCAPE:
             self._proc_query, self._proc_searching = "", False
+            return False
         elif key == ENTER:
             self._proc_searching = False
         elif key == BACKSPACE:
@@ -305,7 +306,7 @@ class ProcessesViewMixin:
         return [
             ("Up/Down", "Select a process (PgUp/PgDn/Home/End jump); with focus on the "
                         "detail, scroll it"),
-            ("/", "Filter by name or PID; Enter keeps the filter, Esc clears it"),
+            ("/", "Filter by name or PID. Enter keeps the filter. Esc clears it and returns to page 1."),
             ("S", "Order: tree, then growth of private bytes, handles, or threads"),
             ("Left/Right", "Growth interval: the detection windows or each process's lifetime"),
             ("Tab", "Move focus between the list and the detail"),
@@ -490,7 +491,7 @@ class ProcessesViewMixin:
                 ):
                     return Text(
                         f"Selected PID {pid} is hidden by the search filter. "
-                        "Press Esc to clear the filter, or Up or Down to select a match.",
+                        "Press Up or Down to select a match, or Esc to clear the filter and return to page 1.",
                         style=palette.muted,
                     )
                 return Text(

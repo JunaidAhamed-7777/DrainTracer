@@ -1,4 +1,4 @@
-# Current version: v5.9.0
+# Current version: v5.10.0
 
 Release records and development milestones are listed newest first. The
 current runtime version here matches `DashboardApp.VERSION` in
@@ -13,6 +13,13 @@ v5.7.0 candidate was likewise never tagged or published; its changes are
 included in v5.8.0.
 Historical entries and source-pinned measurements retain the versions under
 which they were prepared or collected.
+
+## v5.10.0 — 2026-11-20
+
+- The startup overview tracks swap usage, disk reads and writes, and network receive and send rates alongside CPU and RAM. The launch and attach actions are stacked in keyboard order. A brighter terminal palette distinguishes commands, measurements and warnings.
+- Page 6 compares two live processes by PID or compares the monitored session with a saved JSON report. Live comparisons track process identity across refreshes.
+- Escape returns to page 1 from any other page. On page 1, Q or Escape quits. The **Last Report** footer link and the final summary open the folder containing the export.
+- Pausing after the tree exits now explains what happened. HTML report contents links jump directly to the selected section, including in large reports.
 
 ## v5.9.0 — 2026-11-20
 
