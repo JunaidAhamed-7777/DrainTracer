@@ -14,6 +14,12 @@ their changes shipped in v5.5.0. v5.7.0 was likewise unpublished; its changes
 shipped in v5.8.0. Check the matching release tag and PyPI
 distribution for publication status.
 
+## v5.10.0 — 2026-11-20
+
+- Added live PID comparisons and host swap, disk and network readings.
+- Reorganized startup choices, brightened terminal colors, and made Escape return to page 1 or quit from there.
+- Linked terminal report locations to the export folder, clarified pause failures after exit, and improved sidebar navigation in offline HTML reports.
+
 ## v5.9.0 — 2026-11-20
 
 - Added a live system dashboard with ranked processes, direct launch and attach shortcuts, and a hold control for reading a sample.

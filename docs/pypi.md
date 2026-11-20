@@ -31,7 +31,7 @@ It ranks processes by CPU, memory, handles
 resume the display, **1** to open a program, or **2** to hook to a running
 process. Cancel either picker to return to the overview.
 
-![The system overview ranks running processes by CPU, memory, open descriptors, and threads. The operator holds the sample and opens the process picker.](https://raw.githubusercontent.com/JunaidAhamed-7777/DrainTracer/v5.9.0/docs/assets/install-and-launch.gif)
+![The system overview ranks running processes by CPU, memory, open descriptors, and threads. The operator holds the sample and opens the process picker.](https://raw.githubusercontent.com/JunaidAhamed-7777/DrainTracer/v5.10.0/docs/assets/install-and-launch.gif)
 
 On Linux, install into a virtual environment:
 
@@ -79,7 +79,7 @@ draintracer --target "C:\work\app\.venv\Scripts\python.exe" -- "C:\work\app\work
 
 ## Inspect and save evidence
 
-![A monitored Python process grows in private memory. The recording visits Processes, Evidence, and Timeline as samples continue arriving.](https://raw.githubusercontent.com/JunaidAhamed-7777/DrainTracer/v5.9.0/docs/assets/live-growth.gif)
+![A monitored Python process grows in private memory. The recording visits Processes, Evidence, and Timeline as samples continue arriving.](https://raw.githubusercontent.com/JunaidAhamed-7777/DrainTracer/v5.10.0/docs/assets/live-growth.gif)
 
 This Linux recording uses `torture/memory_leak.py`, a bounded example
 included in the [source checkout](https://github.com/JunaidAhamed-7777/DrainTracer#try-an-included-workload).
@@ -110,7 +110,7 @@ Press **E** to export JSON and an offline interactive HTML report. Press **O**
 to open the HTML. **Last Report** in the overview footer and the folder path
 in the session summary both open the export directory in a compatible terminal.
 
-![The offline report for the same run opens on the verdict, then shows the memory chart and the interval that raised the signal.](https://raw.githubusercontent.com/JunaidAhamed-7777/DrainTracer/v5.9.0/docs/assets/html-report.gif)
+![The offline report for the same run opens on the verdict, then shows the memory chart and the interval that raised the signal.](https://raw.githubusercontent.com/JunaidAhamed-7777/DrainTracer/v5.10.0/docs/assets/html-report.gif)
 
 Use the report contents to jump to **Resource trends** or **Leak signals**.
 The retained-sample table beneath the charts can also be read with a keyboard.
