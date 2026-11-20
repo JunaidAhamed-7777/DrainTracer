@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import re
 import unittest
 from html.parser import HTMLParser
@@ -34,6 +35,18 @@ class _Semantics(HTMLParser):
 
 
 class ReportAccessibilityTests(unittest.TestCase):
+    def test_report_embeds_the_brand_kit_for_dark_light_and_print(self) -> None:
+        parser = _Semantics()
+        parser.feed(render_html_report(_report()))
+        images = {attrs["class"]: attrs for tag, attrs in parser.elements if tag == "img"}
+        for theme in ("dark", "light"):
+            image = images[f"brand-{theme}"]
+            self.assertEqual(image["alt"], "DrainTracer. See what keeps growing.")
+            kind, encoded = image["src"].split(",", 1)
+            self.assertEqual(kind, "data:image/svg+xml;base64")
+            self.assertEqual(base64.b64decode(encoded),
+                             resource_path(f"docs/assets/brand/wordmark-{theme}.svg").read_bytes())
+
     def test_report_jump_links_resolve_with_or_without_samples(self) -> None:
         for report in (_report(), _report(snapshots=[], event_log=[])):
             parser = _Semantics()

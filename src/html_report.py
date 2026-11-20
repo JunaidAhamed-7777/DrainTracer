@@ -51,6 +51,18 @@ def _partial_evidence(report: Mapping[str, Any]) -> bool:
             or isinstance(report.get("checkpoint"), Mapping))
 
 
+@lru_cache(maxsize=1)
+def _report_wordmark() -> str:
+    """Embed the official SVGs so a saved report can travel on its own."""
+    def image(theme: str) -> str:
+        source = resource_path(f"docs/assets/brand/wordmark-{theme}.svg").read_bytes()
+        encoded = base64.b64encode(source).decode("ascii")
+        return (f'<img class="brand-{theme}" src="data:image/svg+xml;base64,{encoded}" '
+                'width="1000" height="256" alt="DrainTracer. See what keeps growing.">')
+
+    return f'<span class="brand">{image("dark")}{image("light")}</span>'
+
+
 def render_html_report(report: Mapping[str, Any]) -> str:
     """Return the complete HTML document for an exported report."""
     style = _load_frame("report.css")
@@ -70,9 +82,7 @@ def render_html_report(report: Mapping[str, Any]) -> str:
         (
             '<a class="skip" href="#overview">Skip to report</a>',
             '<header class="report-bar"><div class="bar-inner">'
-            '<span class="brand"><svg aria-hidden="true" width="31" height="25" viewBox="0 0 31 25" '
-            'fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round">'
-            '<path d="M1 16h7l4-12 6 18 4-11h8"/></svg>DrainTracer</span>'
+            f'{_report_wordmark()}'
             f'<span class="kind">Leak report</span><span class="version">{_e(version)}</span></div></header>',
             '<div class="report-layout"><nav class="contents" aria-label="Report contents">'
             '<strong>Contents</strong><ul>'
