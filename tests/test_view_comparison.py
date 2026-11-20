@@ -319,10 +319,15 @@ class ComparisonViewTests(unittest.TestCase):
 
 class ProcessSamplingTests(unittest.TestCase):
     def test_reads_current_process_and_warms_up_cpu(self) -> None:
-        first = sample_process(os.getpid())
+        # Consecutive reads can share a monotonic clock tick on Windows.
+        with mock.patch("src.running_processes.time") as clock:
+            clock.monotonic.side_effect = (10.0, 10.0, 11.0)
+            first = sample_process(os.getpid())
+            same_tick = sample_process(os.getpid(), first)
+            second = sample_process(os.getpid(), same_tick)
         self.assertIsNone(first.error)
         self.assertIsNone(first.cpu_percent)
-        second = sample_process(os.getpid(), first)
+        self.assertIsNone(same_tick.cpu_percent)
         self.assertEqual(second.process, first.process)
         self.assertIsNotNone(second.cpu_percent)
         self.assertGreater(second.resident_bytes, 0)
