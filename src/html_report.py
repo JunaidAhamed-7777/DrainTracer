@@ -194,7 +194,7 @@ def _session_details(report: Mapping[str, Any], summary: ReportSummary) -> str:
     facts.extend(_experiment_facts(report, summary))
     items = "".join(f"<div><dt>{_e(label)}</dt><dd>{_e(value)}</dd></div>" for label, value in facts)
     return (
-        '<section class="panel" id="session" aria-labelledby="session-title">'
+        '<section class="panel" id="session" tabindex="-1" aria-labelledby="session-title">'
         '<h2 id="session-title">Session details</h2>'
         f'<dl class="facts">{items}</dl></section>'
     )
@@ -574,7 +574,7 @@ def _episodes_panel(summary: ReportSummary, start: float | None) -> str:
             ("Resource", "Strongest", ("Started", "num"), ("Lasted", "num"), "Detail"), rows
         )
     return (
-        '<section class="panel" id="signals" aria-label="Leak signals">'
+        '<section class="panel" id="signals" tabindex="-1" aria-label="Leak signals">'
         '<div class="panel-head"><h2>Leak signals</h2>'
         f'<p class="hint">{_e(hint)}</p></div>'
         f"{body}</section>"
@@ -750,7 +750,7 @@ def _events_panel(report: Mapping[str, Any], start: float | None) -> str:
             f"{counts['dropped']:,} discarded from this event log. "
         )
     return (
-        '<section class="panel" id="events" aria-label="Event log">'
+        '<section class="panel" id="events" tabindex="-1" aria-label="Event log">'
         '<div class="panel-head"><h2>Event log</h2>'
         f'<p class="hint">{retention}Elapsed time locates each event on the charts; '
         'use the range fields to inspect it.</p></div>'
@@ -819,7 +819,7 @@ def _processes_panel(report: Mapping[str, Any]) -> str:
             else ""
         )
     return (
-        '<section class="panel" id="processes" aria-label="Processes">'
+        '<section class="panel" id="processes" tabindex="-1" aria-label="Processes">'
         f'<div class="panel-head"><h2>Processes</h2><p class="hint">{_e(caption)}</p></div>'
         f"{body}</section>"
     )

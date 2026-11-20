@@ -2,32 +2,45 @@
 (() => {
   "use strict";
   const contents = Array.from(document.querySelectorAll(".contents a"), (link) => ({
-    link, section: document.getElementById(link.hash.slice(1))
+    link, section: document.getElementById(link.hash.slice(1)), top: 0
   }));
+  let currentLink = null;
+  let bottom = 0;
   function showReadingPosition() {
+    const y = window.scrollY;
     let current = contents[0];
     for (const entry of contents) {
-      if (entry.section.getBoundingClientRect().top > 36) break;
+      if (entry.top > y + 36) break;
       current = entry;
     }
-    if (window.scrollY > 0 && window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 1) {
-      current = contents[contents.length - 1];
+    if (y > 0 && y >= bottom - 1) {
+      // Short final sections can share a scroll destination. Keep the link
+      // the reader followed selected, including on a history navigation.
+      current = contents.find(entry => entry.link.hash === location.hash && entry.top >= y - 1)
+        || contents[contents.length - 1];
     }
-    for (const entry of contents) {
-      if (entry === current) entry.link.setAttribute("aria-current", "location");
-      else entry.link.removeAttribute("aria-current");
-    }
+    if (currentLink === current.link) return;
+    if (currentLink) currentLink.removeAttribute("aria-current");
+    currentLink = current.link;
+    currentLink.setAttribute("aria-current", "location");
   }
-  let positionFrame = 0;
-  function scheduleReadingPosition() {
-    if (!positionFrame) positionFrame = requestAnimationFrame(() => {
-      positionFrame = 0;
-      showReadingPosition();
-    });
+  function measureSections() {
+    const y = window.scrollY;
+    for (const entry of contents) entry.top = entry.section.getBoundingClientRect().top + y;
+    bottom = document.documentElement.scrollHeight - window.innerHeight;
+    showReadingPosition();
   }
-  window.addEventListener("scroll", scheduleReadingPosition, { passive: true });
-  window.addEventListener("resize", scheduleReadingPosition);
-  showReadingPosition();
+  // Charts, disclosures and wrapped headings can move sections. Measure
+  // after layout changes, leaving native fragment jumps and scrolling cheap.
+  if ("ResizeObserver" in window) {
+    new ResizeObserver(measureSections).observe(document.querySelector(".report-layout"));
+  } else {
+    window.addEventListener("load", measureSections);
+    document.addEventListener("toggle", measureSections, true);
+  }
+  window.addEventListener("resize", measureSections);
+  window.addEventListener("scroll", showReadingPosition, { passive: true });
+  window.addEventListener("hashchange", showReadingPosition);
 
   const host = document.getElementById("charts");
   if (!host) return;
