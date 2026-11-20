@@ -57,8 +57,6 @@ class MonitorViewMixin:
             )),
             title=Text(" MONITOR DIAGNOSTICS ", style=f"bold {palette.cyan}"),
             title_align="left",
-            subtitle=Text(" can this recording be trusted? ", style=palette.muted),
-            subtitle_align="right",
             border_style=palette.border,
             box=box.ROUNDED,
             padding=(0, 1),

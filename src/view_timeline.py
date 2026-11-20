@@ -236,11 +236,11 @@ class TimelineViewMixin:
         palette, glyphs = self.palette, self.glyphs
         arrows = "<>" if glyphs.arrow == "->" else "←→"
         if self.console.size.width < 100:
-            return [(arrows, "chart", palette.accent), ("F", "freeze", palette.warn),
+            return [(arrows, "chart", palette.accent), ("F", "unfreeze" if self.timeline_frozen else "freeze", palette.warn),
                     ("P/R/[]", "scope/range", palette.accent)]
         return [
             (arrows, "chart", palette.accent),
-            ("F", "live" if self.timeline_frozen else "freeze", palette.warn),
+            ("F", "unfreeze" if self.timeline_frozen else "freeze", palette.warn),
             ("N", "label", palette.teal),
             ("P/R/[]", "scope/range", palette.accent),
             (f"{glyphs.up}{glyphs.down}", "events", palette.muted),

@@ -401,6 +401,11 @@ class ProcessesViewTests(ViewRenderingMixin, unittest.TestCase):
         self.assertNotIn("PROCESSES 3 live", output)
         self.assertIn("SELECTED PROCESS", output)
         self.assert_fills(output, 80, 24)
+        self.assertIn("[Focus] SELECTED PROCESS", output)
+        app._handle_key("tab")
+        self.assertIn("[Focus] PROCESSES", render_text(app))
+        app._handle_key(DOWN)
+        self.assertEqual(self._selected(app), 2)
 
     def test_denied_and_long_names_render(self) -> None:
         app = _app(80, 24, LEGACY)

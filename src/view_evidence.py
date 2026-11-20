@@ -96,7 +96,7 @@ class EvidenceViewMixin:
             Sized(lambda width, height: self._scrolled(
                 content(width), width, height, "_evidence_offset", "end of evidence"
             )),
-            title=Text(" SIGNAL EVIDENCE  why this warning? ", style=f"bold {palette.accent}"),
+            title=Text(" SIGNAL EVIDENCE ", style=f"bold {palette.accent}"),
             title_align="left",
             subtitle=Text(" severity is a heuristic, not a probability ", style=palette.muted),
             subtitle_align="right",

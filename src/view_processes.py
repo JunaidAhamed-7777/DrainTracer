@@ -126,6 +126,8 @@ class ProcessesViewMixin:
             self._proc_interval = (self._proc_interval + (1 if key == RIGHT else -1)) % count
             return True
         if key in (TAB, BACKTAB):
+            # Returning keyboard focus to the list must also make it visible.
+            self._proc_expanded = False
             self._proc_focus = "detail" if self._proc_focus == "list" else "list"
             return True
         if key == ENTER:
@@ -286,17 +288,17 @@ class ProcessesViewMixin:
     def _processes_controls(self) -> list[tuple[str, str, str]]:
         palette, glyphs = self.palette, self.glyphs
         controls = [
-            (f"{glyphs.up}{glyphs.down}", "select", palette.accent),
-            ("K", "kill whole tree", palette.danger),
+            (f"{glyphs.up}{glyphs.down}", "scroll" if self._proc_focus == "detail" else "select", palette.accent),
             ("/", "search", palette.cyan),
-            ("S", _ORDER_LABELS[self._proc_order], palette.cyan),
-            ("<>" if glyphs.arrow == "->" else "←→", self._proc_interval_label(),
-             palette.teal),
-            ("TAB", "focus", palette.muted),
-            ("ENTER", "detail", palette.muted),
+            ("Tab", "focus", palette.muted),
+            ("Enter", "collapse" if self._proc_expanded else "expand", palette.muted),
         ]
-        if self.manager.contains_monitor:
-            controls.pop(1)
+        if not self.manager.contains_monitor:
+            controls.append(("K", "kill whole tree", palette.danger))
+        controls.extend([
+            ("S", _ORDER_LABELS[self._proc_order], palette.cyan),
+            ("<>" if glyphs.arrow == "->" else "←→", self._proc_interval_label(), palette.teal),
+        ])
         return controls
 
     def _processes_help_keys(self) -> list[tuple[str, str]]:
@@ -331,11 +333,11 @@ class ProcessesViewMixin:
     ) -> Panel:
         palette, sep = self.palette, self.glyphs.sep
         live = sum(1 for row in rows if not row.exited)
+        focused = self._proc_focus == "list"
         title = (
-            f" PROCESSES {live} live {sep} {len(rows) - live} exited {sep} "
+            f" {'[Focus] ' if focused else ''}PROCESSES {live} live {sep} {len(rows) - live} exited {sep} "
             f"{_ORDER_LABELS[self._proc_order]} {sep} {self._proc_interval_label()} "
         )
-        focused = self._proc_focus == "list"
         return Panel(
             Sized(lambda width, height: self._process_list_table(rows, selected, width, height)),
             title=Text(title, style=f"bold {palette.accent_alt}"),
@@ -463,9 +465,11 @@ class ProcessesViewMixin:
             Sized(lambda width, height: self._scrolled(
                 content, width, height, "_proc_detail_offset", "end of detail"
             )),
-            title=Text(" SELECTED PROCESS ", style=f"bold {palette.accent}"),
+            title=Text(" [Focus] SELECTED PROCESS " if focused else " SELECTED PROCESS ",
+                       style=f"bold {palette.accent}"),
             title_align="left",
-            subtitle=Text(" K kills the whole tree, not this process ", style=palette.muted),
+            subtitle=Text(" [K] kills the whole monitored tree ", style=palette.muted)
+            if not self.manager.contains_monitor else None,
             subtitle_align="right",
             border_style=palette.accent if focused else palette.border,
             box=box.ROUNDED,
