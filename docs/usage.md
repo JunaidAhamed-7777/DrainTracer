@@ -72,7 +72,8 @@ Run DrainTracer without arguments to see the live system overview.
 python src/main.py
 ```
 
-The overview shows machine-wide CPU and RAM usage. Four lists rank visible
+The overview shows machine-wide CPU, RAM and swap usage, disk read/write
+rates and network receive/send rates. Four lists rank visible
 processes by CPU (100% represents one fully used core), resident memory
 (RSS), handles on Windows or open file descriptors on Linux, and threads.
 The rankings omit readings the OS cannot provide. Each list shows up to
@@ -211,6 +212,8 @@ identify which processes and transitions explain a change.
 - `K`: terminate the monitored tree; press twice for an attached tree.
 - `E`: export a new JSON report and HTML companion.
 - `O`: open the latest exported HTML report in the default browser.
+- **Last Report** in the overview footer links to the export folder. The
+  final summary displays the same folder as a clickable, copyable path.
 - `S`: cycle the process table through tree, memory, handles, and CPU order.
 - `M`: add a numbered marker such as "opened document" timing to the event
   log, timeline, and report.
@@ -221,9 +224,9 @@ identify which processes and transitions explain a change.
   paging keys scroll it, and `Esc` closes it.
 - `Q`: end the session and clean up or detach according to its launch mode.
 
-Number keys switch between focused views, and `Esc` returns to the
-overview (it closes help, or clears a process filter, first). Switching
-views never pauses sampling or changes the target.
+Number keys switch views. Escape returns to page 1 from any other page.
+On page 1, Q or Escape quits. Escape in help or a text editor closes it
+and returns to page 1. Sampling continues across page changes.
 
 - `1` Overview: the cards, process tree, leak health, and event log.
 - `2` Processes: every live process as a tree, or ranked by growth of
@@ -261,7 +264,9 @@ views never pauses sampling or changes the target.
   cost; these are host context rather than target usage. Unknown readings
   stay `n/a`, and CPU needs a second refresh to establish its baseline.
   Use arrows, paging keys, Home or End to reach all sections in a small terminal.
-- `6` Compare: press `B` to load a saved JSON baseline path, then Enter to
+- `6` Compare: press `P`, enter two PIDs separated by a space and press
+  Enter to inspect CPU, RSS, thread and handle or descriptor counts side
+  by side. For a session comparison, press `B` to enter a saved JSON baseline path, then Enter to
   confirm or Esc to cancel. It shows strict comparability and caveats before
   measured differences, using the same engine and renderer as `diff --strict`.
   It includes drift, peaks, coverage, episodes and, when recorded on both sides,

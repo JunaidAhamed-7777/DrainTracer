@@ -48,8 +48,9 @@ allocation sites. Short runs can be inconclusive.
 
 ![The live system overview ranks processes by four resources. The operator holds the readings, opens the running-program picker, then returns to the overview.](docs/assets/install-and-launch.gif)
 
-Press **P** to read one sample at your own pace. **1** opens a program and
-**2** lists running processes you can monitor.
+Check CPU, RAM, swap, disk transfers and network traffic before choosing a target.
+Press **P** to hold the readings. **1** opens a program and **2** lists running
+processes you can monitor.
 
 - **Follow the whole tree.** Observe a target and its discovered descendants,
   including children that outlive their root.
@@ -218,8 +219,9 @@ connecting IP address. Process reports are not uploaded. Read the
 local data handling.
 
 In an interactive terminal, `draintracer` opens a live system overview when
-you start it without a target. It shows total CPU usage and RAM in use,
-plus four lists of processes ranked highest to lowest by CPU, resident memory
+you start it without a target. It shows CPU, RAM and swap usage, disk reads
+and writes per second, and network receive and send rates. Four lists rank
+processes highest to lowest by CPU, resident memory
 (RSS), handles (Windows) or open file descriptors (Linux), and threads.
 Each list shows up to five processes by default. Use `--top-processes N` to
 change that limit and **Left/Right** when the rankings span multiple pages.
@@ -333,6 +335,9 @@ Use the target's own file logging when needed. See the
 - `S` — cycle process order: tree, memory (private bytes), handles, CPU.
 - `E` — export JSON and HTML reports.
 - `O` — open the latest HTML export.
+- **Last Report** in the overview footer opens the export folder. The final
+  session summary links the same folder and spells out its full path.
+  In Windows Terminal, use **Ctrl+click** to follow a link.
 - `M` — add a numbered marker (`marker N`) to the event log, timeline, and report.
 - `N` — enter a named marker (up to 80 characters); Enter saves and Esc cancels.
   While editing, Space inserts a label space; outside text entry it still pauses the target.
@@ -352,11 +357,13 @@ it remains marked as suspended; detach retries it and reports a cleanup error
 when resuming is denied. Resolve the access restriction before retrying cleanup.
 
 The top navigation bar shows the active view on every page, including the
-monitoring overview. Number keys switch views and `Esc` returns to page
-`1`. Sampling and the target continue while you switch views.
+monitoring overview. Number keys switch views. **Esc** returns to page
+**1** from pages **2–6**. On page **1**, **Q** or **Esc** ends the session.
+If help or a text editor is open, Esc closes it and shows page 1.
+Sampling and the target continue while you switch views.
 
 In the process inspector, a search can hide the selected process. Its detail
-panel says so; `Esc` clears the filter and restores the retained selection.
+panel identifies the hidden selection. Esc clears the filter as you leave the inspector.
 
 | Key | View | Its own keys |
 | --- | --- | --- |
@@ -365,10 +372,14 @@ panel says so; `Esc` clears the filter and restores the retained selection.
 | `3` | Evidence: each window's points, slope, monotonic and drop ratios, score, and verdict | `←`/`→` resource, `↑`/`↓` scroll |
 | `4` | Timeline: one chart with process, pause, signal, and marker annotations | `←`/`→` chart, `F` freeze view, `↑`/`↓` annotations |
 | `5` | Monitor: cadence, collection cost, coverage, freshness, monitor footprint | — |
-| `6` | Compare: a saved baseline against a captured view of the current session | `B` load baseline, `R` refresh, `↑`/`↓` scroll |
+| `6` | Compare two running processes or the monitored session against a saved report | `P` enter two PIDs, `B` load JSON, `R` refresh |
 
-In Compare, press `B` and enter a JSON report path (spaces are supported); Enter
-loads it and Esc cancels. The view shows strict comparability and caveats before
+In **Compare**, press **P**, type two running PIDs separated by a space, and
+press **Enter**. Compare CPU, resident memory, handles or file descriptors,
+and threads for those two individual processes. The monitored target keeps running.
+
+For a baseline comparison, press **B**, enter a DrainTracer JSON report path
+(spaces are supported), and press **Enter**. The view shows strict comparability and caveats before
 differences, using the same engine and rendering as `draintracer diff --strict`.
 It includes drift, peaks, coverage, signal episodes, and per-operation values
 when both runs recorded operation counts. `R` captures a fresh comparison;

@@ -25,7 +25,8 @@ draintracer
 
 If the command is not on `PATH`, use `python -m draintracer` with the same
 Python used for installation. In an interactive terminal, the startup overview
-shows live CPU and RAM usage and ranks processes by CPU, memory, handles
+shows live CPU, RAM, swap, disk read/write rates and network traffic.
+It ranks processes by CPU, memory, handles
 (open file descriptors on Linux), and threads. Press **P** to hold or
 resume the display, **1** to open a program, or **2** to hook to a running
 process. Cancel either picker to return to the overview.
@@ -92,7 +93,9 @@ window showed no sustained growth, and whether any process could not be
 measured. Memory alerts are based on private bytes, shown alongside RSS
 (working set). Alerts name the processes that grew. Number keys open a
 process inspector, the evidence behind each signal, an annotated
-timeline, and monitor diagnostics.
+timeline, and monitor diagnostics. On page **6**, press **P** to compare
+two running PIDs or **B** to compare this session with a saved DrainTracer
+JSON report. **Esc** returns to page **1**. From there **Q** or **Esc** quits.
 
 On Linux, private memory is USS (unique resident pages); Windows uses private
 committed bytes. Linux `handles` readings and `--budget-handles` count open
@@ -103,8 +106,9 @@ other descriptors such as pipes. `/proc` permissions can hide individual
 counters; unavailable data stays unknown, and RSS is never substituted for
 private memory. Compare runs using the same platform and workload.
 
-Press `E` to export JSON and an offline interactive HTML report; press `O`
-to open the latest report.
+Press **E** to export JSON and an offline interactive HTML report. Press **O**
+to open the HTML. **Last Report** in the overview footer and the folder path
+in the session summary both open the export directory in a compatible terminal.
 
 ![The offline report for the same run opens on the verdict, then shows the memory chart and the interval that raised the signal.](https://raw.githubusercontent.com/JunaidAhamed-7777/DrainTracer/v5.9.0/docs/assets/html-report.gif)
 
