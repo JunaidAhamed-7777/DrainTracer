@@ -13,7 +13,7 @@
 <h1 align="center">DrainTracer</h1>
 
 <p align="center">
-  <strong>Release series: v5.8.0</strong> ·
+  <strong>Release series: v5.9.0</strong> ·
   <a href="RELEASES.md">Current version and release notes</a>
 </p>
 
@@ -44,13 +44,12 @@ The target needs no source changes or instrumentation.
 allocation.** DrainTracer measures process counters; it does not identify
 allocation sites. Short runs can be inconclusive.
 
-## See the process behind the growth
+## Start with the system overview
 
-![Private memory grows in a child process while DrainTracer collects evidence, then raises a HIGH leak signal](docs/assets/live-growth.gif)
+![The live system overview ranks processes by four resources. The operator holds the readings, opens the running-program picker, then returns to the overview.](docs/assets/install-and-launch.gif)
 
-*A real dashboard session monitoring the included bounded memory-growth
-workload, from evidence collection to a HIGH signal. Footage is sped up 1.5×;
-values and process IDs vary by run.*
+Press **P** to read one sample at your own pace. **1** opens a program and
+**2** lists running processes you can monitor.
 
 - **Follow the whole tree.** Observe a target and its discovered descendants,
   including children that outlive their root.
@@ -278,10 +277,11 @@ export evidence and `O` to open the HTML report. Try
 `.\torture\steady.py` for a stable baseline. The [torture guide](torture/README.md)
 explains all fixtures and their limits.
 
-![Demo commands: pip install draintracer, then draintracer --target .\torture\memory_leak.py](docs/assets/install-and-launch.gif)
+![DrainTracer follows memory_leak.py as its private memory rises, then shows the Processes, Evidence, and Timeline views.](docs/assets/live-growth.gif)
 
-*Install-and-launch commands from the demo. The `torture` workload shown here
-requires a source checkout; it is not included in the PyPI package.*
+The recording shows the bounded memory-growth fixture running on Linux.
+The **Processes** view identifies the growing process. **Evidence** shows
+the detection window, and **Timeline** shows when the signal appeared.
 
 ### Monitor your program
 
@@ -553,10 +553,10 @@ without hovering over charts.
 Labeled range fields, native signal Zoom buttons, and focusable data tables
 support keyboard use. See the [HTML accessibility checks](docs/html-accessibility.md).
 
-![The exported HTML report shows the HIGH memory signal, resource trend charts, recorded events, and growing processes](docs/assets/html-report.gif)
+![The exported report for memory_leak.py opens on its verdict and resource changes, then scrolls to the memory chart and leak signals.](docs/assets/html-report.gif)
 
-*The offline HTML report from the same demo session: inspect the summary,
-resource trends, events, and process growth after recording.*
+The report uses the same run shown above. Open **Resource trends** to see
+when memory grew. **Leak signals** shows which interval triggered the alert.
 
 Use the JSON reports for scripts and comparisons:
 
