@@ -230,13 +230,16 @@ class DashboardApp(
             self.shutdown()
 
         try:
-            self.console.print(self.render_summary())
+            summary = self.render_summary()
+            self.console.print(LegacySafe(summary, self.console.encoding)
+                               if LegacySafe.needed(self.console.encoding) else summary)
         except Exception as exc:
             # The session itself succeeded; still say where the report went.
             logger.exception("Session summary failed")
             self.console.print(Text(f"Session summary unavailable: {exc}"))
             if self._last_report is not None:
-                self.console.print(Text(f"Report: {self._last_report}"))
+                report = Text.assemble("Report: ", self._report_folder_link(self._last_report))
+                self.console.print(LegacySafe(report, self.console.encoding))
         return 130 if interrupted else 0
 
     def interactive(self) -> bool:
@@ -815,10 +818,7 @@ class DashboardApp(
         quit_keys = "Q/Esc" if self._view == "overview" else "Q"
         navigation = [hint("?", "help"), hint(quit_keys, quit_label)]
         if self._view == "overview" and self._last_report is not None:
-            folder = self._last_report.absolute().parent
-            navigation.insert(0, Text(" Last Report ", style=Style(
-                bold=True, color=palette.ink, bgcolor=palette.teal, link=folder.as_uri(),
-            )))
+            navigation.insert(0, self._report_folder_link(self._last_report, compact=True))
         if self._view == "overview":
             controls = []
             can_control = not self.manager.contains_monitor
@@ -1552,6 +1552,15 @@ class DashboardApp(
     # Session summary
     # ------------------------------------------------------------------
 
+    def _report_folder_link(self, path: Path, *, compact: bool = False) -> Text:
+        folder = path.absolute().parent
+        label = " Last Report " if compact else safe_label(folder, limit=None)
+        return Text(label, style=Style(
+            link=folder.as_uri(), bold=True, underline=not compact,
+            color=self.palette.ink if compact else self.palette.teal,
+            bgcolor=self.palette.teal if compact else None,
+        ))
+
     def render_summary(self) -> Panel:
         """Build the panel printed after the live dashboard closes."""
         palette, glyphs = self.palette, self.glyphs
@@ -1604,10 +1613,7 @@ class DashboardApp(
             verdict.append(f" (partial coverage: {coverage})", style=f"bold {palette.warn}")
         grid.add_row("Verdict", verdict)
         if self._last_report:
-            folder = self._last_report.absolute().parent
-            report = Text(safe_label(folder, limit=None), style=Style(
-                bold=True, underline=True, color=palette.teal, link=folder.as_uri(),
-            ))
+            report = self._report_folder_link(self._last_report)
         else:
             report = Text("not exported (press E during a session)", style=palette.muted)
         grid.add_row("Report", report)
