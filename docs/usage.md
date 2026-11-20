@@ -78,10 +78,13 @@ processes by CPU (100% represents one fully used core), resident memory
 The rankings omit readings the OS cannot provide. Each list shows up to
 five processes by default. Pass `--top-processes N` to change the limit and
 use **Left/Right** to page through rankings that do not fit on screen.
+Press **P** to hold the displayed values and their sample time. Press
+**P** again to see the latest readings.
 
-In **Get Started**, use **Up/Down** to highlight **Open a program** or
-**Hook to a running program**, then press **Spacebar** (or Enter) to select.
-Press **Q** or **Escape** to cancel.
+Press **1** to open a program or **2** to hook to a running program.
+You can also highlight an action with **Up/Down** and select it with
+**Enter** or **Space**. Cancel either picker to return to the overview,
+where **Q** or **Esc** quits.
 Redirected or non-terminal input keeps the numbered `1`/`2` prompt.
 
 **Open a program** opens the native Windows file picker on Windows or a
@@ -127,8 +130,7 @@ labeled; use explicit `--pid` if you intend to attempt direct attachment
 to one of those processes. Enumeration failures offer refresh instead of
 appearing as an empty successful list.
 
-Type `Q` at the startup menu to cancel. Ctrl+C exits with code `130`;
-closing the file picker also cancels without starting a target.
+Ctrl+C exits with code `130`.
 
 The hook choice uses the same attachment behavior as `--pid`: it leaves the
 program running when you quit. Arguments after `--` apply only to **Open a

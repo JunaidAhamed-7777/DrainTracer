@@ -224,12 +224,14 @@ plus four lists of processes ranked highest to lowest by CPU, resident memory
 (RSS), handles (Windows) or open file descriptors (Linux), and threads.
 Each list shows up to five processes by default. Use `--top-processes N` to
 change that limit and **Left/Right** when the rankings span multiple pages.
+Press **P** to hold a reading while you compare rows. Press **P** again to
+return to the latest sample. The timestamp identifies the reading on screen.
 
-Choose an action in **Get Started**.
+Choose how to start monitoring.
 
-- **Open a program:** select an executable or script in the desktop file
-  picker, or enter its path on Linux without a desktop.
-- **Hook to a running program:** browse up to 15 names and PIDs at a
+- **1 · Open a program** lets you select an executable or script in the
+  desktop file picker. On Linux without a desktop, enter the path.
+- **2 · Hook to a running program** lets you browse up to 15 names and PIDs at a
   time. Use **Up/Down** to highlight a program and **Enter** to select it,
   or type a listed PID and press Enter. The list filters as you type a
   name or PID; Backspace updates it immediately. Use `/next` and `/prev`
@@ -256,11 +258,9 @@ The [observer verification and native soak](docs/observer-verification-results.m
 record measured costs, unchanged local budget failures, and the unexpected
 Windows thread warning with their source and machine limits.
 
-Use **Up/Down** to highlight a startup choice, then **Spacebar** (or Enter)
-to select it. Navigation help appears below the Get Started box. Redirected
-or non-terminal input keeps the numbered `1`/`2` prompt.
-
-Press `Q` to cancel either startup prompt, or Escape in the keyboard menu.
+You can also use **Up/Down** and **Enter** or **Space** to choose an action.
+Cancel the picker to return to the live overview. Press **Q** or **Esc**
+on the overview to quit. Redirected input uses a numbered `1`/`2` prompt.
 Supplying `--target` or `--pid`
 skips the menu. All installed-command examples also work with
 `python -m draintracer`; checkout users can use `python src/main.py`.

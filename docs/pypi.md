@@ -25,9 +25,10 @@ draintracer
 
 If the command is not on `PATH`, use `python -m draintracer` with the same
 Python used for installation. In an interactive terminal, the startup overview
-shows live CPU and RAM usage and ranks processes by CPU, memory, handles or
-open file descriptors, and threads. Choose **Open a program** or
-**Hook to a running program** to start monitoring.
+shows live CPU and RAM usage and ranks processes by CPU, memory, handles
+(open file descriptors on Linux), and threads. Press **P** to hold or
+resume the display, **1** to open a program, or **2** to hook to a running
+process. Cancel either picker to return to the overview.
 
 On Linux, install into a virtual environment:
 
