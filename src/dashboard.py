@@ -130,7 +130,7 @@ class DashboardApp(
         self._sort_mode = SORT_MODES[0]
         self._kill_armed_until = 0.0
         self._cpu_cores = psutil.cpu_count(logical=True) or 1
-        self._keys = KeyReader()
+        self._keys = KeyReader(native_windows=stdin_is_interactive())
         self._view = "overview"
         self._init_processes_view()
         self._init_evidence_view()
@@ -197,6 +197,8 @@ class DashboardApp(
                 while not self._quit_requested:
                     changed = self._guarded("Processing samples", self.poll) or False
                     key = self._read_key()
+                    if key == "\x03":
+                        raise KeyboardInterrupt
                     if key in ("\x04", "\x1a") or self._keys.eof:
                         self._quit_requested = True
                     if unattended and not self._quit_requested and self.tree_finished:
