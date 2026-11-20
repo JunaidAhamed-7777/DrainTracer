@@ -114,7 +114,7 @@ class NavigationTests(unittest.TestCase):
     def test_compact_views_use_one_status_line(self) -> None:
         app = _app(80, 24)
         growing_session(app, 5)
-        self.assertIn("1 OVERVIEW", render_text(app).splitlines()[3])
+        self.assertIn("1 OVERVIEW", render_text(app).splitlines()[2])
         app._handle_key("5")
         lines = render_text(app).splitlines()
         self.assertIn("5 MONITOR", lines[0])
@@ -128,7 +128,7 @@ class NavigationTests(unittest.TestCase):
             with self.subTest(key=key):
                 app._handle_key(key)
                 lines = render_text(app).splitlines()
-                self.assertIn(f"[{key} {label}]", lines[3 if key == "1" else 0])
+                self.assertIn(f"[{key} {label}]", lines[2 if key == "1" else 0])
                 self.assertIn("[?] help", lines[-1])
                 self.assertIn("[Q] quit", lines[-1])
         app._handle_key("2")

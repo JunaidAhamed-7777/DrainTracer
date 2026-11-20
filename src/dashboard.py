@@ -445,48 +445,48 @@ class DashboardApp(
         return LegacySafe(layout, encoding) if LegacySafe.needed(encoding) else layout
 
     def _render_layout(self) -> Layout:
+        width, height = self.console.size
+        compact = height < self.COMPACT_LAYOUT_ROWS
+        header_rows = 2 if compact else 3
         if self._show_help:
             layout = Layout(name="root")
             layout.split_column(
-                Layout(self._render_header(), name="header", size=3),
+                Layout(self._render_header(), name="header", size=header_rows),
                 Layout(self._render_help(), name="body", ratio=1),
                 Layout(self._render_footer(), name="footer", size=1),
             )
             return layout
         if self._view != "overview":
             return self._render_focused_view()
-        width, height = self.console.size
         wide = width >= self.WIDE_LAYOUT_COLUMNS
-        compact = height < self.COMPACT_LAYOUT_ROWS
-        process_rows = len(self.snapshot.processes) if self.snapshot else 1
-        body_height = height - 5  # Three header rows, the status line, and the footer.
-
-        # Spare rows go to taller charts; short terminals get a metric strip.
         self._health_spacious = wide and not compact
-        health_height = 9 if self._health_spacious else 7
-        if compact:
+        health_height = 8 if self._health_spacious else 7
+        if self.snapshot is None:
+            metrics = Layout(Panel(Text("Waiting for the first resource sample.", style=self.palette.muted),
+                                   title=" METRICS ", title_align="left", box=box.ROUNDED,
+                                   border_style=self.palette.border), name="metrics", size=3)
+        elif compact:
             metrics = Layout(self._render_metrics_strip(), name="metrics", size=6)
         else:
-            if wide:
-                card_height = (body_height - (process_rows + 5)) // 2
-            else:
-                card_height = (body_height - health_height - 8) // 2
-            card_height = max(6, min(card_height, 10))
+            # A shared chart height makes the four recent histories easier
+            # to scan. Keep space below them for processes and recent events.
+            card_height = min(9, max(6, height // 5))
             self._spark_rows = card_height - 4
-            metrics = Layout(name="metrics", size=card_height * 2)
-            metrics.split_column(Layout(name="cards_top"), Layout(name="cards_bottom"))
-            metrics["cards_top"].split_row(
-                Layout(self._render_cpu_card()),
-                Layout(self._render_memory_card()),
+            cards = (
+                Layout(self._render_cpu_card()), Layout(self._render_memory_card()),
+                Layout(self._render_handles_card()), Layout(self._render_threads_card()),
             )
-            metrics["cards_bottom"].split_row(
-                Layout(self._render_handles_card()),
-                Layout(self._render_threads_card()),
-            )
+            metrics = Layout(name="metrics", size=card_height if wide else card_height * 2)
+            if wide:
+                metrics.split_row(*cards)
+            else:
+                metrics.split_column(Layout(name="cards_top"), Layout(name="cards_bottom"))
+                metrics["cards_top"].split_row(*cards[:2])
+                metrics["cards_bottom"].split_row(*cards[2:])
 
         layout = Layout(name="root")
         layout.split_column(
-            Layout(self._render_header(), name="header", size=3),
+            Layout(self._render_header(), name="header", size=header_rows),
             Layout(self._render_status_line(), name="status", size=1),
             Layout(name="body", ratio=1),
             Layout(self._render_footer(), name="footer", size=1),
@@ -495,12 +495,6 @@ class DashboardApp(
         tree = Layout(self._render_process_panel(), name="tree", ratio=3)
         events = Layout(self._render_event_panel(), name="events", ratio=2)
 
-        if wide:
-            layout["body"].split_row(Layout(name="main", ratio=3), Layout(name="side", ratio=2))
-            layout["main"].split_column(metrics, tree)
-            layout["side"].split_column(health, events)
-            return layout
-
         bottom = Layout(name="bottom", ratio=1)
         if width >= self.SPLIT_BOTTOM_COLUMNS:
             bottom.split_row(tree, events)
@@ -508,8 +502,8 @@ class DashboardApp(
             bottom.split_column(tree, events)
         else:
             # Too small for both; the header still shows the process count.
-            bottom.update(self._render_event_panel())
-        layout["body"].split_column(metrics, health, bottom)
+            bottom.update(events.renderable)
+        layout["body"].split_column(health, metrics, bottom)
         return layout
 
     def _render_focused_view(self) -> Layout:
@@ -748,8 +742,8 @@ class DashboardApp(
             (target, "bold"),
             no_wrap=True, overflow="ellipsis",
         )
-        right = Text(" Attached session " if self.attached else " Launched session ",
-                     style=palette.muted)
+        ownership = "Attached" if self.attached else "Launched"
+        right = Text(f" {ownership} session " if roomy else f" {ownership} ", style=palette.muted)
         bar = Table.grid(expand=True)
         bar.add_column(ratio=1, no_wrap=True)
         bar.add_column(justify="right", no_wrap=True)
@@ -780,7 +774,7 @@ class DashboardApp(
         )
         path.no_wrap = True
         path.overflow = "ellipsis"
-        return Group(bar, info, path)
+        return Group(bar, info) if self.console.height < self.COMPACT_LAYOUT_ROWS else Group(bar, info, path)
 
     def _label_values(self, *pairs: tuple[str, str]) -> Text:
         palette = self.palette
@@ -1082,6 +1076,8 @@ class DashboardApp(
             Sized(self._process_table),
             title=Text(title, style=f"bold {self.palette.accent_alt}"),
             title_align="left",
+            subtitle=Text(" [2] inspect processes ", style=self.palette.muted),
+            subtitle_align="right",
             border_style=self.palette.border,
             box=box.ROUNDED,
             padding=(0, 1),
@@ -1241,6 +1237,8 @@ class DashboardApp(
             Sized(self._health_body),
             title=Text(" LEAK HEALTH ", style=f"bold {color}"),
             title_align="left",
+            subtitle=Text(" [3] inspect evidence ", style=self.palette.muted),
+            subtitle_align="right",
             border_style=self.palette.border if severity == LeakSeverity.NONE else color,
             box=box.ROUNDED,
             padding=(0, 1),
@@ -1323,7 +1321,7 @@ class DashboardApp(
         )
         freshness = self._freshness_line()
         if self._health_spacious:
-            return Group(top, Text(""), rows, freshness or Text(""), footnote)
+            return Group(top, rows, freshness or Text(""), footnote)
         if freshness is not None:
             footnote.append(f" {glyphs.sep} ", style=palette.muted)
             footnote.append_text(freshness)
