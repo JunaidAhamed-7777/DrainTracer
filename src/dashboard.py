@@ -440,7 +440,7 @@ class DashboardApp(
         "evidence": "why a signal was or was not raised: each window's checks and values",
         "timeline": "one chart at a time with process, pause, signal and marker annotations",
         "monitor": "sampling cadence and cost, coverage, freshness, monitor footprint",
-        "comparison": "load a saved baseline and inspect strict comparability before differences",
+        "comparison": "compare two live processes, or compare this session with a saved JSON report",
     }
 
     def _render(self) -> RenderableType:
@@ -796,10 +796,9 @@ class DashboardApp(
             room = max(1, self.console.size.width - 36)
             return Text(f" MARKER {self._marker_draft[-room:]}_  ENTER save  ESC cancel",
                         style=f"bold {palette.teal}", no_wrap=True, overflow="ellipsis")
-        if self._baseline_draft is not None:
-            room = max(1, self.console.size.width - 38)
-            return Text(f" BASELINE {self._baseline_draft[-room:]}_  ENTER load  ESC cancel",
-                        style=f"bold {palette.accent}", no_wrap=True, overflow="ellipsis")
+        editor = self._comparison_editor_footer()
+        if editor is not None:
+            return editor
         width = self.console.size.width
         roomy = width >= 120
 
