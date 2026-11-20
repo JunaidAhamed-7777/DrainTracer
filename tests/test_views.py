@@ -643,6 +643,11 @@ class TimelineViewTests(ViewRenderingMixin, unittest.TestCase):
         self.assertFalse(app.timeline_frozen)
         self.assertIn("30 samples", render_text(app))
 
+    def test_compact_frozen_timeline_keeps_unfreeze_visible(self) -> None:
+        app = self._app(50, 20)
+        app._handle_key("f")
+        self.assertIn("[F] unfreeze", render_text(app).splitlines()[-1])
+
     def test_process_scope_uses_selected_identity_and_freezes_its_points(self) -> None:
         app = self._app()
         app._proc_selected = (2, 2.0)

@@ -235,12 +235,14 @@ class TimelineViewMixin:
     def _timeline_controls(self) -> list[tuple[str, str, str]]:
         palette, glyphs = self.palette, self.glyphs
         arrows = "<>" if glyphs.arrow == "->" else "←→"
+        chart = (arrows, "chart", palette.accent)
+        freeze = ("F", "unfreeze" if self.timeline_frozen else "freeze", palette.warn)
         if self.console.size.width < 100:
-            return [(arrows, "chart", palette.accent), ("F", "unfreeze" if self.timeline_frozen else "freeze", palette.warn),
-                    ("P/R/[]", "scope/range", palette.accent)]
+            actions = [freeze, chart] if self.timeline_frozen else [chart, freeze]
+            return [*actions, ("P/R/[]", "scope/range", palette.accent)]
         return [
-            (arrows, "chart", palette.accent),
-            ("F", "unfreeze" if self.timeline_frozen else "freeze", palette.warn),
+            chart,
+            freeze,
             ("N", "label", palette.teal),
             ("P/R/[]", "scope/range", palette.accent),
             (f"{glyphs.up}{glyphs.down}", "events", palette.muted),
