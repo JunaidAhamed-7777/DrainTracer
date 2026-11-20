@@ -177,6 +177,7 @@ class ProcessCleanupTests(unittest.TestCase):
             manager, refresh=refresh, suspend=lambda pid: process_runner.SuspendOutcome.GONE)
         with running, refresh_patch, suspend:
             self.assertFalse(manager.pause())
+        self.assertIn("exited while pausing", manager.last_error)
         self.assertFalse(manager.is_paused)
         self.assertEqual(manager.pending_resume_pids, frozenset())
 

@@ -588,6 +588,13 @@ class AttachModeTests(unittest.TestCase):
         self.assertEqual(app._events[-1][1], "Nothing to kill: the target tree has already exited")
         self.assertFalse(app.stopped_target)
 
+    def test_pause_after_exit_explains_why_sampling_continues(self) -> None:
+        app = _app()
+        app.manager._last_error = "stale error"
+        app._handle_key(" ")
+        self.assertFalse(app.detector.is_paused)
+        self.assertEqual(app._events[-1][1], "Pause failed: The target process tree has already exited")
+
     def test_pause_and_kill_are_unavailable_when_the_tree_contains_draintracer(self) -> None:
         from unittest import mock
 
