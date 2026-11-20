@@ -15,6 +15,7 @@ from rich.console import Console, Group, RenderableType
 from rich.layout import Layout
 from rich.live import Live
 from rich.panel import Panel
+from rich.style import Style
 from rich.table import Table
 from rich.text import Text
 
@@ -810,6 +811,11 @@ class DashboardApp(
 
         quit_label = ("detach & quit" if roomy else "detach") if self.attached else "quit"
         navigation = [hint("?", "help"), hint("Q", quit_label)]
+        if self._view == "overview" and self._last_report is not None:
+            folder = self._last_report.absolute().parent
+            navigation.insert(0, Text(" Last Report ", style=Style(
+                bold=True, color=palette.ink, bgcolor=palette.teal, link=folder.as_uri(),
+            )))
         if self._view == "overview":
             controls = []
             can_control = not self.manager.contains_monitor
@@ -838,11 +844,6 @@ class DashboardApp(
             if leading.cell_len + control.cell_len <= available:
                 leading.append_text(control)
                 leading.append("  ")
-        if self._view == "overview" and self._last_report_id:
-            note = f"Last report {self._last_report_id}"
-            if leading.cell_len + len(note) <= available:
-                leading.append(note, style=palette.muted)
-
         footer = Table.grid(expand=True)
         footer.add_column(ratio=1, no_wrap=True)
         footer.add_column(justify="right", no_wrap=True)
@@ -1555,7 +1556,7 @@ class DashboardApp(
         palette, glyphs = self.palette, self.glyphs
         grid = Table.grid(padding=(0, 2))
         grid.add_column(style=f"bold {palette.muted}", no_wrap=True)
-        # Fold rather than truncate: report paths are meant to be copied.
+        # Keep the entire report folder readable in plain-text terminals.
         grid.add_column(overflow="fold")
         grid.add_row(
             "Target",
@@ -1602,12 +1603,10 @@ class DashboardApp(
             verdict.append(f" (partial coverage: {coverage})", style=f"bold {palette.warn}")
         grid.add_row("Verdict", verdict)
         if self._last_report:
-            report = Text.assemble(
-                (self._last_report_id or "", f"bold {palette.teal}"),
-                (f"\n{self._last_report}", palette.muted),
-            )
-            if self._last_html_report is not None:
-                report.append(f"\n{self._last_html_report}", style=palette.muted)
+            folder = self._last_report.absolute().parent
+            report = Text(safe_label(folder, limit=None), style=Style(
+                bold=True, underline=True, color=palette.teal, link=folder.as_uri(),
+            ))
         else:
             report = Text("not exported (press E during a session)", style=palette.muted)
         grid.add_row("Report", report)

@@ -212,19 +212,24 @@ class LayoutTests(unittest.TestCase):
         self.assertIn("5s · did not finish", output)
         self.assertIn("profile ci from", output)
 
-    def test_summary_folds_long_report_paths_instead_of_cutting_them(self) -> None:
+    def test_summary_and_footer_link_to_the_exact_report_folder(self) -> None:
         from pathlib import Path
 
         app = _app(60, 40)
         app._accept_snapshot(make_snapshot())
-        app._last_report = Path("C:/very/long/directory/name/for/reports/leak_report_"
-                                "11111111-2222-4333-8444-555555555555.json")
+        folder = Path("long [export] folder/directory name/reports #1").absolute()
         app._last_report_id = "11111111-2222-4333-8444-555555555555"
-        with app.console.capture() as capture:
-            app.console.print(app.render_summary())
-        joined = "".join(line.strip("│ ") for line in capture.get().splitlines())
-        self.assertIn("555555555555.json", joined)
-        self.assertNotIn("…", capture.get())
+        app._last_report = folder / f"{app._last_report_id}.json"
+        app._last_html_report = app._last_report.with_suffix(".html")
+        for view, label in ((app.render_summary(), str(folder)), (app._render_footer(), "Last Report")):
+            segments = list(app.console.render(view))
+            links = [s for s in segments if s.style and s.style.link]
+            self.assertEqual({s.style.link for s in links}, {folder.as_uri()})
+            self.assertEqual("".join(s.text for s in links).replace(" ", ""), label.replace(" ", ""))
+            plain = "".join(s.text for s in segments)
+            self.assertNotIn(app._last_report_id, plain)
+            self.assertNotIn(".json", plain)
+            self.assertNotIn(".html", plain)
 
     def test_bracketed_names_are_shown_literally(self) -> None:
         from dataclasses import replace
