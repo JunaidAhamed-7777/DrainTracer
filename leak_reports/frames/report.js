@@ -1,6 +1,34 @@
 
 (() => {
   "use strict";
+  const contents = Array.from(document.querySelectorAll(".contents a"), (link) => ({
+    link, section: document.getElementById(link.hash.slice(1))
+  }));
+  function showReadingPosition() {
+    let current = contents[0];
+    for (const entry of contents) {
+      if (entry.section.getBoundingClientRect().top > 36) break;
+      current = entry;
+    }
+    if (window.scrollY > 0 && window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 1) {
+      current = contents[contents.length - 1];
+    }
+    for (const entry of contents) {
+      if (entry === current) entry.link.setAttribute("aria-current", "location");
+      else entry.link.removeAttribute("aria-current");
+    }
+  }
+  let positionFrame = 0;
+  function scheduleReadingPosition() {
+    if (!positionFrame) positionFrame = requestAnimationFrame(() => {
+      positionFrame = 0;
+      showReadingPosition();
+    });
+  }
+  window.addEventListener("scroll", scheduleReadingPosition, { passive: true });
+  window.addEventListener("resize", scheduleReadingPosition);
+  showReadingPosition();
+
   const host = document.getElementById("charts");
   if (!host) return;
   let data = null;
@@ -609,9 +637,12 @@
       const pad = Math.max(5, (end - start) * 0.25, step * 4);
       zoomTo(start - pad, end + pad);
       const trends = document.getElementById("trends");
-      if (trends) trends.scrollIntoView({
-        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
-        block: "start" });
+      if (trends) {
+        trends.focus({ preventScroll: true });
+        trends.scrollIntoView({
+          behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+          block: "start" });
+      }
     };
     const button = row.querySelector(".signal-zoom");
     if (button) button.addEventListener("click", zoom);

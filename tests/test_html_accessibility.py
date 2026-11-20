@@ -34,6 +34,19 @@ class _Semantics(HTMLParser):
 
 
 class ReportAccessibilityTests(unittest.TestCase):
+    def test_report_jump_links_resolve_with_or_without_samples(self) -> None:
+        for report in (_report(), _report(snapshots=[], event_log=[])):
+            parser = _Semantics()
+            parser.feed(render_html_report(report))
+            ids = [attrs["id"] for _, attrs in parser.elements if "id" in attrs]
+            targets = [attrs["href"][1:] for tag, attrs in parser.elements
+                       if tag == "a" and attrs.get("href", "").startswith("#")]
+            self.assertEqual(ids.count("overview"), 1)
+            self.assertTrue({"overview", "trends", "signals", "processes", "events", "session",
+                             "sample-values"}.issubset(targets))
+            for target in targets:
+                self.assertEqual(ids.count(target), 1, target)
+
     def test_text_badges_and_tooltips_meet_aa_contrast_in_both_themes(self) -> None:
         css = resource_path("leak_reports/frames/report.css").read_text(encoding="utf-8")
         dark, light = css.split("@media (prefers-color-scheme:light)", 1)

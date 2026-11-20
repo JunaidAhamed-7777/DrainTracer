@@ -64,6 +64,7 @@ def render_html_report(report: Mapping[str, Any]) -> str:
     name = target_filename(target) or target
     version = str(report.get("version") or "")
     title = f"DrainTracer · {name} · {_verdict_label(report, summary)}"
+    created = _local_time(report.get("created_at"), "")
 
     body = "\n".join(
         (
@@ -83,7 +84,10 @@ def render_html_report(report: Mapping[str, Any]) -> str:
             '<li><a href="#session">Session details</a></li>'
             '</ul></nav>',
             '<main id="overview" tabindex="-1">',
-            f'<header class="masthead"><h1>{_e(name)}</h1><p class="path">{_e(target)}</p></header>',
+            '<header class="masthead">'
+            f'<div><h1>{_e(name)}</h1><p class="path">{_e(target)}</p></div>'
+            + (f'<p class="created">Exported<br><b>{_e(created)}</b></p>' if created else "")
+            + '</header>',
             _verdict(report, summary),
             _cards(report, summary, _sample_count(report, summary)),
             _charts_panel(),
@@ -429,18 +433,19 @@ def _cards(report: Mapping[str, Any], summary: ReportSummary, sample_count: int)
         f'<div class="cards">{"".join(cards)}</div>'
         '<div class="run-summary">'
         f'<strong>{_e(format_clock(summary.duration))} monitored</strong>'
-        f'<span>{sample_count:,} samples · up to {summary.max_processes} processes</span>'
+        f'<span>{sample_count:,} sample{"s" if sample_count != 1 else ""} · '
+        f'up to {summary.max_processes} process{"es" if summary.max_processes != 1 else ""}</span>'
         f'<span>{_e(memory)}</span><span>{_e(cpu)}</span></div></section>'
     )
 
 
 def _charts_panel() -> str:
     return (
-        '<section class="panel" id="trends" aria-label="Trends">'
+        '<section class="panel" id="trends" tabindex="-1" aria-label="Trends">'
         '<div class="panel-head"><h2>Resource trends</h2>'
         '<button type="button" class="reset" id="reset-zoom" hidden>Reset zoom</button></div>'
         '<p class="hint trend-help">Drag or enter a time range to zoom. Press Esc to reset. '
-        'Dots mark new or escalating leak signals. <a href="#sample-data">Read sample values</a>.</p>'
+        'Dots mark new or escalating leak signals. <a href="#sample-values">Read sample values</a>.</p>'
         '<form id="range-controls" class="chart-range" novalidate hidden>'
         '<label for="zoom-start">From (seconds)</label>'
         '<input id="zoom-start" type="number" step="any" aria-describedby="range-status">'
@@ -480,7 +485,7 @@ def _sample_table_panel(payload: Mapping[str, Any], stride: int) -> str:
     return (
         '<details class="panel sample-data" id="sample-data">'
         f'<summary>Retained chart sample values ({len(times):,} rows)</summary>'
-        '<p class="hint">Elapsed time starts at the first retained sample. These are the plotted '
+        '<p class="hint" id="sample-values">Elapsed time starts at the first retained sample. These are the plotted '
         f'retained samples, not a complete whole-run sample log.{_e(thinning)} '
         'n/a means a counter was not measured, including paused, failed, or unreadable samples.</p>'
         f'<p><a class="download" download="retained-chart-samples.csv" href="{download}">'
